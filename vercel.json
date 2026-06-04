@@ -1,0 +1,31 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install",
+  "outputDirectory": ".next",
+  "regions": ["iad1"],
+  "env": {
+    "NEXT_PUBLIC_SUPABASE_URL": "@supabase-url",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY": "@supabase-anon-key",
+    "SUPABASE_SERVICE_KEY": "@supabase-service-key",
+    "ANTHROPIC_API_KEY": "@anthropic-api-key",
+    "RESEND_API_KEY": "@resend-api-key",
+    "RESEND_FROM_EMAIL": "@resend-from-email",
+    "NEXT_PUBLIC_URL": "@app-url",
+    "NEXT_PUBLIC_REFERRAL_BASE_URL": "@referral-base-url",
+    "GHL_API_KEY": "@ghl-api-key",
+    "GHL_LOCATION_ID": "@ghl-location-id",
+    "GHL_WEBHOOK_SECRET": "@ghl-webhook-secret"
+  },
+  "routes": [
+    {
+      "src": "/forms/(.*)",
+      "dest": "/forms/$1"
+    },
+    {
+      "src": "/referral/(.*)",
+      "dest": "/api/agencies/referral?agency_slug=$1"
+    }
+  ]
+}

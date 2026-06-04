@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
+import { Resend } from 'resend'
 import { randomUUID } from 'crypto'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+
+function getResend() {
+  return new Resend(process.env.RESEND_API_KEY)
+}
 
 const FORM_TITLES: Record<string, string> = {
   'customer-questionnaire':   'Customer Questionnaire',
@@ -17,16 +22,14 @@ const FORM_TITLES: Record<string, string> = {
 
 export async function POST(req: NextRequest) {
   try {
-    const supabase = getDb()
     const body = await req.json()
     const {
       customer_id,
       form_id,
-      channel,
-      destination,
+      channel,       // 'email' | 'sms' | 'both' | 'link'
+      destination,   // email address or phone number
       client_name,
       agency_id,
-      ghl_contact_id,
     } = body
 
     if (!form_id || !channel) {
@@ -36,9 +39,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unknown form_id' }, { status: 400 })
     }
 
-    // 1. Prevent duplicate sends
+    // 1. Check if form already sent and not expired (prevent duplicates)
     if (customer_id) {
-      const { data: existing } = await supabase
+      const { data: existing } = await getDb()
         .from('form_submissions')
         .select('submission_id, status')
         .eq('customer_id', customer_id)
@@ -57,13 +60,15 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 2. Generate token + link
+    // 2. Generate unique token
     const token = randomUUID().replace(/-/g, '').slice(0, 16) + Date.now().toString(36)
+
+    // 3. Build the link
     const baseUrl = process.env.NEXT_PUBLIC_URL || 'http://localhost:3000'
     const link = `${baseUrl}/forms/${form_id}?t=${token}${client_name ? `&client=${encodeURIComponent(client_name)}` : ''}`
 
-    // 3. Create submission record
-    const { data: submission, error: insertErr } = await supabase
+    // 4. Create submission record
+    const { data: submission, error: insertErr } = await getDb()
       .from('form_submissions')
       .insert({
         customer_id: customer_id || null,
@@ -83,20 +88,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Failed to create form record' }, { status: 500 })
     }
 
-    // 4. Send via email (Resend)
+    // 5. Send via email
     if ((channel === 'email' || channel === 'both') && destination) {
       try {
-        const { Resend } = await import('resend')
-        const resend = new Resend(process.env.RESEND_API_KEY)
-
-        await resend.emails.send({
+        await getResend().emails.send({
           from: process.env.RESEND_FROM_EMAIL || 'Markist — Farmers Financial <forms@yourdomain.com>',
           to: destination,
           subject: `Action Required — ${FORM_TITLES[form_id]}`,
           html: buildEmailHTML(client_name || 'Client', FORM_TITLES[form_id], link, form_id),
         })
 
-        await supabase.from('form_sends').insert({
+        await getDb().from('form_sends').insert({
           submission_id: submission.submission_id,
           customer_id: customer_id || null,
           form_id,
@@ -105,17 +107,18 @@ export async function POST(req: NextRequest) {
         })
       } catch (emailErr) {
         console.error('Email send error:', emailErr)
-        // Non-fatal — return link regardless
+        // Don't fail the whole request if email fails — still return the link
       }
     }
 
-    // 5. Send via SMS (via GHL)
+    // 6. Send via SMS — via GHL webhook (Twilio handled by GHL)
     if ((channel === 'sms' || channel === 'both') && destination) {
       try {
         if (process.env.GHL_API_KEY && process.env.GHL_LOCATION_ID) {
           const smsBody = `Hi ${client_name || 'there'}, Markist sent you a secure form to complete before your appointment. Tap to open: ${link}\n\nReply STOP to opt out.`
 
-          await fetch('https://services.leadconnectorhq.com/conversations/messages', {
+          // GHL send SMS API
+          await fetch(`https://services.leadconnectorhq.com/conversations/messages`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${process.env.GHL_API_KEY}`,
@@ -125,12 +128,12 @@ export async function POST(req: NextRequest) {
             body: JSON.stringify({
               type: 'SMS',
               locationId: process.env.GHL_LOCATION_ID,
-              contactId: ghl_contact_id,
+              contactId: body.ghl_contact_id,
               message: smsBody,
             }),
           })
 
-          await supabase.from('form_sends').insert({
+          await getDb().from('form_sends').insert({
             submission_id: submission.submission_id,
             customer_id: customer_id || null,
             form_id,
@@ -143,9 +146,9 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 6. Log activity
+    // 7. Log activity
     if (customer_id) {
-      await supabase.from('activity').insert({
+      await getDb().from('activity').insert({
         customer_id,
         agency_id: agency_id || null,
         type: 'form_sent',
@@ -181,10 +184,12 @@ function buildEmailHTML(clientName: string, formTitle: string, link: string, for
 </head>
 <body style="margin:0;padding:0;background:#f4f6f9;font-family:'Segoe UI',Arial,sans-serif;">
   <div style="max-width:560px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e4e8ef;">
+    <!-- Header -->
     <div style="background:#0f1e36;padding:24px 32px;">
       <div style="font-size:13px;font-weight:700;color:#fff;letter-spacing:.04em;">FARMERS FINANCIAL SOLUTIONS</div>
       <div style="font-size:11px;color:rgba(255,255,255,.5);margin-top:2px;">Markist · Licensed FSA</div>
     </div>
+    <!-- Body -->
     <div style="padding:32px;">
       <p style="font-size:16px;color:#1a2332;margin:0 0 8px;font-weight:600;">Hi ${clientName},</p>
       <p style="font-size:14px;color:#3d3830;line-height:1.7;margin:0 0 20px;">
@@ -204,10 +209,11 @@ function buildEmailHTML(clientName: string, formTitle: string, link: string, for
         <span style="color:#2b6cb0;word-break:break-all;">${link}</span>
       </p>
     </div>
+    <!-- Footer -->
     <div style="background:#f4f6f9;padding:16px 32px;border-top:1px solid #e4e8ef;">
       <p style="font-size:11px;color:#a8b4c0;margin:0;line-height:1.6;">
         Markist · Farmers Financial Solutions, LLC<br>
-        Securities offered through Farmers Financial Solutions, LLC, Member FINRA &amp; SIPC<br>
+        Securities offered through Farmers Financial Solutions, LLC, Member FINRA & SIPC<br>
         To opt out of future communications, reply STOP to any SMS or contact us directly.
       </p>
     </div>

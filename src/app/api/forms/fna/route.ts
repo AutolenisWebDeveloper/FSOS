@@ -1,22 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
+import Anthropic from '@anthropic-ai/sdk'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-// POST /api/forms/fna
-// Generates FNA report via Anthropic API for a completed form submission
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+
 export async function POST(req: NextRequest) {
   try {
-    const supabase = getDb()
     const { submission_id } = await req.json()
 
     if (!submission_id) {
       return NextResponse.json({ error: 'submission_id required' }, { status: 400 })
     }
 
-    // 1. Fetch submission + customer
-    const { data: sub, error: subErr } = await supabase
+    // 1. Fetch submission + customer data
+    const { data: sub, error: subErr } = await getDb()
       .from('form_submissions')
       .select(`
         *,
@@ -37,22 +37,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No form data to analyze' }, { status: 400 })
     }
 
-    // 2. Return cached report if it exists (unless force=1)
+    // 2. Check if FNA already generated (prevent duplicate API calls)
     if (sub.fna_report && !req.nextUrl.searchParams.get('force')) {
-      return NextResponse.json({ success: true, report: sub.fna_report, cached: true })
+      return NextResponse.json({
+        success: true,
+        report: sub.fna_report,
+        cached: true,
+      })
     }
 
-    // 3. Build prompt — merge form data with customer record
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const customerData = sub.customers as Record<string, any> | null
+    // 3. Build the Claude prompt
     const clientData = {
-      ...(sub.response_data as Record<string, unknown>),
-      ...(customerData ? {
-        _customer_age:      customerData.age,
-        _customer_state:    customerData.state,
-        _existing_life:     customerData.has_life,
-        _existing_auto:     customerData.has_auto,
-        _existing_home:     customerData.has_home,
+      ...sub.response_data as Record<string, unknown>,
+      // Merge in customer record data
+      ...(sub.customers ? {
+        _customer_age: (sub.customers as { age?: number }).age,
+        _customer_state: (sub.customers as { state?: string }).state,
+        _existing_life: (sub.customers as { has_life?: boolean }).has_life,
+        _existing_auto: (sub.customers as { has_auto?: boolean }).has_auto,
+        _existing_home: (sub.customers as { has_home?: boolean }).has_home,
       } : {}),
     }
 
@@ -60,6 +63,7 @@ export async function POST(req: NextRequest) {
 
 IMPORTANT COMPLIANCE REQUIREMENTS:
 - This analysis is for EDUCATIONAL and INFORMATIONAL purposes ONLY
+- Not a product recommendation or suitability determination
 - Do NOT recommend any specific product by name
 - Do NOT make investment, securities, or insurance suitability determinations
 - All actual recommendations require a licensed FSA meeting and FINRA Reg BI review
@@ -76,7 +80,8 @@ Generate a complete FNA. Return ONLY valid JSON (no markdown fences, no preamble
   "gaps": [
     "Specific gap 1 — be concrete (e.g. 'Life coverage gap: current coverage is below the 10x income benchmark')",
     "Specific gap 2",
-    "Specific gap 3"
+    "Specific gap 3",
+    "Specific gap 4 (add more as warranted)"
   ],
   "recommendations": [
     {
@@ -101,10 +106,7 @@ Generate a complete FNA. Return ONLY valid JSON (no markdown fences, no preamble
   }
 }`
 
-    // 4. Call Claude API (lazy import — no module-level instantiation)
-    const { default: Anthropic } = await import('@anthropic-ai/sdk')
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-
+    // 4. Call Claude API
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 2048,
@@ -122,7 +124,7 @@ Generate a complete FNA. Return ONLY valid JSON (no markdown fences, no preamble
     }
 
     // 5. Store report
-    const { error: updateErr } = await supabase
+    const { error: updateErr } = await getDb()
       .from('form_submissions')
       .update({
         fna_report: report,
@@ -135,9 +137,9 @@ Generate a complete FNA. Return ONLY valid JSON (no markdown fences, no preamble
       console.error('FNA store error:', updateErr)
     }
 
-    // 6. Link to open commission case if one exists
+    // 6. Link to commission case if exists
     if (sub.customer_id) {
-      await supabase
+      await getDb()
         .from('commission_cases')
         .update({
           fna_submission_id: submission_id,
@@ -156,13 +158,12 @@ Generate a complete FNA. Return ONLY valid JSON (no markdown fences, no preamble
   }
 }
 
-// GET — retrieve existing FNA report
+// GET — retrieve existing FNA report by submission_id
 export async function GET(req: NextRequest) {
-  const supabase = getDb()
   const submission_id = req.nextUrl.searchParams.get('submission_id')
   if (!submission_id) return NextResponse.json({ error: 'submission_id required' }, { status: 400 })
 
-  const { data, error } = await supabase
+  const { data, error } = await getDb()
     .from('form_submissions')
     .select('fna_report, fna_generated_at, fna_urgency, form_id, customer_id')
     .eq('submission_id', submission_id)

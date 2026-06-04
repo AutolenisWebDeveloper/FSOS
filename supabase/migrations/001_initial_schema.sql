@@ -10,32 +10,40 @@ create extension if not exists "pg_cron";
 
 -- ─────────────────────────────────────────────────────────
 -- AGENCIES
+-- One row per agency owner in your network
 -- ─────────────────────────────────────────────────────────
 create table agencies (
-  agency_id           text primary key,
-  name                text not null,
-  owner               text not null,
-  city                text,
-  phone               text,
-  email               text,
-  slug                text unique,
-  agency_zoom         boolean default false,
-  apex                boolean default false,
-  notes               text,
-  first_referral      date,
-  last_referral       date,
-  last_call           date,
-  last_meeting        date,
-  last_email          date,
-  -- Computed nightly by trigger (replaces generated columns — current_date is STABLE not IMMUTABLE)
-  days_since_referral integer default 999,
-  needs_attention     boolean default false,
-  created_at          timestamptz default now(),
-  updated_at          timestamptz default now()
+  agency_id       text primary key,              -- e.g. 'ag1'
+  name            text not null,
+  owner           text not null,
+  city            text,
+  phone           text,
+  email           text,
+  slug            text unique,                   -- used in referral/upload URLs
+  agency_zoom     boolean default false,
+  apex            boolean default false,
+  notes           text,
+  first_referral  date,
+  last_referral   date,
+  last_call       date,
+  last_meeting    date,
+  last_email      date,
+  days_since_referral integer generated always as (
+    case when last_referral is null then 999
+    else (current_date - last_referral)::integer end
+  ) stored,
+  needs_attention boolean generated always as (
+    case when last_referral is null then false
+    when (current_date - last_referral) > 30 then true
+    else false end
+  ) stored,
+  created_at      timestamptz default now(),
+  updated_at      timestamptz default now()
 );
 
 -- ─────────────────────────────────────────────────────────
 -- CUSTOMERS
+-- Every person in your book of business
 -- ─────────────────────────────────────────────────────────
 create table customers (
   customer_id     uuid primary key default gen_random_uuid(),
@@ -46,27 +54,33 @@ create table customers (
   phone           text,
   cell_phone      text,
   dob             date,
-  -- age computed by trigger (date_part('year', age(dob)) is STABLE not IMMUTABLE)
-  age             integer,
+  age             integer generated always as (
+    case when dob is null then null
+    else date_part('year', age(dob))::integer end
+  ) stored,
   address         text,
   city            text,
   state           text default 'TX',
   zip             text,
   employer        text,
   occupation      text,
-  marital_status  text,
+  marital_status  text,                          -- Single|Married|Divorced|Widowed
   dependents      integer default 0,
+  -- Policy flags (updated by APEX import)
   has_auto        boolean default false,
   has_home        boolean default false,
   has_life        boolean default false,
   has_umbrella    boolean default false,
   policy_count    integer default 0,
-  source          text default 'apex',
-  ghl_contact_id  text,
-  apex_id         text,
+  -- Source tracking
+  source          text default 'apex',           -- apex|agency_referral|agency_upload|manual
+  ghl_contact_id  text,                          -- GHL contact ID for sync
+  apex_id         text,                          -- APEX policy number or ID
+  -- Consent
   consent_sms     boolean default false,
   consent_email   boolean default false,
   consent_date    timestamptz,
+  -- Metadata
   created_at      timestamptz default now(),
   updated_at      timestamptz default now()
 );
@@ -81,22 +95,25 @@ create index idx_customers_state on customers(state);
 
 -- ─────────────────────────────────────────────────────────
 -- POLICIES
+-- Every policy tied to a customer
 -- ─────────────────────────────────────────────────────────
 create table policies (
   policy_id           uuid primary key default gen_random_uuid(),
   customer_id         uuid not null references customers(customer_id) on delete cascade,
   policy_number       text,
-  policy_type         text not null,
+  policy_type         text not null,             -- auto|home|life|term|umbrella|commercial
   carrier             text,
   face_amount         numeric(12,2),
   annual_premium      numeric(10,2),
   monthly_premium     numeric(10,2),
   issue_date          date,
   expiry_date         date,
-  conversion_deadline date,
-  -- days_to_deadline computed by trigger (conversion_deadline - current_date is STABLE)
-  days_to_deadline    integer,
-  status              text default 'active',
+  conversion_deadline date,                      -- for term life — when conversion window closes
+  days_to_deadline    integer generated always as (
+    case when conversion_deadline is null then null
+    else (conversion_deadline - current_date)::integer end
+  ) stored,
+  status              text default 'active',     -- active|lapsed|cancelled|converted
   is_employer_group   boolean default false,
   notes               text,
   created_at          timestamptz default now(),
@@ -110,7 +127,7 @@ create index idx_policies_status on policies(status);
 
 -- ─────────────────────────────────────────────────────────
 -- SCORES
--- priority_score and primary_pipeline use only sibling columns — OK as generated
+-- Nightly scoring output — one row per customer
 -- ─────────────────────────────────────────────────────────
 create table scores (
   score_id            uuid primary key default gen_random_uuid(),
@@ -120,9 +137,11 @@ create table scores (
   life_score          integer default 0 check (life_score between 0 and 100),
   retirement_score    integer default 0 check (retirement_score between 0 and 100),
   business_score      integer default 0 check (business_score between 0 and 100),
+  -- Composite priority score (weighted)
   priority_score      integer generated always as (
     greatest(opra_score, conversion_score, life_score, retirement_score, business_score)
   ) stored,
+  -- Which pipeline this customer belongs in
   primary_pipeline    text generated always as (
     case
       when conversion_score >= 75 then 'conversions'
@@ -133,8 +152,8 @@ create table scores (
       else 'general'
     end
   ) stored,
-  risk_score          integer,
-  risk_label          text,
+  risk_score          integer,                   -- from customer profile form
+  risk_label          text,                      -- Conservative|Moderate|Aggressive
   time_horizon        text,
   scored_at           timestamptz default now(),
   unique (customer_id)
@@ -147,14 +166,15 @@ create index idx_scores_opra on scores(opra_score desc) where opra_score > 0;
 
 -- ─────────────────────────────────────────────────────────
 -- CONSENT LEDGER
+-- Immutable audit trail of all consent events
 -- ─────────────────────────────────────────────────────────
 create table consent_ledger (
   consent_id      uuid primary key default gen_random_uuid(),
   customer_id     uuid not null references customers(customer_id) on delete cascade,
-  channel         text not null,
-  status          text not null,
+  channel         text not null,                 -- sms|email|voice
+  status          text not null,                 -- opted_in|opted_out|pending
   recorded_at     timestamptz default now(),
-  source          text,
+  source          text,                          -- form|ghl_webhook|manual|api
   ip_address      text,
   notes           text
 );
@@ -164,54 +184,56 @@ create index idx_consent_channel on consent_ledger(channel, status);
 
 -- ─────────────────────────────────────────────────────────
 -- CUSTOMER PROFILES
+-- Extended financial profile from form submissions
 -- ─────────────────────────────────────────────────────────
 create table customer_profiles (
-  profile_id              uuid primary key default gen_random_uuid(),
-  customer_id             uuid not null references customers(customer_id) on delete cascade,
-  annual_income           numeric(12,2),
-  spouse_income           numeric(12,2),
-  household_debt          numeric(12,2),
-  net_worth               numeric(12,2),
-  monthly_savings         numeric(10,2),
-  tax_bracket             text,
-  has_401k                boolean,
-  balance_401k            numeric(12,2),
-  has_ira                 boolean,
-  ira_type                text,
-  ira_balance             numeric(12,2),
-  has_life_ins            boolean,
-  life_coverage           numeric(12,2),
-  life_coverage_adequate  boolean,
-  retirement_age          integer,
-  retirement_income_goal  numeric(10,2),
-  social_security_est     numeric(10,2),
-  primary_concern         text,
-  secondary_concern       text,
-  risk_score              integer,
-  risk_label              text,
-  time_horizon            text,
-  emergency_fund          text,
-  estate_docs             text,
-  business_owner          boolean default false,
-  long_term_care          text,
-  forms_completed         text[],
-  updated_at              timestamptz default now(),
+  profile_id          uuid primary key default gen_random_uuid(),
+  customer_id         uuid not null references customers(customer_id) on delete cascade,
+  annual_income       numeric(12,2),
+  spouse_income       numeric(12,2),
+  household_debt      numeric(12,2),
+  net_worth           numeric(12,2),
+  monthly_savings     numeric(10,2),
+  tax_bracket         text,
+  has_401k            boolean,
+  balance_401k        numeric(12,2),
+  has_ira             boolean,
+  ira_type            text,                      -- Traditional|Roth|Both
+  ira_balance         numeric(12,2),
+  has_life_ins        boolean,
+  life_coverage       numeric(12,2),
+  life_coverage_adequate boolean,
+  retirement_age      integer,
+  retirement_income_goal numeric(10,2),
+  social_security_est numeric(10,2),
+  primary_concern     text,
+  secondary_concern   text,
+  risk_score          integer,
+  risk_label          text,
+  time_horizon        text,
+  emergency_fund      text,                      -- Yes|No|Partially
+  estate_docs         text,
+  business_owner      boolean default false,
+  long_term_care      text,
+  forms_completed     text[],
+  updated_at          timestamptz default now(),
   unique (customer_id)
 );
 
 -- ─────────────────────────────────────────────────────────
 -- ACTIVITY LOG
+-- Every interaction logged here
 -- ─────────────────────────────────────────────────────────
 create table activity (
   activity_id     uuid primary key default gen_random_uuid(),
   customer_id     uuid references customers(customer_id) on delete cascade,
   agency_id       text references agencies(agency_id) on delete set null,
-  type            text not null,
-  direction       text,
-  channel         text,
+  type            text not null,                 -- call|sms|email|appointment|note|form_sent|form_received|ai_outreach
+  direction       text,                          -- inbound|outbound
+  channel         text,                          -- phone|sms|email
   subject         text,
   notes           text,
-  ai_agent        text,
+  ai_agent        text,                          -- which AI agent if automated
   ghl_activity_id text,
   created_at      timestamptz default now()
 );
@@ -222,24 +244,25 @@ create index idx_activity_created on activity(created_at desc);
 
 -- ─────────────────────────────────────────────────────────
 -- FORM SUBMISSIONS
+-- One row per form send — tracks the full lifecycle
 -- ─────────────────────────────────────────────────────────
 create table form_submissions (
   submission_id   uuid primary key default gen_random_uuid(),
   customer_id     uuid references customers(customer_id) on delete set null,
   agency_id       text references agencies(agency_id) on delete set null,
-  form_id         text not null,
+  form_id         text not null,                 -- e.g. 'customer-questionnaire'
   form_title      text not null,
-  token           text unique not null,
-  status          text default 'sent',
+  token           text unique not null,           -- unique URL token
+  status          text default 'sent',           -- sent|opened|complete|expired
   sent_at         timestamptz default now(),
   opened_at       timestamptz,
   submitted_at    timestamptz,
   expires_at      timestamptz default (now() + interval '30 days'),
-  sent_via        text,
-  response_data   jsonb,
-  fna_report      jsonb,
+  sent_via        text,                          -- email|sms|both|link
+  response_data   jsonb,                         -- all form answers as JSON
+  fna_report      jsonb,                         -- AI-generated FNA report
   fna_generated_at timestamptz,
-  fna_urgency     text,
+  fna_urgency     text,                          -- High|Medium|Low
   ip_address      text,
   created_at      timestamptz default now()
 );
@@ -251,14 +274,15 @@ create index idx_form_submissions_status on form_submissions(status);
 
 -- ─────────────────────────────────────────────────────────
 -- FORM SENDS LOG
+-- Every send event (email/SMS) logged separately
 -- ─────────────────────────────────────────────────────────
 create table form_sends (
   send_id         uuid primary key default gen_random_uuid(),
   submission_id   uuid references form_submissions(submission_id) on delete cascade,
   customer_id     uuid references customers(customer_id) on delete set null,
   form_id         text not null,
-  channel         text not null,
-  destination     text not null,
+  channel         text not null,                 -- email|sms
+  destination     text not null,                 -- email address or phone number
   sent_at         timestamptz default now(),
   delivered       boolean default false,
   opened_at       timestamptz
@@ -266,20 +290,21 @@ create table form_sends (
 
 -- ─────────────────────────────────────────────────────────
 -- COMMISSION RATES
+-- FFS rate schedule — loaded from Consolidated-Commission-Rates PDF
 -- ─────────────────────────────────────────────────────────
 create table commission_rates (
   rate_id         uuid primary key default gen_random_uuid(),
   carrier         text not null,
   product_name    text not null,
-  product_type    text not null,
-  product_option  text,
+  product_type    text not null,                 -- life|fa|fia|va|vul|mf|annuity
+  product_option  text,                          -- e.g. 'Option 1'
   age_min         integer default 0,
   age_max         integer default 99,
   state_code      text default 'ALL',
-  gdc_rate        numeric(5,4) not null,
+  gdc_rate        numeric(5,4) not null,         -- e.g. 0.0700 = 7.00%
   trail_rate      numeric(5,4) default 0,
   trail_years     integer default 0,
-  is_target       boolean default false,
+  is_target       boolean default false,         -- life = target premium basis
   notes           text,
   effective_date  date not null,
   archived        boolean default false,
@@ -288,51 +313,57 @@ create table commission_rates (
 
 create index idx_rates_lookup on commission_rates(product_type, carrier, archived);
 
+-- Seed the 7 priority products immediately
 insert into commission_rates (carrier, product_name, product_type, product_option, age_min, age_max, gdc_rate, trail_rate, is_target, effective_date) values
-  ('MassMutual Ascend', 'Legend 7',          'fia',  'Option 1', 0,  75, 0.0650, 0,      false, '2024-01-01'),
-  ('MassMutual Ascend', 'Landmark 5',         'fia',  'Option 1', 0,  75, 0.0525, 0,      false, '2024-01-01'),
-  ('Athene',            'Agility 10',          'fia',  'Option 1', 0,  70, 0.0700, 0,      false, '2024-01-01'),
-  ('Pacific Life',      'Pacific Horizon IUL', 'life', null,       18, 80, 0.9500, 0,      true,  '2024-01-01'),
-  ('Protective',        'SPWL',                'life', null,       50, 80, 0.0700, 0,      false, '2024-01-01'),
-  ('Voya',              'Mutual Fund IRA',     'mf',   null,       18, 99, 0.0100, 0.0050, false, '2024-01-01'),
-  ('Corebridge',        'Power Index Plus',    'fia',  'Option 1', 0,  80, 0.0500, 0,      false, '2024-01-01');
+  ('MassMutual Ascend', 'Legend 7', 'fia', 'Option 1', 0, 75, 0.0650, 0, false, '2024-01-01'),
+  ('MassMutual Ascend', 'Landmark 5', 'fia', 'Option 1', 0, 75, 0.0525, 0, false, '2024-01-01'),
+  ('Athene', 'Agility 10', 'fia', 'Option 1', 0, 70, 0.0700, 0, false, '2024-01-01'),
+  ('Pacific Life', 'Pacific Horizon IUL', 'life', null, 18, 80, 0.9500, 0, true, '2024-01-01'),
+  ('Protective', 'SPWL', 'life', null, 50, 80, 0.0700, 0, false, '2024-01-01'),
+  ('Voya', 'Mutual Fund IRA', 'mf', null, 18, 99, 0.0100, 0.0050, false, '2024-01-01'),
+  ('Corebridge', 'Power Index Plus', 'fia', 'Option 1', 0, 80, 0.0500, 0, false, '2024-01-01');
 
 -- ─────────────────────────────────────────────────────────
 -- COMMISSION CASES
+-- One row per submitted/issued case — your production tracker
 -- ─────────────────────────────────────────────────────────
 create table commission_cases (
-  case_id             uuid primary key default gen_random_uuid(),
-  customer_id         uuid references customers(customer_id) on delete set null,
-  agency_id           text references agencies(agency_id) on delete set null,
-  rate_id             uuid references commission_rates(rate_id) on delete set null,
-  carrier             text not null,
-  product_name        text not null,
-  product_type        text not null,
-  product_option      text,
-  client_age          integer,
-  state_code          text default 'TX',
-  premium             numeric(12,2),
-  target_premium      numeric(12,2),
-  gdc_rate_used       numeric(5,4),
-  estimated_gdc       numeric(12,2),
-  estimated_fsa       numeric(12,2),
-  trail_rate_used     numeric(5,4),
-  annual_trail        numeric(12,2),
-  rate_missing        boolean default false,
-  actual_gdc          numeric(12,2),
-  actual_fsa          numeric(12,2),
-  pipeline            text,
-  case_status         text default 'pending',
-  submitted_at        timestamptz,
-  issued_at           timestamptz,
-  issued_date         date,
-  paid_date           date,
-  fna_submission_id   uuid references form_submissions(submission_id) on delete set null,
-  ghl_opportunity_id  text,
-  fna_urgency         text,
-  notes               text,
-  created_at          timestamptz default now(),
-  updated_at          timestamptz default now()
+  case_id         uuid primary key default gen_random_uuid(),
+  customer_id     uuid references customers(customer_id) on delete set null,
+  agency_id       text references agencies(agency_id) on delete set null,
+  rate_id         uuid references commission_rates(rate_id) on delete set null,
+  -- Case details
+  carrier         text not null,
+  product_name    text not null,
+  product_type    text not null,
+  product_option  text,
+  client_age      integer,
+  state_code      text default 'TX',
+  -- Money
+  premium         numeric(12,2),
+  target_premium  numeric(12,2),
+  gdc_rate_used   numeric(5,4),
+  estimated_gdc   numeric(12,2),
+  estimated_fsa   numeric(12,2),                -- GDC × your tier rate
+  trail_rate_used numeric(5,4),
+  annual_trail    numeric(12,2),
+  rate_missing    boolean default false,
+  -- Actual paid (update when FFS pays)
+  actual_gdc      numeric(12,2),
+  actual_fsa      numeric(12,2),
+  -- Pipeline tracking
+  pipeline        text,                          -- conversions|opra|life|retirement|business
+  case_status     text default 'pending',        -- pending|submitted|issued|paid|cancelled|flagged
+  submitted_at    timestamptz,
+  issued_at       timestamptz,
+  issued_date     date,
+  paid_date       date,
+  -- Links
+  fna_submission_id uuid references form_submissions(submission_id) on delete set null,
+  ghl_opportunity_id text,
+  notes           text,
+  created_at      timestamptz default now(),
+  updated_at      timestamptz default now()
 );
 
 create index idx_cases_customer on commission_cases(customer_id);
@@ -344,56 +375,58 @@ create index idx_cases_agency on commission_cases(agency_id);
 -- WORKSHOPS
 -- ─────────────────────────────────────────────────────────
 create table workshops (
-  workshop_id       uuid primary key default gen_random_uuid(),
-  agency_id         text references agencies(agency_id) on delete set null,
-  title             text not null,
-  topic             text not null,
-  scheduled_at      timestamptz not null,
-  max_attendees     integer default 50,
-  location          text,
+  workshop_id     uuid primary key default gen_random_uuid(),
+  agency_id       text references agencies(agency_id) on delete set null,
+  title           text not null,
+  topic           text not null,                 -- retirement|life|opra|business|general
+  scheduled_at    timestamptz not null,
+  max_attendees   integer default 50,
+  location        text,                          -- virtual | physical address
   registration_link text,
-  ghl_calendar_id   text,
-  created_at        timestamptz default now()
+  ghl_calendar_id text,
+  created_at      timestamptz default now()
 );
 
 create table workshop_registrations (
-  reg_id              uuid primary key default gen_random_uuid(),
-  workshop_id         uuid not null references workshops(workshop_id) on delete cascade,
-  customer_id         uuid references customers(customer_id) on delete set null,
-  registered_at       timestamptz default now(),
-  attended            boolean default false,
-  interest_level      text,
-  notes               text,
-  followup_action     text,
-  appointment_booked  boolean default false
+  reg_id          uuid primary key default gen_random_uuid(),
+  workshop_id     uuid not null references workshops(workshop_id) on delete cascade,
+  customer_id     uuid references customers(customer_id) on delete set null,
+  registered_at   timestamptz default now(),
+  attended        boolean default false,
+  interest_level  text,                          -- high|medium|low
+  notes           text,
+  followup_action text,
+  appointment_booked boolean default false
 );
 
 create index idx_workshop_regs_workshop on workshop_registrations(workshop_id);
 create index idx_workshop_regs_customer on workshop_registrations(customer_id);
 
 -- ─────────────────────────────────────────────────────────
--- OPRA CASES
+-- OPRA TRANSFERS
+-- Dedicated tracking for OPRA workflow
 -- ─────────────────────────────────────────────────────────
 create table opra_cases (
-  opra_id           uuid primary key default gen_random_uuid(),
-  customer_id       uuid not null references customers(customer_id) on delete cascade,
-  agency_id         text references agencies(agency_id) on delete set null,
-  policy_id         uuid references policies(policy_id) on delete set null,
-  transfer_date     date,
-  annual_premium    numeric(10,2),
-  contacted         boolean default false,
-  contacted_at      timestamptz,
-  appt_scheduled    boolean default false,
-  appt_date         timestamptz,
-  review_complete   boolean default false,
-  review_date       date,
-  transferred       boolean default false,
-  transferred_date  date,
-  status            text default 'identified',
-  notes             text,
-  ghl_contact_id    text,
-  created_at        timestamptz default now(),
-  updated_at        timestamptz default now()
+  opra_id         uuid primary key default gen_random_uuid(),
+  customer_id     uuid not null references customers(customer_id) on delete cascade,
+  agency_id       text references agencies(agency_id) on delete set null,
+  policy_id       uuid references policies(policy_id) on delete set null,
+  transfer_date   date,
+  annual_premium  numeric(10,2),
+  -- Status tracking
+  contacted       boolean default false,
+  contacted_at    timestamptz,
+  appt_scheduled  boolean default false,
+  appt_date       timestamptz,
+  review_complete boolean default false,
+  review_date     date,
+  transferred     boolean default false,
+  transferred_date date,
+  status          text default 'identified',     -- identified|contacted|scheduled|reviewed|transferred|declined
+  notes           text,
+  ghl_contact_id  text,
+  created_at      timestamptz default now(),
+  updated_at      timestamptz default now()
 );
 
 create index idx_opra_customer on opra_cases(customer_id);
@@ -402,21 +435,24 @@ create index idx_opra_transfer_date on opra_cases(transfer_date);
 
 -- ─────────────────────────────────────────────────────────
 -- AGENCY REFERRALS
+-- Every referral submitted through an agency link
 -- ─────────────────────────────────────────────────────────
 create table agency_referrals (
-  referral_id   uuid primary key default gen_random_uuid(),
-  agency_id     text not null references agencies(agency_id) on delete cascade,
-  customer_id   uuid references customers(customer_id) on delete set null,
-  client_name   text,
-  client_email  text,
-  client_phone  text,
-  referral_type text,
-  notes         text,
-  status        text default 'new',
-  submitted_at  timestamptz default now(),
-  appt_date     timestamptz,
-  outcome_date  date,
-  created_at    timestamptz default now()
+  referral_id     uuid primary key default gen_random_uuid(),
+  agency_id       text not null references agencies(agency_id) on delete cascade,
+  customer_id     uuid references customers(customer_id) on delete set null,
+  -- Referral details (from form submission)
+  client_name     text,
+  client_email    text,
+  client_phone    text,
+  referral_type   text,                          -- conversion|life|retirement|opra|business|general
+  notes           text,
+  -- Status
+  status          text default 'new',            -- new|contacted|appointed|applied|issued|declined
+  submitted_at    timestamptz default now(),
+  appt_date       timestamptz,
+  outcome_date    date,
+  created_at      timestamptz default now()
 );
 
 create index idx_referrals_agency on agency_referrals(agency_id);
@@ -425,51 +461,60 @@ create index idx_referrals_submitted on agency_referrals(submitted_at desc);
 
 -- ─────────────────────────────────────────────────────────
 -- AGENCY UPLOADS
+-- Log of every contact list upload per agency
 -- ─────────────────────────────────────────────────────────
 create table agency_uploads (
-  upload_id             uuid primary key default gen_random_uuid(),
-  agency_id             text not null references agencies(agency_id) on delete cascade,
-  filename              text,
-  upload_type           text,
-  record_count          integer default 0,
-  processed_count       integer default 0,
+  upload_id       uuid primary key default gen_random_uuid(),
+  agency_id       text not null references agencies(agency_id) on delete cascade,
+  filename        text,
+  upload_type     text,                          -- apex_export|agencyzoom_export|customer_list|opra_export
+  record_count    integer default 0,
+  processed_count integer default 0,
   opportunities_created integer default 0,
-  status                text default 'pending',
-  error_message         text,
-  drive_file_id         text,
-  uploaded_at           timestamptz default now(),
-  processed_at          timestamptz
+  status          text default 'pending',        -- pending|processing|complete|error
+  error_message   text,
+  drive_file_id   text,                          -- Google Drive file ID
+  uploaded_at     timestamptz default now(),
+  processed_at    timestamptz
 );
 
 create index idx_uploads_agency on agency_uploads(agency_id);
 create index idx_uploads_status on agency_uploads(status);
 
 -- ─────────────────────────────────────────────────────────
--- DAILY BRIEFINGS
+-- DAILY BRIEFING SNAPSHOTS
+-- Stored each morning at 2:30AM by Make.com
 -- ─────────────────────────────────────────────────────────
 create table daily_briefings (
-  briefing_id               uuid primary key default gen_random_uuid(),
-  briefing_date             date not null unique,
-  urgent_conversions        integer default 0,
-  appointments_today        integer default 0,
-  new_referrals             integer default 0,
-  opra_due                  integer default 0,
-  forms_pending             integer default 0,
-  pipeline_gdc              numeric(12,2),
-  submitted_gdc             numeric(12,2),
-  issued_gdc_ytd            numeric(12,2),
-  ai_calls_made             integer default 0,
-  ai_texts_sent             integer default 0,
-  ai_emails_sent            integer default 0,
-  ai_appointments_booked    integer default 0,
-  priority_actions          jsonb,
-  raw_data                  jsonb,
-  generated_at              timestamptz default now()
+  briefing_id         uuid primary key default gen_random_uuid(),
+  briefing_date       date not null unique,
+  -- Counts
+  urgent_conversions  integer default 0,         -- conversion deadline ≤ 30 days
+  appointments_today  integer default 0,
+  new_referrals       integer default 0,         -- referrals since yesterday
+  opra_due            integer default 0,
+  forms_pending       integer default 0,
+  -- GDC
+  pipeline_gdc        numeric(12,2),
+  submitted_gdc       numeric(12,2),
+  issued_gdc_ytd      numeric(12,2),
+  -- AI activity (from GHL)
+  ai_calls_made       integer default 0,
+  ai_texts_sent       integer default 0,
+  ai_emails_sent      integer default 0,
+  ai_appointments_booked integer default 0,
+  -- Priority actions JSON array
+  priority_actions    jsonb,
+  -- Raw data for the briefing
+  raw_data            jsonb,
+  generated_at        timestamptz default now()
 );
 
 -- ─────────────────────────────────────────────────────────
--- TRIGGERS — update_updated_at
+-- HELPER FUNCTIONS
 -- ─────────────────────────────────────────────────────────
+
+-- Auto-update updated_at timestamp
 create or replace function update_updated_at()
 returns trigger language plpgsql as $$
 begin
@@ -480,133 +525,62 @@ $$;
 
 create trigger agencies_updated_at before update on agencies
   for each row execute function update_updated_at();
+
 create trigger customers_updated_at before update on customers
   for each row execute function update_updated_at();
+
 create trigger policies_updated_at before update on policies
   for each row execute function update_updated_at();
+
 create trigger commission_cases_updated_at before update on commission_cases
   for each row execute function update_updated_at();
+
 create trigger opra_cases_updated_at before update on opra_cases
   for each row execute function update_updated_at();
 
 -- ─────────────────────────────────────────────────────────
--- TRIGGERS — computed columns (replaces generated columns that used current_date)
--- ─────────────────────────────────────────────────────────
-
--- customers.age — recompute on dob change
-create or replace function compute_customer_age()
-returns trigger language plpgsql as $$
-begin
-  if new.dob is not null then
-    new.age := date_part('year', age(new.dob))::integer;
-  else
-    new.age := null;
-  end if;
-  return new;
-end;
-$$;
-
-create trigger customers_compute_age
-  before insert or update of dob on customers
-  for each row execute function compute_customer_age();
-
--- policies.days_to_deadline — recompute on conversion_deadline change
-create or replace function compute_days_to_deadline()
-returns trigger language plpgsql as $$
-begin
-  if new.conversion_deadline is not null then
-    new.days_to_deadline := (new.conversion_deadline - current_date)::integer;
-  else
-    new.days_to_deadline := null;
-  end if;
-  return new;
-end;
-$$;
-
-create trigger policies_compute_deadline
-  before insert or update of conversion_deadline on policies
-  for each row execute function compute_days_to_deadline();
-
--- agencies.days_since_referral + needs_attention — recompute on last_referral change
-create or replace function compute_agency_referral_stats()
-returns trigger language plpgsql as $$
-begin
-  if new.last_referral is null then
-    new.days_since_referral := 999;
-    new.needs_attention := false;
-  else
-    new.days_since_referral := (current_date - new.last_referral)::integer;
-    new.needs_attention := (current_date - new.last_referral) > 30;
-  end if;
-  return new;
-end;
-$$;
-
-create trigger agencies_compute_referral_stats
-  before insert or update of last_referral on agencies
-  for each row execute function compute_agency_referral_stats();
-
--- ─────────────────────────────────────────────────────────
--- NIGHTLY REFRESH — recompute all date-dependent columns
--- Run by pg_cron alongside scoring so values stay current
--- ─────────────────────────────────────────────────────────
-create or replace function refresh_computed_columns()
-returns void language plpgsql as $$
-begin
-  -- Refresh customer ages
-  update customers
-  set age = date_part('year', age(dob))::integer
-  where dob is not null;
-
-  -- Refresh policy deadline countdowns
-  update policies
-  set days_to_deadline = (conversion_deadline - current_date)::integer
-  where conversion_deadline is not null;
-
-  -- Refresh agency referral stats
-  update agencies
-  set
-    days_since_referral = case
-      when last_referral is null then 999
-      else (current_date - last_referral)::integer
-    end,
-    needs_attention = case
-      when last_referral is null then false
-      else (current_date - last_referral) > 30
-    end;
-end;
-$$;
-
--- ─────────────────────────────────────────────────────────
 -- SCORING FUNCTIONS
+-- Run nightly via pg_cron — score every customer
 -- ─────────────────────────────────────────────────────────
 
+-- OPRA SCORE
+-- High score = mono-line customer (only auto or home, no life/FS product)
 create or replace function score_opra(p_customer_id uuid)
 returns integer language plpgsql as $$
 declare
-  v_score        integer := 0;
-  v_has_life     boolean;
-  v_has_auto     boolean;
-  v_has_home     boolean;
-  v_age          integer;
+  v_score       integer := 0;
+  v_policy_count integer;
+  v_has_life    boolean;
+  v_has_auto    boolean;
+  v_has_home    boolean;
+  v_age         integer;
 begin
-  select has_life, has_auto, has_home, age
-  into v_has_life, v_has_auto, v_has_home, v_age
+  select policy_count, has_life, has_auto, has_home, age
+  into v_policy_count, v_has_life, v_has_auto, v_has_home, v_age
   from customers where customer_id = p_customer_id;
 
-  if not v_has_life then v_score := v_score + 40; end if;
+  -- Mono-line (auto only or home only) = strong OPRA candidate
+  if not v_has_life then
+    v_score := v_score + 40;
+  end if;
   if (v_has_auto and not v_has_home) or (v_has_home and not v_has_auto) then
     v_score := v_score + 30;
   end if;
+  -- Multi-line without life = moderate candidate
   if v_has_auto and v_has_home and not v_has_life then
     v_score := v_score + 20;
   end if;
-  if v_age between 30 and 60 then v_score := v_score + 10; end if;
+  -- Age boost (30-60 range)
+  if v_age between 30 and 60 then
+    v_score := v_score + 10;
+  end if;
 
   return least(v_score, 100);
 end;
 $$;
 
+-- CONVERSION SCORE
+-- High score = term life policy close to conversion deadline
 create or replace function score_conversion(p_customer_id uuid)
 returns integer language plpgsql as $$
 declare
@@ -621,7 +595,7 @@ begin
     and conversion_deadline is not null;
 
   if v_days is null then return 0; end if;
-  if v_days < 0 then return 0; end if;
+  if v_days < 0 then return 0; end if;        -- already expired
 
   if v_days <= 30  then return 100; end if;
   if v_days <= 60  then return 90;  end if;
@@ -632,43 +606,51 @@ begin
 end;
 $$;
 
+-- LIFE SCORE
+-- High score = homeowner or family without life insurance
 create or replace function score_life(p_customer_id uuid)
 returns integer language plpgsql as $$
 declare
-  v_score      integer := 0;
-  v_has_life   boolean;
-  v_has_home   boolean;
-  v_dependents integer;
-  v_age        integer;
-  v_marital    text;
+  v_score       integer := 0;
+  v_has_life    boolean;
+  v_has_home    boolean;
+  v_dependents  integer;
+  v_age         integer;
+  v_marital     text;
 begin
   select has_life, has_home, coalesce(dependents, 0), age, marital_status
   into v_has_life, v_has_home, v_dependents, v_age, v_marital
   from customers where customer_id = p_customer_id;
 
-  if v_has_life then return 0; end if;
+  if v_has_life then return 0; end if;         -- already has life — not a lead
 
+  -- Homeowner without life = strong need
   if v_has_home then v_score := v_score + 40; end if;
+  -- Has dependents
   if v_dependents > 0 then v_score := v_score + 30; end if;
+  -- Married
   if v_marital = 'Married' then v_score := v_score + 15; end if;
+  -- Prime age range (28-55)
   if v_age between 28 and 55 then v_score := v_score + 15; end if;
 
   return least(v_score, 100);
 end;
 $$;
 
+-- RETIREMENT SCORE
+-- High score = age 50+, no IRA/annuity on record
 create or replace function score_retirement(p_customer_id uuid)
 returns integer language plpgsql as $$
 declare
-  v_score    integer := 0;
-  v_age      integer;
-  v_has_life boolean;
+  v_score       integer := 0;
+  v_age         integer;
+  v_has_life    boolean;
 begin
   select age, has_life into v_age, v_has_life
   from customers where customer_id = p_customer_id;
 
+  -- Age is the primary driver
   if v_age is null then return 0; end if;
-
   if v_age >= 70 then v_score := 90;
   elsif v_age >= 60 then v_score := 80;
   elsif v_age >= 55 then v_score := 65;
@@ -678,22 +660,27 @@ begin
   else return 0;
   end if;
 
+  -- Existing customer relationship = boost
   if v_has_life then v_score := v_score + 10; end if;
+
   return least(v_score, 100);
 end;
 $$;
 
+-- BUSINESS SCORE
+-- High score = known business owner or employer listed
 create or replace function score_business(p_customer_id uuid)
 returns integer language plpgsql as $$
 declare
-  v_score    integer := 0;
-  v_employer text;
-  v_age      integer;
-  v_profile  record;
+  v_score     integer := 0;
+  v_employer  text;
+  v_age       integer;
+  v_profile   record;
 begin
   select employer, age into v_employer, v_age
   from customers where customer_id = p_customer_id;
 
+  -- Check customer profile for business owner flag
   select * into v_profile from customer_profiles
   where customer_id = p_customer_id;
 
@@ -703,21 +690,26 @@ begin
     v_score := 30;
   end if;
 
+  -- Age range for business owners
   if v_age between 35 and 65 then v_score := v_score + 20; end if;
+
   return least(v_score, 100);
 end;
 $$;
 
+-- MASTER SCORING RUNNER
+-- Called by pg_cron — updates all scores in one pass
 create or replace function run_nightly_scoring()
 returns void language plpgsql as $$
 begin
-  -- Refresh date-dependent computed columns first
-  perform refresh_computed_columns();
-
-  -- Then rescore all customers
   insert into scores (
-    customer_id, opra_score, conversion_score, life_score,
-    retirement_score, business_score, scored_at
+    customer_id,
+    opra_score,
+    conversion_score,
+    life_score,
+    retirement_score,
+    business_score,
+    scored_at
   )
   select
     c.customer_id,
@@ -738,9 +730,8 @@ begin
 end;
 $$;
 
--- ─────────────────────────────────────────────────────────
--- GDC CALCULATOR
--- ─────────────────────────────────────────────────────────
+-- GDC CALCULATOR FUNCTION
+-- Given carrier/product/age/premium → returns estimated GDC and FSA payout
 create or replace function calculate_case_gdc(
   p_product_type   text,
   p_carrier        text,
@@ -750,19 +741,19 @@ create or replace function calculate_case_gdc(
   p_state          text,
   p_premium        numeric,
   p_target_premium numeric default null,
-  p_fsa_tier_rate  numeric default 0.80
+  p_fsa_tier_rate  numeric default 0.80  -- 0.40|0.60|0.80
 )
 returns table (
-  gdc_rate      numeric,
-  trail_rate    numeric,
-  estimated_gdc numeric,
-  estimated_fsa numeric,
-  annual_trail  numeric,
-  rate_missing  boolean
+  gdc_rate       numeric,
+  trail_rate     numeric,
+  estimated_gdc  numeric,
+  estimated_fsa  numeric,
+  annual_trail   numeric,
+  rate_missing   boolean
 ) language plpgsql as $$
 declare
-  r         commission_rates%rowtype;
-  v_premium numeric;
+  r             commission_rates%rowtype;
+  v_premium     numeric;
 begin
   select * into r
   from commission_rates
@@ -783,6 +774,7 @@ begin
     return;
   end if;
 
+  -- Life uses target premium; all others use deposit premium
   if p_product_type = 'life' and r.is_target and p_target_premium is not null
     then v_premium := p_target_premium;
   else
@@ -799,14 +791,13 @@ begin
 end;
 $$;
 
--- ─────────────────────────────────────────────────────────
--- FORM → CUSTOMER PROFILE SYNC
--- ─────────────────────────────────────────────────────────
+-- SYNC FORM TO CUSTOMER PROFILE
+-- Fires when a customer_profile form is submitted
 create or replace function sync_form_to_profile()
 returns trigger language plpgsql as $$
 declare
-  v_score integer := 0;
-  v_val   text;
+  v_score  integer := 0;
+  v_val    text;
 begin
   if new.form_id != 'customer-profile' then return new; end if;
   if new.response_data is null then return new; end if;
@@ -843,9 +834,10 @@ begin
     time_horizon = excluded.time_horizon,
     updated_at   = now();
 
+  -- Also update the scores table risk fields
   update scores set
-    risk_score = v_score,
-    risk_label = case
+    risk_score  = v_score,
+    risk_label  = case
       when v_score >= 23 then 'Aggressive'
       when v_score >= 13 then 'Moderate'
       else 'Conservative'
@@ -861,15 +853,13 @@ create trigger form_submission_profile_sync
   for each row when (new.status = 'complete')
   execute function sync_form_to_profile();
 
--- ─────────────────────────────────────────────────────────
--- AGENCY LAST_REFERRAL sync
--- ─────────────────────────────────────────────────────────
+-- UPDATE AGENCY LAST_REFERRAL when referral submitted
 create or replace function update_agency_last_referral()
 returns trigger language plpgsql as $$
 begin
   update agencies set
     last_referral = current_date,
-    updated_at    = now()
+    updated_at = now()
   where agency_id = new.agency_id;
   return new;
 end;
@@ -880,7 +870,8 @@ create trigger agency_referral_inserted
   for each row execute function update_agency_last_referral();
 
 -- ─────────────────────────────────────────────────────────
--- pg_cron — nightly at 2AM CT (8AM UTC)
+-- pg_cron SCHEDULE
+-- Nightly scoring at 2AM CT = 8AM UTC
 -- ─────────────────────────────────────────────────────────
 select cron.schedule(
   'fsos-nightly-scoring',
@@ -890,6 +881,7 @@ select cron.schedule(
 
 -- ─────────────────────────────────────────────────────────
 -- ROW LEVEL SECURITY
+-- All reads/writes go through service key in API routes
 -- ─────────────────────────────────────────────────────────
 alter table agencies               enable row level security;
 alter table customers              enable row level security;
@@ -909,6 +901,7 @@ alter table agency_referrals       enable row level security;
 alter table agency_uploads         enable row level security;
 alter table daily_briefings        enable row level security;
 
+-- Service role has full access (used by all API routes)
 create policy "service_role_all" on agencies               for all using (auth.role() = 'service_role');
 create policy "service_role_all" on customers              for all using (auth.role() = 'service_role');
 create policy "service_role_all" on policies               for all using (auth.role() = 'service_role');
@@ -927,16 +920,16 @@ create policy "service_role_all" on agency_referrals       for all using (auth.r
 create policy "service_role_all" on agency_uploads         for all using (auth.role() = 'service_role');
 create policy "service_role_all" on daily_briefings        for all using (auth.role() = 'service_role');
 
--- Public read for client form portal (token-filtered in API route)
+-- Public read for form submissions (client portal — reads by token only)
 create policy "public_form_token_read" on form_submissions
-  for select using (true);
+  for select using (true);  -- filtered by token in API route, not RLS
 
 -- ─────────────────────────────────────────────────────────
--- SEED DATA — 4 agency owners
+-- SEED DATA — Your 4 agency owners
 -- ─────────────────────────────────────────────────────────
 insert into agencies (agency_id, name, owner, city, phone, email, slug, agency_zoom, apex) values
-  ('ag1', 'Johnson Agency',       'Steven Johnson',  'Corpus Christi, TX', '(361) 555-0142', 'steven@farmersagent.com', 'steven-johnson', true,  true),
-  ('ag2', 'Brown Agency',         'Sarah Brown',     'McKinney, TX',       '(972) 555-0288', 'sarah@farmersagent.com',  'sarah-brown',    true,  false),
-  ('ag3', 'Vega Insurance Group', 'Carlos Vega Sr.', 'San Antonio, TX',    '(210) 555-0371', 'carlos@farmersagent.com', 'carlos-vega-sr', false, true),
-  ('ag4', 'Taylor Agency',        'Jack Taylor',     'Plano, TX',          '(469) 555-0199', 'jack@farmersagent.com',   'jack-taylor',    true,  true)
+  ('ag1', 'Johnson Agency',      'Steven Johnson',  'Corpus Christi, TX', '(361) 555-0142', 'steven@farmersagent.com',  'steven-johnson',  true,  true),
+  ('ag2', 'Brown Agency',        'Sarah Brown',     'McKinney, TX',       '(972) 555-0288', 'sarah@farmersagent.com',   'sarah-brown',     true,  false),
+  ('ag3', 'Vega Insurance Group','Carlos Vega Sr.', 'San Antonio, TX',    '(210) 555-0371', 'carlos@farmersagent.com',  'carlos-vega-sr',  false, true),
+  ('ag4', 'Taylor Agency',       'Jack Taylor',     'Plano, TX',          '(469) 555-0199', 'jack@farmersagent.com',    'jack-taylor',     true,  true)
 on conflict do nothing;

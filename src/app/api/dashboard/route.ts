@@ -5,37 +5,10 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 // GET /api/dashboard
-// Returns all data needed for Daily Briefing + Dashboard pages
+// Returns all data needed for the Daily Briefing and Dashboard pages
 export async function GET(req: NextRequest) {
-  const supabase = getDb()
-  const scope = req.nextUrl.searchParams.get('scope')
-
-  // Scoped query: workshops only
-  if (scope === 'workshops') {
-    const { data, error } = await supabase
-      .from('workshops')
-      .select(`
-        workshop_id, title, topic, scheduled_at, max_attendees, location,
-        workshop_registrations(reg_id, attended, appointment_booked)
-      `)
-      .gte('scheduled_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
-      .order('scheduled_at', { ascending: true })
-      .limit(20)
-
-    if (error) return NextResponse.json({ workshops: [] })
-
-    const workshops = (data || []).map(w => ({
-      ...w,
-      registered_count: Array.isArray(w.workshop_registrations) ? w.workshop_registrations.length : 0,
-      attended_count: Array.isArray(w.workshop_registrations) ? w.workshop_registrations.filter((r: { attended: boolean }) => r.attended).length : 0,
-      appointments_booked: Array.isArray(w.workshop_registrations) ? w.workshop_registrations.filter((r: { appointment_booked: boolean }) => r.appointment_booked).length : 0,
-    }))
-
-    return NextResponse.json({ workshops })
-  }
   try {
-    const supabase = getDb()
-
+    const db = getDb()
     const [
       briefing,
       urgentConversions,
@@ -46,13 +19,15 @@ export async function GET(req: NextRequest) {
       gdcSummary,
     ] = await Promise.all([
 
-      supabase
+      // Today's briefing snapshot
+      db
         .from('daily_briefings')
         .select('*')
         .eq('briefing_date', new Date().toISOString().split('T')[0])
         .maybeSingle(),
 
-      supabase
+      // Conversions expiring ≤ 30 days
+      db
         .from('policies')
         .select(`
           policy_id, policy_number, face_amount, annual_premium, conversion_deadline, days_to_deadline, status,
@@ -68,7 +43,8 @@ export async function GET(req: NextRequest) {
         .order('days_to_deadline', { ascending: true })
         .limit(20),
 
-      supabase
+      // OPRA cases needing action
+      db
         .from('opra_cases')
         .select(`
           *,
@@ -80,7 +56,8 @@ export async function GET(req: NextRequest) {
         .order('created_at', { ascending: true })
         .limit(15),
 
-      supabase
+      // Top scored opportunities
+      db
         .from('scores')
         .select(`
           *,
@@ -94,14 +71,16 @@ export async function GET(req: NextRequest) {
         .order('priority_score', { ascending: false })
         .limit(25),
 
-      supabase
+      // Recent agency referrals (last 7 days)
+      db
         .from('agency_referrals')
         .select('*, agencies (name, owner)')
         .gte('submitted_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
         .order('submitted_at', { ascending: false })
         .limit(20),
 
-      supabase
+      // Pending forms (sent but not submitted)
+      db
         .from('form_submissions')
         .select('submission_id, form_title, sent_at, customer_id, customers (first_name, last_name)')
         .eq('status', 'sent')
@@ -109,36 +88,36 @@ export async function GET(req: NextRequest) {
         .order('sent_at', { ascending: false })
         .limit(20),
 
-      supabase
+      // GDC summary
+      db
         .from('commission_cases')
         .select('case_status, estimated_gdc, estimated_fsa, actual_gdc, actual_fsa, issued_date')
         .not('case_status', 'eq', 'cancelled'),
     ])
 
     // Calculate GDC totals
-    const gdcData = gdcSummary.data || []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+const gdcData: any[] = gdcSummary.data || []
     const currentYear = new Date().getFullYear()
-
-    const gdcTotals = gdcData.reduce(
-      (acc, c) => {
-        if (c.case_status === 'issued' || c.case_status === 'paid') {
-          const isThisYear = c.issued_date && new Date(c.issued_date).getFullYear() === currentYear
-          if (isThisYear) {
-            acc.issued_ytd += (c.actual_gdc || c.estimated_gdc || 0)
-            acc.fsa_ytd += (c.actual_fsa || c.estimated_fsa || 0)
-          }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const gdcTotals = gdcData.reduce((acc: {issued_ytd:number,fsa_ytd:number,pipeline:number,pipeline_fsa:number}, c: any) => {
+      if (c.case_status === 'issued' || c.case_status === 'paid') {
+        const isThisYear = c.issued_date && new Date(c.issued_date).getFullYear() === currentYear
+        if (isThisYear) {
+          acc.issued_ytd += (c.actual_gdc || c.estimated_gdc || 0)
+          acc.fsa_ytd += (c.actual_fsa || c.estimated_fsa || 0)
         }
-        if (c.case_status === 'submitted' || c.case_status === 'pending') {
-          acc.pipeline += (c.estimated_gdc || 0)
-          acc.pipeline_fsa += (c.estimated_fsa || 0)
-        }
-        return acc
-      },
-      { issued_ytd: 0, fsa_ytd: 0, pipeline: 0, pipeline_fsa: 0 }
-    )
+      }
+      if (c.case_status === 'submitted' || c.case_status === 'pending') {
+        acc.pipeline += (c.estimated_gdc || 0)
+        acc.pipeline_fsa += (c.estimated_fsa || 0)
+      }
+      return acc
+    }, { issued_ytd: 0, fsa_ytd: 0, pipeline: 0, pipeline_fsa: 0 })
 
-    // Determine tier
-    const tier = gdcTotals.issued_ytd >= 55000 ? 3 : gdcTotals.issued_ytd >= 15000 ? 2 : 1
+    // Determine current tier based on rolling 12-month GDC
+    const tier = gdcTotals.issued_ytd >= 55000 ? 3
+      : gdcTotals.issued_ytd >= 15000 ? 2 : 1
     const tierRate = tier === 3 ? 0.80 : tier === 2 ? 0.60 : 0.40
 
     return NextResponse.json({
@@ -155,7 +134,8 @@ export async function GET(req: NextRequest) {
         tier_label: `Tier ${tier}`,
       },
       counts: {
-        urgent_conversions: (urgentConversions.data || []).filter(c => (c.days_to_deadline || 999) <= 30).length,
+        urgent_conversions: // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (urgentConversions.data || []).filter((c: any) => (c.days_to_deadline || 999) <= 30).length,
         opra_due: opraDue.data?.length || 0,
         pending_forms: pendingForms.data?.length || 0,
         new_referrals: recentReferrals.data?.length || 0,

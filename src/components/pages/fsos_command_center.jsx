@@ -2893,7 +2893,7 @@ function FNAPage({ toast, onNav }) {
             Client receives a secure link by email or SMS and fills out the intake form themselves. System notifies you when complete and auto-generates the report.
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:4}}>
-            {["Tokenized secure link — expires in 30 days","Client fills out on phone or computer","Auto-sent when appointment booked in GHL","Responses stored in Supabase automatically"].map((s,i)=>(
+            {["Tokenized secure link — expires in 30 days","Client fills out on phone or computer","Auto-sent when appointment booked in Calendly","Responses stored in Supabase automatically"].map((s,i)=>(
               <div key={i} style={{display:"flex",gap:6,alignItems:"flex-start",fontSize:11,color:"var(--text)"}}>
                 <span style={{color:"var(--green2)",flexShrink:0}}>✓</span>{s}
               </div>
@@ -3490,7 +3490,7 @@ function AIControlCenter({toast}) {
   return (<>
     <div className="page-title">AI Agent Control Center</div>
     <div style={{fontSize:12,color:"var(--muted)",marginBottom:16}}>
-      All 4 AI agents powered by GHL · *Cost included in GHL AI Employee plan ($97/mo flat) · Compliant with TCPA, Texas SB 140, TRAIGA
+      All 4 AI agents powered by Retell AI · Calendly handles booking · Pay-per-minute voice, pay-per-message SMS — no platform fee · Compliant with TCPA, Texas SB 140, TRAIGA
     </div>
 
     <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:14}}>

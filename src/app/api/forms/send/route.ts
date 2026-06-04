@@ -112,35 +112,45 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 6. Send via SMS — via GHL webhook (Twilio handled by GHL)
+    // 6. Send via SMS — direct Twilio REST API (no platform layer)
     if ((channel === 'sms' || channel === 'both') && destination) {
       try {
-        if (process.env.GHL_API_KEY && process.env.GHL_LOCATION_ID) {
+        const accountSid = process.env.TWILIO_ACCOUNT_SID
+        const authToken  = process.env.TWILIO_AUTH_TOKEN
+        const fromNumber = process.env.TWILIO_PHONE_NUMBER
+
+        if (accountSid && authToken && fromNumber) {
           const smsBody = `Hi ${client_name || 'there'}, Markist sent you a secure form to complete before your appointment. Tap to open: ${link}\n\n${TRAIGA_SMS_FOOTER}`
 
-          // GHL send SMS API
-          await fetch(`https://services.leadconnectorhq.com/conversations/messages`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${process.env.GHL_API_KEY}`,
-              'Content-Type': 'application/json',
-              'Version': '2021-04-15',
-            },
-            body: JSON.stringify({
-              type: 'SMS',
-              locationId: process.env.GHL_LOCATION_ID,
-              contactId: body.ghl_contact_id,
-              message: smsBody,
-            }),
-          })
+          // Twilio Messages API — direct REST, no SDK required
+          const twilioRes = await fetch(
+            `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': 'Basic ' + Buffer.from(`${accountSid}:${authToken}`).toString('base64'),
+                'Content-Type': 'application/x-www-form-urlencoded',
+              },
+              body: new URLSearchParams({
+                From: fromNumber,
+                To:   destination.startsWith('+') ? destination : `+1${destination.replace(/\D/g, '')}`,
+                Body: smsBody,
+              }).toString(),
+            }
+          )
 
-          await getDb().from('form_sends').insert({
-            submission_id: submission.submission_id,
-            customer_id: customer_id || null,
-            form_id,
-            channel: 'sms',
-            destination,
-          })
+          if (!twilioRes.ok) {
+            const errBody = await twilioRes.text()
+            console.error('Twilio SMS error:', errBody)
+          } else {
+            await getDb().from('form_sends').insert({
+              submission_id: submission.submission_id,
+              customer_id: customer_id || null,
+              form_id,
+              channel: 'sms',
+              destination,
+            })
+          }
         }
       } catch (smsErr) {
         console.error('SMS send error:', smsErr)

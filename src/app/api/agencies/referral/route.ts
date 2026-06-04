@@ -143,8 +143,8 @@ export async function GET(req: NextRequest) {
 
   if (agency_id) query = query.eq('agency_id', agency_id)
 
-  const { data, error } = await query
+  const { data: referrals, error } = await query
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  return NextResponse.json({ referrals: data })
+  return NextResponse.json({ referrals: referrals || [] })
 }

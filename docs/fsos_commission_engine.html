@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FSOS Commission & GDC Engine</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300&display=swap');
+
+:root {
+  --bg: #080c10;
+  --bg2: #0d1117;
+  --bg3: #161b22;
+  --bg4: #21262d;
+  --border: rgba(255,255,255,0.07);
+  --border2: rgba(255,255,255,0.14);
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --dim: #484f58;
+  --green: #3fb950;
+  --green-bg: rgba(63,185,80,0.1);
+  --green-border: rgba(63,185,80,0.3);
+  --amber: #d29922;
+  --amber-bg: rgba(210,153,34,0.1);
+  --amber-border: rgba(210,153,34,0.3);
+  --red: #f85149;
+  --red-bg: rgba(248,81,73,0.1);
+  --red-border: rgba(248,81,73,0.3);
+  --blue: #58a6ff;
+  --blue-bg: rgba(88,166,255,0.1);
+  --blue-border: rgba(88,166,255,0.3);
+  --purple: #bc8cff;
+  --purple-bg: rgba(188,140,255,0.1);
+  --teal: #39d353;
+  --gold: #e3b341;
+}
+
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-serif;font-size:13px;line-height:1.6;min-height:100vh;}
+
+/* HEADER */
+.header{padding:32px 32px 24px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:16px;}
+.header-left{}
+.header-tag{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px;}
+.header h1{font-size:22px;font-weight:600;color:var(--text);letter-spacing:-.02em;margin-bottom:4px;}
+.header-sub{font-size:12px;color:var(--muted);}
+.fsa-rate-badge{background:var(--green-bg);border:1px solid var(--green-border);border-radius:8px;padding:10px 16px;text-align:center;}
+.fsa-rate-val{font-family:'IBM Plex Mono',monospace;font-size:24px;font-weight:600;color:var(--green);line-height:1;}
+.fsa-rate-lbl{font-size:10px;color:var(--muted);margin-top:3px;font-family:'IBM Plex Mono',monospace;}
+
+/* NAV TABS */
+.tabs{display:flex;gap:1px;padding:0 32px;background:var(--bg2);border-bottom:1px solid var(--border);overflow-x:auto;}
+.tab{font-family:'IBM Plex Mono',monospace;font-size:11px;padding:12px 16px;color:var(--muted);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;white-space:nowrap;transition:color .15s,border-color .15s;letter-spacing:.04em;}
+.tab:hover{color:var(--text);}
+.tab.active{color:var(--blue);border-bottom-color:var(--blue);}
+
+/* LAYOUT */
+.main{padding:24px 32px 60px;max-width:1100px;}
+.section{display:none;}
+.section.active{display:block;}
+
+/* CALCULATOR */
+.calc-grid{display:grid;grid-template-columns:380px 1fr;gap:20px;align-items:start;}
+.calc-panel{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:20px;}
+.calc-panel-title{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid var(--border);}
+.field{margin-bottom:14px;}
+.field label{display:block;font-size:11px;color:var(--muted);margin-bottom:5px;font-family:'IBM Plex Mono',monospace;letter-spacing:.04em;}
+.field select,.field input{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;padding:8px 10px;color:var(--text);font-family:'IBM Plex Mono',monospace;font-size:12px;outline:none;transition:border-color .15s;}
+.field select:focus,.field input:focus{border-color:var(--blue);}
+.field select option{background:var(--bg3);}
+
+/* RESULTS PANEL */
+.result-panel{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:20px;}
+.result-title{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid var(--border);}
+
+.result-main{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;}
+.result-card{background:var(--bg3);border-radius:8px;padding:14px;border:1px solid var(--border);}
+.result-card.highlight{background:var(--green-bg);border-color:var(--green-border);}
+.result-card.highlight2{background:var(--blue-bg);border-color:var(--blue-border);}
+.result-card.warn{background:var(--amber-bg);border-color:var(--amber-border);}
+.result-card.flag{background:var(--red-bg);border-color:var(--red-border);}
+.rc-label{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em;}
+.rc-val{font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600;line-height:1;}
+.rc-val.green{color:var(--green);}
+.rc-val.blue{color:var(--blue);}
+.rc-val.amber{color:var(--amber);}
+.rc-val.red{color:var(--red);}
+.rc-sub{font-size:11px;color:var(--muted);margin-top:4px;}
+
+.calc-formula{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:12px;font-family:'IBM Plex Mono',monospace;font-size:11px;line-height:1.9;color:var(--muted);}
+.calc-formula .hl{color:var(--text);}
+.calc-formula .val{color:var(--green);}
+.calc-formula .op{color:var(--amber);}
+
+.rate-detail{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:12px;}
+.rd-row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--border);font-size:11px;}
+.rd-row:last-child{border-bottom:none;}
+.rd-key{color:var(--muted);font-family:'IBM Plex Mono',monospace;}
+.rd-val{color:var(--text);font-family:'IBM Plex Mono',monospace;font-weight:500;}
+.rd-val.green{color:var(--green);}
+.rd-val.amber{color:var(--amber);}
+.rd-val.flag{color:var(--red);}
+
+.trail-box{background:var(--purple-bg);border:1px solid rgba(188,140,255,.3);border-radius:8px;padding:12px 14px;margin-bottom:12px;}
+.trail-title{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--purple);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px;}
+.trail-row{display:flex;justify-content:space-between;font-size:11px;padding:3px 0;}
+.trail-key{color:var(--muted);font-family:'IBM Plex Mono',monospace;}
+.trail-val{color:var(--purple);font-family:'IBM Plex Mono',monospace;font-weight:500;}
+
+.flag-box{background:var(--red-bg);border:1px solid var(--red-border);border-radius:8px;padding:12px 14px;margin-bottom:12px;}
+.flag-box p{font-size:12px;color:var(--red);}
+.flag-box strong{font-family:'IBM Plex Mono',monospace;}
+
+/* RATE TABLE */
+.rate-table-wrap{overflow-x:auto;}
+.rate-controls{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center;}
+.rate-search{background:var(--bg3);border:1px solid var(--border2);border-radius:6px;padding:7px 12px;color:var(--text);font-family:'IBM Plex Mono',monospace;font-size:11px;outline:none;width:220px;}
+.rate-search:focus{border-color:var(--blue);}
+.filter-btn{font-family:'IBM Plex Mono',monospace;font-size:10px;padding:5px 10px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--muted);cursor:pointer;transition:all .15s;letter-spacing:.04em;}
+.filter-btn.active{background:var(--blue-bg);border-color:var(--blue-border);color:var(--blue);}
+.add-rate-btn{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:10px;padding:6px 14px;border-radius:6px;border:1px solid var(--green-border);background:var(--green-bg);color:var(--green);cursor:pointer;font-weight:600;letter-spacing:.04em;}
+
+table{width:100%;border-collapse:collapse;font-size:11px;}
+thead th{text-align:left;padding:8px 10px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;border-bottom:1px solid var(--border);background:var(--bg2);white-space:nowrap;}
+tbody tr{border-bottom:1px solid var(--border);transition:background .1s;}
+tbody tr:hover{background:var(--bg3);}
+tbody td{padding:9px 10px;font-family:'IBM Plex Mono',monospace;vertical-align:middle;}
+.td-carrier{color:var(--text);font-weight:500;}
+.td-product{color:var(--muted);}
+.td-type{padding:2px 7px;border-radius:4px;font-size:9px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;display:inline-block;}
+.type-life{background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-border);}
+.type-fia{background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);}
+.type-va{background:var(--purple-bg);color:var(--purple);border:1px solid rgba(188,140,255,.3);}
+.type-vul{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-border);}
+.type-mf{background:rgba(57,211,83,.1);color:#39d353;border:1px solid rgba(57,211,83,.3);}
+.type-fa{background:rgba(227,179,65,.1);color:var(--gold);border:1px solid rgba(227,179,65,.3);}
+.td-rate{color:var(--green);font-weight:600;}
+.td-trail{color:var(--purple);}
+.td-flag{color:var(--red);}
+.td-age{color:var(--amber);}
+.edit-btn{font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid var(--border2);background:transparent;color:var(--muted);cursor:pointer;}
+.edit-btn:hover{border-color:var(--blue);color:var(--blue);}
+
+/* PIPELINE FORECAST */
+.forecast-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:20px;}
+.fc-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px;}
+.fc-pipeline{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;}
+.fc-gdc{font-family:'IBM Plex Mono',monospace;font-size:18px;font-weight:600;color:var(--blue);line-height:1;margin-bottom:3px;}
+.fc-fsa{font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--green);}
+.fc-count{font-size:10px;color:var(--dim);margin-top:4px;}
+.fc-flag{border-color:var(--red-border);background:var(--red-bg);}
+.fc-flag .fc-gdc{color:var(--red);}
+
+.forecast-table{background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:20px;}
+.ft-header{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;}
+.ft-title{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;}
+.ft-total{font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--green);font-weight:600;}
+
+/* SUPABASE SCHEMA */
+.schema-block{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:14px 16px;font-family:'IBM Plex Mono',monospace;font-size:11px;line-height:1.9;color:#c8d4b8;margin-bottom:16px;overflow-x:auto;white-space:pre;}
+.schema-comment{color:var(--dim);}
+.schema-keyword{color:var(--blue);}
+.schema-type{color:var(--amber);}
+.schema-name{color:var(--green);}
+
+.section-head{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin:20px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--border);}
+
+/* ADD RATE MODAL */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;}
+.modal-overlay.open{display:flex;}
+.modal{background:var(--bg2);border:1px solid var(--border2);border-radius:12px;padding:24px;width:520px;max-width:95vw;max-height:90vh;overflow-y:auto;}
+.modal-title{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;color:var(--text);margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);}
+.modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.modal-actions{display:flex;gap:8px;margin-top:16px;justify-content:flex-end;}
+.btn-save{font-family:'IBM Plex Mono',monospace;font-size:11px;padding:8px 18px;border-radius:6px;border:1px solid var(--green-border);background:var(--green-bg);color:var(--green);cursor:pointer;font-weight:600;}
+.btn-cancel{font-family:'IBM Plex Mono',monospace;font-size:11px;padding:8px 18px;border-radius:6px;border:1px solid var(--border2);background:transparent;color:var(--muted);cursor:pointer;}
+
+@media(max-width:700px){
+  .main{padding:16px 16px 40px;}
+  .header{padding:20px 16px 16px;}
+  .tabs{padding:0 16px;}
+  .calc-grid{grid-template-columns:1fr;}
+  .result-main{grid-template-columns:1fr;}
+  .modal-grid{grid-template-columns:1fr;}
+}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="header-left">
+    <div class="header-tag">FSOS · Farmers FSA · Commission & GDC Engine</div>
+    <h1>Commission & GDC Calculator</h1>
+    <div class="header-sub">Product-specific GDC rates · Age-band logic · Trail calculations · FSA payout forecasting</div>
+  </div>
+  <div class="fsa-rate-badge">
+    <div class="fsa-rate-val">80%</div>
+    <div class="fsa-rate-lbl">FSA PAYOUT RATE</div>
+  </div>
+</div>
+
+<!-- TABS -->
+<div class="tabs">
+  <button class="tab active" onclick="showTab('calculator',this)">Calculator</button>
+  <button class="tab" onclick="showTab('ratetable',this)">Rate Table</button>
+  <button class="tab" onclick="showTab('forecast',this)">Pipeline Forecast</button>
+  <button class="tab" onclick="showTab('schema',this)">Supabase Schema</button>
+  <button class="tab" onclick="showTab('howto',this)">How It Fits</button>
+</div>
+
+<div class="main">
+
+<!-- ═══════════════════════
+     CALCULATOR
+═══════════════════════ -->
+<div id="tab-calculator" class="section active">
+  <div class="calc-grid">
+
+    <!-- INPUT PANEL -->
+    <div class="calc-panel">
+      <div class="calc-panel-title">Case Inputs</div>
+
+      <div class="field">
+        <label>Product Category</label>
+        <select id="cat" onchange="onCatChange()">
+          <option value="">— select category —</option>
+          <option value="life">Life Insurance</option>
+          <option value="fa">Fixed Annuity</option>
+          <option value="fia">Fixed Indexed Annuity (FIA)</option>
+          <option value="va">Variable Annuity (VA)</option>
+          <option value="vul">Variable Universal Life (VUL)</option>
+          <option value="mf">Mutual Fund / IRA</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Carrier</label>
+        <select id="carrier" onchange="onCarrierChange()">
+          <option value="">— select carrier —</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Product</label>
+        <select id="product" onchange="onProductChange()">
+          <option value="">— select product —</option>
+        </select>
+      </div>
+
+      <div class="field" id="option-field" style="display:none">
+        <label>Product Option</label>
+        <select id="option" onchange="calculate()">
+          <option value="">— select option —</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Client Age</label>
+        <input type="number" id="age" min="0" max="99" placeholder="e.g. 58" oninput="calculate()">
+      </div>
+
+      <div class="field" id="state-field" style="display:none">
+        <label>Client State</label>
+        <select id="state" onchange="calculate()">
+          <option value="TX">Texas</option>
+          <option value="ALL">All States</option>
+          <option value="OTHER">Other</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label id="premium-label">Premium / Contribution ($)</label>
+        <input type="number" id="premium" placeholder="e.g. 50000" oninput="calculate()">
+      </div>
+
+      <div class="field" id="target-field" style="display:none">
+        <label>Target Premium ($) <span style="color:var(--muted);font-size:10px;">(life policies only)</span></label>
+        <input type="number" id="target" placeholder="e.g. 10000" oninput="calculate()">
+      </div>
+
+    </div>
+
+    <!-- RESULTS PANEL -->
+    <div class="result-panel" id="result-panel">
+      <div class="result-title">GDC & FSA Payout Estimate</div>
+      <div id="result-content">
+        <div style="text-align:center;padding:40px 20px;color:var(--dim);">
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:28px;margin-bottom:8px;">—</div>
+          <div style="font-size:12px;">Complete the inputs on the left to calculate</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════════
+     RATE TABLE
+═══════════════════════ -->
+<div id="tab-ratetable" class="section">
+  <div class="rate-controls">
+    <input class="rate-search" type="text" placeholder="Search carrier or product..." oninput="filterTable(this.value)" id="search-input">
+    <button class="filter-btn active" onclick="filterType('all',this)">All</button>
+    <button class="filter-btn" onclick="filterType('life',this)">Life</button>
+    <button class="filter-btn" onclick="filterType('fa',this)">Fixed Annuity</button>
+    <button class="filter-btn" onclick="filterType('fia',this)">FIA</button>
+    <button class="filter-btn" onclick="filterType('va',this)">VA</button>
+    <button class="filter-btn" onclick="filterType('vul',this)">VUL</button>
+    <button class="filter-btn" onclick="filterType('mf',this)">MF/IRA</button>
+    <button class="add-rate-btn" onclick="openModal()">+ Add Rate</button>
+  </div>
+  <div class="rate-table-wrap">
+    <table id="rate-table">
+      <thead>
+        <tr>
+          <th>Carrier</th>
+          <th>Product</th>
+          <th>Type</th>
+          <th>Option</th>
+          <th>Age Band</th>
+          <th>GDC Rate</th>
+          <th>Trail</th>
+          <th>State</th>
+          <th>Effective</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="rate-tbody"></tbody>
+    </table>
+  </div>
+  <div style="margin-top:10px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--dim);" id="rate-count"></div>
+</div>
+
+<!-- ═══════════════════════
+     PIPELINE FORECAST
+═══════════════════════ -->
+<div id="tab-forecast" class="section">
+  <div class="section-head">Pipeline GDC Forecast — Active Opportunities</div>
+  <div class="forecast-grid" id="forecast-grid"></div>
+
+  <div class="forecast-table">
+    <div class="ft-header">
+      <div class="ft-title">Active Cases</div>
+      <div class="ft-total" id="ft-total">Estimated FSA: —</div>
+    </div>
+    <div class="rate-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Client</th>
+            <th>Product</th>
+            <th>Premium</th>
+            <th>GDC Rate</th>
+            <th>Est. GDC</th>
+            <th>Est. FSA (80%)</th>
+            <th>Trail/yr</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="forecast-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div style="background:var(--amber-bg);border:1px solid var(--amber-border);border-radius:8px;padding:12px 14px;">
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">⚠ Cases Flagged — Commission Rate Needed</div>
+    <div id="flagged-cases" style="font-size:12px;color:var(--muted);">Loading...</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════
+     SUPABASE SCHEMA
+═══════════════════════ -->
+<div id="tab-schema" class="section">
+  <div class="section-head">Supabase SQL — Commission Tables</div>
+  <p style="font-size:12px;color:var(--muted);margin-bottom:14px;">Run these in your Supabase SQL Editor. These tables connect to your existing customers, policies, and scores tables.</p>
+
+  <div class="schema-block">-- ════════════════════════════════════════
+-- COMMISSION RATE TABLE
+-- One row per carrier/product/option/age band
+-- ════════════════════════════════════════
+<span class="schema-keyword">create table</span> <span class="schema-name">commission_rates</span> (
+  rate_id        <span class="schema-type">uuid</span> primary key default gen_random_uuid(),
+  carrier        <span class="schema-type">text</span> not null,
+  product_name   <span class="schema-type">text</span> not null,
+  product_type   <span class="schema-type">text</span> not null, -- life|fa|fia|va|vul|mf
+  product_option <span class="schema-type">text</span>,           -- Option A, Option B, etc.
+  age_min        <span class="schema-type">integer</span> default 0,
+  age_max        <span class="schema-type">integer</span> default 99,
+  state_code     <span class="schema-type">text</span> default 'ALL',
+  gdc_rate       <span class="schema-type">numeric(5,4)</span> not null, -- e.g. 0.0700 = 7.00%
+  trail_rate     <span class="schema-type">numeric(5,4)</span> default 0, -- e.g. 0.0050 = 0.50%
+  trail_years    <span class="schema-type">integer</span> default 0,
+  is_target      <span class="schema-type">boolean</span> default false, -- life target premium
+  notes          <span class="schema-type">text</span>,
+  effective_date <span class="schema-type">date</span> not null,
+  archived       <span class="schema-type">boolean</span> default false,
+  created_at     <span class="schema-type">timestamptz</span> default now()
+);
+
+-- ════════════════════════════════════════
+-- COMMISSION CASES
+-- One row per submitted/in-progress case
+-- ════════════════════════════════════════
+<span class="schema-keyword">create table</span> <span class="schema-name">commission_cases</span> (
+  case_id         <span class="schema-type">uuid</span> primary key default gen_random_uuid(),
+  customer_id     <span class="schema-type">uuid</span> references customers(customer_id),
+  agency_id       <span class="schema-type">text</span> references agencies(agency_id),
+  rate_id         <span class="schema-type">uuid</span> references commission_rates(rate_id),
+  carrier         <span class="schema-type">text</span> not null,
+  product_name    <span class="schema-type">text</span> not null,
+  product_type    <span class="schema-type">text</span> not null,
+  product_option  <span class="schema-type">text</span>,
+  client_age      <span class="schema-type">integer</span>,
+  state_code      <span class="schema-type">text</span> default 'TX',
+  premium         <span class="schema-type">numeric(12,2)</span>,    -- total premium/contribution
+  target_premium  <span class="schema-type">numeric(12,2)</span>,    -- life target premium (if applicable)
+  gdc_rate_used   <span class="schema-type">numeric(5,4)</span>,    -- rate snapshot at time of case
+  estimated_gdc   <span class="schema-type">numeric(12,2)</span>,    -- computed: premium × gdc_rate
+  estimated_fsa   <span class="schema-type">numeric(12,2)</span>,    -- computed: gdc × 0.80
+  trail_rate_used <span class="schema-type">numeric(5,4)</span>,
+  annual_trail    <span class="schema-type">numeric(12,2)</span>,    -- premium × trail_rate
+  rate_missing    <span class="schema-type">boolean</span> default false, -- flagged if rate not found
+  pipeline        <span class="schema-type">text</span>,             -- which GHL pipeline
+  case_status     <span class="schema-type">text</span> default 'pending', -- pending|submitted|issued|paid|lapsed
+  submitted_at    <span class="schema-type">timestamptz</span>,
+  issued_at       <span class="schema-type">timestamptz</span>,
+  actual_gdc      <span class="schema-type">numeric(12,2)</span>,    -- actual paid by carrier (when known)
+  actual_fsa      <span class="schema-type">numeric(12,2)</span>,    -- actual FSA payout (when known)
+  notes           <span class="schema-type">text</span>,
+  created_at      <span class="schema-type">timestamptz</span> default now()
+);
+
+-- ════════════════════════════════════════
+-- HELPER FUNCTION: calculate GDC
+-- Call this whenever a case is created
+-- ════════════════════════════════════════
+<span class="schema-keyword">create or replace function</span> <span class="schema-name">calculate_case_gdc</span>(
+  p_product_type text, p_carrier text, p_product text,
+  p_option text, p_age integer, p_state text,
+  p_premium numeric, p_target_premium numeric default null
+) returns table(gdc_rate numeric, trail_rate numeric,
+  estimated_gdc numeric, estimated_fsa numeric,
+  annual_trail numeric, rate_missing boolean)
+language plpgsql as $$
+declare
+  r commission_rates%rowtype;
+  v_gdc numeric := 0;
+  v_trail numeric := 0;
+  v_premium numeric;
+begin
+  -- find matching rate
+  select * into r
+  from commission_rates
+  where product_type = p_product_type
+    and lower(carrier) = lower(p_carrier)
+    and lower(product_name) = lower(p_product)
+    and (product_option = p_option or product_option is null)
+    and p_age between age_min and age_max
+    and (state_code = p_state or state_code = 'ALL')
+    and archived = false
+    and effective_date <= current_date
+  order by effective_date desc
+  limit 1;
+
+  if r.rate_id is null then
+    return query select
+      null::numeric, null::numeric,
+      null::numeric, null::numeric,
+      null::numeric, true;
+    return;
+  end if;
+
+  -- life: use target premium if is_target, else full premium
+  if p_product_type = 'life' and r.is_target and p_target_premium is not null then
+    v_premium := p_target_premium;
+  else
+    v_premium := p_premium;
+  end if;
+
+  v_gdc := v_premium * r.gdc_rate;
+  v_trail := p_premium * coalesce(r.trail_rate, 0);
+
+  return query select
+    r.gdc_rate, r.trail_rate,
+    round(v_gdc, 2), round(v_gdc * 0.80, 2),
+    round(v_trail, 2), false;
+end;
+$$;
+
+-- ════════════════════════════════════════
+-- INSERT SAMPLE RATES (from your schedule)
+-- Replace with your actual FFS rate sheet
+-- ════════════════════════════════════════
+insert into commission_rates
+  (carrier, product_name, product_type, product_option,
+   age_min, age_max, state_code, gdc_rate, trail_rate,
+   trail_years, is_target, effective_date)
+values
+  -- Life
+  ('Pacific Life','Pacific Horizon IUL','life','Option A',0,99,'ALL',0.9500,0,0,true,'2024-01-01'),
+  ('Pacific Life','Pacific Horizon IUL','life','Option B',0,99,'ALL',0.9000,0,0,true,'2024-01-01'),
+  ('Protective','Single Premium Whole Life','life',null,50,80,'ALL',0.0700,0,0,false,'2024-01-01'),
+  -- Fixed Annuity
+  ('Athene','Agility 10 Option 1','fa','Option 1',0,70,'ALL',0.0700,0,0,false,'2024-01-01'),
+  ('Athene','Agility 10 Option 2','fa','Option 2',0,70,'ALL',0.0550,0.0025,10,false,'2024-01-01'),
+  -- FIA
+  ('MassMutual Ascend','Legend 7 Option 1','fia','Option 1',0,80,'ALL',0.0800,0,0,false,'2024-01-01'),
+  ('MassMutual Ascend','Legend 7 Option 2','fia','Option 2',0,80,'ALL',0.0650,0.0025,10,false,'2024-01-01'),
+  ('North American','Charter Plus 10','fia',null,0,80,'ALL',0.0750,0,0,false,'2024-01-01'),
+  -- Mutual Fund / IRA
+  ('Various','Mutual Fund IRA','mf',null,0,99,'ALL',0.0100,0.0050,99,false,'2024-01-01');</div>
+
+  <div class="section-head">Make Scenario — Auto-create commission case on GHL pipeline update</div>
+  <p style="font-size:12px;color:var(--muted);margin-bottom:10px;">When an opportunity moves to "Application Submitted" in any GHL pipeline, Make creates a commission case in Supabase automatically.</p>
+  <div class="schema-block">Make Scenario: GHL Opportunity Stage → Supabase Commission Case
+
+Module 1 — Trigger:
+  GHL Webhook → Opportunity Stage Changed
+  Filter: stage = "Application Submitted"
+
+Module 2 — Get contact data:
+  GHL → Get Contact → use contact_id from webhook
+  Extract: email, phone, custom fields
+  (product_type, carrier, product_name, age, premium, option)
+
+Module 3 — Lookup customer in Supabase:
+  HTTP GET /rest/v1/customers?email=eq.[email]
+  → returns customer_id
+
+Module 4 — Calculate GDC:
+  HTTP POST /rest/v1/rpc/calculate_case_gdc
+  Body: {product_type, carrier, product, option, age, state, premium}
+  → returns: gdc_rate, estimated_gdc, estimated_fsa, rate_missing
+
+Module 5 — Insert commission case:
+  HTTP POST /rest/v1/commission_cases
+  Body: {customer_id, agency_id, carrier, product,
+         premium, gdc_rate_used, estimated_gdc,
+         estimated_fsa, trail_rate_used, annual_trail,
+         rate_missing, pipeline, case_status: 'pending'}
+
+Module 6 — If rate_missing = true:
+  Send email alert: "Commission rate missing for [product]
+  Case [case_id] excluded from forecast. Add rate to
+  commission_rates table to include."</div>
+</div>
+
+<!-- ═══════════════════════
+     HOW IT FITS
+═══════════════════════ -->
+<div id="tab-howto" class="section">
+  <div class="section-head">How the commission engine connects to the FSOS</div>
+
+  <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:24px;">
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;display:grid;grid-template-columns:36px 1fr;gap:12px;align-items:start;">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:18px;color:var(--blue);font-weight:600;">01</div>
+      <div>
+        <div style="font-size:13px;font-weight:500;margin-bottom:3px;">Rate Table lives in Supabase — you own it</div>
+        <div style="font-size:12px;color:var(--muted);">The commission_rates table holds every carrier, product, option, age band, GDC rate, and trail rate. You add rates here once. Every calculation everywhere uses the same source of truth. No hardcoded rates anywhere.</div>
+      </div>
+    </div>
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;display:grid;grid-template-columns:36px 1fr;gap:12px;align-items:start;">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:18px;color:var(--blue);font-weight:600;">02</div>
+      <div>
+        <div style="font-size:13px;font-weight:500;margin-bottom:3px;">GHL pipeline stage triggers commission case creation</div>
+        <div style="font-size:12px;color:var(--muted);">When you move an opportunity to "Application Submitted" in any of the 4 GHL pipelines, Make automatically creates a commission case in Supabase. It looks up the right GDC rate, calculates estimated GDC and FSA payout, and stores it — all without manual entry.</div>
+      </div>
+    </div>
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;display:grid;grid-template-columns:36px 1fr;gap:12px;align-items:start;">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:18px;color:var(--blue);font-weight:600;">03</div>
+      <div>
+        <div style="font-size:13px;font-weight:500;margin-bottom:3px;">Missing rates are flagged — not estimated</div>
+        <div style="font-size:12px;color:var(--muted);">If a product's GDC rate is not in the table, the case is marked rate_missing = true and excluded from all forecasts. You get an email alert. The case stays in the system but does not produce a fictional number — it waits until you add the correct rate.</div>
+      </div>
+    </div>
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;display:grid;grid-template-columns:36px 1fr;gap:12px;align-items:start;">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:18px;color:var(--blue);font-weight:600;">04</div>
+      <div>
+        <div style="font-size:13px;font-weight:500;margin-bottom:3px;">7AM briefing includes daily revenue forecast</div>
+        <div style="font-size:12px;color:var(--muted);">Your morning briefing adds: total estimated GDC in pipeline, total estimated FSA payout, cases issued this week, and trail revenue building. You see the full financial picture every morning without opening a spreadsheet.</div>
+      </div>
+    </div>
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;display:grid;grid-template-columns:36px 1fr;gap:12px;align-items:start;">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:18px;color:var(--blue);font-weight:600;">05</div>
+      <div>
+        <div style="font-size:13px;font-weight:500;margin-bottom:3px;">Archived rates preserve historical accuracy</div>
+        <div style="font-size:12px;color:var(--muted);">When FFS updates their commission schedule, you add the new rate with a new effective_date and set the old rate to archived = true. Cases submitted under the old rate keep their original calculation. New cases use the current rate. No data corruption.</div>
+      </div>
+    </div>
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;display:grid;grid-template-columns:36px 1fr;gap:12px;align-items:start;">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:18px;color:var(--blue);font-weight:600;">06</div>
+      <div>
+        <div style="font-size:13px;font-weight:500;margin-bottom:3px;">Actual vs. estimated reconciliation</div>
+        <div style="font-size:12px;color:var(--muted);">When Farmers/FFS pays out, you update actual_gdc and actual_fsa on the commission case. Over time this builds a reconciliation record showing estimated vs. actual — so you can spot discrepancies, identify products where estimates are consistently off, and know your true yield per product type.</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="background:var(--amber-bg);border:1px solid var(--amber-border);border-radius:8px;padding:14px 16px;">
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Your first action</div>
+    <div style="font-size:12px;color:var(--muted);line-height:1.7;">Open the Rate Table tab → click "Add Rate" → enter your actual FFS commission schedule product by product. The sample rates pre-loaded (Pacific Horizon IUL, Protective SPWL, Athene Agility, MassMutual Ascend Legend, MF/IRA) are illustrative examples from your description. Replace or supplement them with your verified FFS schedule. Every calculation in the system uses only rates you have confirmed.</div>
+  </div>
+</div>
+
+</div><!-- /main -->
+
+<!-- ADD RATE MODAL -->
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <div class="modal-title">Add Commission Rate</div>
+    <div class="modal-grid">
+      <div class="field"><label>Carrier</label><input type="text" id="m-carrier" placeholder="e.g. Athene"></div>
+      <div class="field"><label>Product Name</label><input type="text" id="m-product" placeholder="e.g. Agility 10"></div>
+      <div class="field"><label>Product Type</label>
+        <select id="m-type">
+          <option value="life">Life</option>
+          <option value="fa">Fixed Annuity</option>
+          <option value="fia">FIA</option>
+          <option value="va">VA</option>
+          <option value="vul">VUL</option>
+          <option value="mf">MF/IRA</option>
+        </select>
+      </div>
+      <div class="field"><label>Product Option</label><input type="text" id="m-option" placeholder="Option A, Option 1, etc."></div>
+      <div class="field"><label>Age Min</label><input type="number" id="m-agemin" value="0"></div>
+      <div class="field"><label>Age Max</label><input type="number" id="m-agemax" value="99"></div>
+      <div class="field"><label>GDC Rate (%)</label><input type="number" id="m-gdc" step="0.01" placeholder="e.g. 7.00"></div>
+      <div class="field"><label>Trail Rate (%)</label><input type="number" id="m-trail" step="0.01" placeholder="e.g. 0.50"></div>
+      <div class="field"><label>Trail Years</label><input type="number" id="m-trailyrs" value="0"></div>
+      <div class="field"><label>State</label>
+        <select id="m-state">
+          <option value="ALL">All States</option>
+          <option value="TX">Texas Only</option>
+          <option value="OTHER">Other</option>
+        </select>
+      </div>
+      <div class="field"><label>Effective Date</label><input type="date" id="m-date"></div>
+      <div class="field"><label>Notes</label><input type="text" id="m-notes" placeholder="Optional"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveRate()">Save Rate</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── RATE DATA (pre-loaded examples from FFS schedule) ──
+let rates = [
+  {id:'r1',carrier:'Pacific Life',product:'Pacific Horizon IUL',type:'life',option:'Option A',ageMin:0,ageMax:99,state:'ALL',gdc:0.9500,trail:0,trailYrs:0,isTarget:true,effective:'2024-01-01',notes:'Target premium basis',archived:false},
+  {id:'r2',carrier:'Pacific Life',product:'Pacific Horizon IUL',type:'life',option:'Option B',ageMin:0,ageMax:99,state:'ALL',gdc:0.9000,trail:0,trailYrs:0,isTarget:true,effective:'2024-01-01',notes:'Target premium basis',archived:false},
+  {id:'r3',carrier:'Protective',product:'Single Premium Whole Life',type:'life',option:null,ageMin:50,ageMax:80,state:'ALL',gdc:0.0700,trail:0,trailYrs:0,isTarget:false,effective:'2024-01-01',notes:'Ages 50–80 only',archived:false},
+  {id:'r4',carrier:'Athene',product:'Agility 10',type:'fa',option:'Option 1',ageMin:0,ageMax:70,state:'ALL',gdc:0.0700,trail:0,trailYrs:0,isTarget:false,effective:'2024-01-01',notes:'Max age 70',archived:false},
+  {id:'r5',carrier:'Athene',product:'Agility 10',type:'fa',option:'Option 2',ageMin:0,ageMax:70,state:'ALL',gdc:0.0550,trail:0.0025,trailYrs:10,isTarget:false,effective:'2024-01-01',notes:'With trail',archived:false},
+  {id:'r6',carrier:'MassMutual Ascend',product:'Legend 7',type:'fia',option:'Option 1',ageMin:0,ageMax:80,state:'ALL',gdc:0.0800,trail:0,trailYrs:0,isTarget:false,effective:'2024-01-01',notes:'',archived:false},
+  {id:'r7',carrier:'MassMutual Ascend',product:'Legend 7',type:'fia',option:'Option 2',ageMin:0,ageMax:80,state:'ALL',gdc:0.0650,trail:0.0025,trailYrs:10,isTarget:false,effective:'2024-01-01',notes:'With trail',archived:false},
+  {id:'r8',carrier:'North American',product:'Charter Plus 10',type:'fia',option:null,ageMin:0,ageMax:80,state:'ALL',gdc:0.0750,trail:0,trailYrs:0,isTarget:false,effective:'2024-01-01',notes:'',archived:false},
+  {id:'r9',carrier:'Various',product:'Mutual Fund IRA',type:'mf',option:null,ageMin:0,ageMax:99,state:'ALL',gdc:0.0100,trail:0.0050,trailYrs:99,isTarget:false,effective:'2024-01-01',notes:'1% upfront + 0.50% trail',archived:false},
+];
+
+// ── SAMPLE FORECAST CASES ──
+const forecastCases = [
+  {client:'John Smith',product:'Legend 7 Option 1',type:'fia',premium:150000,age:62,gdcRate:0.0800,status:'submitted'},
+  {client:'Mary Johnson',product:'Pacific Horizon IUL',type:'life',premium:80000,targetPremium:12000,age:48,gdcRate:0.9500,status:'pending',isTarget:true},
+  {client:'Carlos Vega',product:'Agility 10 Option 1',type:'fa',premium:200000,age:67,gdcRate:0.0700,status:'issued'},
+  {client:'Sandra Lee',product:'Unknown FIA Product',type:'fia',premium:100000,age:58,gdcRate:null,status:'pending',rateMissing:true},
+  {client:'Robert Davis',product:'Mutual Fund IRA',type:'mf',premium:50000,age:55,gdcRate:0.0100,trail:0.0050,status:'pending'},
+];
+
+const typeLabels = {life:'Life',fa:'Fixed Annuity',fia:'FIA',va:'VA',vul:'VUL',mf:'MF/IRA'};
+const typeCls = {life:'type-life',fa:'type-fa',fia:'type-fia',va:'type-va',vul:'type-vul',mf:'type-mf'};
+
+let activeTypeFilter = 'all';
+
+// ── CALCULATOR DATA ──
+const catCarriers = {
+  life:['Pacific Life','Protective','North American','Farmers New World Life'],
+  fa:['Athene','American Equity','Midland National'],
+  fia:['MassMutual Ascend','North American','Athene','American National'],
+  va:['Jackson National','Lincoln Financial','Transamerica'],
+  vul:['Pacific Life','North American'],
+  mf:['Various / FFS Platform']
+};
+const carrierProducts = {
+  'Pacific Life':['Pacific Horizon IUL'],
+  'Protective':['Single Premium Whole Life'],
+  'Athene':['Agility 10'],
+  'MassMutual Ascend':['Legend 7'],
+  'North American':['Charter Plus 10'],
+  'Various / FFS Platform':['Mutual Fund IRA'],
+  'Farmers New World Life':['Whole Life','Term Life'],
+  'American Equity':['AssetShield 10'],
+  'Midland National':['Oak ADVantage'],
+  'American National':['Palladium MYG'],
+  'Jackson National':['Perspective II'],
+  'Lincoln Financial':['ChoicePlus'],
+  'Transamerica':['Structured Index Advantage'],
+};
+const productOptions = {
+  'Pacific Horizon IUL':['Option A','Option B'],
+  'Agility 10':['Option 1','Option 2'],
+  'Legend 7':['Option 1','Option 2'],
+};
+
+function onCatChange(){
+  const cat = document.getElementById('cat').value;
+  const cSel = document.getElementById('carrier');
+  cSel.innerHTML = '<option value="">— select carrier —</option>';
+  (catCarriers[cat]||[]).forEach(c=>{
+    const o=document.createElement('option'); o.value=c; o.textContent=c; cSel.appendChild(o);
+  });
+  document.getElementById('product').innerHTML='<option value="">— select product —</option>';
+  document.getElementById('option-field').style.display='none';
+  document.getElementById('target-field').style.display = cat==='life'?'block':'none';
+  document.getElementById('state-field').style.display = (cat==='life')?'block':'none';
+  document.getElementById('premium-label').textContent = cat==='mf'?'Total Contribution ($)':'Premium / Contribution ($)';
+  document.getElementById('result-content').innerHTML='<div style="text-align:center;padding:40px 20px;color:var(--dim);"><div style="font-family:IBM Plex Mono,monospace;font-size:28px;margin-bottom:8px;">—</div><div style="font-size:12px;">Complete the inputs to calculate</div></div>';
+}
+function onCarrierChange(){
+  const carrier=document.getElementById('carrier').value;
+  const pSel=document.getElementById('product');
+  pSel.innerHTML='<option value="">— select product —</option>';
+  (carrierProducts[carrier]||[]).forEach(p=>{
+    const o=document.createElement('option'); o.value=p; o.textContent=p; pSel.appendChild(o);
+  });
+  document.getElementById('option-field').style.display='none';
+}
+function onProductChange(){
+  const prod=document.getElementById('product').value;
+  const opts=productOptions[prod];
+  const oField=document.getElementById('option-field');
+  const oSel=document.getElementById('option');
+  if(opts&&opts.length){
+    oField.style.display='block';
+    oSel.innerHTML='<option value="">— select option —</option>';
+    opts.forEach(o=>{const el=document.createElement('option');el.value=o;el.textContent=o;oSel.appendChild(el);});
+  } else {
+    oField.style.display='none';
+  }
+  calculate();
+}
+
+function findRate(cat,carrier,product,option,age,state){
+  return rates.find(r=>
+    r.type===cat &&
+    r.carrier.toLowerCase()===carrier.toLowerCase() &&
+    r.product.toLowerCase()===product.toLowerCase() &&
+    (!r.option||r.option===option||!option) &&
+    age>=r.ageMin && age<=r.ageMax &&
+    (r.state==='ALL'||r.state===state) &&
+    !r.archived
+  );
+}
+
+function fmt(n){return n==null?'—':'$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function fmtPct(n){return n==null?'—':(n*100).toFixed(2)+'%';}
+
+function calculate(){
+  const cat=document.getElementById('cat').value;
+  const carrier=document.getElementById('carrier').value;
+  const product=document.getElementById('product').value;
+  const option=document.getElementById('option').value;
+  const age=parseInt(document.getElementById('age').value)||0;
+  const state=document.getElementById('state').value||'TX';
+  const premium=parseFloat(document.getElementById('premium').value)||0;
+  const target=parseFloat(document.getElementById('target').value)||0;
+
+  if(!cat||!carrier||!product||!premium){return;}
+
+  const rate=findRate(cat,carrier,product,option,age,state);
+  const rc=document.getElementById('result-content');
+
+  if(!rate){
+    rc.innerHTML=`
+      <div class="flag-box">
+        <p><strong>Commission Rate Not Found</strong></p>
+        <p style="margin-top:6px;">No matching rate in the table for:<br>
+        ${carrier} / ${product}${option?' / '+option:''} / Age ${age} / ${state}<br><br>
+        This case is flagged as <strong>Rate Missing</strong>.<br>
+        Go to the Rate Table tab → Add Rate to add this product.</p>
+      </div>`;
+    return;
+  }
+
+  // calculation
+  const basePremium = (cat==='life'&&rate.isTarget&&target) ? target : premium;
+  const estGDC = basePremium * rate.gdc;
+  const estFSA = estGDC * 0.80;
+  const annualTrail = rate.trail>0 ? premium*rate.trail : 0;
+
+  rc.innerHTML=`
+    <div class="result-main">
+      <div class="result-card highlight">
+        <div class="rc-label">Estimated GDC</div>
+        <div class="rc-val green">${fmt(estGDC)}</div>
+        <div class="rc-sub">${fmtPct(rate.gdc)} × ${fmt(basePremium)}</div>
+      </div>
+      <div class="result-card highlight2">
+        <div class="rc-label">Estimated FSA Payout</div>
+        <div class="rc-val blue">${fmt(estFSA)}</div>
+        <div class="rc-sub">GDC × 80%</div>
+      </div>
+    </div>
+    <div class="calc-formula">
+      <span class="hl">Formula:</span>
+      ${cat==='life'&&rate.isTarget?`<span class="hl">Target Premium</span> <span class="op">${fmt(target)}</span>`:
+      `<span class="hl">Premium</span> <span class="op">${fmt(premium)}</span>`}
+      <span class="op"> × </span><span class="hl">GDC Rate</span> <span class="op">${fmtPct(rate.gdc)}</span>
+      <span class="op"> = </span><span class="val">${fmt(estGDC)} GDC</span>
+      <br><span class="val">${fmt(estGDC)} GDC</span><span class="op"> × </span><span class="hl">80%</span>
+      <span class="op"> = </span><span class="val">${fmt(estFSA)} FSA Payout</span>
+    </div>
+    <div class="rate-detail">
+      <div class="rd-row"><span class="rd-key">Carrier</span><span class="rd-val">${rate.carrier}</span></div>
+      <div class="rd-row"><span class="rd-key">Product</span><span class="rd-val">${rate.product}${rate.option?' / '+rate.option:''}</span></div>
+      <div class="rd-row"><span class="rd-key">GDC Rate</span><span class="rd-val green">${fmtPct(rate.gdc)}</span></div>
+      <div class="rd-row"><span class="rd-key">Age Band</span><span class="rd-val">${rate.ageMin}–${rate.ageMax}</span></div>
+      <div class="rd-row"><span class="rd-key">State</span><span class="rd-val">${rate.state}</span></div>
+      <div class="rd-row"><span class="rd-key">Basis</span><span class="rd-val">${cat==='life'&&rate.isTarget?'Target Premium':'Total Premium'}</span></div>
+      <div class="rd-row"><span class="rd-key">Effective</span><span class="rd-val">${rate.effective}</span></div>
+      ${rate.notes?`<div class="rd-row"><span class="rd-key">Notes</span><span class="rd-val">${rate.notes}</span></div>`:''}
+    </div>
+    ${rate.trail>0?`
+    <div class="trail-box">
+      <div class="trail-title">Trail Commission</div>
+      <div class="trail-row"><span class="trail-key">Annual Trail Rate</span><span class="trail-val">${fmtPct(rate.trail)}</span></div>
+      <div class="trail-row"><span class="trail-key">Annual Trail on ${fmt(premium)}</span><span class="trail-val">${fmt(annualTrail)}</span></div>
+      <div class="trail-row"><span class="trail-key">FSA Trail (80%)</span><span class="trail-val">${fmt(annualTrail*0.80)}/yr</span></div>
+      ${rate.trailYrs<99?`<div class="trail-row"><span class="trail-key">Trail Duration</span><span class="trail-val">${rate.trailYrs} years</span></div>`:''}
+      <div class="trail-row"><span class="trail-key">Total Trail (${rate.trailYrs<99?rate.trailYrs+'yr':'lifetime'})</span><span class="trail-val">${rate.trailYrs<99?fmt(annualTrail*0.80*rate.trailYrs)+' total':'Ongoing'}</span></div>
+    </div>`:''}
+  `;
+}
+
+// ── RATE TABLE ──
+function renderRateTable(filter='all', search=''){
+  const tbody=document.getElementById('rate-tbody');
+  const filtered=rates.filter(r=>{
+    if(r.archived) return false;
+    if(filter!=='all'&&r.type!==filter) return false;
+    if(search){
+      const s=search.toLowerCase();
+      if(!r.carrier.toLowerCase().includes(s)&&!r.product.toLowerCase().includes(s)) return false;
+    }
+    return true;
+  });
+  tbody.innerHTML=filtered.map(r=>`
+    <tr data-type="${r.type}">
+      <td class="td-carrier">${r.carrier}</td>
+      <td class="td-product">${r.product}</td>
+      <td><span class="td-type ${typeCls[r.type]}">${typeLabels[r.type]}</span></td>
+      <td style="color:var(--muted)">${r.option||'—'}</td>
+      <td class="td-age">${r.ageMin}–${r.ageMax}</td>
+      <td class="td-rate">${fmtPct(r.gdc)}</td>
+      <td class="td-trail">${r.trail>0?fmtPct(r.trail)+(r.trailYrs<99?' / '+r.trailYrs+'yr':''):'—'}</td>
+      <td style="color:var(--muted)">${r.state}</td>
+      <td style="color:var(--dim)">${r.effective}</td>
+      <td><button class="edit-btn" onclick="archiveRate('${r.id}')">Archive</button></td>
+    </tr>`).join('');
+  document.getElementById('rate-count').textContent=`Showing ${filtered.length} of ${rates.filter(r=>!r.archived).length} active rates`;
+}
+
+function filterType(type, btn){
+  activeTypeFilter=type;
+  document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderRateTable(type, document.getElementById('search-input').value);
+}
+function filterTable(val){renderRateTable(activeTypeFilter,val);}
+function archiveRate(id){
+  const r=rates.find(r=>r.id===id);
+  if(r&&confirm(`Archive ${r.carrier} / ${r.product}? It will no longer appear in calculations.`)){
+    r.archived=true; renderRateTable(activeTypeFilter);
+  }
+}
+
+// ── FORECAST ──
+function renderForecast(){
+  const grid=document.getElementById('forecast-grid');
+  const tbody=document.getElementById('forecast-tbody');
+  const flagged=document.getElementById('flagged-cases');
+
+  const byPipeline={
+    'Life Insurance':{gdc:0,fsa:0,count:0},
+    'Fixed Annuity / FIA':{gdc:0,fsa:0,count:0},
+    'MF / IRA':{gdc:0,fsa:0,count:0},
+    'Flagged — Rate Missing':{gdc:0,fsa:0,count:0}
+  };
+
+  let totalFSA=0;
+  const flaggedList=[];
+
+  const rows=forecastCases.map(c=>{
+    if(c.rateMissing){
+      byPipeline['Flagged — Rate Missing'].count++;
+      flaggedList.push(c.client+' — '+c.product);
+      return `<tr>
+        <td class="td-carrier">${c.client}</td>
+        <td class="td-product">${c.product}</td>
+        <td>${fmt(c.premium)}</td>
+        <td class="td-flag">Rate Missing</td>
+        <td class="td-flag">—</td>
+        <td class="td-flag">—</td>
+        <td>—</td>
+        <td><span class="td-type" style="background:var(--red-bg);color:var(--red);border:1px solid var(--red-border);padding:2px 7px;border-radius:4px;font-size:9px;">FLAGGED</span></td>
+      </tr>`;
+    }
+    const basePremium = c.isTarget&&c.targetPremium ? c.targetPremium : c.premium;
+    const estGDC = basePremium * c.gdcRate;
+    const estFSA = estGDC * 0.80;
+    const trail = c.trail ? c.premium*c.trail*0.80 : 0;
+    totalFSA += estFSA;
+
+    const pLine = c.type==='mf'?'MF / IRA':c.type==='life'?'Life Insurance':'Fixed Annuity / FIA';
+    if(byPipeline[pLine]){byPipeline[pLine].gdc+=estGDC;byPipeline[pLine].fsa+=estFSA;byPipeline[pLine].count++;}
+
+    const statusCls={pending:'color:var(--amber)',submitted:'color:var(--blue)',issued:'color:var(--green)'};
+    return `<tr>
+      <td class="td-carrier">${c.client}</td>
+      <td class="td-product">${c.product}</td>
+      <td>${fmt(c.premium)}</td>
+      <td class="td-rate">${fmtPct(c.gdcRate)}</td>
+      <td class="td-rate">${fmt(estGDC)}</td>
+      <td class="td-rate">${fmt(estFSA)}</td>
+      <td class="td-trail">${trail>0?fmt(trail)+'/yr':'—'}</td>
+      <td style="${statusCls[c.status]||''};font-family:'IBM Plex Mono',monospace;font-size:11px;text-transform:uppercase;">${c.status}</td>
+    </tr>`;
+  });
+
+  tbody.innerHTML=rows.join('');
+  document.getElementById('ft-total').textContent=`Estimated FSA: ${fmt(totalFSA)}`;
+
+  grid.innerHTML=Object.entries(byPipeline).map(([name,d])=>`
+    <div class="fc-card${name.includes('Flagged')?d.count>0?' fc-flag':'':''}" >
+      <div class="fc-pipeline">${name}</div>
+      <div class="fc-gdc">${d.count>0&&!name.includes('Flagged')?fmt(d.fsa):(d.count>0?d.count+' case'+(d.count>1?'s':''):'—')}</div>
+      ${!name.includes('Flagged')?`<div class="fc-fsa">Est. FSA payout</div>`:''}
+      <div class="fc-count">${d.count} case${d.count!==1?'s':''}</div>
+    </div>`).join('');
+
+  flagged.innerHTML=flaggedList.length
+    ? flaggedList.map(f=>`<div style="padding:3px 0;font-family:'IBM Plex Mono',monospace;font-size:11px;">${f}</div>`).join('')
+    : '<span style="color:var(--green);font-family:IBM Plex Mono,monospace;font-size:11px;">No flagged cases — all active cases have commission rates.</span>';
+}
+
+// ── MODAL ──
+function openModal(){
+  document.getElementById('modal').classList.add('open');
+  document.getElementById('m-date').value=new Date().toISOString().split('T')[0];
+}
+function closeModal(){document.getElementById('modal').classList.remove('open');}
+function saveRate(){
+  const gdc=parseFloat(document.getElementById('m-gdc').value)/100;
+  const trail=parseFloat(document.getElementById('m-trail').value||0)/100;
+  if(!document.getElementById('m-carrier').value||!document.getElementById('m-product').value||isNaN(gdc)){
+    alert('Carrier, product, and GDC rate are required.'); return;
+  }
+  rates.push({
+    id:'r'+(rates.length+1),
+    carrier:document.getElementById('m-carrier').value,
+    product:document.getElementById('m-product').value,
+    type:document.getElementById('m-type').value,
+    option:document.getElementById('m-option').value||null,
+    ageMin:parseInt(document.getElementById('m-agemin').value)||0,
+    ageMax:parseInt(document.getElementById('m-agemax').value)||99,
+    state:document.getElementById('m-state').value,
+    gdc, trail,
+    trailYrs:parseInt(document.getElementById('m-trailyrs').value)||0,
+    isTarget:false,
+    effective:document.getElementById('m-date').value,
+    notes:document.getElementById('m-notes').value,
+    archived:false
+  });
+  closeModal();
+  renderRateTable(activeTypeFilter);
+  ['m-carrier','m-product','m-option','m-gdc','m-trail','m-trailyrs','m-notes'].forEach(id=>{document.getElementById(id).value='';});
+}
+
+// ── TAB NAV ──
+function showTab(id, btn){
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+  document.getElementById('tab-'+id).classList.add('active');
+  btn.classList.add('active');
+  if(id==='ratetable') renderRateTable();
+  if(id==='forecast') renderForecast();
+}
+
+// init
+renderRateTable();
+</script>
+</body>
+</html>

@@ -6,7 +6,33 @@ export const runtime = 'nodejs'
 
 // GET /api/dashboard
 // Returns all data needed for Daily Briefing + Dashboard pages
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
+  const supabase = getDb()
+  const scope = req.nextUrl.searchParams.get('scope')
+
+  // Scoped query: workshops only
+  if (scope === 'workshops') {
+    const { data, error } = await supabase
+      .from('workshops')
+      .select(`
+        workshop_id, title, topic, scheduled_at, max_attendees, location,
+        workshop_registrations(reg_id, attended, appointment_booked)
+      `)
+      .gte('scheduled_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
+      .order('scheduled_at', { ascending: true })
+      .limit(20)
+
+    if (error) return NextResponse.json({ workshops: [] })
+
+    const workshops = (data || []).map(w => ({
+      ...w,
+      registered_count: Array.isArray(w.workshop_registrations) ? w.workshop_registrations.length : 0,
+      attended_count: Array.isArray(w.workshop_registrations) ? w.workshop_registrations.filter((r: { attended: boolean }) => r.attended).length : 0,
+      appointments_booked: Array.isArray(w.workshop_registrations) ? w.workshop_registrations.filter((r: { appointment_booked: boolean }) => r.appointment_booked).length : 0,
+    }))
+
+    return NextResponse.json({ workshops })
+  }
   try {
     const supabase = getDb()
 

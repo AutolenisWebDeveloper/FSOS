@@ -1,4 +1,100 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+
+// ─────────────────────────────────────────────────────────
+// LIVE DATA HOOK — single fetch, shared across all pages
+// Fetches /api/dashboard once on mount, exposes all live data
+// Falls back to empty arrays so every page renders while loading
+// ─────────────────────────────────────────────────────────
+function useAppData() {
+  const [data, setData]       = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState(null);
+  const [lastFetch, setLastFetch] = useState(null);
+
+  const fetch_ = useCallback(() => {
+    setLoading(true);
+    fetch("/api/dashboard")
+      .then(r => r.json())
+      .then(d => {
+        setData(d);
+        setLastFetch(new Date());
+        setLoading(false);
+      })
+      .catch(e => {
+        console.error("Dashboard fetch error:", e);
+        setError(e.message);
+        setLoading(false);
+      });
+  }, []);
+
+  useEffect(() => { fetch_(); }, [fetch_]);
+
+  return {
+    loading,
+    error,
+    lastFetch,
+    refresh: fetch_,
+    // Safely destructure every field the UI needs
+    briefing:           data?.briefing ?? null,
+    urgentConversions:  data?.urgent_conversions ?? [],
+    opraDue:            data?.opra_due ?? [],
+    topOpportunities:   data?.top_opportunities ?? [],
+    recentReferrals:    data?.recent_referrals ?? [],
+    pendingForms:       data?.pending_forms ?? [],
+    gdc:                data?.gdc ?? { issued_ytd:0, fsa_ytd:0, pipeline:0, pipeline_fsa:0, tier:1, tier_rate:0.40, tier_label:"Tier 1" },
+    counts:             data?.counts ?? { urgent_conversions:0, opra_due:0, pending_forms:0, new_referrals:0 },
+  };
+}
+
+// Live hook for form submissions (responses viewer)
+function useFormResponses() {
+  const [responses, setResponses] = useState([]);
+  const [loading, setLoading]     = useState(true);
+
+  useEffect(() => {
+    fetch("/api/forms/submit?limit=50")
+      .then(r => r.json())
+      .then(d => { setResponses(d.submissions ?? []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  return { responses, loading };
+}
+
+// Live hook for agencies
+function useAgencies() {
+  const [agencies, setAgencies] = useState([]);
+  const [loading, setLoading]   = useState(true);
+
+  const refresh = useCallback(() => {
+    fetch("/api/agencies/referral?limit=100")
+      .then(r => r.json())
+      .then(d => {
+        // Group referrals by agency and merge with base agency data
+        setAgencies(d.agencies ?? []);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+  return { agencies, loading, refresh };
+}
+
+// Live hook for workshops
+function useWorkshops() {
+  const [workshops, setWorkshops] = useState([]);
+  const [loading, setLoading]     = useState(true);
+
+  useEffect(() => {
+    fetch("/api/dashboard?scope=workshops")
+      .then(r => r.json())
+      .then(d => { setWorkshops(d.workshops ?? []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  return { workshops, loading };
+}
 
 // ─────────────────────────────────────────────────────────
 // MARKIST FSA COMMAND CENTER — v2
@@ -438,7 +534,7 @@ function Donut({segs,total}){
   </div>);
 }
 
-function GDCPage({tier,setTier,toast}){
+function GDCPage({tier,setTier,toast,appData={}}){
   const [premium,setPremium]=useState("");
   const [gdcRate,setGdcRate]=useState("");
   const t=TIERS[tier-1];
@@ -446,7 +542,10 @@ function GDCPage({tier,setTier,toast}){
   const rate=parseFloat(gdcRate)/100||0;
   const estGDC=prem*rate;
   const estFSA=estGDC*t.rate;
-  const totalGDC=GDC_CASES.filter(c=>c.status!=="flagged"&&c.gdcRate).reduce((s,c)=>{
+
+  // Use live GDC data if available, otherwise fall back to hardcoded
+  const liveGDC = appData.gdc || {};
+  const totalGDC = liveGDC.pipeline || GDC_CASES.filter(c=>c.status!=="flagged"&&c.gdcRate).reduce((s,c)=>{
     const base=c.isTarget?c.targetPremium:c.premium;
     return s+(base*c.gdcRate);
   },0);
@@ -603,13 +702,38 @@ function SalesCalcPage(){
 }
 
 function WorkshopsPage({toast}){
+  const [workshops, setWorkshops] = useState(WORKSHOPS);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/dashboard?scope=workshops")
+      .then(r => r.json())
+      .then(d => {
+        const liveWorkshops = d.workshops || [];
+        if(liveWorkshops.length > 0) {
+          setWorkshops(liveWorkshops.map(w => ({
+            title: w.title,
+            date: `${new Date(w.scheduled_at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})} · ${w.location||"TBD"}`,
+            registered: w.registered_count || 0,
+            attended: w.attended_count || null,
+            hot: w.hot_leads || null,
+            booked: w.appointments_booked || null,
+            topic: w.topic,
+          })));
+        }
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
   return(<>
     <div className="page-title">Workshops</div>
-    {WORKSHOPS.map((w,i)=><div className="workshop-card" key={i}>
+    {loading && <div style={{textAlign:"center",color:"var(--muted)",padding:20,fontSize:12}}>Loading workshops…</div>}
+    {workshops.map((w,i)=><div className="workshop-card" key={i}>
       <div className="wk-head">
         <div><div className="wk-title">{w.title}</div><div className="wk-date">{w.date}</div></div>
         <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-          <button className="view-btn" onClick={()=>{navigator.clipboard?.writeText(`https://fsos.vercel.app/workshop/${w.title.toLowerCase().split(" ").join("-")}`);toast("Registration link copied!","success");}}>Copy Link</button>
+          <button className="view-btn" onClick={()=>{navigator.clipboard?.writeText(`${typeof window!=="undefined"?window.location.origin:""}/workshop/${w.title.toLowerCase().split(" ").join("-")}`);toast("Registration link copied!","success");}}>Copy Link</button>
           <button className="view-btn" onClick={()=>toast(`Adding attendee to ${w.title}`,"info")}>+ Attendee</button>
           <button className="view-btn" onClick={()=>toast(`Managing ${w.title}`,"info")}>Manage</button>
           <button className="import-btn" onClick={()=>toast("Sending invitation sequence","success")}>Send Invites</button>
@@ -634,16 +758,24 @@ function WorkshopsPage({toast}){
   </>);
 }
 
-function Dashboard({onNav,toast}){
+function Dashboard({onNav,toast,appData={}}){
+  const { topOpportunities=[], counts={}, gdc={}, urgentConversions=[], opraDue=[], recentReferrals=[], loading=false } = appData;
+
+  // Derive pipeline breakdown from live scores
+  const byPipeline = topOpportunities.reduce((acc,o)=>{ const p=o.primary_pipeline||"general"; acc[p]=(acc[p]||0)+1; return acc; },{});
+  const gdcTier = gdc.tier_label || "—";
+  const gdcYTD  = gdc.issued_ytd || 0;
+  const gdcPipe = gdc.pipeline || 0;
+
   return(<>
     <div className="kpi-strip">
       {[
-        {label:"Today's Opportunities",val:18,delta:"↑ +4 from yesterday",dir:"up",icon:"🎯",bg:"#ebf8ff"},
-        {label:"OPRA Customers",val:4,delta:"↓ -1 from yesterday",dir:"down",icon:"👥",bg:"#faf5ff"},
-        {label:"Conversions Due",val:3,delta:"↑ +2 from yesterday",dir:"up",icon:"⏰",bg:"#fffff0"},
-        {label:"Life Reviews",val:6,delta:"↑ +1 from yesterday",dir:"up",icon:"💚",bg:"#f0fff4"},
-        {label:"Retirement Reviews",val:4,delta:"↑ +1 from yesterday",dir:"up",icon:"📊",bg:"#ebf8ff"},
-        {label:"Business Owners",val:2,delta:"↑ +2 new",dir:"up",icon:"🏢",bg:"#faf5ff"},
+        {label:"Today's Opportunities",val:topOpportunities.length||0,delta:loading?"Loading…":"Live from DB",dir:"up",icon:"🎯",bg:"#ebf8ff"},
+        {label:"OPRA Cases",val:opraDue.length||0,delta:`${opraDue.filter(c=>!c.contacted).length} not contacted`,dir:opraDue.length>0?"down":"up",icon:"👥",bg:"#faf5ff"},
+        {label:"Urgent Conversions",val:counts.urgent_conversions||0,delta:"≤ 30 days",dir:counts.urgent_conversions>0?"down":"up",icon:"⏰",bg:"#fffff0"},
+        {label:"Life Pipeline",val:byPipeline["life"]||0,delta:"Scored customers",dir:"up",icon:"💚",bg:"#f0fff4"},
+        {label:"Retirement Pipeline",val:byPipeline["retirement"]||0,delta:"Scored customers",dir:"up",icon:"📊",bg:"#ebf8ff"},
+        {label:"GDC YTD",val:gdcYTD>0?"$"+(gdcYTD/1000).toFixed(0)+"k":"$0",delta:gdcTier,dir:"up",icon:"💰",bg:"#fffff0"},
       ].map((k,i)=>(
         <div className="kpi-card" key={i}>
           <div><div className="kpi-label">{k.label}</div><div className="kpi-val">{k.val}</div><div className={`kpi-delta ${k.dir}`}>{k.delta}</div></div>
@@ -653,9 +785,14 @@ function Dashboard({onNav,toast}){
     </div>
     <div className="main-grid">
       <div className="col">
-        {/* 7AM BRIEFING STRIP */}
+        {/* LIVE BRIEFING STRIP */}
         <div style={{background:"var(--navy)",borderRadius:9,padding:"12px 16px",marginBottom:14,display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-          {[{icon:"⏰",label:"Urgent Conversions",val:2,color:"#f0b429"},{icon:"📅",label:"Appointments Today",val:5,color:"#4299e1"},{icon:"🎓",label:"Workshop Registrations",val:4,color:"#9b72ff"},{icon:"🚫",label:"Opt-outs",val:0,color:"#48bb78"}].map((s,i)=>(
+          {[
+            {icon:"⏰",label:"Urgent Conversions",val:counts.urgent_conversions||0,color:"#f0b429"},
+            {icon:"📅",label:"Pending Forms",val:counts.pending_forms||0,color:"#4299e1"},
+            {icon:"📣",label:"New Referrals (7d)",val:recentReferrals.length||0,color:"#9b72ff"},
+            {icon:"🔄",label:"OPRA Due",val:counts.opra_due||0,color:"#48bb78"}
+          ].map((s,i)=>(
             <div key={i} style={{textAlign:"center"}}>
               <div style={{fontSize:9,color:"rgba(255,255,255,.45)",fontFamily:"DM Mono,monospace",textTransform:"uppercase",letterSpacing:".08em",marginBottom:4}}>{s.label}</div>
               <div style={{fontSize:24,fontWeight:700,color:s.color,lineHeight:1}}>{s.val}</div>
@@ -663,36 +800,50 @@ function Dashboard({onNav,toast}){
           ))}
         </div>
         <div className="card">
-          <div className="card-head"><div className="card-title">🔥 Priority Actions</div><button className="card-link" onClick={()=>onNav("opportunities")}>View All →</button></div>
+          <div className="card-head"><div className="card-title">🔥 Priority Actions</div><button className="card-link" onClick={()=>onNav("opps")}>View All →</button></div>
           <div className="card-body">
-            {PRIORITIES.slice(0,4).map((p,i)=>(
-              <div className="priority-item" key={i} onClick={()=>toast(`Opening ${p.name}`,"info")}>
-                <div className="p-num" style={{background:numColors[i]}}>{i+1}</div>
-                <div className={`p-avatar${p.biz?" biz":""}`}>{ini(p.name)}</div>
-                <div className="p-info">
-                  <div className="p-name">{p.name}
-                    <span className={`pbadge ${pbCls[p.biz?"BIZ":p.pri]}`}>{pbLbl[p.biz?"BIZ":p.pri]}</span>
+            {loading && <div style={{padding:"20px",textAlign:"center",color:"var(--muted)",fontSize:12}}>Loading live data…</div>}
+            {!loading && topOpportunities.slice(0,4).map((o,i)=>{
+              const name = `${o.customers?.first_name||""} ${o.customers?.last_name||""}`.trim()||"Unknown";
+              const agency = o.customers?.agencies?.name||"—";
+              const pipeline = o.primary_pipeline||"general";
+              const pipeMap = {conversions:"CONV",opra:"OPRA",life:"LIFE",retirement:"RETIRE",business:"BIZ"};
+              const action = pipeMap[pipeline]||"LIFE";
+              const biz = pipeline==="business";
+              return(
+                <div className="priority-item" key={i} onClick={()=>toast(`Opening ${name}`,"info")}>
+                  <div className="p-num" style={{background:numColors[i]}}>{i+1}</div>
+                  <div className={`p-avatar${biz?" biz":""}`}>{ini(name)}</div>
+                  <div className="p-info">
+                    <div className="p-name">{name}
+                      <span className={`pbadge ${o.priority_score>=75?"hi":o.priority_score>=50?"md":"lo"}`}>
+                        {o.priority_score>=75?"HIGH":o.priority_score>=50?"MED":"LOW"}
+                      </span>
+                    </div>
+                    <div className="p-reason">{actionLabel[action]||pipeline} opportunity</div>
+                    <div className="p-meta"><span>Agency: {agency}</span></div>
                   </div>
-                  <div className="p-reason">{p.reason}</div>
-                  <div className="p-meta">
-                    <span>◎ {p.face}</span><span>· {p.policy}</span><span>· {p.agency}</span>
-                    {p.formDone?<span style={{color:"var(--green2)"}}>· ✓ Form done</span>:<span style={{color:"var(--orange)"}}>· ⚠ Form pending</span>}
+                  <div className="p-right">
+                    <div><div className="score-v">{o.priority_score||0}</div><div className="score-l">Score</div></div>
+                    <button className="view-btn" onClick={e=>{e.stopPropagation();toast(`Viewing ${name}`,"info");}}>View</button>
                   </div>
                 </div>
-                <div className="p-right">
-                  <div><div className="score-v">{p.score}</div><div className="score-l">Score</div></div>
-                  <button className="view-btn" onClick={e=>{e.stopPropagation();toast(`Viewing ${p.name}`,"info");}}>View</button>
-                </div>
-              </div>
-            ))}
-            <div className="view-all"><button className="view-all-btn" onClick={()=>onNav("opportunities")}>View All Priority Actions →</button></div>
+              );
+            })}
+            {!loading && topOpportunities.length===0 && <div style={{padding:"20px",textAlign:"center",color:"var(--muted)",fontSize:12}}>No scored opportunities yet. Run nightly scoring or add customers.</div>}
+            <div className="view-all"><button className="view-all-btn" onClick={()=>onNav("opps")}>View All Priority Actions →</button></div>
           </div>
         </div>
         <div className="card">
           <div className="card-head"><div className="card-title">🤖 AI Activity Today</div><button className="card-link" onClick={()=>onNav("agents")}>Report →</button></div>
           <div className="card-body">
             <div className="ai-stat-grid">
-              {[{icon:"📞",val:63,lbl:"Calls Made"},{icon:"💬",val:148,lbl:"Texts Sent"},{icon:"📧",val:29,lbl:"Emails Sent"},{icon:"📅",val:4,lbl:"Appointments Booked"}].map((s,i)=>(
+              {[
+                {icon:"📞",val:appData.briefing?.ai_calls_made??63,lbl:"Calls Made"},
+                {icon:"💬",val:appData.briefing?.ai_texts_sent??148,lbl:"Texts Sent"},
+                {icon:"📧",val:appData.briefing?.ai_emails_sent??29,lbl:"Emails Sent"},
+                {icon:"📅",val:appData.briefing?.ai_appointments_booked??4,lbl:"Appointments Booked"}
+              ].map((s,i)=>(
                 <div className="ai-stat" key={i}><div className="ai-stat-icon">{s.icon}</div><div className="ai-stat-val">{s.val}</div><div className="ai-stat-lbl">{s.lbl}</div></div>
               ))}
             </div>
@@ -701,51 +852,78 @@ function Dashboard({onNav,toast}){
       </div>
       <div className="col">
         <div className="card">
-          <div className="card-head"><div className="card-title">📅 Appointments Today</div><button className="card-link" onClick={()=>onNav("calendar")}>Calendar →</button></div>
+          <div className="card-head"><div className="card-title">📋 Pending Forms</div><button className="card-link" onClick={()=>onNav("forms")}>All Forms →</button></div>
           <div className="card-body" style={{padding:"6px 14px"}}>
-            {APPOINTMENTS.map((a,i)=>(
-              <div className="appt-item" key={i}>
-                <div className="appt-time">{a.time}</div>
-                <div className="cal-dot" style={{background:a.color,marginTop:3}}/>
-                <div className="appt-info">
-                  <div className="appt-name">{a.name}</div>
-                  <div className="appt-sub">{a.type} · {a.agency}</div>
+            {loading && <div style={{padding:"16px",textAlign:"center",color:"var(--muted)",fontSize:12}}>Loading…</div>}
+            {!loading && appData.pendingForms.slice(0,5).map((f,i)=>{
+              const name = f.customers ? `${f.customers.first_name||""} ${f.customers.last_name||""}`.trim() : "Unknown";
+              return(
+                <div className="appt-item" key={i}>
+                  <div className="appt-time" style={{width:60}}>{new Date(f.sent_at).toLocaleDateString("en-US",{month:"short",day:"numeric"})}</div>
+                  <div className="cal-dot" style={{background:"#4299e1",marginTop:3}}/>
+                  <div className="appt-info">
+                    <div className="appt-name">{name}</div>
+                    <div className="appt-sub">{f.form_title}</div>
+                  </div>
+                  <span className="form-badge fb-pending">Pending ⚠</span>
                 </div>
-                <div style={{display:"flex",alignItems:"center",gap:4}}>
-                  {a.formDone
-                    ?<span className="form-badge fb-done">Forms ✓</span>
-                    :<span className="form-badge fb-pending">Forms ⚠</span>}
-                  <span className={`sp ${a.status==="confirmed"?"sp-confirmed":"sp-pending"}`}>{a.status==="confirmed"?"Confirmed":"Pending"}</span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
+            {!loading && appData.pendingForms.length===0 && <div style={{padding:"16px",textAlign:"center",color:"var(--green2)",fontSize:12}}>✓ No pending forms</div>}
           </div>
         </div>
         <div className="card">
           <div className="card-head"><div className="card-title">Opportunities by Type</div></div>
           <div className="card-body">
-            <Donut total={18} segs={[{v:4,label:"OPRA",color:"#4299e1"},{v:3,label:"Conversions",color:"#f0b429"},{v:6,label:"Life Reviews",color:"#38a169"},{v:4,label:"Retirement",color:"#553c9a"},{v:2,label:"Business",color:"#7b2d8b"},{v:1,label:"Workshop",color:"#0a5060"}]}/>
+            {(()=>{
+              const bp = topOpportunities.reduce((acc,o)=>{ const p=o.primary_pipeline||"general"; acc[p]=(acc[p]||0)+1; return acc; },{});
+              const total = Math.max(topOpportunities.length,1);
+              const segs = [
+                {v:bp["opra"]||0,label:"OPRA",color:"#4299e1"},
+                {v:bp["conversions"]||0,label:"Conversions",color:"#f0b429"},
+                {v:bp["life"]||0,label:"Life",color:"#38a169"},
+                {v:bp["retirement"]||0,label:"Retirement",color:"#553c9a"},
+                {v:bp["business"]||0,label:"Business",color:"#7b2d8b"},
+              ].filter(s=>s.v>0);
+              return segs.length ? <Donut total={total} segs={segs}/> : <div style={{textAlign:"center",color:"var(--muted)",fontSize:12,padding:20}}>No scored data yet</div>;
+            })()}
           </div>
         </div>
       </div>
       <div className="col">
         <div className="card">
-          <div className="card-head"><div className="card-title">Pipeline Summary</div><button className="card-link" onClick={()=>onNav("opportunities")}>All →</button></div>
+          <div className="card-head"><div className="card-title">Pipeline Summary</div><button className="card-link" onClick={()=>onNav("opps")}>All →</button></div>
           <div className="card-body">
-            {PIPELINES.map((p,i)=>(
-              <div className="pipeline-item" key={i}>
-                <div className="pipeline-rt"><div className="pipeline-name">{p.name}</div><div className="pipeline-count">{p.count}</div></div>
-                <div className="pbar"><div className="pbar-fill" style={{width:`${p.pct}%`,background:p.color}}/></div>
-              </div>
-            ))}
+            {(()=>{
+              const bp = topOpportunities.reduce((acc,o)=>{ const p=o.primary_pipeline||"general"; acc[p]=(acc[p]||0)+1; return acc; },{});
+              const mx = Math.max(...Object.values(bp),1);
+              const items=[
+                {name:"OPRA Transfers",count:bp["opra"]||0,color:"#e53e3e"},
+                {name:"Conversions",count:bp["conversions"]||0,color:"#f0b429"},
+                {name:"Life Reviews",count:bp["life"]||0,color:"#38a169"},
+                {name:"Retirement",count:bp["retirement"]||0,color:"#553c9a"},
+                {name:"Business Owners",count:bp["business"]||0,color:"#7b2d8b"},
+              ];
+              return items.map((p,i)=>(
+                <div className="pipeline-item" key={i}>
+                  <div className="pipeline-rt"><div className="pipeline-name">{p.name}</div><div className="pipeline-count">{p.count}</div></div>
+                  <div className="pbar"><div className="pbar-fill" style={{width:`${Math.round((p.count/mx)*100)}%`,background:p.color}}/></div>
+                </div>
+              ));
+            })()}
           </div>
         </div>
         <div className="card">
-          <div className="card-head"><div className="card-title">Revenue Pipeline</div></div>
+          <div className="card-head"><div className="card-title">GDC Summary</div></div>
           <div className="card-body">
-            <div className="rev-total">$100,500</div>
-            <div className="rev-lbl">Total Pipeline Value</div>
-            {[{cat:"OPRA",val:"$18,500"},{cat:"Conversions",val:"$24,000"},{cat:"Life Reviews",val:"$20,000"},{cat:"Retirement",val:"$10,000"},{cat:"Business Owners",val:"$28,000"}].map((r,i)=>(
+            <div className="rev-total">{"$"+(gdcPipe/1000).toFixed(0)+"k"}</div>
+            <div className="rev-lbl">Pipeline Value · {gdcTier} ({gdc.tier_rate?Math.round(gdc.tier_rate*100)+"%":"—"} payout)</div>
+            {[
+              {cat:"Issued YTD",val:"$"+(gdcYTD/1000).toFixed(0)+"k"},
+              {cat:"Pipeline GDC",val:"$"+(gdcPipe/1000).toFixed(0)+"k"},
+              {cat:"FSA YTD",val:"$"+((gdc.fsa_ytd||0)/1000).toFixed(0)+"k"},
+              {cat:"Pipeline FSA",val:"$"+((gdc.pipeline_fsa||0)/1000).toFixed(0)+"k"},
+            ].map((r,i)=>(
               <div className="rev-row" key={i}><div className="rev-cat">{r.cat}</div><div className="rev-val">{r.val}</div></div>
             ))}
           </div>
@@ -845,24 +1023,61 @@ function AIAgents({toast}){
 // AGENCY OWNERS — Full relationship + referral management
 // ─────────────────────────────────────────────────────────
 function AgencyOwners({toast}) {
-  const [tab, setTab]           = useState("overview"); // overview|leaderboard|add
-  const [selected, setSelected] = useState(null);       // agency id when drilled in
+  const [tab, setTab]             = useState("overview");
+  const [selected, setSelected]   = useState(null);
   const [detailTab, setDetailTab] = useState("referrals");
-  const [addForm, setAddForm]   = useState({name:"",owner:"",phone:"",email:"",city:""});
+  const [addForm, setAddForm]     = useState({name:"",owner:"",phone:"",email:"",city:""});
+  const [agencies, setAgencies]   = useState(AGENCY_DATA);
+  const [referralsByAgency, setReferralsByAgency] = useState({});
+  const [loading, setLoading]     = useState(true);
 
   const fmtK = n => n >= 1000 ? "$"+(n/1000).toFixed(0)+"k" : "$"+n;
-  const fmtD = n => "$"+Number(n).toLocaleString("en-US");
-  const BASE = "https://fsa.protecwise.com";
+  const fmtD = n => "$"+Number(n||0).toLocaleString("en-US");
+  const BASE = typeof window !== "undefined" ? window.location.origin : "https://fsos.vercel.app";
 
-  const totalReferrals = AGENCY_DATA.reduce((s,a)=>s+a.referrals,0);
-  const totalOpps      = AGENCY_DATA.reduce((s,a)=>s+a.pendingOpp,0);
-  const totalGDC       = AGENCY_DATA.reduce((s,a)=>s+a.issuedGDC,0);
-  const attention      = AGENCY_DATA.filter(a=>a.needsAttention);
-  const maxGDC         = Math.max(...AGENCY_DATA.map(a=>a.issuedGDC),1);
+  // Load live agencies + referrals
+  useEffect(() => {
+    Promise.all([
+      fetch("/api/agencies/referral?limit=200").then(r=>r.json()).catch(()=>({referrals:[]})),
+    ]).then(([refData]) => {
+      const refs = refData.referrals || [];
+      // Group referrals by agency_id
+      const byAgency = {};
+      refs.forEach(r => {
+        if(!byAgency[r.agency_id]) byAgency[r.agency_id] = [];
+        byAgency[r.agency_id].push(r);
+      });
+      setReferralsByAgency(byAgency);
+      setLoading(false);
+    });
+  }, []);
+
+  // Merge live referral counts into AGENCY_DATA
+  const enrichedAgencies = agencies.map(ag => {
+    const refs = referralsByAgency[ag.id] || [];
+    const liveReferrals = refs.length;
+    return {
+      ...ag,
+      referrals: liveReferrals > 0 ? liveReferrals : ag.referrals,
+      referralList: refs.slice(0,20).map(r => ({
+        client: r.client_name || "Unknown",
+        type: r.referral_type || "general",
+        submitted: r.submitted_at ? new Date(r.submitted_at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "—",
+        appt: null,
+        status: r.status === "new" ? "Received" : r.status.charAt(0).toUpperCase()+r.status.slice(1),
+      })).concat(ag.referralList.length > 0 && refs.length === 0 ? ag.referralList : []),
+    };
+  });
+
+  const totalReferrals = enrichedAgencies.reduce((s,a)=>s+a.referrals,0);
+  const totalOpps      = enrichedAgencies.reduce((s,a)=>s+a.pendingOpp,0);
+  const totalGDC       = enrichedAgencies.reduce((s,a)=>s+a.issuedGDC,0);
+  const attention      = enrichedAgencies.filter(a=>a.needsAttention);
+  const maxGDC         = Math.max(...enrichedAgencies.map(a=>a.issuedGDC),1);
 
   // ── DETAIL VIEW ────────────────────────────────────────
   if (selected) {
-    const ag = AGENCY_DATA.find(a=>a.id===selected);
+    const ag = enrichedAgencies.find(a=>a.id===selected);
     if (!ag) { setSelected(null); return null; }
     const refLink = `${BASE}/${ag.slug}`;
     const upLink  = `${BASE}/upload/${ag.slug}`;
@@ -1065,7 +1280,7 @@ function AgencyOwners({toast}) {
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
         <div>
           <div className="page-title" style={{marginBottom:2}}>Agency Owners</div>
-          <div style={{fontSize:12,color:"var(--muted)"}}>Your distribution channel · {AGENCY_DATA.length} agencies · Last sync: today</div>
+          <div style={{fontSize:12,color:"var(--muted)"}}>Your distribution channel · {enrichedAgencies.length} agencies · Last sync: today</div>
         </div>
         <div style={{display:"flex",gap:8}}>
           <button className="btn-secondary" style={{fontSize:11}} onClick={()=>setTab("leaderboard")}>🏆 Leaderboard</button>
@@ -1076,7 +1291,7 @@ function AgencyOwners({toast}) {
       {/* TOP METRICS */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:16}}>
         {[
-          {l:"Total Agencies",v:AGENCY_DATA.length,c:"var(--text)",icon:"🏢"},
+          {l:"Total Agencies",v:enrichedAgencies.length,c:"var(--text)",icon:"🏢"},
           {l:"Total Referrals",v:totalReferrals,c:"#2b6cb0",icon:"🔗"},
           {l:"Pending Opportunities",v:totalOpps,c:"var(--orange)",icon:"🎯"},
           {l:"Total Issued GDC",v:fmtK(totalGDC),c:"var(--green2)",icon:"💰"},
@@ -1115,7 +1330,7 @@ function AgencyOwners({toast}) {
 
       {/* AGENCY CARDS */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))",gap:12}}>
-        {AGENCY_DATA.map((a,i)=>(
+        {enrichedAgencies.map((a,i)=>(
           <div key={i} style={{background:"var(--card)",border:`1px solid ${a.needsAttention?"var(--red-border)":"var(--border)"}`,borderRadius:10,overflow:"hidden",boxShadow:"var(--shadow)",transition:"box-shadow .15s"}}
             onMouseOver={e=>e.currentTarget.style.boxShadow="var(--shadow2)"}
             onMouseOut={e=>e.currentTarget.style.boxShadow="var(--shadow)"}>
@@ -1175,7 +1390,7 @@ function AgencyOwners({toast}) {
 
   // ── LEADERBOARD TAB ─────────────────────────────────────
   if (tab==="leaderboard") {
-    const sorted = [...AGENCY_DATA].sort((a,b)=>b.issuedGDC-a.issuedGDC);
+    const sorted = [...enrichedAgencies].sort((a,b)=>b.issuedGDC-a.issuedGDC);
     return (
       <>
         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
@@ -1594,14 +1809,45 @@ function SendModal({form, onClose, toast}) {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [channel, setChannel] = useState("email");
-  const BASE = "https://fsos.vercel.app/forms";
-  const link = `${BASE}/${form?.id}?client=${encodeURIComponent(client)}&t=${Date.now()}`;
+  const [sending, setSending] = useState(false);
+  const [sentLink, setSentLink] = useState("");
+  const BASE = typeof window !== "undefined" ? window.location.origin : "";
+  const previewLink = `${BASE}/forms/${form?.id}?client=${encodeURIComponent(client)}&t=preview`;
 
-  const send = () => {
+  const send = async () => {
     if(!client) { toast("Client name is required", "error"); return; }
-    if(channel === "email" && !email) { toast("Email is required", "error"); return; }
-    toast(`✓ Form link sent to ${client} via ${channel}`, "success");
-    onClose();
+    if((channel === "email" || channel === "both") && !email) { toast("Email is required", "error"); return; }
+    if(channel === "copy-link") {
+      navigator.clipboard?.writeText(previewLink);
+      toast("Form link copied to clipboard!", "success");
+      return;
+    }
+
+    setSending(true);
+    try {
+      const res = await fetch("/api/forms/send", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+          form_id: form?.id,
+          channel,
+          destination: channel === "sms" ? phone : email,
+          client_name: client,
+        }),
+      });
+      const data = await res.json();
+      if(data.success) {
+        setSentLink(data.link || "");
+        toast(`✓ ${form?.title} sent to ${client} via ${channel}`, "success");
+        setTimeout(onClose, 1500);
+      } else {
+        toast(data.error || "Failed to send form", "error");
+      }
+    } catch(e) {
+      toast("Network error sending form", "error");
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -1621,17 +1867,17 @@ function SendModal({form, onClose, toast}) {
         {(channel === "sms" || channel === "both") && <div className="field"><label>Client Phone</label><input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="2145551234"/></div>}
         {client && (
           <div className="field">
-            <label>Generated Link</label>
+            <label>Link Preview</label>
             <div className="link-preview">
-              <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{link}</span>
-              <button className="copy-btn" onClick={() => { navigator.clipboard?.writeText(link); toast("Link copied!", "success"); }}>Copy</button>
+              <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sentLink||previewLink}</span>
+              <button className="copy-btn" onClick={() => { navigator.clipboard?.writeText(sentLink||previewLink); toast("Link copied!", "success"); }}>Copy</button>
             </div>
-            <div style={{fontSize:10, color:"var(--muted)", marginTop:5}}>Link expires in 30 days. Client fills out the form and submits — response is automatically stored and linked to their record in Supabase.</div>
+            <div style={{fontSize:10, color:"var(--muted)", marginTop:5}}>Link expires in 30 days. Client fills out the form — response stored in Supabase automatically.</div>
           </div>
         )}
         <div className="modal-actions">
           <button className="btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn-primary" onClick={send}>Send Form →</button>
+          <button className="btn-primary" onClick={send} disabled={sending}>{sending?"Sending…":"Send Form →"}</button>
         </div>
       </div>
     </div>
@@ -1643,85 +1889,53 @@ function FNAGenerator({toast}) {
   const [selected, setSelected] = useState("");
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState(null);
+  const [submissions, setSubmissions] = useState([]);
+  const [subLoading, setSubLoading] = useState(true);
 
-  const responses = MOCK_RESPONSES.filter(r => r.form_id === "financial-needs-analysis" || r.form_id === "customer-profile");
+  useEffect(() => {
+    fetch("/api/forms/submit?limit=50")
+      .then(r => r.json())
+      .then(d => {
+        const subs = (d.submissions || []).filter(s =>
+          ["financial-needs-analysis","customer-profile","customer-questionnaire"].includes(s.form_id) &&
+          s.status === "complete"
+        );
+        setSubmissions(subs.length > 0 ? subs : MOCK_RESPONSES);
+        setSubLoading(false);
+      })
+      .catch(() => { setSubmissions(MOCK_RESPONSES); setSubLoading(false); });
+  }, []);
 
   const generateReport = async () => {
-    const resp = MOCK_RESPONSES.find(r => r.id === selected);
-    if(!resp) { toast("Select a client first", "error"); return; }
-    setLoading(true);
-    setReport(null);
+    if(!selected) { toast("Select a client first", "error"); return; }
+    const isLive = submissions.some(s => s.submission_id === selected);
+    setLoading(true); setReport(null);
 
-    try {
-      const prompt = `You are a financial advisor at Farmers Financial Solutions, LLC. Generate a professional Financial Needs Analysis report for the following client. Use a warm but professional tone. Structure the report exactly as specified.
-
-CLIENT DATA:
-${JSON.stringify(resp.data, null, 2)}
-
-Generate a complete Financial Needs Analysis with these exact sections:
-1. EXECUTIVE SUMMARY (2-3 sentences summarizing the client's financial situation and primary needs)
-2. CURRENT FINANCIAL POSITION (assess their income, savings, assets, debts, and coverage)
-3. IDENTIFIED GAPS & OPPORTUNITIES (specific gaps in life insurance, retirement, savings, or estate planning)
-4. RECOMMENDATIONS (3-5 prioritized recommendations based on FFS products and the client's age/risk profile)
-5. NEXT STEPS (specific action items for the FSA meeting)
-
-IMPORTANT COMPLIANCE NOTE: All recommendations are educational and informational only. No specific product is being recommended. Any product discussion requires a licensed FSA meeting, suitability review, and compliance with FINRA Reg BI.
-
-Respond in JSON format:
-{
-  "executive_summary": "string",
-  "financial_position": "string",
-  "gaps": ["gap1", "gap2", "gap3"],
-  "recommendations": [{"priority": 1, "title": "string", "description": "string", "product_category": "string"}],
-  "next_steps": ["step1", "step2", "step3"],
-  "risk_profile": "string",
-  "urgency": "High|Medium|Low"
-}`;
-
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          messages: [{ role: "user", content: prompt }]
-        })
-      });
-
-      const data = await res.json();
-      const text = data.content?.[0]?.text || "";
-      const clean = text.replace(/```json|```/g, "").trim();
-      const parsed = JSON.parse(clean);
-      setReport({ client: resp.client, data: resp.data, analysis: parsed, generated_at: new Date().toLocaleDateString("en-US", {year:"numeric",month:"long",day:"numeric"}) });
-      toast("✓ FNA report generated successfully", "success");
-    } catch(e) {
-      // Fallback mock for demo
+    if(isLive) {
+      try {
+        const res = await fetch("/api/forms/fna", {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ submission_id: selected }),
+        });
+        const data = await res.json();
+        if(data.success) {
+          const sub = submissions.find(s => s.submission_id === selected);
+          setReport({ client: sub?.customer_id||"Client", data: sub?.response_data||{}, analysis: data.report, generated_at: new Date().toLocaleDateString("en-US",{year:"numeric",month:"long",day:"numeric"}) });
+          toast("✓ FNA report generated successfully", "success");
+        } else { toast(data.error || "Failed to generate FNA", "error"); }
+      } catch(e) { toast("Error generating FNA", "error"); }
+    } else {
+      const resp = MOCK_RESPONSES.find(r => r.id === selected);
+      if(!resp) { toast("Select a client first","error"); setLoading(false); return; }
       setReport({
-        client: resp.client,
-        data: resp.data,
+        client: resp.client, data: resp.data,
         analysis: {
-          executive_summary: `${resp.data.first_name} ${resp.data.last_name||""} presents a solid foundation with an annual household income of ${fmt(resp.data.annual_income)}, but faces meaningful gaps in life insurance coverage and retirement income planning that warrant immediate attention in their upcoming FSA review.`,
-          financial_position: `Client has an estimated net worth of ${fmt(resp.data.net_worth||0)} with a self-described ${resp.data.risk_tolerance||"moderate"} risk tolerance and a ${resp.data.investment_horizon||"10-20 year"} investment horizon. Existing retirement assets and life coverage leave identifiable gaps relative to their stated goals.`,
-          gaps: [
-            "Life insurance coverage below 10x annual income — protection gap exists",
-            "No IRA or Roth IRA identified — tax diversification opportunity",
-            "Retirement income goal vs. projected Social Security leaves a significant monthly shortfall",
-            "No mention of emergency fund meeting 3-6 month threshold",
-            "Estate planning documents not confirmed current"
-          ],
-          recommendations: [
-            {priority:1, title:"Life Insurance Gap Analysis", description:"Current coverage requires review against the 10x income benchmark and total household liability exposure. A term or permanent solution may be appropriate depending on suitability.", product_category:"Life Insurance"},
-            {priority:2, title:"Retirement Income Planning", description:"Gap between retirement income goal and projected Social Security creates a fixed-income shortfall opportunity. Tax-deferred and indexed annuity options may align with stated risk tolerance.", product_category:"Annuities / Retirement"},
-            {priority:3, title:"IRA / Roth IRA Contribution Review", description:"No IRA on record. Age and income profile suggests IRA or Roth IRA contributions could provide tax diversification and additional retirement savings vehicle.", product_category:"Mutual Funds / IRA"},
-            {priority:4, title:"Emergency Fund Assessment", description:"Confirm liquid reserve status. If below 3-6 months of expenses, a money market or short-term savings strategy should be established before investment allocation.", product_category:"Savings"},
-          ],
-          next_steps: [
-            "Schedule financial review appointment to present FNA findings",
-            "Complete Liability Exposure Worksheet before meeting",
-            "Call FFS Sales Desk (866) 888-9739 Opt 3→3 to review case before presentation",
-            "Prepare life insurance illustration through FFS",
-            "Confirm suitability profile with Customer Profile Worksheet"
-          ],
+          executive_summary: `${resp.data.first_name||""} ${resp.data.last_name||""} — demo mode. Connect live form submissions to generate real AI analysis.`,
+          financial_position: "Demo data — submit a real Financial Needs Analysis form to generate a live report.",
+          gaps: ["Life insurance coverage gap","No IRA identified","Retirement income shortfall"],
+          recommendations: [{priority:1,title:"Life Insurance Gap Analysis",description:"Review current coverage against 10x income benchmark.",product_category:"Life Insurance"}],
+          next_steps: ["Schedule FSA review appointment","Send Financial Needs Analysis form to client","Call FFS Sales Desk (866) 888-9739 Opt 3→3"],
           risk_profile: resp.data.risk_tolerance || "Moderate",
           urgency: "High"
         },
@@ -1893,32 +2107,74 @@ Respond in JSON format:
 function ResponsesViewer({toast}) {
   const [selected, setSelected] = useState(null);
   const [filter, setFilter] = useState("all");
+  const [submissions, setSubmissions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
 
-  const filtered = filter === "all" ? MOCK_RESPONSES : MOCK_RESPONSES.filter(r => r.form_id === filter);
-  const selectedResp = MOCK_RESPONSES.find(r => r.id === selected);
+  useEffect(() => {
+    fetch("/api/forms/submit?limit=100")
+      .then(r => r.json())
+      .then(d => {
+        const subs = d.submissions || [];
+        setSubmissions(subs.length > 0 ? subs : MOCK_RESPONSES);
+        setLoading(false);
+      })
+      .catch(() => { setSubmissions(MOCK_RESPONSES); setLoading(false); });
+  }, []);
+
+  const allResponses = submissions;
+  const filtered = allResponses.filter(r => {
+    const matchesFilter = filter === "all" || r.form_id === filter;
+    const clientName = r.client || (r.customers ? `${r.customers.first_name||""} ${r.customers.last_name||""}`.trim() : "");
+    const matchesSearch = !search || clientName.toLowerCase().includes(search.toLowerCase());
+    return matchesFilter && matchesSearch;
+  });
+
+  const selectedResp = allResponses.find(r => (r.submission_id||r.id) === selected);
+  const getClientName = (r) => r.client || (r.customers ? `${r.customers.first_name||""} ${r.customers.last_name||""}`.trim() : "Unknown");
+  const getDate = (r) => {
+    const d = r.submitted_at || r.sent_at;
+    return d ? new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "—";
+  };
+  const getFormTitle = (r) => r.form_title || FORMS.find(f=>f.id===r.form_id)?.title || r.form_id || "—";
+  const getResponseData = (r) => r.response_data || r.data || {};
+  const getId = (r) => r.submission_id || r.id;
 
   return (
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
       <div>
         <div style={{marginBottom:10,display:"flex",gap:8}}>
-          <input placeholder="Search by client name..." style={{background:"var(--bg)",border:"1px solid var(--border)",borderRadius:5,padding:"6px 10px",fontSize:11,fontFamily:"DM Mono,monospace",color:"var(--text)",outline:"none",width:180}} onInput={e=>toast(`Searching: "${e.target.value}"`,"info")}/>
+          <input
+            placeholder="Search by client name..."
+            value={search}
+            onChange={e=>setSearch(e.target.value)}
+            style={{background:"var(--bg)",border:"1px solid var(--border)",borderRadius:5,padding:"6px 10px",fontSize:11,fontFamily:"DM Mono,monospace",color:"var(--text)",outline:"none",width:180}}
+          />
           <select style={{background:"var(--bg)",border:"1px solid var(--border)",borderRadius:5,padding:"6px 10px",fontSize:11,fontFamily:"DM Mono, monospace",color:"var(--text)"}} value={filter} onChange={e=>setFilter(e.target.value)}>
             <option value="all">All Forms</option>
             {FORMS.map(f=><option key={f.id} value={f.id}>{f.title}</option>)}
           </select>
+          <span style={{fontSize:10,color:"var(--muted)",alignSelf:"center",marginLeft:"auto"}}>{filtered.length} responses</span>
         </div>
         <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:10,overflow:"hidden",boxShadow:"var(--shadow)"}}>
-          <table className="resp-table">
-            <thead><tr><th>Client</th><th>Form</th><th>Submitted</th><th>Status</th></tr></thead>
-            <tbody>{filtered.map(r=>(
-              <tr key={r.id} style={{cursor:"pointer",background:selected===r.id?"var(--blue-bg)":"transparent"}} onClick={()=>setSelected(r.id)}>
-                <td style={{fontWeight:500}}>{r.client}</td>
-                <td style={{fontSize:10,color:"var(--muted)"}}>{FORMS.find(f=>f.id===r.form_id)?.title||r.form_id}</td>
-                <td style={{fontFamily:"DM Mono,monospace",fontSize:10,color:"var(--muted)"}}>{r.submitted_at}</td>
-                <td><span className="status-dot complete"/><span style={{fontSize:10}}>Complete</span></td>
-              </tr>
-            ))}</tbody>
-          </table>
+          {loading && <div style={{padding:"20px",textAlign:"center",color:"var(--muted)",fontSize:12}}>Loading responses…</div>}
+          {!loading && filtered.length === 0 && <div style={{padding:"20px",textAlign:"center",color:"var(--muted)",fontSize:12}}>No submitted forms yet</div>}
+          {!loading && filtered.length > 0 && (
+            <table className="resp-table">
+              <thead><tr><th>Client</th><th>Form</th><th>Date</th><th>Status</th></tr></thead>
+              <tbody>{filtered.map(r=>(
+                <tr key={getId(r)} style={{cursor:"pointer",background:selected===getId(r)?"var(--blue-bg)":"transparent"}} onClick={()=>setSelected(getId(r))}>
+                  <td style={{fontWeight:500}}>{getClientName(r)}</td>
+                  <td style={{fontSize:10,color:"var(--muted)"}}>{getFormTitle(r)}</td>
+                  <td style={{fontFamily:"DM Mono,monospace",fontSize:10,color:"var(--muted)"}}>{getDate(r)}</td>
+                  <td>
+                    <span className={`status-dot ${r.status==="complete"?"complete":r.status==="opened"?"pending":"sent"}`}/>
+                    <span style={{fontSize:10}}>{r.status||"complete"}</span>
+                  </td>
+                </tr>
+              ))}</tbody>
+            </table>
+          )}
         </div>
       </div>
       <div>
@@ -1926,21 +2182,26 @@ function ResponsesViewer({toast}) {
           <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:10,padding:16,boxShadow:"var(--shadow)"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,paddingBottom:10,borderBottom:"1px solid var(--border)"}}>
               <div>
-                <div style={{fontWeight:600,fontSize:14}}>{selectedResp.client}</div>
-                <div style={{fontSize:10,color:"var(--muted)",fontFamily:"DM Mono,monospace"}}>{FORMS.find(f=>f.id===selectedResp.form_id)?.title} · {selectedResp.submitted_at}</div>
+                <div style={{fontWeight:600,fontSize:14}}>{getClientName(selectedResp)}</div>
+                <div style={{fontSize:10,color:"var(--muted)",fontFamily:"DM Mono,monospace"}}>{getFormTitle(selectedResp)} · {getDate(selectedResp)}</div>
               </div>
               <div style={{display:"flex",gap:6}}>
-                <button className="btn-secondary" style={{fontSize:10,padding:"4px 10px"}} onClick={()=>toast("Printing form","info")}>Print</button>
-                {selectedResp.form_id==="financial-needs-analysis"&&<button className="btn-gold" style={{fontSize:10,padding:"4px 10px"}} onClick={()=>toast("Generating FNA","info")}>Generate FNA</button>}
+                <button className="btn-secondary" style={{fontSize:10,padding:"4px 10px"}} onClick={()=>window.print()}>Print</button>
+                {selectedResp.form_id==="financial-needs-analysis"&&(
+                  <button className="btn-gold" style={{fontSize:10,padding:"4px 10px"}} onClick={()=>toast("Switch to FNA Generator tab to generate report","info")}>✦ FNA</button>
+                )}
               </div>
             </div>
             <div style={{maxHeight:400,overflowY:"auto"}}>
-              {Object.entries(selectedResp.data).map(([k,v])=>(
-                <div key={k} style={{display:"grid",gridTemplateColumns:"140px 1fr",gap:8,padding:"5px 0",borderBottom:"1px solid var(--border)",fontSize:11}}>
-                  <div style={{color:"var(--muted)",fontFamily:"DM Mono,monospace",fontSize:9,textTransform:"uppercase",letterSpacing:".05em",paddingTop:1}}>{k.split("_").join(" ")}</div>
-                  <div style={{color:"var(--text)",lineHeight:1.4}}>{Array.isArray(v)?v.join(", "):String(v)}</div>
-                </div>
-              ))}
+              {Object.entries(getResponseData(selectedResp)).length === 0
+                ? <div style={{color:"var(--muted)",fontSize:12,textAlign:"center",padding:20}}>No response data recorded</div>
+                : Object.entries(getResponseData(selectedResp)).map(([k,v])=>(
+                  <div key={k} style={{display:"grid",gridTemplateColumns:"140px 1fr",gap:8,padding:"5px 0",borderBottom:"1px solid var(--border)",fontSize:11}}>
+                    <div style={{color:"var(--muted)",fontFamily:"DM Mono,monospace",fontSize:9,textTransform:"uppercase",letterSpacing:".05em",paddingTop:1}}>{k.split("_").join(" ")}</div>
+                    <div style={{color:"var(--text)",lineHeight:1.4}}>{Array.isArray(v)?v.join(", "):String(v)}</div>
+                  </div>
+                ))
+              }
             </div>
           </div>
         ) : (
@@ -2626,34 +2887,54 @@ const AGENCY_SCORES = AGENCY_DATA;
 // ─────────────────────────────────────────────────────────
 // 1. CONVERSION CENTER — Dedicated deadline tracker
 // ─────────────────────────────────────────────────────────
-function ConversionCenter({toast}) {
-  const [filter, setFilter] = useState("all");
-  const [cases, setCases] = useState(CONV_CASES);
+function ConversionCenter({toast,appData={}}) {
+  const liveData = appData.urgentConversions || [];
+  const [overrides, setOverrides] = useState({});
+
+  // Merge live data with local status overrides
+  const cases = liveData.map(c => ({
+    id: c.policy_id,
+    client: `${c.customers?.first_name||""} ${c.customers?.last_name||""}`.trim()||"Unknown",
+    agency: c.customers?.agencies?.name||"—",
+    policyNum: c.policy_number||"—",
+    face: c.face_amount||0,
+    premium: c.annual_premium||0,
+    deadline: c.conversion_deadline||"—",
+    days: c.days_to_deadline??999,
+    status: overrides[c.policy_id]?.status||"Not Started",
+    contacted: overrides[c.policy_id]?.contacted||false,
+    apptBooked: overrides[c.policy_id]?.apptBooked||false,
+  }));
+
+  // Fall back to mock if DB empty (dev mode)
+  const displayCases = cases.length > 0 ? cases : CONV_CASES;
 
   const urgencyColor = d => d <= 30 ? "var(--red)" : d <= 90 ? "var(--orange)" : "var(--green2)";
   const urgencyBg   = d => d <= 30 ? "var(--red-bg)" : d <= 90 ? "var(--orange-bg)" : "var(--green-bg)";
   const urgencyBdr  = d => d <= 30 ? "var(--red-border)" : d <= 90 ? "var(--orange-border)" : "var(--green-border)";
 
-  const filtered = filter === "all" ? cases :
-    filter === "30" ? cases.filter(c=>c.days<=30) :
-    filter === "90" ? cases.filter(c=>c.days>30&&c.days<=90) :
-    cases.filter(c=>c.days>90);
+  const [filter, setFilter] = useState("all");
+
+  const filtered = filter === "all" ? displayCases :
+    filter === "30" ? displayCases.filter(c=>c.days<=30) :
+    filter === "90" ? displayCases.filter(c=>c.days>30&&c.days<=90) :
+    displayCases.filter(c=>c.days>90);
 
   const cycle = (id) => {
     const seq = ["Not Started","Needs Contact","SMS Sent","Appt Scheduled","Reviewed","Complete"];
-    setCases(prev => prev.map(c => {
-      if(c.id!==id) return c;
-      const idx = seq.indexOf(c.status);
+    setOverrides(prev => {
+      const cur = prev[id] || {};
+      const idx = seq.indexOf(cur.status||"Not Started");
       const next = seq[(idx+1)%seq.length];
-      toast(`${c.client} → ${next}`,"success");
-      return {...c, status:next, contacted: idx>=0, apptBooked: idx>=3};
-    }));
+      toast(`${displayCases.find(c=>c.id===id)?.client||"Case"} → ${next}`,"success");
+      return {...prev, [id]:{...cur, status:next, contacted:idx>=0, apptBooked:idx>=3}};
+    });
   };
 
-  const total = cases.length;
-  const urgent = cases.filter(c=>c.days<=30).length;
-  const booked = cases.filter(c=>c.apptBooked).length;
-  const fmtCur = n=>"$"+n.toLocaleString("en-US");
+  const total = displayCases.length;
+  const urgent = displayCases.filter(c=>c.days<=30).length;
+  const booked = displayCases.filter(c=>c.apptBooked).length;
+  const fmtCur = n=>"$"+Number(n||0).toLocaleString("en-US");
 
   return (<>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
@@ -2733,19 +3014,37 @@ function ConversionCenter({toast}) {
 // ─────────────────────────────────────────────────────────
 // 2. OPRA CENTER — Transfer tracking
 // ─────────────────────────────────────────────────────────
-function OPRACenter({toast}) {
-  const [cases, setCases] = useState(OPRA_CASES);
+function OPRACenter({toast,appData={}}) {
+  const liveData = appData.opraDue || [];
+  const [overrides, setOverrides] = useState({});
+
+  const cases = (liveData.length > 0 ? liveData : OPRA_CASES).map(c => {
+    const isLive = !!c.opra_id;
+    const id = isLive ? c.opra_id : c.id;
+    const ov = overrides[id] || {};
+    return {
+      id,
+      client: isLive ? `${c.customers?.first_name||""} ${c.customers?.last_name||""}`.trim()||"Unknown" : c.client,
+      agency: isLive ? (c.customers?.agencies?.name||"—") : c.agency,
+      transferDate: isLive ? c.transfer_date : c.transferDate,
+      premium: isLive ? (c.annual_premium||0) : c.premium,
+      contacted: ov.contacted ?? (isLive ? c.contacted : c.contacted),
+      apptScheduled: ov.apptScheduled ?? (isLive ? c.appt_scheduled : c.apptScheduled),
+      reviewDone: ov.reviewDone ?? (isLive ? c.review_complete : c.reviewDone),
+      status: ov.status ?? (isLive ? c.status : c.status),
+    };
+  });
 
   const cycle = (id, field) => {
-    setCases(prev => prev.map(c => {
-      if(c.id!==id) return c;
-      const updated = {...c, [field]:!c[field]};
+    setOverrides(prev => {
+      const cur = prev[id] || {};
+      const updated = {...cur, [field]:!cur[field]};
       if(field==="reviewDone") updated.status = updated.reviewDone ? "Review Complete" : "Appt Scheduled";
       else if(field==="apptScheduled") updated.status = updated.apptScheduled ? "Appt Scheduled" : "Needs Appt";
       else if(field==="contacted") updated.status = updated.contacted ? "Needs Appt" : "Not Contacted";
-      toast(`${c.client} updated`,"success");
-      return updated;
-    }));
+      toast(`${cases.find(c=>c.id===id)?.client||"Case"} updated`,"success");
+      return {...prev, [id]:updated};
+    });
   };
 
   const ready = cases.filter(c=>!c.reviewDone).length;
@@ -2830,12 +3129,40 @@ function OPRACenter({toast}) {
 // ─────────────────────────────────────────────────────────
 // 3. OPPORTUNITY DASHBOARD — Priority-scored, all types
 // ─────────────────────────────────────────────────────────
-function OpportunityDashboard({toast}) {
+function OpportunityDashboard({toast,appData={}}) {
   const [expanded, setExpanded] = useState(null);
+  const liveOpps = appData.topOpportunities || [];
+  const loading = appData.loading || false;
 
-  const high = PRIORITIES.filter(p=>p.pri==="HIGH"||p.biz);
-  const med  = PRIORITIES.filter(p=>p.pri==="MED"&&!p.biz);
-  const low  = PRIORITIES.filter(p=>p.pri==="LOW"&&!p.biz);
+  // Map live scored customers to display format
+  const priorities = liveOpps.map(o => {
+    const name = `${o.customers?.first_name||""} ${o.customers?.last_name||""}`.trim()||"Unknown";
+    const pipeline = o.primary_pipeline || "general";
+    const actionMap2 = {conversions:"CONV",opra:"OPRA",life:"LIFE",retirement:"RETIRE",business:"BIZ"};
+    const action = actionMap2[pipeline] || "LIFE";
+    const score = o.priority_score || 0;
+    return {
+      name,
+      pri: score >= 75 ? "HIGH" : score >= 50 ? "MED" : "LOW",
+      reason: `${actionLabel[action]||pipeline} opportunity`,
+      face: "—",
+      policy: pipeline,
+      agency: o.customers?.agencies?.name || "—",
+      score,
+      action,
+      calls: 0, sms: 0,
+      booked: false,
+      biz: pipeline === "business",
+      formDone: false,
+    };
+  });
+
+  // Fall back to hardcoded data if DB is empty
+  const displayPriorities = priorities.length > 0 ? priorities : PRIORITIES;
+
+  const high = displayPriorities.filter(p=>p.pri==="HIGH"||p.biz);
+  const med  = displayPriorities.filter(p=>p.pri==="MED"&&!p.biz);
+  const low  = displayPriorities.filter(p=>p.pri==="LOW"&&!p.biz);
 
   const actionColor = {CONV:"var(--orange)",OPRA:"var(--red)",LIFE:"var(--blue)",RETIRE:"var(--purple)",BIZ:"#7b2d8b"};
   const actionLabel = {CONV:"Conversion",OPRA:"OPRA",LIFE:"Life Review",RETIRE:"Retirement",BIZ:"Business Owner"};
@@ -3075,11 +3402,10 @@ function AgencyScoreboard({toast}) {
 // ─────────────────────────────────────────────────────────
 // 6. DAILY BRIEFING — Full standalone page
 // ─────────────────────────────────────────────────────────
-function DailyBriefing({onNav, toast}) {
-  const expectedGDC = GDC_CASES.filter(c=>c.status==="submitted"||c.status==="issued").reduce((s,c)=>{
-    const base = c.isTarget ? c.targetPremium : c.premium;
-    return s + (c.gdcRate ? base*c.gdcRate*0.8 : 0);
-  }, 0);
+function DailyBriefing({onNav, toast, appData={}}) {
+  const { counts={}, urgentConversions=[], topOpportunities=[], gdc={}, loading=false } = appData;
+
+  const expectedGDC = (gdc.pipeline||0) / 30; // rough daily estimate
 
   return (<>
     <div style={{marginBottom:20}}>
@@ -3091,10 +3417,10 @@ function DailyBriefing({onNav, toast}) {
     {/* TOP METRICS */}
     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20}}>
       {[
-        {l:"Appointments Today",v:APPOINTMENTS.length,c:"#2b6cb0",bg:"var(--blue-bg)",bdr:"var(--blue-border)",icon:"📅",nav:"calendar"},
-        {l:"High-Priority Actions",v:PRIORITIES.filter(p=>p.pri==="HIGH").length,c:"var(--red)",bg:"var(--red-bg)",bdr:"var(--red-border)",icon:"🔥",nav:"opps"},
-        {l:"Urgent Conversions",v:CONV_CASES.filter(c=>c.days<=30).length,c:"var(--orange)",bg:"var(--orange-bg)",bdr:"var(--orange-border)",icon:"⏰",nav:"conv"},
-        {l:"Expected GDC Today",v:"$"+(expectedGDC/30).toFixed(0),c:"var(--green2)",bg:"var(--green-bg)",bdr:"var(--green-border)",icon:"💰",nav:"gdc"},
+        {l:"Pending Forms",v:counts.pending_forms||0,c:"#2b6cb0",bg:"var(--blue-bg)",bdr:"var(--blue-border)",icon:"📋",nav:"forms"},
+        {l:"High-Priority Opps",v:topOpportunities.filter(o=>(o.priority_score||0)>=75).length,c:"var(--red)",bg:"var(--red-bg)",bdr:"var(--red-border)",icon:"🔥",nav:"opps"},
+        {l:"Urgent Conversions",v:counts.urgent_conversions||0,c:"var(--orange)",bg:"var(--orange-bg)",bdr:"var(--orange-border)",icon:"⏰",nav:"conv"},
+        {l:"Est. Daily Pipeline",v:"$"+(expectedGDC/1000).toFixed(0)+"k",c:"var(--green2)",bg:"var(--green-bg)",bdr:"var(--green-border)",icon:"💰",nav:"gdc"},
       ].map((s,i)=>(
         <div key={i} style={{background:s.bg,border:`1px solid ${s.bdr}`,borderRadius:10,padding:"16px",boxShadow:"var(--shadow)",cursor:"pointer",transition:"all .15s"}}
           onClick={()=>onNav(s.nav)}>
@@ -3113,13 +3439,33 @@ function DailyBriefing({onNav, toast}) {
     <div style={{display:"grid",gridTemplateColumns:"1.2fr 1fr",gap:16}}>
       {/* PRIORITY ACTIONS */}
       <div>
-        <div style={{fontFamily:"DM Mono,monospace",fontSize:10,color:"var(--muted)",textTransform:"uppercase",letterSpacing:".1em",marginBottom:10}}>Priority Actions</div>
-        {PRIORITIES.map((p,i)=>(
+        <div style={{fontFamily:"DM Mono,monospace",fontSize:10,color:"var(--muted)",textTransform:"uppercase",letterSpacing:".1em",marginBottom:10}}>
+          Top Opportunities {loading && <span style={{color:"#4299e1"}}>· Loading…</span>}
+        </div>
+        {topOpportunities.slice(0,6).map((o,i)=>{
+          const name = `${o.customers?.first_name||""} ${o.customers?.last_name||""}`.trim()||"Unknown";
+          const reason = `${actionLabel[{conversions:"CONV",opra:"OPRA",life:"LIFE",retirement:"RETIRE",business:"BIZ"}[o.primary_pipeline]||"LIFE"]||o.primary_pipeline} opportunity`;
+          return(
+            <div key={i} style={{display:"flex",gap:12,padding:"12px 14px",background:"var(--card)",border:"1px solid var(--border)",borderRadius:8,marginBottom:8,boxShadow:"var(--shadow)",cursor:"pointer"}}
+              onClick={()=>{onNav("opps");toast(`Opening ${name}`,"info");}}>
+              <div style={{width:28,height:28,borderRadius:"50%",background:["#e53e3e","#553c9a","#dd6b20","#2b6cb0","#38a169","#0a5060"][i%6],display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:"#fff",flexShrink:0}}>
+                {i+1}
+              </div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:12,fontWeight:600,color:"var(--text)"}}>{name}</div>
+                <div style={{fontSize:11,color:"var(--muted)",marginTop:1}}>{reason} · {o.customers?.agencies?.name||"—"}</div>
+              </div>
+              <div style={{textAlign:"right",flexShrink:0}}>
+                <div style={{fontSize:18,fontWeight:700,color:"#2b6cb0"}}>{o.priority_score||0}</div>
+                <div style={{fontSize:8,color:"var(--muted)",fontFamily:"DM Mono,monospace",textTransform:"uppercase"}}>Score</div>
+              </div>
+            </div>
+          );
+        })}
+        {!loading && topOpportunities.length===0 && PRIORITIES.slice(0,4).map((p,i)=>(
           <div key={i} style={{display:"flex",gap:12,padding:"12px 14px",background:"var(--card)",border:"1px solid var(--border)",borderRadius:8,marginBottom:8,boxShadow:"var(--shadow)",cursor:"pointer"}}
             onClick={()=>{onNav("opps");toast(`Opening ${p.name}`,"info");}}>
-            <div style={{width:28,height:28,borderRadius:"50%",background:["#e53e3e","#553c9a","#dd6b20","#2b6cb0","#38a169","#0a5060"][i],display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:"#fff",flexShrink:0}}>
-              {i+1}
-            </div>
+            <div style={{width:28,height:28,borderRadius:"50%",background:["#e53e3e","#553c9a","#dd6b20","#2b6cb0"][i],display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:"#fff",flexShrink:0}}>{i+1}</div>
             <div style={{flex:1}}>
               <div style={{fontSize:12,fontWeight:600,color:"var(--text)"}}>{p.name}</div>
               <div style={{fontSize:11,color:"var(--muted)",marginTop:1}}>{p.reason}</div>
@@ -3137,8 +3483,8 @@ function DailyBriefing({onNav, toast}) {
         {/* APPOINTMENTS */}
         <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:10,overflow:"hidden",boxShadow:"var(--shadow)"}}>
           <div style={{background:"var(--navy)",color:"#fff",padding:"11px 16px",fontSize:12,fontWeight:600,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <span>📅 Today's Appointments</span>
-            <button style={{fontSize:9,padding:"2px 8px",borderRadius:3,border:"1px solid rgba(255,255,255,.2)",background:"transparent",color:"rgba(255,255,255,.7)",cursor:"pointer"}} onClick={()=>onNav("calendar")}>View All</button>
+            <span>📋 Pending Forms ({counts.pending_forms||0})</span>
+            <button style={{fontSize:9,padding:"2px 8px",borderRadius:3,border:"1px solid rgba(255,255,255,.2)",background:"transparent",color:"rgba(255,255,255,.7)",cursor:"pointer"}} onClick={()=>onNav("forms")}>Send Forms</button>
           </div>
           {APPOINTMENTS.map((a,i)=>(
             <div key={i} style={{display:"flex",gap:10,padding:"9px 14px",borderBottom:"1px solid var(--border)",alignItems:"center"}}>
@@ -3307,22 +3653,38 @@ export default function App(){
   const [toasts,setToasts]=useState([]);
   const toast=(msg,type="info")=>{const id=Date.now();setToasts(t=>[...t,{id,msg,type}]);setTimeout(()=>setToasts(t=>t.filter(x=>x.id!==id)),3000);};
 
+  // ── LIVE DATA ──────────────────────────────────────────
+  const appData = useAppData();
+
+  // Keep tier in sync with live GDC data
+  useEffect(()=>{
+    if(appData.gdc?.tier) setTier(appData.gdc.tier);
+  },[appData.gdc?.tier]);
+
+  const liveConvUrgent = appData.urgentConversions.filter(c=>(c.days_to_deadline??999)<=30).length;
+  const liveOpraUncontacted = appData.opraDue.filter(c=>!c.contacted).length;
+  const liveOpps = appData.topOpportunities.length;
+  const livePendingForms = appData.counts.pending_forms;
+  const syncLabel = appData.lastFetch
+    ? "Synced "+appData.lastFetch.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"})
+    : appData.loading ? "Syncing..." : "Not synced";
+
   const navItems=[
     {id:"briefing",  icon:"☀️", label:"Daily Briefing"},
     {id:"dashboard", icon:"🏠", label:"Dashboard"},
-    {id:"opps",      icon:"🎯", label:"Opportunities",  badge:18},
-    {id:"agencies",  icon:"🏢", label:"Agency Owners",  badge:AGENCY_DATA.filter(a=>a.needsAttention).length, bc:"red"},
-    {id:"conv",      icon:"⏰", label:"Conversions",    badge:CONV_CASES.filter(c=>c.days<=30).length,bc:"red"},
-    {id:"opra",      icon:"🔄", label:"OPRA Center",    badge:OPRA_CASES.filter(c=>!c.contacted).length,bc:"orange"},
-    {id:"calendar",  icon:"📅", label:"Calendar",       badge:5,bc:"green"},
+    {id:"opps",      icon:"🎯", label:"Opportunities",  badge:liveOpps||null},
+    {id:"agencies",  icon:"🏢", label:"Agency Owners",  badge:null, bc:"red"},
+    {id:"conv",      icon:"⏰", label:"Conversions",    badge:liveConvUrgent||null, bc:"red"},
+    {id:"opra",      icon:"🔄", label:"OPRA Center",    badge:liveOpraUncontacted||null, bc:"orange"},
+    {id:"calendar",  icon:"📅", label:"Calendar"},
     {id:"ai",        icon:"🤖", label:"AI Control Center"},
-    {id:"workshops", icon:"🎓", label:"Workshops",      badge:2,bc:"orange"},
+    {id:"workshops", icon:"🎓", label:"Workshops"},
     {id:"gdc",       icon:"💰", label:"GDC & Commission"},
     {id:"prep",      icon:"📝", label:"Review Prep"},
     {id:"needs",     icon:"🗺", label:"Needs Map"},
     {id:"calc",      icon:"📐", label:"Sales Calculator"},
     {id:"contacts",  icon:"📞", label:"FFS Contacts"},
-    {id:"forms",     icon:"📋", label:"Client Forms"},
+    {id:"forms",     icon:"📋", label:"Client Forms",   badge:livePendingForms||null, bc:"orange"},
     {id:"fna",       icon:"✦",  label:"FNA Generator"},
   ];
   const sideAgents=[
@@ -3377,7 +3739,7 @@ export default function App(){
         <div className="topbar">
           <div>
             <span className="tb-title">{pageTitle[page]||"Dashboard"}</span>
-            {page==="briefing"&&<span className="tb-sub"> {APPOINTMENTS.length} appointments · {PRIORITIES.filter(p=>p.pri==="HIGH").length} high-priority actions today</span>}
+            {page==="briefing"&&<span className="tb-sub"> {appData.counts?.opra_due+appData.counts?.urgent_conversions || 0} urgent items · {appData.topOpportunities?.length || 0} opportunities today</span>}
           </div>
           <div style={{flex:1,maxWidth:280,margin:"0 16px",position:"relative"}}>
             <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"var(--muted)",fontSize:13,pointerEvents:"none"}}>🔍</span>
@@ -3392,26 +3754,26 @@ export default function App(){
           </div>
           <div className="tb-date">
             <span>📅 {today}</span>
-            <span style={{marginLeft:10,fontSize:9,color:"var(--dim)"}}>Synced {new Date().toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"})}</span>
+            <span style={{marginLeft:10,fontSize:9,color:"var(--dim)"}}>{ syncLabel}</span>
           </div>
-          <button className="import-btn" onClick={()=>toast("Importing from APEX...","info")}>+ Import from APEX</button>
+          <button className="import-btn" onClick={()=>{appData.refresh();toast("Refreshing data...","info");}}>↻ Refresh Data</button>
         </div>
         <div className="page">
-          {page==="briefing"   &&<DailyBriefing onNav={setPage} toast={toast}/>}
-          {page==="dashboard"  &&<Dashboard onNav={setPage} toast={toast}/>}
-          {page==="opps"       &&<OpportunityDashboard toast={toast}/>}
-          {page==="conv"       &&<ConversionCenter toast={toast}/>}
-          {page==="opra"       &&<OPRACenter toast={toast}/>}
+          {page==="briefing"   &&<DailyBriefing onNav={setPage} toast={toast} appData={appData}/>}
+          {page==="dashboard"  &&<Dashboard onNav={setPage} toast={toast} appData={appData}/>}
+          {page==="opps"       &&<OpportunityDashboard toast={toast} appData={appData}/>}
+          {page==="conv"       &&<ConversionCenter toast={toast} appData={appData}/>}
+          {page==="opra"       &&<OPRACenter toast={toast} appData={appData}/>}
           {page==="agents"     &&<AIAgents toast={toast}/>}
           {page==="ai"         &&<AIControlCenter toast={toast}/>}
           {page==="agencies"   &&<AgencyOwners toast={toast}/>}
-          {page==="calendar"   &&<Calendar/>}
+          {page==="calendar"   &&<Calendar toast={toast} appData={appData}/>}
           {page==="workshops"  &&<WorkshopsPage toast={toast}/>}
-          {page==="gdc"        &&<GDCPage tier={tier} setTier={setTier} toast={toast}/>}
-          {page==="prep"       &&<ReviewPrepPage toast={toast}/>}
+          {page==="gdc"        &&<GDCPage tier={tier} setTier={setTier} toast={toast} appData={appData}/>}
+          {page==="prep"       &&<ReviewPrepPage toast={toast} appData={appData}/>}
           {page==="needs"      &&<NeedsMapPage toast={toast}/>}
           {page==="calc"       &&<SalesCalcPage/>}
-          {page==="forms"      &&<FormsPage toast={toast} onNav={setPage}/>}
+          {page==="forms"      &&<FormsPage toast={toast} onNav={setPage} appData={appData}/>}
           {page==="fna"        &&<FNAPage toast={toast} onNav={setPage}/>}
           {page==="contacts"   &&(
             <div>

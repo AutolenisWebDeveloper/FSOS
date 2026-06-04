@@ -1,0 +1,1340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FSOS Implementation Guide v2 — Markist FSA</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Newsreader:ital,wght@0,400;0,500;1,400&family=DM+Mono:wght@400;500&display=swap');
+:root {
+  --ink:#1a1612; --ink2:#3d3830; --ink3:#7a7060;
+  --bg:#faf8f4; --bg2:#f2efe8; --card:#fff;
+  --rule:#e8e2d8; --rule2:#d4ccbe;
+  --accent:#1a2d4a; --accent2:#2b4d7a;
+  --green:#1a5c3a; --green-bg:#f0f8f4; --green-border:#b8dcc8;
+  --red:#b91c1c; --red-bg:#fef2f2; --red-border:#fecaca;
+  --amber:#92400e; --amber-bg:#fffbeb; --amber-border:#fde68a;
+  --blue:#1e40af; --blue-bg:#eff6ff; --blue-border:#bfdbfe;
+  --purple:#5b21b6; --purple-bg:#f5f3ff; --purple-border:#ddd6fe;
+  --teal:#0f5a6a; --teal-bg:#f0f9fb; --teal-border:#a0d0d8;
+  --shadow:0 1px 4px rgba(0,0,0,.08); --shadow2:0 4px 20px rgba(0,0,0,.12);
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html{scroll-behavior:smooth;}
+body{background:var(--bg);color:var(--ink);font-family:'Newsreader',Georgia,serif;font-size:15px;line-height:1.65;}
+
+/* TOP BAR */
+.topbar{background:var(--accent);padding:0 32px;position:sticky;top:0;z-index:100;display:flex;align-items:center;gap:0;height:52px;}
+.topbar-brand{font-family:'Syne',sans-serif;font-weight:800;color:#fff;font-size:14px;letter-spacing:.06em;text-transform:uppercase;margin-right:32px;white-space:nowrap;}
+.nav-tabs{display:flex;gap:0;overflow-x:auto;flex:1;}
+.nav-btn{padding:0 16px;height:52px;border:none;background:transparent;color:rgba(255,255,255,.55);font-family:'Syne',sans-serif;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;white-space:nowrap;border-bottom:2px solid transparent;transition:all .15s;}
+.nav-btn:hover{color:rgba(255,255,255,.85);}
+.nav-btn.active{color:#fff;border-bottom-color:#fff;}
+.topbar-progress{margin-left:auto;display:flex;align-items:center;gap:10px;flex-shrink:0;padding-left:20px;}
+.prog-label{font-family:'DM Mono',monospace;font-size:10px;color:rgba(255,255,255,.5);letter-spacing:.06em;}
+.prog-count{font-family:'DM Mono',monospace;font-size:11px;color:#fff;font-weight:500;}
+.prog-bar{width:80px;height:4px;background:rgba(255,255,255,.2);border-radius:2px;overflow:hidden;}
+.prog-fill{height:100%;background:#fff;border-radius:2px;transition:width .4s;}
+
+/* LAYOUT */
+.wrap{max-width:860px;margin:0 auto;padding:40px 24px 80px;}
+.section{display:none;} .section.active{display:block;}
+
+/* MASTHEAD */
+.masthead{margin-bottom:36px;}
+.masthead-eyebrow{font-family:'Syne',sans-serif;font-size:10px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--ink3);margin-bottom:8px;}
+.masthead-title{font-family:'Syne',sans-serif;font-size:34px;font-weight:800;color:var(--ink);line-height:1.15;margin-bottom:10px;}
+.masthead-sub{font-size:15px;color:var(--ink2);line-height:1.7;max-width:580px;}
+
+/* OVERVIEW CARDS */
+.overview-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:32px;}
+.sum-card{background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:16px 18px;text-align:center;}
+.sum-val{font-family:'Syne',sans-serif;font-size:32px;font-weight:800;color:var(--accent);line-height:1;}
+.sum-lbl{font-size:11px;color:var(--ink3);margin-top:4px;font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:.06em;}
+
+/* PHASE CARDS */
+.phase-card{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:22px 24px;margin-bottom:10px;cursor:pointer;display:grid;grid-template-columns:52px 1fr auto;gap:16px;align-items:center;transition:box-shadow .15s,border-color .15s;}
+.phase-card:hover{box-shadow:var(--shadow2);border-color:var(--rule2);}
+.phase-num-circle{width:44px;height:44px;border-radius:50%;background:var(--accent);color:#fff;font-family:'Syne',sans-serif;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;}
+.phase-card-title{font-family:'Syne',sans-serif;font-size:15px;font-weight:700;color:var(--ink);margin-bottom:3px;}
+.phase-card-sub{font-size:12px;color:var(--ink3);}
+.phase-card-meta{text-align:right;}
+.phase-card-weeks{font-family:'DM Mono',monospace;font-size:10px;color:var(--ink3);margin-bottom:3px;text-transform:uppercase;letter-spacing:.06em;}
+.phase-card-cost{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:var(--green);}
+
+/* PHASE HEADER */
+.phase-header{margin-bottom:24px;padding-bottom:18px;border-bottom:2px solid var(--rule);}
+.phase-eyebrow{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink3);margin-bottom:6px;}
+.phase-title-lg{font-family:'Syne',sans-serif;font-size:26px;font-weight:800;color:var(--ink);margin-bottom:6px;}
+.phase-timeline{font-family:'DM Mono',monospace;font-size:11px;color:var(--accent2);font-weight:500;}
+.phase-desc{font-size:14px;color:var(--ink2);line-height:1.7;margin-top:8px;max-width:640px;}
+
+/* STATUS BAR */
+.status-bar{display:flex;gap:8px;margin-bottom:24px;flex-wrap:wrap;}
+.status-pill{font-family:'DM Mono',monospace;font-size:10px;padding:4px 10px;border-radius:20px;border:1px solid var(--rule);color:var(--ink3);}
+.status-pill.critical{background:var(--red-bg);border-color:var(--red-border);color:var(--red);}
+.status-pill.go{background:var(--green-bg);border-color:var(--green-border);color:var(--green);}
+.status-pill.cost{background:var(--amber-bg);border-color:var(--amber-border);color:var(--amber);}
+
+/* STEP GROUPS */
+.step-group{margin-bottom:32px;}
+.step-group-title{font-family:'Syne',sans-serif;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);padding:0 0 10px;border-bottom:1px solid var(--rule);margin-bottom:12px;}
+
+/* STEPS */
+.step{background:var(--card);border:1px solid var(--rule);border-radius:10px;margin-bottom:8px;transition:border-color .12s;}
+.step:hover{border-color:var(--rule2);}
+.step.done{border-color:var(--green-border);background:var(--green-bg);}
+.step.done .step-title{text-decoration:line-through;color:var(--ink3);}
+.step-head{display:grid;grid-template-columns:44px 1fr auto auto;gap:10px;align-items:center;padding:14px 16px;cursor:pointer;}
+.step-check{width:24px;height:24px;border-radius:6px;border:2px solid var(--rule2);background:var(--bg);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .12s;font-size:12px;color:transparent;flex-shrink:0;}
+.step.done .step-check{background:var(--green);border-color:var(--green);color:#fff;}
+.step-text{min-width:0;}
+.step-title{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:var(--ink);line-height:1.3;}
+.step-sub{font-size:11px;color:var(--ink3);margin-top:2px;font-family:'DM Mono',monospace;}
+.step-badge{font-family:'DM Mono',monospace;font-size:9px;font-weight:500;padding:2px 8px;border-radius:4px;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;flex-shrink:0;}
+.badge-setup{background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-border);}
+.badge-config{background:var(--purple-bg);color:var(--purple);border:1px solid var(--purple-border);}
+.badge-deploy{background:var(--accent);color:#fff;}
+.badge-test{background:var(--teal-bg);color:var(--teal);border:1px solid var(--teal-border);}
+.badge-compliance{background:var(--red-bg);color:var(--red);border:1px solid var(--red-border);}
+.badge-manual{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-border);}
+.badge-new{background:#7c3aed;color:#fff;}
+.step-expand{font-size:12px;color:var(--ink3);transition:transform .2s;flex-shrink:0;}
+.step.open .step-expand{transform:rotate(180deg);}
+.step-body{display:none;padding:0 16px 16px 54px;}
+.step.open .step-body{display:block;}
+.step-body p{font-size:13px;color:var(--ink2);line-height:1.75;margin-bottom:10px;}
+.step-body strong{color:var(--ink);font-weight:700;font-family:'Syne',sans-serif;font-size:12px;letter-spacing:.03em;}
+.step-body ul,.step-body ol{padding-left:18px;margin-bottom:10px;}
+.step-body li{font-size:13px;color:var(--ink2);line-height:1.7;margin-bottom:4px;}
+.code-block{background:var(--accent);color:#c8d4b8;font-family:'DM Mono',monospace;font-size:11px;border-radius:8px;padding:14px 16px;margin:10px 0;line-height:1.9;overflow-x:auto;white-space:pre;}
+.tip{background:var(--amber-bg);border-left:3px solid #f59e0b;padding:10px 14px;border-radius:0 6px 6px 0;font-size:12px;color:var(--amber);line-height:1.6;margin:8px 0;}
+.note{background:var(--red-bg);border:1px solid var(--red-border);border-radius:8px;padding:14px 16px;font-size:13px;color:var(--red);line-height:1.65;margin-bottom:18px;}
+.success-note{background:var(--green-bg);border:1px solid var(--green-border);border-radius:8px;padding:14px 16px;font-size:13px;color:var(--green);line-height:1.65;margin-bottom:18px;}
+.link-chip{display:inline-block;background:var(--blue-bg);border:1px solid var(--blue-border);color:var(--blue);font-family:'DM Mono',monospace;font-size:10px;padding:2px 8px;border-radius:4px;margin:2px 0;}
+.env-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:10px 0;}
+.env-row{background:var(--bg2);border-radius:5px;padding:6px 10px;font-family:'DM Mono',monospace;font-size:10px;}
+.env-key{color:var(--accent2);font-weight:500;}
+.env-val{color:var(--ink3);margin-top:1px;}
+.checklist{display:flex;flex-direction:column;gap:5px;margin:10px 0;}
+.cl-item{display:flex;gap:8px;align-items:flex-start;font-size:13px;color:var(--ink2);}
+.cl-item::before{content:"□";flex-shrink:0;margin-top:1px;}
+
+/* TOOLS TABLE */
+.tools-table{width:100%;border-collapse:collapse;font-size:12px;}
+.tools-table th{text-align:left;padding:8px 12px;font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);border-bottom:2px solid var(--rule);}
+.tools-table td{padding:10px 12px;border-bottom:1px solid var(--rule);vertical-align:top;}
+.tools-table tr:hover td{background:var(--bg2);}
+
+/* RESPONSIVE */
+@media(max-width:640px){
+  .overview-grid{grid-template-columns:repeat(2,1fr);}
+  .phase-card{grid-template-columns:44px 1fr;}
+  .phase-card-meta{display:none;}
+  .step-head{grid-template-columns:36px 1fr auto;}
+  .step-badge{display:none;}
+  .env-grid{grid-template-columns:1fr;}
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-brand">FSOS Build Guide v2</div>
+  <div class="nav-tabs">
+    <button class="nav-btn active" onclick="showTab('overview',this)">Overview</button>
+    <button class="nav-btn" onclick="showTab('phase1',this)">1 · Foundation</button>
+    <button class="nav-btn" onclick="showTab('phase2',this)">2 · Scoring</button>
+    <button class="nav-btn" onclick="showTab('phase3',this)">3 · GHL</button>
+    <button class="nav-btn" onclick="showTab('phase4',this)">4 · Command Center</button>
+    <button class="nav-btn" onclick="showTab('phase5',this)">5 · Forms & FNA</button>
+    <button class="nav-btn" onclick="showTab('phase6',this)">6 · Agencies</button>
+    <button class="nav-btn" onclick="showTab('phase7',this)">7 · AI Agents</button>
+    <button class="nav-btn" onclick="showTab('phase8',this)">8 · Chrome</button>
+    <button class="nav-btn" onclick="showTab('workshops',this)">Workshops</button>
+    <button class="nav-btn" onclick="showTab('commission',this)">GDC</button>
+    <button class="nav-btn" onclick="showTab('compliance',this)">Compliance</button>
+    <button class="nav-btn" onclick="showTab('tools',this)">All Tools</button>
+  </div>
+  <div class="topbar-progress">
+    <div>
+      <div class="prog-label">PROGRESS</div>
+      <div class="prog-count" id="prog-count">0 / 95</div>
+    </div>
+    <div class="prog-bar"><div class="prog-fill" id="prog-fill" style="width:0%"></div></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════ OVERVIEW ═══ -->
+<div id="tab-overview" class="section active">
+<div class="wrap">
+  <div class="masthead">
+    <div class="masthead-eyebrow">Farmers FSA · Markist · McKinney TX</div>
+    <div class="masthead-title">FSOS Build Guide v2</div>
+    <div class="masthead-sub">Eight phases. Every step in exact order. Check each off as you complete it. Progress saves in your browser. Nothing fires until the previous layer is proven.</div>
+  </div>
+
+  <div class="overview-grid">
+    <div class="sum-card"><div class="sum-val">8</div><div class="sum-lbl">Build phases</div></div>
+    <div class="sum-card"><div class="sum-val" id="total-steps-count">95</div><div class="sum-lbl">Total steps</div></div>
+    <div class="sum-card"><div class="sum-val">$29</div><div class="sum-lbl">Monthly cost at start</div></div>
+    <div class="sum-card"><div class="sum-val">$126</div><div class="sum-lbl">Monthly cost at full build</div></div>
+  </div>
+
+  <div class="note">Before starting — confirm with your DM: (1) Sub-account Admin role is active. (2) He will enable AI Employee when you reach Phase 7. Get both confirmed in writing or text this week.</div>
+
+  <div id="phase-cards"></div>
+</div>
+</div>
+
+<!-- ════════════════════════════════════════ PHASES ═════ -->
+<div id="tab-phase1" class="section"><div class="wrap">
+  <div class="phase-header">
+    <div class="phase-eyebrow">Phase 01 · Weeks 1–2</div>
+    <div class="phase-title-lg">Foundation</div>
+    <div class="phase-timeline">Target completion: end of week 2</div>
+    <div class="phase-desc">Database, file sync bridge, and ingestion pipeline. Nothing fires until this is solid. Monthly cost added: $9 (Make Starter).</div>
+  </div>
+  <div class="status-bar">
+    <span class="status-pill cost">$9/mo — Make Starter</span>
+    <span class="status-pill">Supabase Free</span>
+    <span class="status-pill">Google Drive Free</span>
+  </div>
+  <div id="steps-phase1"></div>
+</div></div>
+
+<div id="tab-phase2" class="section"><div class="wrap">
+  <div class="phase-header">
+    <div class="phase-eyebrow">Phase 02 · Weeks 2–3</div>
+    <div class="phase-title-lg">Scoring Engine</div>
+    <div class="phase-timeline">Runs nightly at 2AM via pg_cron</div>
+    <div class="phase-desc">Four SQL scoring functions that score every customer in your BOB overnight. OPRA, Conversions, Life cross-sell, Retirement discovery. No additional cost.</div>
+  </div>
+  <div class="status-bar">
+    <span class="status-pill go">No additional cost</span>
+    <span class="status-pill">Requires Phase 1 complete</span>
+  </div>
+  <div id="steps-phase2"></div>
+</div></div>
+
+<div id="tab-phase3" class="section"><div class="wrap">
+  <div class="phase-header">
+    <div class="phase-eyebrow">Phase 03 · Weeks 3–5</div>
+    <div class="phase-title-lg">GHL Pipelines + Outreach</div>
+    <div class="phase-timeline">First automated outreach goes live</div>
+    <div class="phase-desc">Connect Supabase scores to GHL. Build 5 pipelines, A2P registration, outreach sequences, and your FSA calendar. Monthly cost added: ~$30 (A2P + usage).</div>
+  </div>
+  <div class="status-bar">
+    <span class="status-pill cost">+$30/mo approx</span>
+    <span class="status-pill critical">Compliance checkpoint required</span>
+    <span class="status-pill">3 Twilio numbers already active</span>
+  </div>
+  <div id="steps-phase3"></div>
+</div></div>
+
+<div id="tab-phase4" class="section"><div class="wrap">
+  <div class="phase-header">
+    <div class="phase-eyebrow">Phase 04 · Weeks 4–6</div>
+    <div class="phase-title-lg">Command Center Deployment</div>
+    <div class="phase-timeline">Your FSA operating system goes live</div>
+    <div class="phase-desc">Deploy fsos_command_center.jsx to Vercel. 16 pages, 0 subscriptions beyond Vercel Hobby (free). This is where you operate every day from.</div>
+  </div>
+  <div class="status-bar">
+    <span class="status-pill go">Vercel Hobby = Free</span>
+    <span class="status-pill">Requires Phase 1 Supabase complete</span>
+    <span class="status-pill cost">5 environment variables</span>
+  </div>
+  <div id="steps-phase4"></div>
+</div></div>
+
+<div id="tab-phase5" class="section"><div class="wrap">
+  <div class="phase-header">
+    <div class="phase-eyebrow">Phase 05 · Weeks 5–7</div>
+    <div class="phase-title-lg">Client Forms + FNA System</div>
+    <div class="phase-timeline">7 digital forms + AI-powered FNA reports</div>
+    <div class="phase-desc">Deploy the forms system so you can send digital forms to clients and fill them on their behalf. FNA reports powered by Claude API. Uses your existing Anthropic Max plan — no extra cost.</div>
+  </div>
+  <div class="status-bar">
+    <span class="status-pill go">Claude Max plan — no extra cost for API</span>
+    <span class="status-pill">Requires Phase 4 Vercel deploy</span>
+    <span class="status-pill compliance">Compliance review required for FNA</span>
+  </div>
+  <div id="steps-phase5"></div>
+</div></div>
+
+<div id="tab-phase6" class="section"><div class="wrap">
+  <div class="phase-header">
+    <div class="phase-eyebrow">Phase 06 · Weeks 6–8</div>
+    <div class="phase-title-lg">Agency Owners System</div>
+    <div class="phase-timeline">Your distribution channel goes live</div>
+    <div class="phase-desc">Build the referral and upload link infrastructure for your agency owner network. Each agency owner gets two links. That's it. No login, no training, no portal. Everything else happens inside FSOS.</div>
+  </div>
+  <div class="status-bar">
+    <span class="status-pill go">No additional cost</span>
+    <span class="status-pill">Requires Phase 4 Vercel deploy</span>
+    <span class="status-pill">Scale to 10–15 agency owners</span>
+  </div>
+  <div id="steps-phase6"></div>
+</div></div>
+
+<div id="tab-phase7" class="section"><div class="wrap">
+  <div class="phase-header">
+    <div class="phase-eyebrow">Phase 07 · Weeks 7–10</div>
+    <div class="phase-title-lg">AI Agent Workforce</div>
+    <div class="phase-timeline">Hands-free outreach goes live</div>
+    <div class="phase-desc">GHL AI Employee enabled by DM. Four AI agents: Receptionist, Appointment Setter, Conversion Specialist, Follow-Up. Monthly cost added: $97 (GHL AI Employee).</div>
+  </div>
+  <div class="status-bar">
+    <span class="status-pill cost">+$97/mo GHL AI Employee</span>
+    <span class="status-pill critical">DM must enable AI Employee first</span>
+    <span class="status-pill compliance">TRAIGA + TCPA review required</span>
+  </div>
+  <div id="steps-phase7"></div>
+</div></div>
+
+<div id="tab-phase8" class="section"><div class="wrap">
+  <div class="phase-header">
+    <div class="phase-eyebrow">Phase 08 · Weeks 10–12</div>
+    <div class="phase-title-lg">Claude Chrome — Full Automation</div>
+    <div class="phase-timeline">APEX BOB import fully automated</div>
+    <div class="phase-desc">Install Claude in Chrome, record the APEX BOB export workflow, schedule it weekly. Eliminates your only remaining manual step. No additional cost.</div>
+  </div>
+  <div class="status-bar">
+    <span class="status-pill go">No additional cost</span>
+    <span class="status-pill">Requires all prior phases complete</span>
+  </div>
+  <div id="steps-phase8"></div>
+</div></div>
+
+<!-- ═════════════════════════════════════ WORKSHOPS ═════ -->
+<div id="tab-workshops" class="section"><div class="wrap">
+  <div class="phase-header">
+    <div class="phase-eyebrow">Parallel Track · Alongside Phase 3+</div>
+    <div class="phase-title-lg">Workshop System</div>
+    <div class="phase-timeline">Build alongside Phase 3 — no dependency</div>
+    <div class="phase-desc">Workshop registration, invitation sequences, post-workshop follow-up, and hot lead scoring. Each workshop becomes an automated pipeline into the scoring engine.</div>
+  </div>
+  <div id="steps-workshops"></div>
+</div></div>
+
+<!-- ══════════════════════════════════════ COMMISSION ═══ -->
+<div id="tab-commission" class="section"><div class="wrap">
+  <div class="phase-header">
+    <div class="phase-eyebrow">Parallel Track · Alongside Phase 3+</div>
+    <div class="phase-title-lg">GDC & Commission Engine</div>
+    <div class="phase-timeline">Build alongside Phase 3 — no dependency</div>
+    <div class="phase-desc">Supabase commission tables, calculate_case_gdc() function, GDC Tracker, and Make automation to create cases from GHL pipeline events. Tiered 40%/60%/80% FSA payout built in.</div>
+  </div>
+  <div id="steps-commission"></div>
+</div></div>
+
+<!-- ══════════════════════════════════════ COMPLIANCE ═══ -->
+<div id="tab-compliance" class="section"><div class="wrap">
+  <div class="phase-header">
+    <div class="phase-eyebrow">Non-Negotiable · Before Any Outreach Fires</div>
+    <div class="phase-title-lg">Compliance Framework</div>
+    <div class="phase-timeline">Complete before Phase 3 outreach goes live</div>
+    <div class="phase-desc">TCPA, Texas SB 140, TRAIGA 2026, FINRA Reg BI, and Farmers agent agreement requirements. Every automated outreach must clear this checklist first.</div>
+  </div>
+  <div class="note">Your FFS Regional Compliance Consultant for Texas is Ryan Anderson — (253) 242-0597 · ryan.anderson@farmersinsurance.com. Call him before any automated outbound SMS or voice goes live. This is not optional.</div>
+  <div id="steps-compliance"></div>
+</div></div>
+
+<!-- ═══════════════════════════════════════ ALL TOOLS ═══ -->
+<div id="tab-tools" class="section"><div class="wrap">
+  <div class="phase-header">
+    <div class="phase-eyebrow">Reference</div>
+    <div class="phase-title-lg">Every Tool and Its Role</div>
+    <div class="phase-timeline">Updated to reflect v2 build</div>
+    <div class="phase-desc">Complete stack reference. Every tool, what it does, what it costs, and when it enters the build.</div>
+  </div>
+  <div id="tools-table-wrap"></div>
+</div></div>
+
+<script>
+// ══════════════════════════════════════════════════════════
+// ALL STEPS DATA
+// ══════════════════════════════════════════════════════════
+const DATA = {
+
+phase1: { groups: [
+  { title: 'Google Drive — File intake bridge', steps: [
+    { badge:'setup', badgeLabel:'Setup',
+      title: 'Create your FSOS folder structure in Google Drive',
+      sub: 'Google Drive → New → Folder',
+      detail: `<strong>Create this exact folder hierarchy:</strong>
+<div class="code-block">FSOS/
+├── APEX_Exports/          ← Drop weekly BOB exports here
+├── Agency_Uploads/        ← Agency owner contact lists land here
+│   ├── Johnson_Agency/
+│   ├── Brown_Agency/
+│   └── [each agency owner]/
+├── Commission_Rates/      ← FFS rate PDFs for reference
+└── Reports/               ← Generated FNA reports (optional)</div>
+<p>Make.com watches the APEX_Exports folder. Any CSV dropped there triggers the ingestion pipeline automatically.</p>
+<div class="tip">Share the Agency_Uploads/[agency_name]/ subfolder with each agency owner as a Google Drive shared folder — alternative to the upload link in Phase 6.</div>` },
+
+    { badge:'config', badgeLabel:'Make.com',
+      title: 'Create a Make.com account and connect Google Drive',
+      sub: 'make.com → sign up → Starter ($9/mo) → connect Google Drive',
+      detail: `<strong>Go to make.com → Create account → Starter plan ($9/month)</strong>
+<p>Then connect your Google account:</p>
+<ol><li>Make → Connections → Add connection → Google Drive</li>
+<li>Authorize with your Google account</li>
+<li>Confirm it can see your FSOS folder</li></ol>
+<div class="tip">Starter plan gives you 10,000 operations/month — more than enough for weekly APEX imports, daily scoring pushes, and the 7AM briefing scenario combined.</div>` }
+  ]},
+
+  { title: 'Supabase — Master database', steps: [
+    { badge:'setup', badgeLabel:'Database',
+      title: 'Create the FSOS project in Supabase',
+      sub: 'supabase.com → New project → name it FSOS',
+      detail: `<strong>supabase.com → New project:</strong>
+<ol><li>Project name: FSOS</li>
+<li>Database password: generate a strong one — save it in 1Password</li>
+<li>Region: US East (closest to TX)</li>
+<li>Plan: Free tier (handles your current scale)</li></ol>
+<p>After creation, go to Settings → Database → copy both connection strings:</p>
+<div class="env-grid">
+<div class="env-row"><div class="env-key">DATABASE_URL</div><div class="env-val">Transaction mode (pooled) — add ?pgbouncer=true&connection_limit=1</div></div>
+<div class="env-row"><div class="env-key">DIRECT_URL</div><div class="env-val">Session mode — for migrations only</div></div>
+</div>
+<div class="tip">Set up Uptime Robot (uptimerobot.com — free) to ping your Supabase URL every 10 minutes. Without this, the free tier pauses after 7 days of inactivity.</div>` },
+
+    { badge:'setup', badgeLabel:'Database',
+      title: 'Enable pg_cron and run the complete schema SQL',
+      sub: 'Supabase → Database → Extensions → pg_cron → SQL Editor',
+      detail: `<strong>Step 1: Enable pg_cron</strong>
+<p>Supabase → Database → Extensions → search "pg_cron" → toggle on</p>
+<strong>Step 2: Run the core schema</strong>
+<div class="code-block">-- Core tables
+create table agencies (agency_id text primary key, name text, owner text, city text, phone text, email text, slug text unique, created_at timestamptz default now());
+create table customers (customer_id uuid primary key default gen_random_uuid(), agency_id text references agencies, first_name text, last_name text, email text, phone text, dob date, policy_count integer default 0, has_life boolean default false, has_auto boolean default false, has_home boolean default false, created_at timestamptz default now());
+create table policies (policy_id uuid primary key default gen_random_uuid(), customer_id uuid references customers, policy_number text, policy_type text, face_amount numeric, premium numeric, issue_date date, conversion_deadline date, status text);
+create table scores (score_id uuid primary key default gen_random_uuid(), customer_id uuid references customers unique, opra_score integer default 0, conversion_score integer default 0, life_score integer default 0, retirement_score integer default 0, scored_at timestamptz default now());
+create table consent_ledger (consent_id uuid primary key default gen_random_uuid(), customer_id uuid references customers, channel text, status text, recorded_at timestamptz default now(), source text);
+create table activity (activity_id uuid primary key default gen_random_uuid(), customer_id uuid references customers, type text, notes text, created_at timestamptz default now());</div>
+<div class="tip">Run each block separately if the combined paste throws an error. Supabase SQL Editor handles one statement at a time most reliably.</div>` },
+
+    { badge:'config', badgeLabel:'Make.com',
+      title: 'Build the Make CSV ingestion scenario',
+      sub: 'Make → Create scenario → Google Drive Watch → CSV Parse → Supabase Insert',
+      detail: `<strong>Scenario flow:</strong>
+<div class="code-block">Trigger: Google Drive — Watch Files in Folder
+  Folder: FSOS/APEX_Exports/
+  Watch: New files only
+
+Module 2: CSV — Parse CSV
+  File content: from trigger
+  Has headers: Yes
+
+Module 3: Iterator (loop each row)
+
+Module 4: Supabase — Upsert row
+  Table: customers
+  Match on: policy_number OR email
+  Map: first_name, last_name, email, phone, policy_type, face_amount, etc.
+
+Module 5: Supabase — Upsert row
+  Table: policies
+  Foreign key: customer_id from Module 4</div>
+<p>Confirm APEX column names with your DM before mapping — APEX BOB export column order varies by district.</p>
+<div class="tip">Run the scenario manually first with a 10-row test export from APEX. Verify customer_id and agency_id are assigned correctly before scheduling.</div>` }
+  ]},
+
+  { title: 'Uptime & maintenance setup', steps: [
+    { badge:'setup', badgeLabel:'Uptime',
+      title: 'Set up Uptime Robot to prevent Supabase free tier pausing',
+      sub: 'uptimerobot.com → free account → HTTP monitor → your Supabase URL',
+      detail: `<strong>uptimerobot.com → Create Free Account → Add New Monitor:</strong>
+<ol><li>Monitor Type: HTTP(s)</li>
+<li>Friendly Name: FSOS Supabase Keep-Alive</li>
+<li>URL: your Supabase project URL (Settings → API → Project URL)</li>
+<li>Monitoring Interval: every 5 minutes</li></ol>
+<p>This prevents the Supabase free tier from pausing. Without it, the database pauses after 7 days of no activity and your next APEX import will fail silently.</p>` }
+  ]}
+]},
+
+phase2: { groups: [
+  { title: 'Four scoring functions — run in Supabase SQL Editor', steps: [
+    { badge:'setup', badgeLabel:'Database',
+      title: 'Build and test all 4 scoring SQL functions',
+      sub: 'Supabase → SQL Editor → create each function → test with SELECT',
+      detail: `<strong>Create all four functions in order:</strong>
+<div class="code-block">-- OPRA SCORE
+create or replace function score_opra(p_customer_id uuid)
+returns integer language plpgsql as $$
+declare v_score integer := 0; v_policies integer; v_has_multi boolean;
+begin
+  select count(*), count(*) > 1 into v_policies, v_has_multi
+  from policies where customer_id = p_customer_id and status = 'active';
+  if v_has_multi then v_score := v_score + 40; end if;
+  if v_policies = 1 then v_score := v_score + 20; end if;
+  return least(v_score, 100);
+end; $$;
+
+-- CONVERSION SCORE (days to deadline weighted)
+create or replace function score_conversion(p_customer_id uuid)
+returns integer language plpgsql as $$
+declare v_score integer := 0; v_days integer;
+begin
+  select min(conversion_deadline - current_date) into v_days
+  from policies where customer_id = p_customer_id
+  and policy_type ilike '%term%' and conversion_deadline is not null;
+  if v_days is null then return 0; end if;
+  if v_days <= 30 then v_score := 100;
+  elsif v_days <= 90 then v_score := 75;
+  elsif v_days <= 180 then v_score := 50;
+  else v_score := 25; end if;
+  return v_score;
+end; $$;</div>
+<div class="tip">Test each function immediately after creation: SELECT score_opra('paste-a-real-customer-uuid-here'); — use a customer_id from your customers table.</div>` },
+
+    { badge:'config', badgeLabel:'Database',
+      title: 'Schedule all 4 scoring functions to run nightly at 2AM',
+      sub: 'Supabase → SQL Editor → pg_cron → cron.schedule()',
+      detail: `<div class="code-block">-- Run all 4 scorers nightly at 2AM CT (8AM UTC)
+select cron.schedule(
+  'nightly-scoring',
+  '0 8 * * *',
+  $$
+  insert into scores (customer_id, opra_score, conversion_score, life_score, retirement_score, scored_at)
+  select
+    c.customer_id,
+    score_opra(c.customer_id),
+    score_conversion(c.customer_id),
+    score_life(c.customer_id),
+    score_retirement(c.customer_id),
+    now()
+  from customers c
+  on conflict (customer_id) do update set
+    opra_score = excluded.opra_score,
+    conversion_score = excluded.conversion_score,
+    life_score = excluded.life_score,
+    retirement_score = excluded.retirement_score,
+    scored_at = excluded.scored_at;
+  $$
+);
+
+-- Verify it's scheduled:
+select * from cron.job;</div>
+<p>The next morning after enabling, verify scores appear: SELECT * FROM scores LIMIT 10;</p>` }
+  ]}
+]},
+
+phase3: { groups: [
+  { title: 'Twilio + A2P setup', steps: [
+    { badge:'setup', badgeLabel:'Twilio',
+      title: 'Connect your 3 Twilio numbers to GHL',
+      sub: 'GHL → Settings → Phone Numbers → Connect Twilio',
+      detail: `<strong>You have 3 numbers already active:</strong>
+<div class="code-block">Toll-free: Voice AI inbound receptionist
+469 number: OPRA + term conversion outreach
+361 number: Life + retirement + workshop nurture</div>
+<p>GHL → Settings → Phone Numbers → Connect → enter Twilio Account SID and Auth Token from your Twilio console.</p>` },
+
+    { badge:'compliance', badgeLabel:'Compliance',
+      title: 'A2P 10DLC registration for 469 and 361 numbers',
+      sub: 'GHL → Settings → Phone Numbers → 10DLC → register campaign',
+      detail: `<strong>Required before any automated SMS fires from 469 or 361 numbers.</strong>
+<p>GHL → Settings → LC Phone → A2P Registration:</p>
+<ol><li>Register your brand (business entity)</li>
+<li>Register your campaign (FSA financial services outreach)</li>
+<li>Processing time: 3–7 business days</li></ol>
+<div class="note">Do not send automated SMS before A2P registration is approved. Carriers will block messages and the number may be flagged. Toll-free numbers have a separate verification process — complete that separately.</div>` }
+  ]},
+
+  { title: 'GHL pipelines and custom fields', steps: [
+    { badge:'config', badgeLabel:'GHL config',
+      title: 'Create 5 GHL pipelines',
+      sub: 'GHL → Pipelines → Add Pipeline → create each with standard stages',
+      detail: `<strong>Create these 5 pipelines:</strong>
+<div class="code-block">1. OPRA Transfers
+   Stages: Identified → Contacted → Appointment Scheduled → Review Complete → Transferred
+
+2. Term Conversions
+   Stages: Identified → Contacted → Appointment Scheduled → Application Submitted → Issued
+
+3. Life Cross-Sell
+   Stages: Identified → Contacted → Appointment Scheduled → Application Submitted → Issued
+
+4. Retirement Discovery
+   Stages: Identified → Contacted → Appointment Scheduled → Application Submitted → Issued
+
+5. Business Owners
+   Stages: Identified → Contacted → Discovery Call → Proposal → Application → Issued
+
+6. Workshops (optional 6th)
+   Stages: Invited → Registered → Attended → Follow-Up → Appointment → Application</div>` },
+
+    { badge:'config', badgeLabel:'GHL config',
+      title: 'Create custom fields for FSA scoring data',
+      sub: 'GHL → Settings → Custom Fields → create scoring fields',
+      detail: `<div class="code-block">Fields to create (type: Number unless noted):
+- fsa_opra_score (Number)
+- fsa_conversion_score (Number)
+- fsa_life_score (Number)
+- fsa_retirement_score (Number)
+- fsa_scored_at (Date)
+- fsa_policy_number (Text)
+- fsa_face_amount (Number)
+- fsa_conversion_deadline (Date)
+- fsa_days_to_deadline (Number)
+- fsa_agency_id (Text)
+- fsa_form_status (Text) ← forms sent/complete status
+- fsa_risk_label (Text) ← Conservative/Moderate/Aggressive</div>` },
+
+    { badge:'config', badgeLabel:'Make.com',
+      title: 'Build the Supabase → GHL score push scenario',
+      sub: 'Make → Schedule daily → Supabase query → GHL update contact',
+      detail: `<div class="code-block">Schedule: Daily at 2:30AM (after scoring runs at 2AM)
+
+Module 1: Supabase — Search rows
+  Table: scores
+  Filter: scored_at >= now() - interval '25 hours'
+  Order: opra_score desc
+  Limit: 500
+
+Module 2: Iterator
+
+Module 3: GHL — Search Contact
+  Filter: email = {{customer.email}}
+
+Module 4: GHL — Update Contact
+  Map all fsa_* custom fields from Supabase scores</div>` }
+  ]},
+
+  { title: 'Outreach sequences', steps: [
+    { badge:'config', badgeLabel:'GHL config',
+      title: 'Build GHL outreach sequences for each pipeline',
+      sub: 'GHL → Automations → New Workflow → trigger on pipeline stage entry',
+      detail: `<strong>Build one workflow per pipeline entry trigger:</strong>
+<p>OPRA entry sequence (from 469 number):</p>
+<div class="code-block">Day 0: SMS — "Hi {{first_name}}, this is Markist with Farmers..."
+Day 2: SMS follow-up if no response
+Day 4: Call task assigned to you
+Day 7: Email + final SMS if no contact</div>
+<div class="note">Do not activate any outreach workflow before A2P registration is approved AND before Ryan Anderson (compliance) confirms your TCPA consent mechanism is in place.</div>` },
+
+    { badge:'setup', badgeLabel:'GHL config',
+      title: 'Set up your FSA calendar and appointment types in GHL',
+      sub: 'GHL → Calendars → New Calendar → set availability',
+      detail: `<div class="code-block">Calendar types to create:
+1. General Financial Review (60 min)
+2. OPRA Transfer Review (30 min)
+3. Term Conversion Review (45 min)
+4. Retirement/IRA Discovery (60 min)
+5. Business Owner Review (90 min)
+6. Life Insurance Review (45 min)</div>
+<p>Embed calendar links in outreach sequences — when AI books an appointment, it uses these calendar links automatically.</p>` }
+  ]}
+]},
+
+phase4: { groups: [
+  { title: 'Vercel deployment — Command Center', steps: [
+    { badge:'deploy', badgeLabel:'Deploy',
+      title: 'Deploy the FSOS Command Center to Vercel',
+      sub: 'vercel.com → Import project → upload fsos_command_center.jsx → deploy',
+      detail: `<strong>Option A — Vercel CLI (recommended):</strong>
+<div class="code-block">npm install -g vercel
+cd your-project-folder
+vercel deploy</div>
+<strong>Option B — Vercel Dashboard:</strong>
+<ol><li>vercel.com → Add New → Project</li>
+<li>Import from GitHub or upload directly</li>
+<li>Framework: React (Vite or Create React App)</li>
+<li>Build command: npm run build</li>
+<li>Output directory: dist</li></ol>
+<p>The command center is a single-file React component (fsos_command_center.jsx). Wrap it in a minimal Vite or CRA shell if deploying standalone.</p>
+<div class="tip">Vercel Hobby plan is free and handles your traffic volume. Only upgrade to Pro if you need password protection or custom domains beyond the free tier.</div>` },
+
+    { badge:'config', badgeLabel:'Vercel',
+      title: 'Set all 5 environment variables in Vercel',
+      sub: 'Vercel → Project → Settings → Environment Variables → add each',
+      detail: `<strong>Required environment variables — add all 5 before first deploy:</strong>
+<div class="env-grid">
+<div class="env-row"><div class="env-key">SUPABASE_URL</div><div class="env-val">your-project.supabase.co</div></div>
+<div class="env-row"><div class="env-key">SUPABASE_ANON_KEY</div><div class="env-val">your anon key (client-safe)</div></div>
+<div class="env-row"><div class="env-key">SUPABASE_SERVICE_KEY</div><div class="env-val">your service key (server-side only — never expose in frontend)</div></div>
+<div class="env-row"><div class="env-key">ANTHROPIC_API_KEY</div><div class="env-val">your Claude API key (for FNA generator)</div></div>
+<div class="env-row"><div class="env-key">RESEND_API_KEY</div><div class="env-val">your Resend key (for form email delivery)</div></div>
+</div>
+<div class="note">SUPABASE_SERVICE_KEY must only be used in server-side API routes (/api/*). Never import it in frontend JSX — it bypasses RLS and has full database access.</div>` },
+
+    { badge:'test', badgeLabel:'Test',
+      title: 'Smoke test all 16 command center pages',
+      sub: 'Open your Vercel URL → click every nav item → confirm no errors',
+      detail: `<strong>Check every page loads without a white screen:</strong>
+<div class="checklist">
+<div class="cl-item">☀️ Daily Briefing — shows appointments, priority actions, GDC strip</div>
+<div class="cl-item">🏠 Dashboard — 6 KPI cards, priority list, AI activity, pipeline</div>
+<div class="cl-item">🎯 Opportunities — filter tabs work, all 6 cards show</div>
+<div class="cl-item">🏢 Agency Owners — overview cards, leaderboard, add agency form</div>
+<div class="cl-item">⏰ Conversions — 30/60/90 day buckets, color coding</div>
+<div class="cl-item">🔄 OPRA Center — table, one-click toggles, import button</div>
+<div class="cl-item">📅 Calendar — appointments with form status badges</div>
+<div class="cl-item">🤖 AI Control Center — 4 agent cards with metrics</div>
+<div class="cl-item">🎓 Workshops — registration counts, send invites</div>
+<div class="cl-item">💰 GDC & Commission — tier selector, cases table, add case</div>
+<div class="cl-item">📝 Review Prep — checklist by appointment type</div>
+<div class="cl-item">🗺 Needs Map — age cohort cards, product tags</div>
+<div class="cl-item">📐 Sales Calculator — 10-3-1 model, tier payout</div>
+<div class="cl-item">📋 Client Forms — 7 form cards, fill + send modes</div>
+<div class="cl-item">✦ FNA Generator — 3-mode choice screen</div>
+<div class="cl-item">📞 FFS Contacts — all 8 contacts with clickable tel: links</div>
+</div>` },
+
+    { badge:'config', badgeLabel:'Supabase',
+      title: 'Set up Supabase Row Level Security (RLS) for production',
+      sub: 'Supabase → Authentication → RLS policies → enable on all tables',
+      detail: `<div class="code-block">-- Enable RLS on all tables
+alter table customers enable row level security;
+alter table policies enable row level security;
+alter table scores enable row level security;
+alter table form_submissions enable row level security;
+alter table commission_cases enable row level security;
+
+-- Only service_role can read/write (your API routes use service key)
+create policy "service_role_only" on customers
+  for all using (auth.role() = 'service_role');
+
+-- Repeat for each table</div>
+<div class="tip">With RLS enabled, the anon key used in the frontend cannot directly read customer data — all reads go through your /api/* routes using the service key server-side.</div>` }
+  ]}
+]},
+
+phase5: { groups: [
+  { title: 'Forms schema and API routes', steps: [
+    { badge:'setup', badgeLabel:'Database',
+      title: 'Run the forms system SQL schema in Supabase',
+      sub: 'Supabase → SQL Editor → paste fsos_forms_api_routes.md schema section',
+      detail: `<strong>Supabase → SQL Editor → run this schema:</strong>
+<div class="code-block">create table form_submissions (
+  submission_id  uuid primary key default gen_random_uuid(),
+  customer_id    uuid references customers(customer_id),
+  agency_id      text references agencies(agency_id),
+  form_id        text not null,
+  form_title     text not null,
+  token          text unique not null,
+  status         text default 'sent',
+  sent_at        timestamptz default now(),
+  submitted_at   timestamptz,
+  expires_at     timestamptz default (now() + interval '30 days'),
+  sent_via       text,
+  response_data  jsonb,
+  fna_report     jsonb,
+  fna_generated_at timestamptz,
+  ip_address     text
+);
+create unique index on form_submissions(token);
+create index on form_submissions(customer_id);
+create index on form_submissions(form_id);
+
+create table form_sends (
+  send_id        uuid primary key default gen_random_uuid(),
+  submission_id  uuid references form_submissions,
+  customer_id    uuid references customers,
+  form_id        text not null,
+  channel        text not null,
+  destination    text not null,
+  sent_at        timestamptz default now()
+);</div>` },
+
+    { badge:'deploy', badgeLabel:'Deploy',
+      title: 'Deploy the 3 forms API routes to Vercel',
+      sub: 'Create api/ folder → add submit.js, send.js, fna.js → redeploy',
+      detail: `<strong>Create these files in your project's api/ directory:</strong>
+<div class="code-block">api/
+├── forms/
+│   ├── submit.js   ← receives client form submissions
+│   ├── send.js     ← sends form links via Resend + SMS
+│   └── fna.js      ← calls Claude API → generates FNA report</div>
+<p>Full code for each route is in <span class="link-chip">fsos_forms_api_routes.md</span> — copy each function exactly as written.</p>
+<div class="tip">Test each route with a curl command before connecting the frontend:
+curl -X POST https://your-app.vercel.app/api/forms/send -H "Content-Type: application/json" -d '{"form_id":"customer-questionnaire","client_name":"Test Client","channel":"copy-link"}'</div>` },
+
+    { badge:'deploy', badgeLabel:'Deploy',
+      title: 'Deploy the client-facing form portal as a public page',
+      sub: 'Add fsos_client_form_portal.html → deploy → test at /forms/customer-questionnaire',
+      detail: `<strong>The client portal (fsos_client_form_portal.html) is a standalone HTML file.</strong>
+<p>Deploy it so clients can access it at:</p>
+<div class="code-block">https://your-app.vercel.app/forms/customer-questionnaire?t=[token]&client=[name]
+https://your-app.vercel.app/forms/financial-needs-analysis?t=[token]&client=[name]
+https://your-app.vercel.app/forms/customer-profile?t=[token]&client=[name]</div>
+<p>In your Vercel project, add a vercel.json to route /forms/* to the portal:</p>
+<div class="code-block">{"routes": [{"src": "/forms/(.*)", "dest": "/fsos_client_form_portal.html"}]}</div>` },
+
+    { badge:'test', badgeLabel:'Test',
+      title: 'End-to-end test: send form → client submits → verify in Supabase',
+      sub: 'Command Center → Client Forms → Send to Client → fill → check Supabase',
+      detail: `<strong>Full test sequence:</strong>
+<ol>
+<li>Open command center → Client Forms → Forms Library</li>
+<li>Click "Send Link to Client" on Customer Questionnaire</li>
+<li>Enter your own name and email — send to yourself</li>
+<li>Open the link in a private browser window</li>
+<li>Fill out all fields → Submit</li>
+<li>Check Supabase: form_submissions table should have 1 new row with status='complete' and response_data populated</li>
+<li>Back in command center → Submitted Responses tab → confirm your submission appears</li>
+</ol>` },
+
+    { badge:'test', badgeLabel:'Test',
+      title: 'Test FNA generation end-to-end',
+      sub: 'FNA Generator → select submitted response → generate → verify report',
+      detail: `<strong>After completing the form submission test above:</strong>
+<ol>
+<li>Command center → ✦ FNA Generator</li>
+<li>Choose "Generate Report from Existing Submission"</li>
+<li>Select the test submission you just created</li>
+<li>Click "Generate FNA Report with Claude AI"</li>
+<li>Verify the report generates with: Executive Summary, Financial Position, Gaps, Recommendations, Next Steps</li>
+<li>Click Print/PDF — verify it renders cleanly</li>
+</ol>
+<div class="tip">The first FNA generation may take 15–20 seconds as Claude processes the data. Subsequent calls are faster once the API connection is warm.</div>` },
+
+    { badge:'config', badgeLabel:'Make.com',
+      title: 'Build Make scenario: GHL booking confirmed → send 2 form links',
+      sub: 'Make → New scenario → GHL Webhook trigger → POST /api/forms/send × 2',
+      detail: `<div class="code-block">Trigger: GHL Webhook — appointment.status = confirmed
+
+Module 2: HTTP GET — lookup customer in Supabase
+  GET /rest/v1/customers?email=eq.{{contact_email}}
+  → get customer_id, agency_id
+
+Module 3: HTTP GET — check if forms already sent
+  GET /rest/v1/form_submissions?customer_id=eq.{{id}}&status=in.(sent,complete)
+  → if exists, skip (prevents duplicate sends)
+
+Module 4: HTTP POST — send Customer Questionnaire
+  POST /api/forms/send
+  Body: {customer_id, form_id:"customer-questionnaire", channel:"email", destination:{{email}}, client_name:{{name}}}
+
+Module 5: HTTP POST — send FNA Intake
+  POST /api/forms/send
+  Body: {customer_id, form_id:"financial-needs-analysis", channel:"email", destination:{{email}}, client_name:{{name}}}
+
+Module 6: GHL — Add internal note to contact
+  "Forms sent: Customer Questionnaire + FNA Intake — {{timestamp}}"</div>` }
+  ]}
+]},
+
+phase6: { groups: [
+  { title: 'Agency infrastructure setup', steps: [
+    { badge:'setup', badgeLabel:'Database',
+      title: 'Add agency_data table and seed your current agencies',
+      sub: 'Supabase → SQL Editor → run agencies schema → insert your 4 agencies',
+      detail: `<div class="code-block">-- Extend agencies table with full fields
+alter table agencies add column if not exists slug text unique;
+alter table agencies add column if not exists agency_zoom boolean default false;
+alter table agencies add column if not exists apex boolean default false;
+alter table agencies add column if not exists notes text;
+alter table agencies add column if not exists last_referral date;
+alter table agencies add column if not exists last_call date;
+alter table agencies add column if not exists last_meeting date;
+alter table agencies add column if not exists last_email date;
+
+-- Insert your current agency owners
+insert into agencies (agency_id, name, owner, city, phone, email, slug, agency_zoom, apex) values
+  ('ag1', 'Johnson Agency', 'Steven Johnson', 'Corpus Christi, TX', '(361) 555-0142', 'steven@farmersagent.com', 'steven-johnson', true, true),
+  ('ag2', 'Brown Agency', 'Sarah Brown', 'McKinney, TX', '(972) 555-0288', 'sarah@farmersagent.com', 'sarah-brown', true, false),
+  ('ag3', 'Vega Insurance Group', 'Carlos Vega Sr.', 'San Antonio, TX', '(210) 555-0371', 'carlos@farmersagent.com', 'carlos-vega-sr', false, true),
+  ('ag4', 'Taylor Agency', 'Jack Taylor', 'Plano, TX', '(469) 555-0199', 'jack@farmersagent.com', 'jack-taylor', true, true)
+on conflict do nothing;</div>` },
+
+    { badge:'deploy', badgeLabel:'Deploy',
+      title: 'Build and deploy the referral link routing',
+      sub: 'Create pages/[slug].js in Vercel → route fsa.protecwise.com/[slug] → intake form',
+      detail: `<strong>Each agency owner gets a unique referral URL:</strong>
+<div class="code-block">fsa.protecwise.com/steven-johnson
+fsa.protecwise.com/sarah-brown
+fsa.protecwise.com/carlos-vega-sr
+fsa.protecwise.com/jack-taylor</div>
+<p>When someone visits this URL, they see a branded intake form. On submission, the agency_id is automatically stamped on the customer record in Supabase.</p>
+<p>Build as a dynamic Vercel route: pages/[slug].js → look up agency by slug → render intake form → POST to /api/forms/submit with agency_id pre-filled.</p>` },
+
+    { badge:'deploy', badgeLabel:'Deploy',
+      title: 'Build and deploy the upload link page',
+      sub: 'Create pages/upload/[slug].js → file upload form → Make trigger → ingest',
+      detail: `<strong>Upload URL per agency:</strong>
+<div class="code-block">fsa.protecwise.com/upload/steven-johnson</div>
+<p>This is a simple HTML page with a file upload input. No login. Agency owner drops an Excel or CSV file, it uploads to Google Drive (FSOS/Agency_Uploads/[slug]/) and triggers the Make ingestion scenario with agency_id pre-tagged.</p>
+<div class="tip">Most Farmers agency owners are not tech-savvy. The upload page should be a single large drop zone with these instructions: "Drag your customer list here or click to upload. Accepts Excel or CSV files." Nothing else on the page.</div>` },
+
+    { badge:'manual', badgeLabel:'Manual',
+      title: 'Generate and share links with each agency owner',
+      sub: 'Command Center → Agency Owners → Open Agency → Copy both links → share',
+      detail: `<strong>For each agency owner:</strong>
+<ol>
+<li>Command Center → 🏢 Agency Owners → click their card</li>
+<li>Copy the Referral Link → send via text or email</li>
+<li>Copy the Upload Link → send via text or email</li>
+<li>Simple message: "Hey [Name], here are your two links. The first one is for sending me referrals — just share it with anyone who wants a financial review. The second one is for uploading your customer list whenever you want me to look for opportunities."</li>
+</ol>
+<div class="tip">Do NOT over-explain. Two links, two sentences. Agency owners who receive a 3-page PDF about the system will not use it.</div>` },
+
+    { badge:'config', badgeLabel:'Make.com',
+      title: 'Configure AgencyZoom webhook to tag customers by agency',
+      sub: 'AgencyZoom → Integrations → Webhooks → add your Make webhook URL',
+      detail: `<strong>For agencies using AgencyZoom (Johnson, Brown, Taylor):</strong>
+<ol>
+<li>Make → Create new scenario → Webhook trigger → copy the webhook URL</li>
+<li>AgencyZoom → Settings → Integrations → Webhooks → add the Make URL</li>
+<li>Events to send: New Customer, Policy Updated, Renewal</li>
+</ol>
+<p>In Make: map the agency identifier from the webhook payload to the agency_id field in Supabase. Each agency has a unique AgencyZoom account — the sender email or account ID identifies which agency the data comes from.</p>` },
+
+    { badge:'manual', badgeLabel:'Manual',
+      title: 'Import first contact list for each agency',
+      sub: 'Ask each agency owner for their customer list → upload → verify in Supabase',
+      detail: `<strong>Initial data load process:</strong>
+<ol>
+<li>Email or text each agency owner: "Can you export your customer list from AgencyZoom (or APEX) and send it to me? Just an Excel file with name, phone, email, and policy type."</li>
+<li>Drop received file in FSOS/Agency_Uploads/[agency_name]/ in Google Drive</li>
+<li>Make scenario triggers automatically and ingests into Supabase with agency_id tagged</li>
+<li>Verify in Supabase: SELECT count(*) FROM customers WHERE agency_id = 'ag1';</li>
+</ol>
+<div class="tip">Do this for all 4 agency owners in the first week of Phase 6. The sooner their customers are in the scoring engine, the sooner the system finds opportunities in their books.</div>` }
+  ]}
+]},
+
+phase7: { groups: [
+  { title: 'AI agent setup — requires DM approval first', steps: [
+    { badge:'compliance', badgeLabel:'Pre-req',
+      title: 'Confirm DM will enable AI Employee on your sub-account',
+      sub: 'Text or call your DM this week — get confirmation before starting Phase 7',
+      detail: `<strong>Do not start Phase 7 until your DM confirms AI Employee is enabled.</strong>
+<p>Your GHL setup is inside your DM's account as a sub-account Admin. The AI Employee feature is controlled at the account level. Your DM must enable it for your sub-account.</p>
+<p>Message to send: "Hey [DM name], I'm building out my financial services pipeline system in GHL. When I get to the AI agent phase, I'll need AI Employee enabled on my sub-account. Can you confirm you'll enable that when I'm ready? Target is about [X] weeks out."</p>
+<div class="tip">Get a yes or no now so you can plan around it. If DM says no, you can still run AI-assisted workflows through GHL's standard automation without the AI Employee add-on.</div>` },
+
+    { badge:'config', badgeLabel:'GHL config',
+      title: 'Build the Knowledge Base for all AI agents',
+      sub: 'GHL → AI Employee → Knowledge Base → add content for each agent',
+      detail: `<strong>Load these into GHL Knowledge Base:</strong>
+<div class="code-block">1. Customer Needs Map (from FFS guide 32-9913)
+   — Age cohort → recommended products
+   — "Just Starting Out (20-30): Term, Emergency Fund, Roth IRA"
+   — [all 7 cohorts]
+
+2. Common objections and responses (from 32-9913)
+   — "What if the market goes down?"
+   — "I already have a financial advisor"
+   — "I want to think about it"
+
+3. FFS contact directory
+   — Sales Desk: (866) 888-9739 Option 3→3
+   — Matt Anderson FSD: (818) 584-0264
+   — Ando Agamalian: (818) 584-0205
+
+4. Carrier contacts (from Wholesalers.pdf)
+   — Athene: (888) 266-8489 Option 4
+   — Corebridge: (888) 502-2900 Ext. 6
+   — [all carriers]
+
+5. Appointment confirmation script
+6. OPRA conversation script
+7. Conversion conversation script
+8. Objection handling scripts</div>` },
+
+    { badge:'config', badgeLabel:'GHL config',
+      title: 'Configure Conversation AI — SMS and email bot',
+      sub: 'GHL → AI Employee → Conversation AI → configure persona + scripts',
+      detail: `<strong>Persona configuration:</strong>
+<div class="code-block">Name: [Your agency name] Assistant
+Tone: Professional, helpful, not pushy
+Opening message:
+"Hi {{first_name}}, this is the [Agency] team reaching out about your Farmers policies.
+We'd love to schedule a complimentary financial review with [Markist].
+Are you available for a quick call this week?"
+
+TCPA disclosure (required — add to every first outreach):
+"This is an artificial or prerecorded message from [Agency Name].
+Reply STOP to opt out."</div>
+<div class="note">The TRAIGA 2026 (Texas) law requires disclosure that a message is AI-generated. Include "This message was generated by an AI assistant" in the footer of every AI-initiated SMS or email.</div>` },
+
+    { badge:'config', badgeLabel:'GHL config',
+      title: 'Configure Voice AI inbound receptionist (toll-free number)',
+      sub: 'GHL → AI Employee → Voice AI → connect toll-free number → configure IVR',
+      detail: `<div class="code-block">Inbound call menu:
+"Thank you for calling [Agency Name], a Farmers Insurance Agency.
+This is an AI assistant. How can I help you today?
+
+If you're calling to schedule a financial review, say 'appointment.'
+If you're an existing customer with a question, say 'customer service.'
+If you'd like to speak with [Markist] directly, say 'agent.'"
+
+Appointment path → collect: name, best callback number, preferred time
+→ create GHL appointment automatically
+→ send confirmation SMS
+
+Agent path → transfer to your direct number
+→ if no answer → voicemail + SMS notification to you</div>` }
+  ]}
+]},
+
+phase8: { groups: [
+  { title: 'Claude in Chrome — APEX automation', steps: [
+    { badge:'setup', badgeLabel:'Setup',
+      title: 'Install the Claude in Chrome extension',
+      sub: 'Chrome Web Store → Claude for Chrome → Install → sign in with Anthropic account',
+      detail: `<p>Chrome Web Store → search "Claude for Chrome" → Install → sign in with your Anthropic Max account.</p>
+<p>After installation: navigate to APEX in Chrome → open the Claude sidebar → confirm Claude can see the page content.</p>` },
+
+    { badge:'config', badgeLabel:'Chrome',
+      title: 'Record the APEX BOB export workflow',
+      sub: 'Claude in Chrome → record → navigate APEX BOB export → save workflow',
+      detail: `<strong>Steps to record:</strong>
+<ol>
+<li>Open APEX in Chrome</li>
+<li>Open Claude sidebar → click Record</li>
+<li>Navigate to: Reports → Book of Business → Export → select all columns → Export CSV</li>
+<li>Save the CSV to FSOS/APEX_Exports/ in Google Drive</li>
+<li>Stop recording → save workflow as "Weekly APEX BOB Export"</li>
+</ol>
+<div class="tip">Test the recording 3 times manually before scheduling. APEX occasionally changes page layout after updates — re-record if it breaks.</div>` },
+
+    { badge:'config', badgeLabel:'Chrome',
+      title: 'Schedule the APEX workflow to run every Monday at 7AM',
+      sub: 'Claude in Chrome → Workflows → set schedule → Monday 7AM',
+      detail: `<p>Claude in Chrome → open the "Weekly APEX BOB Export" workflow → Schedule → Every Monday → 7:00 AM CT.</p>
+<p>When it runs: Claude exports the BOB from APEX → saves CSV to Google Drive → Make ingestion scenario triggers automatically → Supabase updates → scoring runs that night → GHL gets updated scores by Tuesday morning.</p>
+<div class="success-note">At this point the system is fully automated. Your only remaining action is reviewing the Daily Briefing each morning and taking the calls/appointments the system generates.</div>` }
+  ]}
+]},
+
+workshops: { groups: [
+  { title: 'Workshop infrastructure — GHL setup', steps: [
+    { badge:'setup', badgeLabel:'Database',
+      title: 'Add workshops schema to Supabase',
+      sub: 'Supabase → SQL Editor → run workshops schema',
+      detail: `<div class="code-block">create table workshops (
+  workshop_id   uuid primary key default gen_random_uuid(),
+  agency_id     text references agencies,
+  title         text not null,
+  topic         text not null, -- retirement|life|opra|business|general
+  scheduled_at  timestamptz not null,
+  max_attendees integer default 50,
+  location      text, -- virtual or physical address
+  registration_link text,
+  created_at    timestamptz default now()
+);
+
+create table workshop_registrations (
+  reg_id        uuid primary key default gen_random_uuid(),
+  workshop_id   uuid references workshops,
+  customer_id   uuid references customers,
+  registered_at timestamptz default now(),
+  attended      boolean default false,
+  interest_level text, -- high|medium|low
+  notes         text,
+  followup_action text
+);</div>` },
+
+    { badge:'config', badgeLabel:'GHL config',
+      title: 'Build workshop pipelines and registration landing pages in GHL',
+      sub: 'GHL → Funnels → New → Workshop Registration → connect to calendar',
+      detail: `<p>Create one GHL funnel per workshop topic. Each funnel has:</p>
+<ol>
+<li>Landing page with workshop details + registration form</li>
+<li>Thank you page with calendar booking link</li>
+<li>Automated confirmation email + SMS</li>
+<li>Reminder sequence: 7 days out, 2 days out, day of</li>
+</ol>
+<p>Agency owners get a unique registration link per workshop (GHL UTM tag) so you can track which agency drove which registrations.</p>` },
+
+    { badge:'config', badgeLabel:'GHL config',
+      title: 'Build post-workshop follow-up automation',
+      sub: 'GHL → Automation → Post-workshop sequence → trigger on attended=true',
+      detail: `<div class="code-block">Trigger: workshop_registrations.attended = true
+
+Day 0 (same evening):
+  SMS: "Great seeing you at [Workshop]! Ready to review your
+  specific situation? Schedule your personal review: [calendar link]"
+
+Day 2 (if no appointment booked):
+  SMS: "Hi {{first_name}}, do you have any questions from [Workshop]?
+  I'm happy to answer by text or set up a quick call."
+
+Day 5 (if still no response):
+  Email: Educational follow-up on the workshop topic
+  + calendar booking link
+
+Day 14 (final touch):
+  Personal SMS from you (not AI): review their score and send
+  a specific, relevant observation</div>` }
+  ]}
+]},
+
+commission: { groups: [
+  { title: 'Commission rate tables and calculation engine', steps: [
+    { badge:'setup', badgeLabel:'Database',
+      title: 'Run the commission schema in Supabase',
+      sub: 'Supabase → SQL Editor → run commission_rates and commission_cases tables',
+      detail: `<div class="code-block">create table commission_rates (
+  rate_id        uuid primary key default gen_random_uuid(),
+  carrier        text not null,
+  product_name   text not null,
+  product_type   text not null,
+  product_option text,
+  age_min        integer default 0,
+  age_max        integer default 99,
+  gdc_rate       numeric(5,4) not null,
+  trail_rate     numeric(5,4) default 0,
+  archived       boolean default false,
+  effective_date date not null
+);
+
+create table commission_cases (
+  case_id        uuid primary key default gen_random_uuid(),
+  customer_id    uuid references customers,
+  agency_id      text references agencies,
+  carrier        text not null,
+  product_name   text not null,
+  premium        numeric(12,2),
+  gdc_rate_used  numeric(5,4),
+  estimated_gdc  numeric(12,2),
+  estimated_fsa  numeric(12,2),
+  case_status    text default 'pending',
+  issued_date    date,
+  paid_date      date,
+  actual_gdc     numeric(12,2),
+  actual_fsa     numeric(12,2),
+  notes          text,
+  created_at     timestamptz default now()
+);</div>` },
+
+    { badge:'manual', badgeLabel:'Manual',
+      title: 'Enter FFS commission rates from the Consolidated rate PDF',
+      sub: 'GDC & Commission page → Add Case → enter rates for most-used products first',
+      detail: `<strong>Priority order for data entry (most used products first):</strong>
+<div class="code-block">1. MassMutual Ascend Legend 7 — Option 1, ages 18-75: 6.50% GDC
+2. MassMutual Ascend Landmark 5 — Option 1, ages 18-75: 5.25% GDC
+3. Athene Agility 10 — Option 1, ages 0-70: 7.00% GDC
+4. Pacific Horizon IUL — target premium based (per FFS guide)
+5. Protective SPWL — ages 50-80: 7.00% GDC
+6. Mutual Fund IRA (Voya/Sammons) — 1.00% upfront + 0.50% trail
+7. Corebridge Power Index Plus — Option 1, ages 0-80: 5.00% GDC</strong></div>
+<div class="tip">Start with 7 products. These cover 80% of your typical case mix. Add others as you write them.</div>` },
+
+    { badge:'config', badgeLabel:'Make.com',
+      title: 'Build Make: GHL "Application Submitted" → create commission case in Supabase',
+      sub: 'Make → GHL trigger → pipeline stage = Application Submitted → Supabase insert',
+      detail: `<div class="code-block">Trigger: GHL Pipeline Stage Changed
+  Stage name = "Application Submitted"
+
+Module 2: Supabase — Search customer
+  Email = {{contact.email}}
+
+Module 3: Supabase — Insert commission_cases
+  customer_id: from Module 2
+  carrier: from GHL custom field (fsa_carrier)
+  product_name: from GHL custom field (fsa_product)
+  premium: from GHL opportunity value
+  case_status: 'submitted'
+  created_at: now()</div>
+<p>When GHL moves an opportunity to "Application Submitted," a commission case appears automatically in your GDC tracker. No manual entry.</p>` }
+  ]}
+]},
+
+compliance: { groups: [
+  { title: 'Pre-outreach compliance — complete before Phase 3 goes live', steps: [
+    { badge:'compliance', badgeLabel:'Required',
+      title: 'Call Ryan Anderson — confirm TRAIGA AI disclosure language',
+      sub: 'Ryan Anderson, FFS Compliance TX — (253) 242-0597',
+      detail: `<strong>Call before any automated outreach goes live.</strong>
+<p>Texas TRAIGA (effective January 1, 2026) requires disclosure that AI is being used in any consumer-facing interaction. Specifically:</p>
+<ul>
+<li>Any AI-generatedSMS must include: "This message was generated by an AI assistant"</li>
+<li>Any AI voice call must disclose it is an "artificial or prerecorded voice" at the start of the call</li>
+<li>Violations carry penalties up to $10,000 per incident</li>
+</ul>
+<p>Ask Ryan: "Can you confirm the exact disclosure language I need in my GHL AI agent SMS messages to comply with TRAIGA?" Get his answer in writing.</p>` },
+
+    { badge:'compliance', badgeLabel:'Required',
+      title: 'Confirm TCPA consent mechanism before first automated SMS fires',
+      sub: 'Written prior express consent required — verify your capture process',
+      detail: `<strong>TCPA requires written prior express consent before automated marketing SMS.</strong>
+<p>Your consent capture must: be in writing, clearly disclose automated texts will be sent, include opt-out instructions, and be stored in your consent_ledger table in Supabase.</p>
+<div class="note">Texas SB 140 (effective Sept 1, 2025) adds a private right of action for DTPA violations from automated messaging. Penalties can reach $1,500/text. Do not activate outreach before this is confirmed with Ryan Anderson.</div>` },
+
+    { badge:'compliance', badgeLabel:'Required',
+      title: 'Write your AIS Program document for TRAIGA safe harbor',
+      sub: 'Required for TRAIGA — document your AI governance process (2–3 pages)',
+      detail: `<strong>TRAIGA provides a safe harbor if you have a written AI governance program.</strong>
+<p>Include: description of AI tools (GHL AI Employee, Claude API), purpose of each, how you oversee outputs, how customers can request human review, how you handle errors, and review schedule.</p>
+<div class="tip">Claude can write the first draft — describe your system and ask for a compliant AIS Program document following the NIST AI RMF safe harbor requirements.</div>` },
+
+    { badge:'compliance', badgeLabel:'Required',
+      title: 'Get FNA output reviewed by Ryan Anderson before sending to clients',
+      sub: 'Share sample FNA report with Ryan — confirm educational vs. investment advice distinction',
+      detail: `<strong>The FNA report must be reviewed before client delivery.</strong>
+<p>Key points: labeled "for informational and educational purposes only," no specific product recommendation, FINRA Reg BI review must precede actual recommendations, and the existing disclaimer must remain unchanged.</p>
+<p>Generate one sample FNA from test data and email to Ryan. Ask: "Does this FNA document comply with FINRA guidelines as an educational tool?"</p>` }
+  ]}
+]},
+
+};
+
+// ══════════════════════════════════════════════════════════
+// PHASE OVERVIEW CARDS
+// ══════════════════════════════════════════════════════════
+const PHASES = [
+  {num:"01", title:"Foundation",         sub:"Supabase + Google Drive + Make ingestion",            weeks:"Weeks 1–2",   cost:"$9/mo"},
+  {num:"02", title:"Scoring Engine",     sub:"4 SQL scoring functions + pg_cron nightly",           weeks:"Weeks 2–3",   cost:"$0 added"},
+  {num:"03", title:"GHL + Outreach",     sub:"5 pipelines + A2P + sequences + calendar",            weeks:"Weeks 3–5",   cost:"+$30/mo"},
+  {num:"04", title:"Command Center",     sub:"Deploy 16-page FSA operating system to Vercel",       weeks:"Weeks 4–6",   cost:"Free (Hobby)"},
+  {num:"05", title:"Forms + FNA",        sub:"7 digital forms + Claude-powered FNA reports",        weeks:"Weeks 5–7",   cost:"$0 (Max plan)"},
+  {num:"06", title:"Agency Owners",      sub:"Referral links + upload links + distribution channel",weeks:"Weeks 6–8",   cost:"$0 added"},
+  {num:"07", title:"AI Agent Workforce", sub:"4 AI agents: Receptionist + Appt + Conversion + FU", weeks:"Weeks 7–10",  cost:"+$97/mo"},
+  {num:"08", title:"Chrome Automation",  sub:"APEX BOB fully automated via Claude in Chrome",       weeks:"Weeks 10–12", cost:"$0 added"},
+];
+
+// ══════════════════════════════════════════════════════════
+// TOOLS TABLE
+// ══════════════════════════════════════════════════════════
+const TOOLS = [
+  {tool:"Supabase",           role:"Master database — customers, scores, forms, commission cases, agencies", cost:"Free",       phase:"Phase 1"},
+  {tool:"Make.com",           role:"Automation — ingestion, score push, 7AM briefing, form sends",          cost:"$9/mo",      phase:"Phase 1"},
+  {tool:"Google Drive",       role:"File intake — APEX exports and agency uploads land here",               cost:"Free",       phase:"Phase 1"},
+  {tool:"Uptime Robot",       role:"Keeps Supabase alive — pings every 5 minutes",                         cost:"Free",       phase:"Phase 1"},
+  {tool:"GoHighLevel",        role:"CRM + pipelines + outreach + calendars + AI agents",                    cost:"DM account", phase:"Phase 3"},
+  {tool:"Twilio",             role:"3 phone numbers (toll-free, 469, 361) — voice + SMS",                  cost:"Usage",      phase:"Phase 3"},
+  {tool:"Vercel",             role:"Deploy command center + forms API + client portal",                     cost:"Free (Hobby)",phase:"Phase 4"},
+  {tool:"Resend.com",         role:"Transactional email — form links, confirmations",                       cost:"Free tier",  phase:"Phase 5"},
+  {tool:"Anthropic Claude API",role:"Powers FNA reports — Claude Sonnet via Max plan",                     cost:"Max plan",   phase:"Phase 5"},
+  {tool:"GHL AI Employee",    role:"4 AI agents — receptionist, appt setter, conversion, follow-up",       cost:"+$97/mo",    phase:"Phase 7"},
+  {tool:"Claude in Chrome",   role:"Automates APEX BOB export weekly — fully hands-free",                  cost:"Max plan",   phase:"Phase 8"},
+  {tool:"FFS Sales Desk",     role:"(866) 888-9739 Opt 3→3 — case consultation before every presentation", cost:"Free",       phase:"Always"},
+  {tool:"APEX",               role:"Farmers BOB export — weekly manual or Chrome-automated",               cost:"Included",   phase:"Phase 1"},
+  {tool:"AgencyZoom",         role:"Agency owner CRM — webhook for contact uploads",                       cost:"Agency pays",phase:"Phase 6"},
+];
+
+// ══════════════════════════════════════════════════════════
+// RENDER ENGINE
+// ══════════════════════════════════════════════════════════
+const STORAGE_KEY = 'fsos_guide_v2_done';
+let doneSet = new Set(JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'));
+
+function totalSteps() {
+  let n = 0;
+  Object.values(DATA).forEach(ph => ph.groups.forEach(g => n += g.steps.length));
+  return n;
+}
+
+function updateProgress() {
+  const total = totalSteps();
+  const done = doneSet.size;
+  const pct = total > 0 ? (done / total * 100) : 0;
+  const pc = document.getElementById('prog-count');
+  const pf = document.getElementById('prog-fill');
+  const ts = document.getElementById('total-steps-count');
+  if(pc) pc.textContent = done + ' / ' + total;
+  if(pf) pf.style.width = pct + '%';
+  if(ts) ts.textContent = total;
+}
+
+function makeStepId(phaseKey, gi, si) { return phaseKey+'-'+gi+'-'+si; }
+
+function renderSteps(containerId, phaseKey) {
+  const container = document.getElementById(containerId);
+  if(!container || !DATA[phaseKey]) return;
+  container.innerHTML = '';
+  DATA[phaseKey].groups.forEach((group, gi) => {
+    const gDiv = document.createElement('div');
+    gDiv.className = 'step-group';
+    gDiv.innerHTML = '<div class="step-group-title">'+group.title+'</div>';
+    group.steps.forEach((step, si) => {
+      const id = makeStepId(phaseKey, gi, si);
+      const isDone = doneSet.has(id);
+      const s = document.createElement('div');
+      s.className = 'step' + (isDone ? ' done' : '');
+      s.dataset.id = id;
+      const badgeClass = 'badge-' + (step.badge || 'config');
+      s.innerHTML =
+        '<div class="step-head" onclick="toggleStep(this.parentElement)">' +
+          '<div class="step-check" onclick="event.stopPropagation();toggleDone(this.parentElement)">' + (isDone?'✓':'') + '</div>' +
+          '<div class="step-text">' +
+            '<div class="step-title">' + step.title + '</div>' +
+            '<div class="step-sub">' + (step.sub||'') + '</div>' +
+          '</div>' +
+          '<span class="step-badge ' + badgeClass + '">' + (step.badgeLabel||step.badge||'') + '</span>' +
+          '<span class="step-expand">▾</span>' +
+        '</div>' +
+        '<div class="step-body"><div class="step-body-inner">' + (step.detail||'') + '</div></div>';
+      gDiv.appendChild(s);
+    });
+    container.appendChild(gDiv);
+  });
+}
+
+function toggleStep(el) { el.classList.toggle('open'); }
+
+function toggleDone(el) {
+  const id = el.dataset.id;
+  if(doneSet.has(id)) { doneSet.delete(id); el.classList.remove('done'); el.querySelector('.step-check').textContent = ''; }
+  else { doneSet.add(id); el.classList.add('done'); el.querySelector('.step-check').textContent = '✓'; }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify([...doneSet]));
+  updateProgress();
+}
+
+function showTab(id, btn) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  const tab = document.getElementById('tab-' + id);
+  if(tab) tab.classList.add('active');
+  if(btn) btn.classList.add('active');
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+function renderPhaseCards() {
+  const container = document.getElementById('phase-cards');
+  if(!container) return;
+  PHASES.forEach((p, i) => {
+    const tabId = 'phase' + (i+1);
+    const card = document.createElement('div');
+    card.className = 'phase-card';
+    card.onclick = function() {
+      const btn = [...document.querySelectorAll('.nav-btn')].find(b => b.textContent.includes((i+1)+' ·'));
+      showTab(tabId, btn);
+    };
+    card.innerHTML =
+      '<div class="phase-num-circle">' + p.num + '</div>' +
+      '<div><div class="phase-card-title">' + p.title + '</div><div class="phase-card-sub">' + p.sub + '</div></div>' +
+      '<div class="phase-card-meta"><div class="phase-card-weeks">' + p.weeks + '</div><div class="phase-card-cost">' + p.cost + '</div></div>';
+    container.appendChild(card);
+  });
+  [['Workshops','workshops'],['GDC & Commission','commission'],['Compliance (required)','compliance'],['All Tools','tools']].forEach(([title,tabId])=>{
+    const card = document.createElement('div');
+    card.className = 'phase-card';
+    card.style.borderStyle = 'dashed';
+    card.onclick = function() {
+      const btn = [...document.querySelectorAll('.nav-btn')].find(b=>b.getAttribute('onclick')&&b.getAttribute('onclick').includes("'"+tabId+"'"));
+      showTab(tabId, btn);
+    };
+    card.innerHTML = '<div class="phase-num-circle" style="background:var(--ink3)">✦</div><div><div class="phase-card-title">'+title+'</div></div>';
+    container.appendChild(card);
+  });
+}
+
+function renderToolsTable() {
+  const wrap = document.getElementById('tools-table-wrap');
+  if(!wrap) return;
+  wrap.innerHTML = '<table class="tools-table"><thead><tr><th>Tool</th><th>Role in FSOS</th><th>Cost</th><th>Phase</th></tr></thead><tbody>' +
+    TOOLS.map(t=>'<tr><td style="font-family:DM Mono,monospace;font-weight:500;white-space:nowrap">'+t.tool+'</td><td>'+t.role+'</td><td style="font-family:DM Mono,monospace;white-space:nowrap;color:var(--green)">'+t.cost+'</td><td style="font-family:DM Mono,monospace;color:var(--accent2);white-space:nowrap">'+t.phase+'</td></tr>').join('') +
+    '</tbody></table>';
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  renderPhaseCards();
+  ['phase1','phase2','phase3','phase4','phase5','phase6','phase7','phase8'].forEach(function(p){
+    renderSteps('steps-'+p, p);
+  });
+  renderSteps('steps-workshops','workshops');
+  renderSteps('steps-commission','commission');
+  renderSteps('steps-compliance','compliance');
+  renderToolsTable();
+  updateProgress();
+});
+</script>
+</body>
+</html>

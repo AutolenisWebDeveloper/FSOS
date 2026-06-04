@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FFS Document Integration Map</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Karla:wght@300;400;500;600&display=swap');
+
+:root {
+  --cream:#faf8f4; --white:#ffffff; --ink:#1c1a16;
+  --ink2:#4a4540; --muted:#8a8070; --rule:#e8e2d8;
+  --navy:#1a2d4a; --navy-bg:#f0f3f8; --navy-border:#c8d4e8;
+  --red:#c0392b; --red-bg:#fdf5f4; --red-border:#f0c8c4;
+  --green:#1a5c3a; --green-bg:#f0f8f4; --green-border:#b8dcc8;
+  --gold:#8a6a00; --gold-bg:#fefdf0; --gold-border:#e8d880;
+  --purple:#4a2080; --purple-bg:#f8f0ff; --purple-border:#d0b0f0;
+  --teal:#0a5060; --teal-bg:#f0f8fa; --teal-border:#a0d0da;
+  --shadow:0 1px 4px rgba(0,0,0,.08);
+  --shadow2:0 4px 16px rgba(0,0,0,.12);
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--cream);color:var(--ink);font-family:'Karla',sans-serif;font-size:14px;line-height:1.6;}
+
+.header{background:var(--navy);color:#fff;padding:40px 48px 32px;}
+.header-tag{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:rgba(255,255,255,.5);margin-bottom:10px;}
+.header h1{font-family:'Playfair Display',serif;font-size:36px;font-weight:700;margin-bottom:8px;line-height:1.2;}
+.header-sub{font-size:14px;color:rgba(255,255,255,.65);max-width:640px;}
+
+.summary-strip{display:grid;grid-template-columns:repeat(5,1fr);gap:0;border-bottom:1px solid var(--rule);}
+.sum-item{background:var(--white);padding:18px 24px;border-right:1px solid var(--rule);text-align:center;}
+.sum-item:last-child{border-right:none;}
+.sum-val{font-family:'Playfair Display',serif;font-size:32px;font-weight:700;color:var(--navy);line-height:1;}
+.sum-lbl{font-size:11px;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.06em;}
+
+.main{max-width:1200px;margin:0 auto;padding:40px 48px 60px;}
+
+.section-head{display:flex;align-items:baseline;gap:12px;margin:36px 0 16px;padding-bottom:10px;border-bottom:2px solid var(--ink);}
+.section-num{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);}
+.section-title{font-family:'Playfair Display',serif;font-size:22px;font-weight:600;}
+
+.doc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;margin-bottom:8px;}
+
+.doc-card{background:var(--white);border:1px solid var(--rule);border-radius:10px;overflow:hidden;box-shadow:var(--shadow);transition:box-shadow .2s,border-color .2s;cursor:pointer;}
+.doc-card:hover{box-shadow:var(--shadow2);border-color:rgba(0,0,0,.15);}
+.doc-card-head{padding:16px 18px 14px;border-bottom:1px solid var(--rule);}
+.doc-form{font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;padding:2px 8px;border-radius:3px;margin-bottom:8px;display:inline-block;}
+.doc-title{font-family:'Playfair Display',serif;font-size:15px;font-weight:600;color:var(--ink);line-height:1.3;margin-bottom:4px;}
+.doc-id{font-size:10px;color:var(--muted);font-family:'Karla',monospace;}
+.doc-card-body{padding:14px 18px 16px;}
+.doc-desc{font-size:13px;color:var(--ink2);line-height:1.6;margin-bottom:12px;}
+.doc-uses{display:flex;flex-direction:column;gap:6px;}
+.doc-use{display:flex;gap:8px;align-items:flex-start;font-size:12px;}
+.use-tag{font-size:9px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:2px 6px;border-radius:3px;white-space:nowrap;flex-shrink:0;margin-top:1px;}
+.use-text{color:var(--ink2);line-height:1.5;}
+
+/* color classes */
+.navy{background:var(--navy-bg);color:var(--navy);border:1px solid var(--navy-border);}
+.red{background:var(--red-bg);color:var(--red);border:1px solid var(--red-border);}
+.green{background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);}
+.gold{background:var(--gold-bg);color:var(--gold);border:1px solid var(--gold-border);}
+.purple{background:var(--purple-bg);color:var(--purple);border:1px solid var(--purple-border);}
+.teal{background:var(--teal-bg);color:var(--teal);border:1px solid var(--teal-border);}
+
+/* integration map */
+.int-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px;}
+.int-card{background:var(--white);border:1px solid var(--rule);border-radius:10px;padding:18px;box-shadow:var(--shadow);}
+.int-card-title{font-family:'Playfair Display',serif;font-size:14px;font-weight:600;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--rule);}
+.int-item{display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--rule);font-size:12px;}
+.int-item:last-child{border-bottom:none;}
+.int-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;margin-top:5px;}
+.int-text{color:var(--ink2);line-height:1.5;}
+
+/* GDC correction callout */
+.correction-box{background:var(--red-bg);border:1px solid var(--red-border);border-radius:10px;padding:20px 24px;margin-bottom:24px;}
+.correction-title{font-family:'Playfair Display',serif;font-size:16px;font-weight:600;color:var(--red);margin-bottom:8px;}
+.correction-body{font-size:13px;color:var(--ink2);line-height:1.7;}
+.correction-body strong{color:var(--ink);font-weight:600;}
+
+.highlight-box{background:var(--navy);color:#fff;border-radius:10px;padding:24px;margin-bottom:24px;}
+.highlight-title{font-family:'Playfair Display',serif;font-size:18px;font-weight:600;margin-bottom:12px;}
+.highlight-body{font-size:13px;color:rgba(255,255,255,.8);line-height:1.8;}
+.hl-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px;}
+.hl-item{background:rgba(255,255,255,.08);border-radius:6px;padding:12px 14px;}
+.hl-item-title{font-size:12px;font-weight:600;color:rgba(255,255,255,.9);margin-bottom:4px;}
+.hl-item-body{font-size:11px;color:rgba(255,255,255,.6);line-height:1.5;}
+
+@media(max-width:700px){
+  .main{padding:24px 20px 40px;}
+  .header{padding:28px 20px 22px;}
+  .summary-strip{grid-template-columns:repeat(3,1fr);}
+  .doc-grid,.int-grid{grid-template-columns:1fr;}
+  .hl-grid{grid-template-columns:1fr;}
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-tag">Farmers FSA · FSOS · Document Integration Map</div>
+  <h1>Your FFS Document Library<br>— and exactly how to use each one</h1>
+  <div class="header-sub">11 official Farmers Financial Solutions documents. Every one has a specific role in your system — from populating the commission engine to powering the AI knowledge base to improving financial review meetings.</div>
+</div>
+
+<div class="summary-strip">
+  <div class="sum-item"><div class="sum-val">11</div><div class="sum-lbl">Documents uploaded</div></div>
+  <div class="sum-item"><div class="sum-val">52</div><div class="sum-lbl">Pages of commission rates</div></div>
+  <div class="sum-item"><div class="sum-val">6</div><div class="sum-lbl">Client-facing forms</div></div>
+  <div class="sum-item"><div class="sum-val">3</div><div class="sum-lbl">System integrations</div></div>
+  <div class="sum-item"><div class="sum-val">1</div><div class="sum-lbl">Critical correction needed</div></div>
+</div>
+
+<div class="main">
+
+<!-- CRITICAL CORRECTION -->
+<div class="correction-box">
+  <div class="correction-title">⚠ Critical correction to your GDC engine — the commission grid is tiered, not flat 80%</div>
+  <div class="correction-body">
+    The Consolidated Commission Rates document reveals the actual FFS payout structure. <strong>The FSA payout rate is NOT a flat 80%.</strong> It operates on a rolling 12-month GDC tier system:<br><br>
+    <strong>Tier 1:</strong> Under $14,999 GDC → <strong>40% payout</strong> (not 80%)<br>
+    <strong>Tier 2:</strong> $15,000–$54,999 GDC → <strong>60% payout</strong><br>
+    <strong>Tier 3:</strong> $55,000+ GDC → <strong>80% payout</strong><br><br>
+    Your GDC Tracker and commission engine currently calculate all payouts at 80%. This must be corrected immediately. The GDC tracker needs a tier selector or rolling 12-month total input so it applies the correct payout rate per your current tier. At Tier 1, your FSA payout is less than half of what the tracker currently shows.
+  </div>
+</div>
+
+<!-- SECTION 1: COMMISSION ENGINE -->
+<div class="section-head">
+  <span class="section-num">01</span>
+  <span class="section-title">Commission rate engine — the most valuable documents</span>
+</div>
+
+<div class="doc-grid">
+  <div class="doc-card">
+    <div class="doc-card-head">
+      <div class="doc-form navy">Database source</div>
+      <div class="doc-title">Consolidated Commission Rates — All States</div>
+      <div class="doc-id">52 pages · May 6, 2026 · Proprietary</div>
+    </div>
+    <div class="doc-card-body">
+      <div class="doc-desc">Your complete FFS commission schedule. Every carrier, every product, every option, every age band, every GDC rate and trail rate — all in one document. This is the authoritative source for every calculation in your system.</div>
+      <div class="doc-uses">
+        <div class="doc-use"><span class="use-tag navy">GDC Engine</span><span class="use-text">Populate every row in the Supabase commission_rates table from this document. One row per carrier/product/option/age band.</span></div>
+        <div class="doc-use"><span class="use-tag red">Tier correction</span><span class="use-text">The Commission Grid on page 5 reveals the 3-tier payout structure (40%/60%/80%) that must replace the flat 80% in your GDC Tracker.</span></div>
+        <div class="doc-use"><span class="use-tag gold">Archive logic</span><span class="use-text">Pages 39–52 are archived schedules (e.g., MassMutual Legend 7 pre-1/1/24 and 1/1/24–2/17/26). Use archived=true in Supabase for these rows — they apply to in-force cases only.</span></div>
+        <div class="doc-use"><span class="use-tag purple">AI Knowledge Base</span><span class="use-text">Load product-type descriptions and general rate ranges into GHL knowledge base for educational responses. Never specific rates — rates are for your calculation engine only.</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-card">
+    <div class="doc-card-head">
+      <div class="doc-form gold">Planning tool</div>
+      <div class="doc-title">Sales Activity Calculator — Using 10-3-1</div>
+      <div class="doc-id">318551 · 04/25 · 4 pages · Proprietary</div>
+    </div>
+    <div class="doc-card-body">
+      <div class="doc-desc">FFS's official calculator for working backwards from a GDC goal to daily activity requirements. Built on Al Granum's 10-3-1 model: 10 introductions → 3 appointments → 1 sale. Has three calculation modes: by new accounts, by GDC goal, and by commission goal.</div>
+      <div class="doc-uses">
+        <div class="doc-use"><span class="use-tag green">Goals tab</span><span class="use-text">Power the Goals page in your GDC Tracker. Enter your GDC goal → the system calculates required introductions/day, appointments needed, and applications required.</span></div>
+        <div class="doc-use"><span class="use-tag navy">7AM briefing</span><span class="use-text">Add to briefing: "You need X introductions today to hit your Tier 3 goal." Makes the daily number concrete and actionable.</span></div>
+        <div class="doc-use"><span class="use-tag gold">Scoring logic</span><span class="use-text">The tier thresholds ($14,999 / $55,000 rolling 12-month GDC) should gate how aggressively the scoring engine pushes opportunities. At Tier 1 you need volume; at Tier 3 you need quality cases.</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SECTION 2: FINANCIAL REVIEW FORMS -->
+<div class="section-head">
+  <span class="section-num">02</span>
+  <span class="section-title">Financial review forms — what you collect in every meeting</span>
+</div>
+
+<div class="doc-grid">
+  <div class="doc-card">
+    <div class="doc-card-head">
+      <div class="doc-form green">Client intake</div>
+      <div class="doc-title">Customer Questionnaire — Personal Information</div>
+      <div class="doc-id">318507 · 06/24 · 1 page · Confidential</div>
+    </div>
+    <div class="doc-card-body">
+      <div class="doc-desc">First-contact intake form capturing personal info and areas of concern. Includes 401(k) status, job change history, IRA status, and life insurance coverage check (10× salary benchmark). This is the pre-meeting discovery form.</div>
+      <div class="doc-uses">
+        <div class="doc-use"><span class="use-tag navy">GHL form</span><span class="use-text">Build this as a GHL survey sent to customers before their financial review appointment. Responses auto-populate the customer record in GHL and Supabase.</span></div>
+        <div class="doc-use"><span class="use-tag green">Scoring signals</span><span class="use-text">"Job change in last 5 years" → rollover opportunity flag. "No life insurance or less than 10× salary" → life cross-sell score boost. "Yes to 401(k) review" → retirement pipeline entry.</span></div>
+        <div class="doc-use"><span class="use-tag purple">AI pre-brief</span><span class="use-text">Conversation AI collects these answers before the FSA meeting. Results appear in the morning briefing so you walk in already knowing their situation.</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-card">
+    <div class="doc-card-head">
+      <div class="doc-form green">Fact-find form</div>
+      <div class="doc-title">Customer Profile Worksheet</div>
+      <div class="doc-id">31-4996 · 09-23 · 4 pages · FFS form</div>
+    </div>
+    <div class="doc-card-body">
+      <div class="doc-desc">The official FFS 4-page fact-find form. Captures financial goals, customer data (full KYC), savings and investments, income/expenses, and a 6-question risk tolerance assessment producing a Conservative/Moderate/Aggressive score plus an Investor Profile model (1–5).</div>
+      <div class="doc-uses">
+        <div class="doc-use"><span class="use-tag navy">Supabase schema</span><span class="use-text">Add a customer_profiles table capturing: risk_tolerance_score, investor_profile (1–5), time_horizon, total_savings, household_income, tax_bracket, investment_experience.</span></div>
+        <div class="doc-use"><span class="use-tag green">Scoring engine</span><span class="use-text">Risk tolerance score feeds product suitability filtering. Conservative profile → FIAs and whole life. Aggressive → VAs and VULs. This prevents the AI from flagging an aggressive product for a conservative customer.</span></div>
+        <div class="doc-use"><span class="use-tag gold">Meeting prep</span><span class="use-text">When the briefing surfaces a retirement appointment, pull the customer's profile score and display it: "Carlos Vega — Risk Score: Moderate (16 pts) — Investor Profile 3 — 10+ year horizon." You walk in prepared.</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-card">
+    <div class="doc-card-head">
+      <div class="doc-form green">Asset snapshot</div>
+      <div class="doc-title">Liability Exposure Worksheet (Declaration of Assets)</div>
+      <div class="doc-id">31-8352 · 04-19 · 1 page · Confidential</div>
+    </div>
+    <div class="doc-card-body">
+      <div class="doc-desc">Calculates total assets at risk: real estate equity, potential wage garnishment, personal property, investment/retirement assets, and existing life insurance. Designed to show customers why they need protection — the gap between what they have and what they could lose.</div>
+      <div class="doc-uses">
+        <div class="doc-use"><span class="use-tag navy">Meeting tool</span><span class="use-text">Use before every life insurance and liability conversation. The "Total Assets at Risk" number creates urgency that raw premium numbers don't.</span></div>
+        <div class="doc-use"><span class="use-tag green">Digital form</span><span class="use-text">Build as an interactive GHL survey or a standalone HTML calculator. Customer fills it out before the meeting — their total assets at risk pre-calculates and appears in your briefing before the appointment.</span></div>
+        <div class="doc-use"><span class="use-tag purple">Scoring signal</span><span class="use-text">High total assets at risk + no permanent life insurance = maximum life cross-sell score. Add "assets_at_risk" field to Supabase customer_profiles table and weight it in the life score SQL.</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-card">
+    <div class="doc-card-head">
+      <div class="doc-form teal">Cash flow</div>
+      <div class="doc-title">Cash Flow Statement</div>
+      <div class="doc-id">31-8422 · 02-24 · 2 pages · FFS form</div>
+    </div>
+    <div class="doc-card-body">
+      <div class="doc-desc">Detailed income vs. expenses worksheet. Covers household essential, transportation, living, family care, medical/health, taxes, and discretionary categories. Identifies surplus cash flow available for investment or insurance premium.</div>
+      <div class="doc-uses">
+        <div class="doc-use"><span class="use-tag navy">Premium sizing</span><span class="use-text">Net monthly surplus tells you what premium a customer can actually afford. Build this calculation into meeting prep — "Mary Jones has $480/mo available after essential expenses."</span></div>
+        <div class="doc-use"><span class="use-tag gold">Digital pre-meeting</span><span class="use-text">Send as GHL survey 48 hours before the retirement or life meeting. Completed data appears in meeting prep section of the briefing — you arrive knowing their budget without asking.</span></div>
+        <div class="doc-use"><span class="use-tag green">Conversion sizing</span><span class="use-text">For term conversion meetings: cash flow statement tells you whether the customer can afford the permanent policy premium. Prevents scheduling a conversion meeting they can't fund.</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-card">
+    <div class="doc-card-head">
+      <div class="doc-form teal">Net worth</div>
+      <div class="doc-title">Statement of Financial Position</div>
+      <div class="doc-id">326578 · 02/24 · 3 pages · FFS form</div>
+    </div>
+    <div class="doc-card-body">
+      <div class="doc-desc">Full personal balance sheet. Assets (cash, tax-free, tax-deferred, taxable, life insurance, use assets), liabilities, net worth calculation, net worth tracker over time, minor assets (529s/UTMAs), and tax bucket analysis (% deferred vs. free vs. taxable).</div>
+      <div class="doc-uses">
+        <div class="doc-use"><span class="use-tag navy">Retirement scoring</span><span class="use-text">Tax bucket breakdown is your retirement product selector. Heavy on tax-deferred (401k/IRA) with nothing in tax-free → Roth conversion and FIA conversation. All taxable → immediate annuity opportunity.</span></div>
+        <div class="doc-use"><span class="use-tag green">Net worth tracker</span><span class="use-text">Annual review trigger: build a Make automation that emails the Statement of Financial Position PDF to existing clients every December with a message to update it before their annual review.</span></div>
+        <div class="doc-use"><span class="use-tag gold">AI pre-screen</span><span class="use-text">Add a simplified version as the pre-meeting survey for retirement appointments. Net worth data feeds the retirement score and product recommendation alignment in the meeting prep briefing.</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-card">
+    <div class="doc-card-head">
+      <div class="doc-form purple">Business clients</div>
+      <div class="doc-title">Business Information Questionnaire</div>
+      <div class="doc-id">6151379.1 · 02/24 · 2 pages · FNWL form</div>
+    </div>
+    <div class="doc-card-body">
+      <div class="doc-desc">Business owner fact-find. Captures entity structure, ownership, employees, existing benefit plans (health, LTD, group life, 401k, SEP, pension), buy-sell agreement status, financial data, and a Business Planning Checklist with priority ranking.</div>
+      <div class="doc-uses">
+        <div class="doc-use"><span class="use-tag purple">New scoring category</span><span class="use-text">Business owners = highest-value FSA prospects. Add a business_owner flag and a business_opportunity_score to Supabase. Triggers: no buy-sell agreement, no key-man life, no retirement plan = 3 simultaneous opportunities.</span></div>
+        <div class="doc-use"><span class="use-tag navy">Separate pipeline</span><span class="use-text">Consider adding a "Business Owner" pipeline to GHL. Business clients follow a different review path (Executive Bonus, Key Man, Buy-Sell) than individual clients.</span></div>
+        <div class="doc-use"><span class="use-tag green">Workshop topic</span><span class="use-text">"Business Owner Financial Review" is a high-converting workshop topic. Use this questionnaire as the pre-workshop intake form. Business owners with no buy-sell agreement are urgent opportunities.</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SECTION 3: MEETING PROCESS GUIDE -->
+<div class="section-head">
+  <span class="section-num">03</span>
+  <span class="section-title">Financial review process — how to run the meeting</span>
+</div>
+
+<div class="doc-grid">
+  <div class="doc-card">
+    <div class="doc-card-head">
+      <div class="doc-form navy">Process guide</div>
+      <div class="doc-title">Financial Reviews — Guide for Farmers FSA Agents</div>
+      <div class="doc-id">32-9913 · 04-24 · 5 pages · Proprietary (agent use only)</div>
+    </div>
+    <div class="doc-card-body">
+      <div class="doc-desc">The official FFS 5-step financial review process: Fact Finding → Asset Inventory → Assess Options → Presentation → Open Account. Includes the Customer Needs Map (age cohort → product matrix), Priority Pyramid (Protection→Savings→Growth), key investment topics, and common objection responses.</div>
+      <div class="doc-uses">
+        <div class="doc-use"><span class="use-tag purple">AI Knowledge Base — critical</span><span class="use-text">The Customer Needs Map is your scoring engine's product alignment logic. Age 20-30 → term + emergency fund. Age 50-60 → IRA, rollover, indexed annuity. Load the full cohort matrix into GHL knowledge base.</span></div>
+        <div class="doc-use"><span class="use-tag navy">Retirement scoring</span><span class="use-text">The age cohort table directly maps to retirement scoring rules. "Nearing Retirement" (60-70) with no IRA, rollover, or indexed annuity = maximum retirement score. Add cohort_label to Supabase based on DOB.</span></div>
+        <div class="doc-use"><span class="use-tag gold">AI objection handling</span><span class="use-text">The 3 common objections ("market goes down", "already have an advisor", "want to think about it") should be scripted into Conversation AI responses — word-for-word from this document, within compliance guardrails.</span></div>
+        <div class="doc-use"><span class="use-tag green">FFS Sales Desk</span><span class="use-text">Document confirms: call (866) 888-9739 Option 4 before any presentation to review the case with FFS Sales Support. Build this as a checklist item in your GHL opportunity record before moving to "Presentation" stage.</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SECTION 4: CONTACTS & RESOURCES -->
+<div class="section-head">
+  <span class="section-num">04</span>
+  <span class="section-title">Key contacts — who to call and when</span>
+</div>
+
+<div class="doc-grid">
+  <div class="doc-card">
+    <div class="doc-card-head">
+      <div class="doc-form teal">Contact directory</div>
+      <div class="doc-title">FFS Phone Directory — Sales Team</div>
+      <div class="doc-id">FFSPhoneDirectory · Rev.04-26 · Proprietary</div>
+    </div>
+    <div class="doc-card-body">
+      <div class="doc-desc">Complete FFS Sales Team directory. Sales Desk: (866) 888-9739 Option 3 → then Option 3 for Central territory (Texas). Your FSD: Matt Anderson (818) 584-0264 / matthew.1.anderson@farmersinsurance.com. Internal Wholesaler for Central: Ando Agamalian (818) 584-0205.</div>
+      <div class="doc-uses">
+        <div class="doc-use"><span class="use-tag navy">Command Center</span><span class="use-text">Add an FFS Contacts quick-reference panel to the command center UI. One-click to call Sales Desk, your FSD Matt Anderson, and Internal Wholesaler Ando Agamalian.</span></div>
+        <div class="doc-use"><span class="use-tag purple">AI Knowledge Base</span><span class="use-text">Load into GHL knowledge base so Conversation AI can answer "How do I reach FFS?" with the correct phone and extension — not a generic response.</span></div>
+        <div class="doc-use"><span class="use-tag gold">Opportunity workflow</span><span class="use-text">Add a GHL workflow stage reminder: when an opportunity moves to "Assess Options," automatically send you an internal task: "Call FFS Sales Desk at (866) 888-9739 Opt 3 → Opt 3 before the presentation."</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-card">
+    <div class="doc-card-head">
+      <div class="doc-form teal">Resource directory</div>
+      <div class="doc-title">Farmers Financial Solutions Resource Directory</div>
+      <div class="doc-id">Wholesalers.pdf · 04-25 · 3 pages · Proprietary</div>
+    </div>
+    <div class="doc-card-body">
+      <div class="doc-desc">Complete FFS resource directory. Includes call tree options, all FSD contacts, Internal Sales Support, Compliance Consultants, OSJ/New Accounts Department Principals, Licensing & Registration team, plus carrier contacts (Athene, Corebridge, MassMutual Ascend, Pacific Life, Protective, Sammons, Equitable Annuities) and mutual fund dealer numbers.</div>
+      <div class="doc-uses">
+        <div class="doc-use"><span class="use-tag navy">Compliance contacts</span><span class="use-text">Your FFS Regional Compliance Consultant for TX/Central region: Ryan Anderson (253) 242-0597. Add to command center contacts panel. Call before any edge-case compliance question — do not rely on AI for compliance answers.</span></div>
+        <div class="doc-use"><span class="use-tag red">OSJ contacts</span><span class="use-text">New accounts go through the OSJ New Accounts Department. Key contact: Lora Brandt — FFS Supervisory Principal Manager (818) 584-0199. Add to opportunity workflow for "Open Requested Account" stage.</span></div>
+        <div class="doc-use"><span class="use-tag green">Carrier contacts</span><span class="use-text">Load all carrier phone numbers into GHL knowledge base. When a client calls asking about an Athene policy, AI answers: "For Athene questions call (888) 266-8489 Option 4."</span></div>
+        <div class="doc-use"><span class="use-tag gold">Commission questions</span><span class="use-text">Commissions/Finance issues → (866) 888-9739 Option 6 or usw_ffs_accounting@farmersinsurance.com. Add to GDC Tracker as a "Questions?" link so you know exactly who to call when a payout doesn't match.</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SECTION 5: SYSTEM INTEGRATION PLAN -->
+<div class="section-head">
+  <span class="section-num">05</span>
+  <span class="section-title">Complete integration plan — where every document goes</span>
+</div>
+
+<div class="highlight-box">
+  <div class="highlight-title">The 4 systems these documents feed into</div>
+  <div class="highlight-body">Every document has a specific destination in your FSOS. Nothing sits in a drawer.</div>
+  <div class="hl-grid">
+    <div class="hl-item">
+      <div class="hl-item-title">Supabase database</div>
+      <div class="hl-item-body">Commission Rates (all 52 pages) → commission_rates table. Customer Profile, Liability Worksheet, Cash Flow, Statement of Financial Position → customer_profiles table schema. Business Questionnaire → business_profiles table. Risk tolerance scores → scoring weight adjustments.</div>
+    </div>
+    <div class="hl-item">
+      <div class="hl-item-title">GHL Knowledge Base</div>
+      <div class="hl-item-body">Customer Needs Map (age cohort → products) → retirement and life scoring logic and AI educational responses. Common objections → Conversation AI scripts. FFS carrier contacts → AI directory answers. Financial review process steps → AI meeting prep.</div>
+    </div>
+    <div class="hl-item">
+      <div class="hl-item-title">GHL Surveys / Forms</div>
+      <div class="hl-item-body">Customer Questionnaire → pre-meeting GHL form. Liability Exposure Worksheet → digital HTML calculator sent pre-appointment. Cash Flow Statement → pre-meeting survey. Statement of Financial Position → annual review digital form. Business Questionnaire → business owner pre-meeting form.</div>
+    </div>
+    <div class="hl-item">
+      <div class="hl-item-title">Command Center UI</div>
+      <div class="hl-item-body">FFS Contacts panel → direct links to Sales Desk, FSD Matt Anderson, Wholesaler Ando Agamalian, Compliance Ryan Anderson, OSJ Lora Brandt. GDC Tracker → corrected tier structure (40%/60%/80%). Sales Activity Calculator → Goals page integration.</div>
+    </div>
+  </div>
+</div>
+
+<!-- IMMEDIATE ACTIONS -->
+<div class="section-head">
+  <span class="section-num">06</span>
+  <span class="section-title">Immediate actions — what to do with these documents right now</span>
+</div>
+
+<div class="int-grid">
+  <div class="int-card">
+    <div class="int-card-title" style="color:var(--red)">🔴 Do today — critical fixes</div>
+    <div class="int-item"><div class="int-dot" style="background:var(--red)"></div><div class="int-text">Fix the GDC Tracker tier structure: add a "Current GDC Tier" selector (Tier 1/2/3) that applies 40%/60%/80% instead of flat 80%. Every commission calculation in the system is currently overstated if you're in Tier 1 or 2.</div></div>
+    <div class="int-item"><div class="int-dot" style="background:var(--red)"></div><div class="int-text">Update the Supabase commission engine: the calculate_case_gdc() function must accept a tier parameter and apply the correct payout rate based on rolling 12-month GDC total.</div></div>
+    <div class="int-item"><div class="int-dot" style="background:var(--red)"></div><div class="int-text">Add your FSD contact (Matt Anderson) and Internal Wholesaler (Ando Agamalian) to a contacts panel in the command center UI. These are your primary FFS support contacts for Texas.</div></div>
+  </div>
+
+  <div class="int-card">
+    <div class="int-card-title" style="color:var(--gold)">🟡 Do this week — commission rates</div>
+    <div class="int-item"><div class="int-dot" style="background:var(--gold)"></div><div class="int-text">Enter your most-used products from the Commission Rates document into the Supabase commission_rates table. Priority order: Athene Agility 10, MassMutual Ascend Legend 7, Pacific Horizon IUL, Protective SPWL, Mutual Fund IRA.</div></div>
+    <div class="int-item"><div class="int-dot" style="background:var(--gold)"></div><div class="int-text">For each product: enter one row per option × age band. MassMutual Legend 7 alone has 7 options × 3 age bands = 21 rows. Budget 2–3 hours for full data entry.</div></div>
+    <div class="int-item"><div class="int-dot" style="background:var(--gold)"></div><div class="int-text">Mark archived schedules (Appendix, pages 39–52) with archived=true and the effective_date range so in-force case calculations use the correct historical rate.</div></div>
+  </div>
+
+  <div class="int-card">
+    <div class="int-card-title" style="color:var(--green)">🟢 Do this month — forms and scoring</div>
+    <div class="int-item"><div class="int-dot" style="background:var(--green)"></div><div class="int-text">Build the Customer Questionnaire (318507) as a GHL survey. Set it to auto-send 48 hours before every financial review appointment. Responses populate Supabase customer_profiles automatically.</div></div>
+    <div class="int-item"><div class="int-dot" style="background:var(--green)"></div><div class="int-text">Add the Customer Needs Map age cohort logic to the retirement scoring SQL. "Nearing Retirement" (60–70) with no indexed annuity or rollover = maximum retirement score regardless of other signals.</div></div>
+    <div class="int-item"><div class="int-dot" style="background:var(--green)"></div><div class="int-text">Add a business_owner_flag to Supabase customers. Any customer identified as a business owner triggers the Business Questionnaire outreach sequence and a separate "Business Owner" scoring track.</div></div>
+    <div class="int-item"><div class="int-dot" style="background:var(--green)"></div><div class="int-text">Load FFS carrier contacts, common objections, and the Customer Needs Map into the GHL knowledge base before activating Conversation AI.</div></div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

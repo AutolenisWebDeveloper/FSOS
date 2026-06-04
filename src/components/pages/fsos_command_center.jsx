@@ -1035,11 +1035,12 @@ function AgencyOwners({toast}) {
   const fmtD = n => "$"+Number(n||0).toLocaleString("en-US");
   const BASE = typeof window !== "undefined" ? window.location.origin : "https://fsos.vercel.app";
 
-  // Load live agencies + referrals
+  // Load live agencies (with referral stats) + raw referral list
   useEffect(() => {
     Promise.all([
+      fetch("/api/agencies/list").then(r=>r.json()).catch(()=>({agencies:[]})),
       fetch("/api/agencies/referral?limit=200").then(r=>r.json()).catch(()=>({referrals:[]})),
-    ]).then(([refData]) => {
+    ]).then(([listData, refData]) => {
       const refs = refData.referrals || [];
       // Group referrals by agency_id
       const byAgency = {};
@@ -1048,6 +1049,28 @@ function AgencyOwners({toast}) {
         byAgency[r.agency_id].push(r);
       });
       setReferralsByAgency(byAgency);
+
+      // Merge live agency stats onto the base AGENCY_DATA records (matched by id)
+      const live = listData.agencies || [];
+      if (live.length > 0) {
+        const byId = {};
+        live.forEach(a => { byId[a.agency_id] = a; });
+        setAgencies(prev => prev.map(ag => {
+          const L = byId[ag.id];
+          if (!L) return ag;
+          const days = L.days_since_referral ?? ag.daysSinceReferral;
+          return {
+            ...ag,
+            owner: L.owner || ag.owner,
+            city: L.city || ag.city,
+            referrals: L.referral_count ?? ag.referrals,
+            pendingReferrals: L.pending_referrals ?? 0,
+            lastReferral: L.last_referral ? new Date(L.last_referral).toISOString().split("T")[0] : ag.lastReferral,
+            daysSinceReferral: days,
+            needsAttention: !!L.needs_attention || (days != null && days > 30),
+          };
+        }));
+      }
       setLoading(false);
     });
   }, []);
@@ -1346,8 +1369,9 @@ function AgencyOwners({toast}) {
               </div>
               <div style={{textAlign:"right"}}>
                 <div style={{fontSize:9,color:"var(--muted)",fontFamily:"DM Mono,monospace",marginBottom:2}}>
-                  {a.needsAttention ? <span style={{color:"var(--red)"}}>⚠ {a.daysSinceReferral}d inactive</span> : `Active ${a.lastActivity}d ago`}
+                  {a.needsAttention ? <span style={{color:"var(--red)",fontWeight:700}}>⚠ NEEDS ATTENTION · {a.daysSinceReferral}d</span> : `Active ${a.daysSinceReferral!=null?a.daysSinceReferral:a.lastActivity}d ago`}
                 </div>
+                {a.pendingReferrals>0 && <div style={{fontSize:9,color:"var(--orange)",fontFamily:"DM Mono,monospace",marginBottom:2}}>{a.pendingReferrals} pending referral{a.pendingReferrals!==1?"s":""}</div>}
                 <div style={{fontSize:16,fontWeight:700,color:"var(--green2)"}}>{fmtK(a.issuedGDC)}</div>
               </div>
             </div>
@@ -3015,41 +3039,69 @@ function ConversionCenter({toast,appData={}}) {
 // 2. OPRA CENTER — Transfer tracking
 // ─────────────────────────────────────────────────────────
 function OPRACenter({toast,appData={}}) {
-  const liveData = appData.opraDue || [];
-  const [overrides, setOverrides] = useState({});
+  const [liveData, setLiveData] = useState([]);
+  const [counts, setCounts] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  const cases = (liveData.length > 0 ? liveData : OPRA_CASES).map(c => {
+  const refresh = useCallback(() => {
+    setLoading(true);
+    // Show uncontacted first
+    fetch("/api/opra?contacted=false&limit=100")
+      .then(r => r.json())
+      .then(d => {
+        setLiveData(d.cases || []);
+        setCounts(d.counts || null);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const usingLive = liveData.length > 0;
+  const cases = (usingLive ? liveData : OPRA_CASES).map(c => {
     const isLive = !!c.opra_id;
     const id = isLive ? c.opra_id : c.id;
-    const ov = overrides[id] || {};
     return {
       id,
+      isLive,
       client: isLive ? `${c.customers?.first_name||""} ${c.customers?.last_name||""}`.trim()||"Unknown" : c.client,
       agency: isLive ? (c.customers?.agencies?.name||"—") : c.agency,
       transferDate: isLive ? c.transfer_date : c.transferDate,
       premium: isLive ? (c.annual_premium||0) : c.premium,
-      contacted: ov.contacted ?? (isLive ? c.contacted : c.contacted),
-      apptScheduled: ov.apptScheduled ?? (isLive ? c.appt_scheduled : c.apptScheduled),
-      reviewDone: ov.reviewDone ?? (isLive ? c.review_complete : c.reviewDone),
-      status: ov.status ?? (isLive ? c.status : c.status),
+      contacted: isLive ? c.contacted : c.contacted,
+      apptScheduled: isLive ? c.appt_scheduled : c.apptScheduled,
+      reviewDone: isLive ? c.review_complete : c.reviewDone,
+      transferred: isLive ? c.transferred : false,
+      status: isLive ? c.status : c.status,
     };
   });
 
-  const cycle = (id, field) => {
-    setOverrides(prev => {
-      const cur = prev[id] || {};
-      const updated = {...cur, [field]:!cur[field]};
-      if(field==="reviewDone") updated.status = updated.reviewDone ? "Review Complete" : "Appt Scheduled";
-      else if(field==="apptScheduled") updated.status = updated.apptScheduled ? "Appt Scheduled" : "Needs Appt";
-      else if(field==="contacted") updated.status = updated.contacted ? "Needs Appt" : "Not Contacted";
-      toast(`${cases.find(c=>c.id===id)?.client||"Case"} updated`,"success");
-      return {...prev, [id]:updated};
-    });
+  // Persist a status change to the OPRA case, then refresh from the server
+  const patchCase = async (c, body, label) => {
+    if (!c.isLive) { toast("Demo row — connect data to persist","info"); return; }
+    try {
+      const res = await fetch("/api/opra", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ opra_id: c.id, ...body }),
+      });
+      const d = await res.json();
+      if (d.case) { toast(`${c.client} — ${label}`,"success"); refresh(); }
+      else toast(d.error || "Update failed","error");
+    } catch { toast("Network error","error"); }
+  };
+
+  const cycle = (c, field) => {
+    if (field==="contacted") patchCase(c, { contacted: !c.contacted, contacted_at: new Date().toISOString() }, "marked contacted");
+    else if (field==="apptScheduled") patchCase(c, { appt_scheduled: !c.apptScheduled }, "appointment updated");
+    else if (field==="reviewDone") patchCase(c, { review_complete: !c.reviewDone }, "review updated");
   };
 
   const ready = cases.filter(c=>!c.reviewDone).length;
-  const booked = cases.filter(c=>c.apptScheduled).length;
-  const notContacted = cases.filter(c=>!c.contacted).length;
+  const booked = counts ? counts.appt_scheduled : cases.filter(c=>c.apptScheduled).length;
+  const notContacted = counts ? counts.not_contacted : cases.filter(c=>!c.contacted).length;
+  const totalCases = counts ? counts.total : cases.length;
 
   return (<>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
@@ -3062,7 +3114,7 @@ function OPRACenter({toast,appData={}}) {
     {/* SUMMARY */}
     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:16}}>
       {[
-        {label:"Total OPRA Cases",val:cases.length,color:"var(--text)",bg:"var(--card)"},
+        {label:"Total OPRA Cases",val:totalCases,color:"var(--text)",bg:"var(--card)"},
         {label:"Not Contacted",val:notContacted,color:"var(--red)",bg:"var(--red-bg)",bdr:"var(--red-border)"},
         {label:"Appointments Booked",val:booked,color:"#2b6cb0",bg:"var(--blue-bg)",bdr:"var(--blue-border)"},
         {label:"Ready to Close",val:ready,color:"var(--orange)",bg:"var(--orange-bg)",bdr:"var(--orange-border)"},
@@ -3073,6 +3125,8 @@ function OPRACenter({toast,appData={}}) {
         </div>
       ))}
     </div>
+
+    {loading && <div style={{fontSize:12,color:"var(--muted)",marginBottom:10}}>Loading OPRA cases…</div>}
 
     {/* TABLE */}
     <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:10,overflow:"auto",boxShadow:"var(--shadow)"}}>
@@ -3093,25 +3147,26 @@ function OPRACenter({toast,appData={}}) {
               <td className="td-mono" style={{fontSize:10,color:"var(--muted)"}}>{c.transferDate}</td>
               <td className="td-mono" style={{textAlign:"right",fontWeight:600}}>${c.premium.toLocaleString()}</td>
               <td style={{textAlign:"center"}}>
-                <button style={{fontSize:14,background:"none",border:"none",cursor:"pointer"}} onClick={()=>cycle(c.id,"contacted")} title="Toggle contacted">
+                <button style={{fontSize:14,background:"none",border:"none",cursor:"pointer"}} onClick={()=>cycle(c,"contacted")} title="Mark contacted">
                   {c.contacted?"✅":"⭕"}
                 </button>
               </td>
               <td style={{textAlign:"center"}}>
-                <button style={{fontSize:14,background:"none",border:"none",cursor:"pointer"}} onClick={()=>cycle(c.id,"apptScheduled")} title="Toggle appointment">
+                <button style={{fontSize:14,background:"none",border:"none",cursor:"pointer"}} onClick={()=>cycle(c,"apptScheduled")} title="Toggle appointment">
                   {c.apptScheduled?"📅":"—"}
                 </button>
               </td>
               <td style={{textAlign:"center"}}>
-                <button style={{fontSize:14,background:"none",border:"none",cursor:"pointer"}} onClick={()=>cycle(c.id,"reviewDone")} title="Toggle review done">
+                <button style={{fontSize:14,background:"none",border:"none",cursor:"pointer"}} onClick={()=>cycle(c,"reviewDone")} title="Toggle review done">
                   {c.reviewDone?"✅":"⭕"}
                 </button>
               </td>
-              <td><span className={`sp ${c.reviewDone?"sp-confirmed":c.apptScheduled?"sp-submitted":c.contacted?"sp-pending":"sp-flagged"}`}>{c.status}</span></td>
+              <td><span className={`sp ${c.transferred?"sp-confirmed":c.reviewDone?"sp-confirmed":c.apptScheduled?"sp-submitted":c.contacted?"sp-pending":"sp-flagged"}`}>{c.transferred?"Transferred":c.status}</span></td>
               <td>
                 <div style={{display:"flex",gap:4}}>
-                  <button style={{fontSize:9,padding:"3px 8px",borderRadius:3,border:"none",background:"#2b6cb0",color:"#fff",cursor:"pointer"}} onClick={()=>toast(`Opening ${c.client}`,"info")}>Open</button>
-                  <button style={{fontSize:9,padding:"3px 6px",borderRadius:3,border:"1px solid var(--green-border)",background:"var(--green-bg)",color:"var(--green)",cursor:"pointer"}} onClick={()=>toast(`Calling ${c.client}`,"success")}>📞</button>
+                  <button style={{fontSize:9,padding:"3px 8px",borderRadius:3,border:"none",background:"#2b6cb0",color:"#fff",cursor:"pointer"}} onClick={()=>patchCase(c,{contacted:true,contacted_at:new Date().toISOString()},"marked contacted")}>Mark Contacted</button>
+                  <button style={{fontSize:9,padding:"3px 8px",borderRadius:3,border:"1px solid var(--blue-border)",background:"var(--blue-bg)",color:"#2b6cb0",cursor:"pointer"}} onClick={()=>patchCase(c,{appt_scheduled:true},"appt scheduled")}>Appt Scheduled</button>
+                  <button style={{fontSize:9,padding:"3px 8px",borderRadius:3,border:"1px solid var(--green-border)",background:"var(--green-bg)",color:"var(--green)",cursor:"pointer"}} onClick={()=>patchCase(c,{transferred:true,transferred_date:new Date().toISOString().split("T")[0],status:"transferred"},"transferred")}>Transferred</button>
                 </div>
               </td>
             </tr>
@@ -3131,23 +3186,42 @@ function OPRACenter({toast,appData={}}) {
 // ─────────────────────────────────────────────────────────
 function OpportunityDashboard({toast,appData={}}) {
   const [expanded, setExpanded] = useState(null);
-  const liveOpps = appData.topOpportunities || [];
-  const loading = appData.loading || false;
+  const [opps, setOpps] = useState([]);
+  const [pipelineCounts, setPipelineCounts] = useState({});
+  const [pipeFilter, setPipeFilter] = useState("all");
+  const [loading, setLoading] = useState(true);
+
+  const actionColor = {CONV:"var(--orange)",OPRA:"var(--red)",LIFE:"var(--blue)",RETIRE:"var(--purple)",BIZ:"#7b2d8b"};
+  const actionLabel = {CONV:"Conversion",OPRA:"OPRA",LIFE:"Life Review",RETIRE:"Retirement",BIZ:"Business Owner"};
+  const actionMap2 = {conversions:"CONV",opra:"OPRA",life:"LIFE",retirement:"RETIRE",business:"BIZ"};
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`/api/scores?limit=100${pipeFilter!=="all"?`&pipeline=${pipeFilter}`:""}`)
+      .then(r => r.json())
+      .then(d => {
+        setOpps(d.opportunities || []);
+        setPipelineCounts(d.pipeline_counts || {});
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [pipeFilter]);
 
   // Map live scored customers to display format
-  const priorities = liveOpps.map(o => {
+  const priorities = opps.map(o => {
     const name = `${o.customers?.first_name||""} ${o.customers?.last_name||""}`.trim()||"Unknown";
     const pipeline = o.primary_pipeline || "general";
-    const actionMap2 = {conversions:"CONV",opra:"OPRA",life:"LIFE",retirement:"RETIRE",business:"BIZ"};
     const action = actionMap2[pipeline] || "LIFE";
     const score = o.priority_score || 0;
     return {
       name,
       pri: score >= 75 ? "HIGH" : score >= 50 ? "MED" : "LOW",
       reason: `${actionLabel[action]||pipeline} opportunity`,
-      face: "—",
+      face: o.customers?.age ? `Age ${o.customers.age}` : "—",
       policy: pipeline,
       agency: o.customers?.agencies?.name || "—",
+      phone: o.customers?.phone || "",
+      email: o.customers?.email || "",
       score,
       action,
       calls: 0, sms: 0,
@@ -3157,15 +3231,21 @@ function OpportunityDashboard({toast,appData={}}) {
     };
   });
 
-  // Fall back to hardcoded data if DB is empty
-  const displayPriorities = priorities.length > 0 ? priorities : PRIORITIES;
+  // Fall back to hardcoded data only if DB is empty AND no filter is applied
+  const displayPriorities = priorities.length > 0 ? priorities : (pipeFilter==="all" && !loading ? PRIORITIES : []);
 
   const high = displayPriorities.filter(p=>p.pri==="HIGH"||p.biz);
   const med  = displayPriorities.filter(p=>p.pri==="MED"&&!p.biz);
   const low  = displayPriorities.filter(p=>p.pri==="LOW"&&!p.biz);
 
-  const actionColor = {CONV:"var(--orange)",OPRA:"var(--red)",LIFE:"var(--blue)",RETIRE:"var(--purple)",BIZ:"#7b2d8b"};
-  const actionLabel = {CONV:"Conversion",OPRA:"OPRA",LIFE:"Life Review",RETIRE:"Retirement",BIZ:"Business Owner"};
+  const pipeButtons = [
+    {id:"all",label:"All"},
+    {id:"conversions",label:"Conversions"},
+    {id:"opra",label:"OPRA"},
+    {id:"life",label:"Life"},
+    {id:"retirement",label:"Retirement"},
+    {id:"business",label:"Business"},
+  ];
 
   const OppGroup = ({title, items, color, icon}) => (
     <div style={{marginBottom:20}}>
@@ -3191,6 +3271,7 @@ function OpportunityDashboard({toast,appData={}}) {
               </div>
               <div style={{fontSize:11,color:"var(--muted)",marginBottom:4}}>{p.reason}</div>
               <div style={{fontSize:10,color:"var(--dim)",fontFamily:"DM Mono,monospace"}}>◎ {p.face} · {p.policy} · {p.agency}</div>
+              {(p.phone||p.email) && <div style={{fontSize:10,color:"var(--dim)",fontFamily:"DM Mono,monospace",marginTop:2}}>{[p.phone,p.email].filter(Boolean).join(" · ")}</div>}
             </div>
             <div style={{textAlign:"center",flexShrink:0}}>
               <div style={{fontSize:22,fontWeight:700,color:"#2b6cb0",lineHeight:1}}>{p.score}</div>
@@ -3219,10 +3300,20 @@ function OpportunityDashboard({toast,appData={}}) {
         <div style={{fontSize:12,color:"var(--muted)"}}>Every revenue opportunity ranked by priority · Click any card to take action</div>
       </div>
       <div style={{display:"flex",gap:6}}>
-        <button className="btn-secondary" style={{fontSize:10,padding:"5px 12px"}} onClick={()=>toast("Refreshing scores...","info")}>↻ Refresh Scores</button>
+        <button className="btn-secondary" style={{fontSize:10,padding:"5px 12px"}} onClick={()=>setPipeFilter(f=>f)}>↻ Refresh Scores</button>
         <button className="btn-secondary" style={{fontSize:10,padding:"5px 12px"}} onClick={()=>toast("Exporting opportunities...","success")}>Export CSV</button>
       </div>
     </div>
+    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:16}}>
+      {pipeButtons.map(b=>(
+        <button key={b.id} onClick={()=>setPipeFilter(b.id)}
+          style={{fontSize:10,padding:"5px 12px",borderRadius:5,cursor:"pointer",border:`1px solid ${pipeFilter===b.id?"#2b6cb0":"var(--border)"}`,background:pipeFilter===b.id?"var(--blue-bg)":"var(--card)",color:pipeFilter===b.id?"#2b6cb0":"var(--text)",fontWeight:pipeFilter===b.id?700:500,fontFamily:"DM Mono,monospace"}}>
+          {b.label}{b.id!=="all"&&pipelineCounts[b.id]!=null?` (${pipelineCounts[b.id]})`:""}
+        </button>
+      ))}
+    </div>
+    {loading && <div style={{fontSize:12,color:"var(--muted)",marginBottom:12}}>Loading opportunities…</div>}
+    {!loading && displayPriorities.length===0 && <div style={{fontSize:12,color:"var(--muted)",marginBottom:12}}>No opportunities for this pipeline yet.</div>}
     <OppGroup title="High Priority" items={high} color="var(--red)" icon="🔥"/>
     <OppGroup title="Medium Priority" items={med} color="var(--orange)" icon="⚡"/>
     <OppGroup title="Low Priority / Follow-up" items={low} color="var(--blue)" icon="📌"/>

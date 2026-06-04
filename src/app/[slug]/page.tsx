@@ -10,7 +10,8 @@ interface Agency {
   agency_id: string
   name: string
   owner: string
-  slug: string
+  city?: string
+  slug?: string
 }
 
 export default function AgencyReferralPage() {
@@ -18,6 +19,7 @@ export default function AgencyReferralPage() {
   const slug = params.slug as string
 
   const [agency, setAgency] = useState<Agency | null>(null)
+  const [notFound, setNotFound] = useState(false)
   const [loading, setLoading] = useState(true)
   const [submitted, setSubmitted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -30,12 +32,19 @@ export default function AgencyReferralPage() {
     notes: '',
   })
 
-  // Validate agency slug on load
+  // Look up the agency by slug on load so we can greet by owner name
   useEffect(() => {
     if (!slug) return
-    // We don't have a public agency lookup endpoint — just mark as valid and let POST handle it
-    setLoading(false)
-    setAgency({ agency_id: '', name: '', owner: '', slug })
+    setLoading(true)
+    fetch(`/api/agencies/referral?slug=${encodeURIComponent(slug)}`)
+      .then(async res => {
+        if (res.status === 404) { setNotFound(true); setAgency(null); return }
+        const data = await res.json()
+        if (data.error) { setNotFound(true); setAgency(null); return }
+        setAgency({ ...data, slug })
+      })
+      .catch(() => setNotFound(true))
+      .finally(() => setLoading(false))
   }, [slug])
 
   async function handleSubmit(e: React.FormEvent) {
@@ -72,6 +81,18 @@ export default function AgencyReferralPage() {
     </div>
   )
 
+  if (notFound) return (
+    <Page>
+      <div style={{ textAlign: 'center', padding: '40px 32px' }}>
+        <div style={{ fontSize: 44, marginBottom: 16 }}>🔗</div>
+        <h2 style={{ fontSize: 20, fontWeight: 700, color: '#1a2332', margin: '0 0 12px' }}>Referral link not active</h2>
+        <p style={{ fontSize: 14, color: '#6b7a8d', lineHeight: 1.7, margin: 0 }}>
+          This referral link is not active. Contact your agent for a new link.
+        </p>
+      </div>
+    </Page>
+  )
+
   if (submitted) return (
     <Page>
       <div style={{ textAlign: 'center', padding: '40px 32px' }}>
@@ -95,6 +116,11 @@ export default function AgencyReferralPage() {
     <Page>
       <div style={{ padding: '24px 32px' }}>
         <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1a2332', margin: '0 0 6px' }}>Refer a Client</h2>
+        {agency?.owner && (
+          <p style={{ fontSize: 13, color: '#2b6cb0', fontWeight: 600, margin: '0 0 6px' }}>
+            Referred by {agency.owner}{agency.name ? ` — ${agency.name}` : ''}
+          </p>
+        )}
         <p style={{ fontSize: 13, color: '#6b7a8d', margin: '0 0 24px', lineHeight: 1.6 }}>
           Submit a client referral to Markist. Your client will receive a secure questionnaire
           to prepare for their financial review.

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
+import { TRAIGA_SMS_FOOTER } from '@/lib/compliance'
 import { Resend } from 'resend'
 import { randomUUID } from 'crypto'
 
@@ -115,7 +116,7 @@ export async function POST(req: NextRequest) {
     if ((channel === 'sms' || channel === 'both') && destination) {
       try {
         if (process.env.GHL_API_KEY && process.env.GHL_LOCATION_ID) {
-          const smsBody = `Hi ${client_name || 'there'}, Markist sent you a secure form to complete before your appointment. Tap to open: ${link}\n\nReply STOP to opt out.`
+          const smsBody = `Hi ${client_name || 'there'}, Markist sent you a secure form to complete before your appointment. Tap to open: ${link}\n\n${TRAIGA_SMS_FOOTER}`
 
           // GHL send SMS API
           await fetch(`https://services.leadconnectorhq.com/conversations/messages`, {

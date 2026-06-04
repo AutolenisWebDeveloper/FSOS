@@ -131,8 +131,23 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   const supabase = getDb()
+  const slug = req.nextUrl.searchParams.get('slug')
   const agency_id = req.nextUrl.searchParams.get('agency_id')
   const limit = parseInt(req.nextUrl.searchParams.get('limit') || '50')
+
+  // Mode: public agency lookup by slug (used by the referral page on mount)
+  if (slug) {
+    const { data: agency, error: slugErr } = await supabase
+      .from('agencies')
+      .select('agency_id, name, owner, city')
+      .eq('slug', slug)
+      .maybeSingle()
+
+    if (slugErr || !agency) {
+      return NextResponse.json({ error: 'Agency not found' }, { status: 404 })
+    }
+    return NextResponse.json(agency)
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let query: any = supabase

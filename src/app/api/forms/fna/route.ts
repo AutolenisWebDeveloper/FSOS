@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
+import { FINRA_DISCLAIMER } from '@/lib/compliance'
 import Anthropic from '@anthropic-ai/sdk'
 
 export const dynamic = 'force-dynamic'
@@ -68,6 +69,7 @@ IMPORTANT COMPLIANCE REQUIREMENTS:
 - Do NOT make investment, securities, or insurance suitability determinations
 - All actual recommendations require a licensed FSA meeting and FINRA Reg BI review
 - Product categories are acceptable; specific carriers/products are NOT
+- Every report MUST carry this exact disclaimer verbatim: "${FINRA_DISCLAIMER}"
 
 CLIENT DATA:
 ${JSON.stringify(clientData, null, 2)}
@@ -122,6 +124,9 @@ Generate a complete FNA. Return ONLY valid JSON (no markdown fences, no preamble
       console.error('FNA JSON parse error. Raw output:', text.slice(0, 500))
       return NextResponse.json({ error: 'Failed to parse AI response' }, { status: 500 })
     }
+
+    // Guarantee the FINRA disclaimer is present on every report regardless of model output
+    report.compliance_disclaimer = FINRA_DISCLAIMER
 
     // 5. Store report
     const { error: updateErr } = await getDb()

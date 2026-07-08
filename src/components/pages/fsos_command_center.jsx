@@ -3298,6 +3298,10 @@ function OpportunityDashboard({toast,appData={}}) {
       booked: false,
       biz: pipeline === "business",
       formDone: false,
+      ghlStage: o.ghl?.stage || null,
+      ghlPipeline: o.ghl?.pipeline || null,
+      ghlPos: o.ghl?.stage_position || null,
+      inGhl: !!o.ghl?.in_ghl,
     };
   });
 
@@ -3337,6 +3341,8 @@ function OpportunityDashboard({toast,appData={}}) {
                   {actionLabel[p.action]}
                 </span>
                 {p.formDone && <span style={{fontSize:9,background:"var(--green-bg)",color:"var(--green)",border:"1px solid var(--green-border)",borderRadius:3,padding:"2px 5px",fontFamily:"DM Mono,monospace"}}>Forms ✓</span>}
+                {p.ghlStage && <span title={p.ghlPipeline?`GHL · ${p.ghlPipeline}`:"GoHighLevel pipeline stage"} style={{fontSize:9,background:"#f0e9ff",color:"#6b46c1",border:"1px solid #d6bcfa",borderRadius:3,padding:"2px 6px",fontFamily:"DM Mono,monospace"}}>◆ {p.ghlPos?`${p.ghlPos}. `:""}{p.ghlStage}</span>}
+                {!p.ghlStage && p.inGhl && <span title="Synced to GoHighLevel (no opportunity stage yet)" style={{fontSize:9,background:"var(--card)",color:"var(--muted)",border:"1px dashed var(--border)",borderRadius:3,padding:"2px 6px",fontFamily:"DM Mono,monospace"}}>◇ In GHL</span>}
               </div>
               <div style={{fontSize:11,color:"var(--muted)",marginBottom:4}}>{p.reason}</div>
               <div style={{fontSize:10,color:"var(--dim)",fontFamily:"DM Mono,monospace"}}>◎ {p.face} · {p.policy} · {p.agency}</div>

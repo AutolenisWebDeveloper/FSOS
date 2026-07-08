@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 // Small GHL stage chip shown across pages (Opportunities, Conversions, OPRA,
 // Agency Owners). `stage`/`pos` come from the API's per-row `ghl` object.
@@ -1118,9 +1118,291 @@ function Dashboard({onNav,toast,appData={}}){
 }
 
 // ─────────────────────────────────────────────────────────
+// CONTACT UPLOAD — CSV → GoHighLevel bulk import
+// Validates, de-dupes, maps fields, syncs into the GHL location, tags/stages,
+// and logs every batch. Talks to POST/GET /api/ghl/contacts/upload.
+// ─────────────────────────────────────────────────────────
+// Stage names mirror src/lib/ghl.ts so the operator picks a real stage.
+const UPLOAD_PIPELINES = [
+  { key: "", label: "— No opportunity (contacts only) —", stages: [] },
+  { key: "prospect_client", label: "Prospect / Client", stages: [
+    "New Opportunity","Contacted","Appointment Scheduled","Appointment Completed","Fact-Finder Completed",
+    "Recommendation Presented","Application Submitted","Issued","Annual Review Scheduled","Referral Requested"] },
+  { key: "agency_owner", label: "Agency Owner", stages: [
+    "Prospect Owner","Pilot (90-day)","Active Partner","Opportunity Handoff","Financial Assessment",
+    "Quick Wins","Strategic Partner","Dormant"] },
+  { key: "term_conversions", label: "Term Conversions", stages: [
+    "Conversion Eligible Identified","Window Notice Sent","Review Scheduled","Conversion Illustrated",
+    "Application Submitted","Converted (Issued)"] },
+];
+
+// Minimal header sniff for the pre-upload preview only (the server does the
+// authoritative parse). Reads the first CSV line, honoring basic quoting.
+function sniffHeaders(text) {
+  const firstLine = text.replace(/^﻿/, "").split(/\r?\n/)[0] || "";
+  const out = []; let cur = ""; let q = false;
+  for (let i = 0; i < firstLine.length; i++) {
+    const ch = firstLine[i];
+    if (q) { if (ch === '"' && firstLine[i+1] === '"') { cur += '"'; i++; } else if (ch === '"') q = false; else cur += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === ",") { out.push(cur.trim()); cur = ""; }
+    else cur += ch;
+  }
+  out.push(cur.trim());
+  return out.filter(Boolean);
+}
+
+function ContactUploadPage({toast}) {
+  const [file, setFile]         = useState(null);
+  const [headers, setHeaders]   = useState([]);
+  const [tags, setTags]         = useState("");
+  const [source, setSource]     = useState("csv_upload");
+  const [pipeline, setPipeline] = useState("");
+  const [stage, setStage]       = useState(1);
+  const [busy, setBusy]         = useState(false);
+  const [result, setResult]     = useState(null);
+  const [drag, setDrag]         = useState(false);
+  const [history, setHistory]   = useState([]);
+  const [histLoading, setHistLoading] = useState(true);
+  const inputRef = useRef(null);
+
+  const loadHistory = () => {
+    setHistLoading(true);
+    fetch("/api/ghl/contacts/upload?limit=15")
+      .then(r => r.ok ? r.json() : { batches: [] })
+      .then(d => setHistory(d.batches || []))
+      .catch(() => setHistory([]))
+      .finally(() => setHistLoading(false));
+  };
+  useEffect(loadHistory, []);
+
+  const acceptFile = (f) => {
+    if (!f) return;
+    if (!/\.csv$/i.test(f.name)) { toast("Please choose a .csv file", "error"); return; }
+    if (f.size > 5 * 1024 * 1024) { toast("File exceeds the 5MB limit", "error"); return; }
+    setFile(f); setResult(null);
+    const reader = new FileReader();
+    reader.onload = e => { try { setHeaders(sniffHeaders(String(e.target.result || ""))); } catch { setHeaders([]); } };
+    reader.readAsText(f.slice(0, 64 * 1024));
+  };
+
+  const submit = async () => {
+    if (!file) { toast("Choose a CSV file first", "error"); return; }
+    setBusy(true); setResult(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      if (tags.trim()) fd.append("tags", tags.trim());
+      if (source.trim()) fd.append("source", source.trim());
+      if (pipeline) { fd.append("pipeline", pipeline); fd.append("stage", String(stage)); }
+      const res = await fetch("/api/ghl/contacts/upload", { method: "POST", body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast(data.error || `Upload failed (HTTP ${res.status})`, "error");
+        setResult({ error: data.error || `HTTP ${res.status}`, detail: data });
+      } else {
+        setResult(data);
+        const c = data.counts || {};
+        toast(`Imported ${c.success||0} · ${c.duplicate||0} dupes · ${c.invalid||0} invalid · ${c.failed||0} failed`,
+          (c.failed||c.invalid) ? "info" : "success");
+        loadHistory();
+      }
+    } catch (e) {
+      toast("Network error during upload", "error");
+      setResult({ error: String(e && e.message || e) });
+    } finally { setBusy(false); }
+  };
+
+  const downloadAttention = () => {
+    if (!result || !result.rows || !result.rows.length) return;
+    const cols = ["row_number","status","first_name","last_name","email","phone","attempts","error_message"];
+    const esc = v => { const s = String(v==null?"":v); return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; };
+    const csv = [cols.join(","), ...result.rows.map(r => cols.map(c => esc(r[c])).join(","))].join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    const a = document.createElement("a"); a.href = url; a.download = "upload-attention-rows.csv"; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const stages = (UPLOAD_PIPELINES.find(p => p.key === pipeline) || {}).stages || [];
+  const counts = (result && result.counts) || {};
+  const card = { background:"var(--card)", border:"1px solid var(--border)", borderRadius:10, padding:16, boxShadow:"var(--shadow)" };
+  const kpi = (label, val, color) => (
+    <div style={{...card, textAlign:"center", padding:14}}>
+      <div style={{fontSize:26, fontWeight:700, color}}>{val}</div>
+      <div style={{fontSize:10, color:"var(--muted)", textTransform:"uppercase", letterSpacing:".04em", marginTop:2}}>{label}</div>
+    </div>
+  );
+
+  return (
+    <div>
+      <div style={{display:"grid", gridTemplateColumns:"minmax(0,1.4fr) minmax(0,1fr)", gap:16, alignItems:"start"}}>
+        {/* Upload card */}
+        <div style={card}>
+          <div style={{fontSize:15, fontWeight:700, color:"var(--navy)", marginBottom:4}}>Upload Contacts to GoHighLevel</div>
+          <div style={{fontSize:11, color:"var(--muted)", marginBottom:14, lineHeight:1.5}}>
+            Import a CSV of contacts. Rows are validated, de-duplicated, mapped, and upserted into your GHL
+            location — no duplicates are ever created. Add tags, a source, and optionally drop everyone onto a
+            pipeline stage.
+          </div>
+
+          <div
+            onDragOver={e=>{e.preventDefault(); setDrag(true);}}
+            onDragLeave={()=>setDrag(false)}
+            onDrop={e=>{e.preventDefault(); setDrag(false); acceptFile(e.dataTransfer.files?.[0]);}}
+            onClick={()=>inputRef.current&&inputRef.current.click()}
+            style={{border:`2px dashed ${drag?"#4299e1":"var(--border)"}`, borderRadius:9, padding:"22px 16px",
+              textAlign:"center", cursor:"pointer", background: drag?"#f0f7ff":"var(--bg)", transition:"all .15s"}}>
+            <div style={{fontSize:26, marginBottom:6}}>📥</div>
+            <div style={{fontSize:12, fontWeight:600, color:"var(--navy)"}}>
+              {file ? file.name : "Drop a CSV here or click to browse"}
+            </div>
+            <div style={{fontSize:10, color:"var(--muted)", marginTop:3}}>
+              {file ? `${(file.size/1024).toFixed(1)} KB · ${headers.length} columns detected` : "Max 5MB · up to 1,000 rows"}
+            </div>
+            <input ref={inputRef} type="file" accept=".csv,text/csv" style={{display:"none"}}
+              onChange={e=>acceptFile(e.target.files?.[0])}/>
+          </div>
+
+          {headers.length > 0 && (
+            <div style={{marginTop:10, display:"flex", flexWrap:"wrap", gap:5}}>
+              {headers.map((h,i)=>(
+                <span key={i} style={{fontSize:9, fontFamily:"DM Mono,monospace", background:"var(--bg2)",
+                  border:"1px solid var(--border)", borderRadius:4, padding:"2px 6px", color:"var(--muted)"}}>{h}</span>
+              ))}
+            </div>
+          )}
+
+          <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginTop:14}}>
+            <label style={{fontSize:11}}>
+              <div style={{fontWeight:600, marginBottom:4, color:"var(--navy)"}}>Tags (comma-separated)</div>
+              <input value={tags} onChange={e=>setTags(e.target.value)} placeholder="apex-import, warm-lead"
+                style={{width:"100%", padding:"7px 9px", border:"1px solid var(--border)", borderRadius:6, fontSize:11, fontFamily:"DM Sans,sans-serif"}}/>
+            </label>
+            <label style={{fontSize:11}}>
+              <div style={{fontWeight:600, marginBottom:4, color:"var(--navy)"}}>Source</div>
+              <input value={source} onChange={e=>setSource(e.target.value)} placeholder="csv_upload"
+                style={{width:"100%", padding:"7px 9px", border:"1px solid var(--border)", borderRadius:6, fontSize:11, fontFamily:"DM Sans,sans-serif"}}/>
+            </label>
+            <label style={{fontSize:11}}>
+              <div style={{fontWeight:600, marginBottom:4, color:"var(--navy)"}}>Pipeline (optional)</div>
+              <select value={pipeline} onChange={e=>{setPipeline(e.target.value); setStage(1);}}
+                style={{width:"100%", padding:"7px 9px", border:"1px solid var(--border)", borderRadius:6, fontSize:11, fontFamily:"DM Sans,sans-serif", background:"#fff"}}>
+                {UPLOAD_PIPELINES.map(p=><option key={p.key} value={p.key}>{p.label}</option>)}
+              </select>
+            </label>
+            <label style={{fontSize:11, opacity: stages.length?1:.5}}>
+              <div style={{fontWeight:600, marginBottom:4, color:"var(--navy)"}}>Stage</div>
+              <select value={stage} onChange={e=>setStage(Number(e.target.value))} disabled={!stages.length}
+                style={{width:"100%", padding:"7px 9px", border:"1px solid var(--border)", borderRadius:6, fontSize:11, fontFamily:"DM Sans,sans-serif", background:"#fff"}}>
+                {stages.length ? stages.map((s,i)=><option key={i} value={i+1}>{i+1}. {s}</option>) : <option>—</option>}
+              </select>
+            </label>
+          </div>
+
+          <button className="btn-primary" disabled={busy||!file} onClick={submit}
+            style={{width:"100%", marginTop:14, padding:"10px", fontSize:12, opacity:(busy||!file)?.6:1, cursor:(busy||!file)?"not-allowed":"pointer"}}>
+            {busy ? "Uploading & syncing to GHL…" : "Import & Sync to GoHighLevel"}
+          </button>
+          <div style={{fontSize:9, color:"var(--muted)", marginTop:8, lineHeight:1.5}}>
+            Detected columns are auto-mapped: <b>name / first / last</b>, <b>email</b>, <b>phone</b>, <b>tags</b>,
+            <b> source</b>, plus product interest &amp; life stage into GHL custom fields. A name column and either
+            email or phone are required.
+          </div>
+        </div>
+
+        {/* Result panel */}
+        <div style={{...card, minHeight:180}}>
+          <div style={{fontSize:13, fontWeight:700, color:"var(--navy)", marginBottom:12}}>Import Result</div>
+          {!result && <div style={{fontSize:11, color:"var(--muted)"}}>Run an import to see per-row results here.</div>}
+          {result && result.error && (
+            <div style={{fontSize:11, color:"var(--red)", background:"#fef2f2", border:"1px solid #fecaca", borderRadius:7, padding:12}}>
+              {result.error}
+              {result.detail && result.detail.headers &&
+                <div style={{marginTop:8, color:"var(--muted)", fontSize:10}}>Detected headers: {result.detail.headers.join(", ")}</div>}
+            </div>
+          )}
+          {result && !result.error && (
+            <>
+              <div style={{display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:8, marginBottom:12}}>
+                {kpi("Imported", counts.success||0, "var(--green2)")}
+                {kpi("Duplicates", counts.duplicate||0, "#b7791f")}
+                {kpi("Invalid", counts.invalid||0, "var(--muted)")}
+                {kpi("Failed", counts.failed||0, "var(--red)")}
+              </div>
+              <div style={{fontSize:10, color:"var(--muted)", marginBottom:8}}>
+                {result.total} rows · location {result.location_id}
+                {result.pipeline ? ` · ${result.pipeline} stage ${result.stage}` : ""}
+              </div>
+              {result.rows && result.rows.length > 0 && (
+                <>
+                  <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6}}>
+                    <div style={{fontSize:11, fontWeight:600}}>Rows needing attention ({result.rows.length})</div>
+                    <button className="btn-secondary" style={{fontSize:9, padding:"3px 8px"}} onClick={downloadAttention}>⬇ CSV</button>
+                  </div>
+                  <div style={{maxHeight:220, overflowY:"auto", border:"1px solid var(--border)", borderRadius:6}}>
+                    {result.rows.map((r,i)=>(
+                      <div key={i} style={{display:"grid", gridTemplateColumns:"34px 62px 1fr", gap:6, padding:"6px 8px",
+                        borderBottom:"1px solid var(--border)", fontSize:10, alignItems:"center"}}>
+                        <span style={{color:"var(--muted)", fontFamily:"DM Mono,monospace"}}>#{r.row_number}</span>
+                        <span style={{fontWeight:600, color: r.status==="failed"?"var(--red)": r.status==="duplicate"?"#b7791f":"var(--muted)"}}>{r.status}</span>
+                        <span style={{color:"var(--muted)"}}>{r.error_message || `${r.first_name||""} ${r.last_name||""}`.trim()}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+              {result.rows && result.rows.length === 0 &&
+                <div style={{fontSize:11, color:"var(--green2)", fontWeight:600}}>✓ Every row imported cleanly.</div>}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Upload history */}
+      <div style={{...card, marginTop:16}}>
+        <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12}}>
+          <div style={{fontSize:13, fontWeight:700, color:"var(--navy)"}}>Upload History</div>
+          <button className="btn-secondary" style={{fontSize:10, padding:"4px 10px"}} onClick={loadHistory}>↻ Refresh</button>
+        </div>
+        {histLoading && <div style={{fontSize:11, color:"var(--muted)"}}>Loading…</div>}
+        {!histLoading && history.length === 0 && <div style={{fontSize:11, color:"var(--muted)"}}>No imports yet.</div>}
+        {!histLoading && history.length > 0 && (
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%", borderCollapse:"collapse", fontSize:11}}>
+              <thead>
+                <tr style={{textAlign:"left", color:"var(--muted)", fontSize:9, textTransform:"uppercase", letterSpacing:".04em"}}>
+                  <th style={{padding:"6px 8px"}}>File</th><th style={{padding:"6px 8px"}}>When</th>
+                  <th style={{padding:"6px 8px"}}>Total</th><th style={{padding:"6px 8px"}}>OK</th>
+                  <th style={{padding:"6px 8px"}}>Dup</th><th style={{padding:"6px 8px"}}>Inv</th>
+                  <th style={{padding:"6px 8px"}}>Fail</th><th style={{padding:"6px 8px"}}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.map(b=>(
+                  <tr key={b.batch_id} style={{borderTop:"1px solid var(--border)"}}>
+                    <td style={{padding:"7px 8px", fontWeight:600}}>{b.filename||"—"}</td>
+                    <td style={{padding:"7px 8px", color:"var(--muted)"}}>{b.created_at ? new Date(b.created_at).toLocaleString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}) : "—"}</td>
+                    <td style={{padding:"7px 8px"}}>{b.total_rows}</td>
+                    <td style={{padding:"7px 8px", color:"var(--green2)", fontWeight:600}}>{b.success_count}</td>
+                    <td style={{padding:"7px 8px", color:"#b7791f"}}>{b.duplicate_count}</td>
+                    <td style={{padding:"7px 8px", color:"var(--muted)"}}>{b.invalid_count}</td>
+                    <td style={{padding:"7px 8px", color: b.failed_count?"var(--red)":"var(--muted)", fontWeight:b.failed_count?600:400}}>{b.failed_count}</td>
+                    <td style={{padding:"7px 8px"}}><span style={{fontSize:9, padding:"2px 7px", borderRadius:20, background: b.status==="complete"?"#dcfce7":"#fef9c3", color: b.status==="complete"?"#166534":"#854d0e"}}>{b.status}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
 // AGENCY OWNERS — Full relationship + referral management
 // ─────────────────────────────────────────────────────────
-function AgencyOwners({toast}) {
+function AgencyOwners({toast, onNav}) {
   const [tab, setTab]             = useState("overview");
   const [selected, setSelected]   = useState(null);
   const [detailTab, setDetailTab] = useState("referrals");
@@ -1344,7 +1626,7 @@ function AgencyOwners({toast}) {
               <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:10,overflow:"hidden",boxShadow:"var(--shadow)"}}>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",borderBottom:"1px solid var(--border)"}}>
                   <div style={{fontSize:13,fontWeight:600}}>Upload History</div>
-                  <button className="btn-primary" style={{fontSize:10,padding:"4px 12px"}} onClick={()=>toast("Import upload — connect APEX on deploy","info")}>+ Process Upload</button>
+                  <button className="btn-primary" style={{fontSize:10,padding:"4px 12px"}} onClick={()=>onNav?onNav("upload"):toast("Open Contact Upload from the sidebar","info")}>+ Upload Contacts to GHL</button>
                 </div>
                 {ag.uploadHistory.map((u,i)=>(
                   <div key={i} style={{display:"grid",gridTemplateColumns:"1fr auto",gap:12,padding:"14px 16px",borderBottom:"1px solid var(--border)"}}>
@@ -3923,6 +4205,7 @@ export default function App(){
     {id:"dashboard", icon:"🏠", label:"Dashboard"},
     {id:"opps",      icon:"🎯", label:"Opportunities",  badge:liveOpps||null},
     {id:"agencies",  icon:"🏢", label:"Agency Owners",  badge:null, bc:"red"},
+    {id:"upload",    icon:"📥", label:"Contact Upload"},
     {id:"conv",      icon:"⏰", label:"Conversions",    badge:liveConvUrgent||null, bc:"red"},
     {id:"opra",      icon:"🔄", label:"OPRA Center",    badge:liveOpraUncontacted||null, bc:"orange"},
     {id:"calendar",  icon:"📅", label:"Calendar"},
@@ -3942,7 +4225,7 @@ export default function App(){
     {name:"Conversion AI",status:"running",ct:"—"},
     {name:"Follow Up AI",status:"running",ct:"—"},
   ];
-  const pageTitle={briefing:"Daily Briefing",dashboard:"Dashboard",opps:"Opportunities",agencies:"Agency Owners",conv:"Conversion Center",opra:"OPRA Center",calendar:"Calendar",ai:"AI Control Center",workshops:"Workshops",gdc:"GDC & Commission",prep:"Financial Review Prep",needs:"Customer Needs Map",calc:"Sales Calculator",contacts:"FFS Contacts",forms:"Client Forms",fna:"Financial Needs Analysis"};
+  const pageTitle={briefing:"Daily Briefing",dashboard:"Dashboard",opps:"Opportunities",agencies:"Agency Owners",upload:"Contact Upload",conv:"Conversion Center",opra:"OPRA Center",calendar:"Calendar",ai:"AI Control Center",workshops:"Workshops",gdc:"GDC & Commission",prep:"Financial Review Prep",needs:"Customer Needs Map",calc:"Sales Calculator",contacts:"FFS Contacts",forms:"Client Forms",fna:"Financial Needs Analysis"};
 
   return(<>
     <style>{G}</style>
@@ -4023,7 +4306,8 @@ export default function App(){
           {page==="conv"       &&<ConversionCenter toast={toast} appData={appData}/>}
           {page==="opra"       &&<OPRACenter toast={toast} appData={appData}/>}
           {page==="ai"         &&<AIControlCenter toast={toast}/>}
-          {page==="agencies"   &&<AgencyOwners toast={toast}/>}
+          {page==="agencies"   &&<AgencyOwners toast={toast} onNav={setPage}/>}
+          {page==="upload"     &&<ContactUploadPage toast={toast}/>}
           {page==="calendar"   &&<Calendar toast={toast} appData={appData}/>}
           {page==="workshops"  &&<WorkshopsPage toast={toast}/>}
           {page==="gdc"        &&<GDCPage tier={tier} setTier={setTier} toast={toast} appData={appData}/>}

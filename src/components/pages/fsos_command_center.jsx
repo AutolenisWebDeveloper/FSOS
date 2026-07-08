@@ -473,6 +473,32 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;fon
 .error-banner{background:var(--red-bg);border:1px solid var(--red-border);color:var(--red);border-radius:7px;padding:11px 15px;margin-bottom:14px;font-size:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;}
 .error-banner button{background:var(--red);color:#fff;border:none;border-radius:5px;padding:5px 12px;font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;}
 
+/* AI ASSISTANT */
+.agents-box.clickable{cursor:pointer;transition:background .15s;}
+.agents-box.clickable:hover{background:rgba(255,255,255,.09);}
+.ab-open{font-size:8px;color:#4299e1;margin-top:6px;font-family:'DM Mono',monospace;letter-spacing:.05em;}
+.asst-overlay{position:fixed;inset:0;background:rgba(15,30,54,.5);z-index:300;display:flex;align-items:flex-end;justify-content:flex-end;padding:0;}
+.asst-panel{background:var(--card);width:100%;max-width:420px;height:100vh;display:flex;flex-direction:column;box-shadow:-4px 0 24px rgba(0,0,0,.18);animation:asstIn .2s ease;}
+@keyframes asstIn{from{transform:translateX(24px);opacity:0}to{transform:translateX(0);opacity:1}}
+.asst-head{display:flex;align-items:center;justify-content:space-between;padding:15px 18px;background:var(--navy);color:#fff;}
+.asst-head-title{font-size:14px;font-weight:600;}
+.asst-head-sub{font-size:10px;color:rgba(255,255,255,.5);margin-top:1px;}
+.asst-close{background:rgba(255,255,255,.1);border:none;color:#fff;width:28px;height:28px;border-radius:6px;cursor:pointer;font-size:15px;line-height:1;}
+.asst-close:hover{background:rgba(255,255,255,.2);}
+.asst-body{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;background:var(--bg);}
+.asst-msg{max-width:88%;padding:10px 13px;border-radius:11px;font-size:12.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word;}
+.asst-msg.user{align-self:flex-end;background:#2b6cb0;color:#fff;border-bottom-right-radius:3px;}
+.asst-msg.assistant{align-self:flex-start;background:var(--card);color:var(--text);border:1px solid var(--border);border-bottom-left-radius:3px;}
+.asst-hint{align-self:flex-start;font-size:11px;color:var(--muted);line-height:1.5;background:var(--card);border:1px solid var(--border);border-radius:11px;padding:12px 14px;}
+.asst-chip{display:inline-block;margin:4px 4px 0 0;padding:4px 10px;border:1px solid var(--border);border-radius:14px;background:var(--card);color:#2b6cb0;font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;}
+.asst-chip:hover{background:var(--blue-bg);}
+.asst-typing{align-self:flex-start;color:var(--muted);font-size:11px;font-style:italic;}
+.asst-foot{display:flex;gap:8px;padding:12px;border-top:1px solid var(--border);background:var(--card);}
+.asst-input{flex:1;border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-family:'DM Sans',sans-serif;font-size:13px;color:var(--text);outline:none;resize:none;max-height:110px;}
+.asst-input:focus{border-color:#bee3f8;}
+.asst-send{background:#2b6cb0;color:#fff;border:none;border-radius:8px;padding:0 16px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;}
+.asst-send:disabled{opacity:.5;cursor:not-allowed;}
+
 `;
 
 const today = new Date().toLocaleDateString("en-US",{weekday:"long",year:"numeric",month:"long",day:"numeric"});
@@ -3703,10 +3729,94 @@ function ReviewPrepPage({toast}) {
   </>);
 }
 
+const ASSISTANT_SUGGESTIONS=[
+  "Draft a friendly SMS reminding a client to complete their questionnaire",
+  "Explain the 10-3-1 activity model",
+  "How does the GDC tier payout work?",
+  "Write a voicemail script for a term-conversion follow-up",
+];
+
+function AssistantModal({open,onClose}){
+  const [messages,setMessages]=useState([]);
+  const [input,setInput]=useState("");
+  const [sending,setSending]=useState(false);
+  const [error,setError]=useState("");
+
+  const send=useCallback(async(text)=>{
+    const content=(text??input).trim();
+    if(!content||sending) return;
+    setError("");
+    const next=[...messages,{role:"user",content}];
+    setMessages(next);
+    setInput("");
+    setSending(true);
+    try{
+      const res=await fetch("/api/assistant",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({messages:next}),
+      });
+      const data=await res.json();
+      if(!res.ok) throw new Error(data.error||"Assistant unavailable");
+      setMessages(m=>[...m,{role:"assistant",content:data.reply||"(no response)"}]);
+    }catch(e){
+      setError(e.message||"Something went wrong");
+      setMessages(m=>[...m,{role:"assistant",content:"Sorry — I couldn't reach the assistant just now. Please try again."}]);
+    }finally{
+      setSending(false);
+    }
+  },[input,messages,sending]);
+
+  if(!open) return null;
+
+  return(
+    <div className="asst-overlay" onClick={onClose}>
+      <div className="asst-panel" onClick={e=>e.stopPropagation()}>
+        <div className="asst-head">
+          <div>
+            <div className="asst-head-title">✦ FSOS Assistant</div>
+            <div className="asst-head-sub">Compliance-aware · educational use only</div>
+          </div>
+          <button className="asst-close" onClick={onClose} aria-label="Close assistant">×</button>
+        </div>
+        <div className="asst-body">
+          {messages.length===0&&(
+            <div className="asst-hint">
+              Hi Markist — I can help you navigate FSOS, draft client outreach for your review,
+              and explain concepts. I never recommend specific products or make suitability calls.
+              <div>
+                {ASSISTANT_SUGGESTIONS.map((s,i)=>(
+                  <span className="asst-chip" key={i} onClick={()=>send(s)}>{s}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          {messages.map((m,i)=>(
+            <div className={`asst-msg ${m.role}`} key={i}>{m.content}</div>
+          ))}
+          {sending&&<div className="asst-typing">Assistant is typing…</div>}
+        </div>
+        <div className="asst-foot">
+          <textarea
+            className="asst-input"
+            rows={1}
+            value={input}
+            placeholder="Ask the assistant…"
+            onChange={e=>setInput(e.target.value)}
+            onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}}}
+          />
+          <button className="asst-send" disabled={sending||!input.trim()} onClick={()=>send()}>Send</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App(){
   const [page,setPage]=useState("briefing");
   const [tier,setTier]=useState(3);
   const [toasts,setToasts]=useState([]);
+  const [assistantOpen,setAssistantOpen]=useState(false);
   const toast=(msg,type="info")=>{const id=Date.now();setToasts(t=>[...t,{id,msg,type}]);setTimeout(()=>setToasts(t=>t.filter(x=>x.id!==id)),3000);};
 
   // ── LIVE DATA ──────────────────────────────────────────
@@ -3767,10 +3877,12 @@ export default function App(){
           </button>
         ))}
         <div className="sb-sec">AI Agents</div>
-        <div className="agents-box">
+        <div className="agents-box clickable" onClick={()=>setPage("ai")} role="button" tabIndex={0}
+             onKeyDown={e=>{if(e.key==="Enter"||e.key===" ")setPage("ai");}} title="Open AI Control Center">
           <div className="ab-title">Live Status</div>
           {sideAgents.map((a,i)=>(<div className="agent-row" key={i}><div className={`a-dot ${a.status}`}/><div className="a-name">{a.name}</div><div className="a-ct">{a.ct}</div></div>))}
           <div style={{fontSize:8,color:"var(--dim)",marginTop:6,lineHeight:1.4}}>Counts unavailable — connect Retell/Twilio to populate.</div>
+          <div className="ab-open">Open AI Control Center →</div>
         </div>
         <div className="tier-box">
           <div className="tier-label">Current GDC Tier</div>
@@ -3787,7 +3899,7 @@ export default function App(){
           </div>))}
         </div>
         <div className="sb-bottom">
-          <button className="help-btn" onClick={()=>toast("Opening AI Assistant","info")}>
+          <button className="help-btn" onClick={()=>setAssistantOpen(true)}>
             <span>💬</span><div><div>Need Help?</div><div className="help-sub">Open AI Assistant</div></div>
           </button>
         </div>
@@ -3866,5 +3978,6 @@ export default function App(){
       </div>
     </div>
     <div className="toast-wrap">{toasts.map(t=><div key={t.id} className={`toast ${t.type}`}>{t.msg}</div>)}</div>
+    <AssistantModal open={assistantOpen} onClose={()=>setAssistantOpen(false)}/>
   </>);
 }

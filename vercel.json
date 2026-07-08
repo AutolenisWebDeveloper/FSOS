@@ -3,6 +3,7 @@
   "regions": ["iad1"],
   "functions": {
     "src/app/api/forms/fna/route.ts": { "maxDuration": 60 },
-    "src/app/api/forms/submit/route.ts": { "maxDuration": 60 }
+    "src/app/api/forms/submit/route.ts": { "maxDuration": 60 },
+    "src/app/api/assistant/route.ts": { "maxDuration": 60 }
   }
 }

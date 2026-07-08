@@ -202,6 +202,7 @@ All routes export `dynamic = 'force-dynamic'` and `runtime = 'nodejs'`. All Supa
 | `/api/forms/submit` | GET, POST | Public | Token flow. GET returns status and marks `opened`; POST saves the response, marks complete, triggers async FNA when the form is the FNA. |
 | `/api/forms/responses` | GET | Internal | Retrieve stored form responses. |
 | `/api/forms/fna` | GET, POST | Internal | POST generates the FNA via Anthropic Claude (`claude-sonnet-5`); GET retrieves a stored report. |
+| `/api/assistant` | POST | Internal | Compliance-aware in-app AI assistant (Anthropic Claude). Backs the sidebar "AI Assistant" panel. |
 | `/api/webhooks/calendly` | POST | Public | Calendly events, signature-verified (see below). |
 
 ---

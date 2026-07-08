@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
 import { requireInternalAuth, parseLimit } from '@/lib/http'
-import { findStageById } from '@/lib/ghl'
+import { ghlSummary } from '@/lib/ghl'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -46,18 +46,7 @@ export async function GET(req: NextRequest) {
     // contact sits in the GHL workflow without a second round-trip.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     for (const o of (opportunities || []) as any[]) {
-      const c = o.customers
-      const loc = findStageById(c?.ghl_stage_id)
-      o.ghl = loc
-        ? {
-            in_ghl: true,
-            stage: loc.stageName,
-            stage_position: loc.position,
-            pipeline: loc.pipeline.name,
-            pipeline_key: loc.pipeline.key,
-            opportunity_id: c?.ghl_opportunity_id || null,
-          }
-        : { in_ghl: !!c?.ghl_contact_id, stage: null, pipeline: null }
+      o.ghl = ghlSummary(o.customers)
     }
 
     // Pipeline counts across the full scores table

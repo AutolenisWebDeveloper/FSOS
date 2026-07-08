@@ -19,12 +19,16 @@ let _db: SupabaseClient<any> | null = null
 export function getDb(): SupabaseClient<any> {
   if (_db) return _db
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_KEY
+  // Accept both the FSOS-native names and the names injected by the official
+  // Supabase↔Vercel integration (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY), so a
+  // reconnected integration doesn't silently break every internal API route.
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY
 
   if (!url || !key) {
     throw new Error(
-      '[FSOS] Supabase env vars missing: NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_KEY required'
+      '[FSOS] Supabase env vars missing: set NEXT_PUBLIC_SUPABASE_URL (or SUPABASE_URL) and ' +
+        'SUPABASE_SERVICE_KEY (or SUPABASE_SERVICE_ROLE_KEY)'
     )
   }
 

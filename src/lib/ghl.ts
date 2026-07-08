@@ -160,6 +160,44 @@ export function isIssuedStage(stageId: string | null | undefined): boolean {
   return !!stageId && ISSUED_STAGE_IDS.has(stageId)
 }
 
+export interface GhlSummary {
+  in_ghl: boolean
+  stage: string | null
+  stage_position: number | null
+  pipeline: string | null
+  pipeline_key: GhlPipeline['key'] | null
+  opportunity_id: string | null
+}
+
+// Build the compact GHL display object the read APIs attach to a row. Resolves
+// the human-readable stage/pipeline from the stored stage id via the ID map.
+export function ghlSummary(
+  row:
+    | { ghl_stage_id?: string | null; ghl_contact_id?: string | null; ghl_opportunity_id?: string | null }
+    | null
+    | undefined,
+): GhlSummary {
+  const loc = findStageById(row?.ghl_stage_id)
+  if (loc) {
+    return {
+      in_ghl: true,
+      stage: loc.stageName,
+      stage_position: loc.position,
+      pipeline: loc.pipeline.name,
+      pipeline_key: loc.pipeline.key,
+      opportunity_id: row?.ghl_opportunity_id || null,
+    }
+  }
+  return {
+    in_ghl: !!row?.ghl_contact_id,
+    stage: null,
+    stage_position: null,
+    pipeline: null,
+    pipeline_key: null,
+    opportunity_id: row?.ghl_opportunity_id || null,
+  }
+}
+
 // ── Custom-field key map (contact model) ─────────────────────────────────
 // Keys as they appear in GHL (contact.<key>). Used when reading/writing
 // custom fields via the API.

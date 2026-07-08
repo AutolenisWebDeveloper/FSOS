@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
 import { requireInternalAuth } from '@/lib/http'
+import { ghlSummary } from '@/lib/ghl'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -53,6 +54,7 @@ export async function GET(req: NextRequest) {
         last_referral: lastReferral,
         days_since_referral: daysSince,
         needs_attention: lastReferral ? daysSince > 30 : stats.pending > 0,
+        ghl: ghlSummary(a),
       }
     })
 

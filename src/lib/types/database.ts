@@ -136,6 +136,7 @@ export interface Activity {
   subject: string | null
   notes: string | null
   ai_agent: string | null
+  ghl_activity_id: string | null
   created_at: string
 }
 
@@ -187,6 +188,10 @@ export interface Customer {
   consent_sms: boolean
   consent_email: boolean
   consent_date: string | null
+  ghl_contact_id: string | null
+  ghl_opportunity_id: string | null
+  ghl_stage_id: string | null
+  ghl_pipeline_id: string | null
   created_at: string
   updated_at: string
 }
@@ -306,6 +311,7 @@ export interface CommissionCase {
   issued_date: string | null
   paid_date: string | null
   fna_submission_id: string | null
+  ghl_opportunity_id: string | null
   notes: string | null
   created_at: string
   updated_at: string

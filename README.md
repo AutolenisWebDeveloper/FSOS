@@ -18,6 +18,7 @@ A full-stack command center for **Markist**, a licensed Farmers Financial Servic
 | AI voice | Retell AI (config only; not yet wired into routes) |
 | Email | Resend |
 | SMS | Twilio (direct REST API) |
+| Pipelines / workflows | GoHighLevel (LeadConnector v2) |
 | Automation | Make.com |
 
 ---
@@ -136,6 +137,9 @@ Copy `.env.local.example` to `.env.local` and fill in values. Never commit `.env
 | `TWILIO_AUTH_TOKEN` | twilio.com → Console → Account Info | ✅ SMS |
 | `TWILIO_PHONE_NUMBER` | Twilio sending number (E.164) | ✅ SMS |
 | `RETELL_API_KEY` | retellai.com → API Key | ⬜ Voice (not yet wired) |
+| `GHL_API_KEY` | GHL → Settings → Private Integrations | ⬜ GHL sync (writes no-op if unset) |
+| `GHL_LOCATION_ID` | GHL sub-account id (default `ATDNO1e5d27nj5t8vId3`) | ⬜ GHL |
+| `GHL_WEBHOOK_SECRET` | Shared secret for `x-ghl-signature` | ⬜ GHL webhook |
 | `FSOS_ADMIN_USER` | Basic-auth username (default `markist`) | ⬜ Auth gate |
 | `FSOS_ADMIN_PASSWORD` | Basic-auth password — set to enable the gate | ⬜ Auth gate |
 | `FSOS_API_SECRET` | Bearer token for server-to-server internal API calls | ⬜ Internal API |
@@ -204,6 +208,8 @@ All routes export `dynamic = 'force-dynamic'` and `runtime = 'nodejs'`. All Supa
 | `/api/forms/fna` | GET, POST | Internal | POST generates the FNA via Anthropic Claude (`claude-sonnet-5`); GET retrieves a stored report. |
 | `/api/assistant` | POST | Internal | Compliance-aware in-app AI assistant (Anthropic Claude). Backs the sidebar "AI Assistant" panel. |
 | `/api/webhooks/calendly` | POST | Public | Calendly events, signature-verified (see below). |
+| `/api/webhooks/ghl` | POST | Public | GoHighLevel events (opportunity stage moves, contacts, appointments, opt-outs), `x-ghl-signature`-verified. Creates commission cases at *Application Submitted*. See `docs/ghl_integration.md`. |
+| `/api/ghl/sync` | POST | Internal | Push a customer into GHL — upsert contact + open/move opportunity at a pipeline stage (bound to the authoritative stage-ID map). |
 
 ---
 

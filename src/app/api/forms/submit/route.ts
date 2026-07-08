@@ -1,14 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
+import { requireInternalAuth, readJson, parseLimit } from '@/lib/http'
+import { referenceFromToken } from '@/lib/tokens'
+import { generateFNAReport } from '@/lib/fna'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
+// POST /api/forms/submit — public (client portal). Saves a response by token.
 export async function POST(req: NextRequest) {
   try {
     const supabase = getDb()
-    const body = await req.json()
-    const { token, form_id, response_data } = body
+    const parsed = await readJson<{ token?: string; form_id?: string; response_data?: unknown }>(req)
+    if ('error' in parsed) return parsed.error
+    const { token, form_id, response_data } = parsed.data
 
     if (!token || !form_id || !response_data) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -16,29 +21,28 @@ export async function POST(req: NextRequest) {
 
     const { data: submission, error: findErr } = await supabase
       .from('form_submissions')
-      .select('*')
+      .select('submission_id, form_id, form_title, sent_via, customer_id, agency_id, expires_at, status')
       .eq('token', token)
       .single()
 
     if (findErr || !submission) {
       return NextResponse.json({ error: 'Form link not found' }, { status: 404 })
     }
-
     if (submission.form_id !== form_id) {
       return NextResponse.json({ error: 'Form ID mismatch' }, { status: 400 })
     }
-
     if (new Date(submission.expires_at) < new Date()) {
       return NextResponse.json({ error: 'Form link has expired' }, { status: 410 })
     }
-
     if (submission.status === 'complete') {
       return NextResponse.json({ error: 'Form already submitted' }, { status: 409 })
     }
 
     const ip = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown'
 
-    const { error: updateErr } = await supabase
+    // Atomic guard against a concurrent double-submit: only flip rows that are
+    // not already complete, and confirm exactly one row changed.
+    const { data: updated, error: updateErr } = await supabase
       .from('form_submissions')
       .update({
         status: 'complete',
@@ -47,10 +51,15 @@ export async function POST(req: NextRequest) {
         ip_address: ip,
       })
       .eq('submission_id', submission.submission_id)
+      .neq('status', 'complete')
+      .select('submission_id')
 
     if (updateErr) {
       console.error('Form submit error:', updateErr)
       return NextResponse.json({ error: 'Failed to save form' }, { status: 500 })
+    }
+    if (!updated || updated.length === 0) {
+      return NextResponse.json({ error: 'Form already submitted' }, { status: 409 })
     }
 
     if (submission.customer_id) {
@@ -63,15 +72,17 @@ export async function POST(req: NextRequest) {
       })
     }
 
+    // Generate the FNA synchronously. Fire-and-forget does not survive a
+    // serverless function returning its response, so we await it here.
     if (form_id === 'financial-needs-analysis' && submission.customer_id) {
-      generateFNAAsync(submission.submission_id, response_data as Record<string, unknown>).catch(
-        (err) => console.error('FNA generation error:', err)
-      )
+      try {
+        await generateFNAReport(submission.submission_id)
+      } catch (err) {
+        console.error('FNA generation error:', err)
+      }
     }
 
-    const ref = 'FFS-' + token.slice(-6).toUpperCase()
-    return NextResponse.json({ success: true, ref })
-
+    return NextResponse.json({ success: true, ref: referenceFromToken(token) })
   } catch (err) {
     console.error('Form submit unexpected error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -79,14 +90,12 @@ export async function POST(req: NextRequest) {
 }
 
 // GET — two modes:
-// 1. ?token=xxx  → single form status lookup (client portal)
-// 2. ?limit=N    → list recent submissions (command center)
+//   ?token=xxx → single form status lookup (PUBLIC, client portal)
+//   ?limit=N   → list recent submissions (INTERNAL, command center)
 export async function GET(req: NextRequest) {
   const supabase = getDb()
   const token = req.nextUrl.searchParams.get('token')
-  const limit = parseInt(req.nextUrl.searchParams.get('limit') || '0')
 
-  // Mode 1: token lookup
   if (token) {
     const { data, error } = await supabase
       .from('form_submissions')
@@ -102,67 +111,26 @@ export async function GET(req: NextRequest) {
         .update({ status: 'opened', opened_at: new Date().toISOString() })
         .eq('token', token)
     }
-
     return NextResponse.json(data)
   }
 
-  // Mode 2: list submissions for command center
-  if (limit > 0) {
+  const limitParam = req.nextUrl.searchParams.get('limit')
+  if (limitParam) {
+    const unauthorized = requireInternalAuth(req)
+    if (unauthorized) return unauthorized
+
+    const limit = parseLimit(limitParam, 50, 200)
     const { data, error } = await supabase
       .from('form_submissions')
-      .select('submission_id, form_id, form_title, status, sent_at, submitted_at, customer_id, agency_id, response_data, fna_report, fna_urgency, customers(first_name, last_name)')
+      .select(
+        'submission_id, form_id, form_title, status, sent_at, submitted_at, customer_id, agency_id, response_data, fna_report, fna_urgency, customers(first_name, last_name)',
+      )
       .order('sent_at', { ascending: false })
-      .limit(Math.min(limit, 200))
+      .limit(limit)
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ submissions: data || [] })
   }
 
   return NextResponse.json({ error: 'token or limit required' }, { status: 400 })
-}
-
-async function generateFNAAsync(submission_id: string, response_data: Record<string, unknown>) {
-  const { default: Anthropic } = await import('@anthropic-ai/sdk')
-  const supabase = getDb()
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-
-  const prompt = `You are a financial advisor at Farmers Financial Solutions, LLC.
-Generate a professional Financial Needs Analysis for this client.
-Return ONLY valid JSON (no markdown, no preamble):
-
-CLIENT DATA:
-${JSON.stringify(response_data, null, 2)}
-
-{
-  "executive_summary": "2-3 sentence summary",
-  "financial_position": "assessment of income, assets, coverage, retirement readiness",
-  "gaps": ["gap1", "gap2", "gap3"],
-  "recommendations": [
-    {"priority": 1, "title": "...", "description": "...", "product_category": "Life Insurance|Annuities|IRA|Mutual Funds|Planning"}
-  ],
-  "next_steps": ["step1", "step2", "step3"],
-  "risk_profile": "Conservative|Moderate|Aggressive",
-  "urgency": "High|Medium|Low",
-  "monthly_retirement_gap": 0
-}
-
-COMPLIANCE: For educational and informational purposes only. Not a product recommendation or suitability determination. Requires licensed FSA review per FINRA Reg BI.`
-
-  const message = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 2048,
-    messages: [{ role: 'user', content: prompt }],
-  })
-
-  const text = message.content[0].type === 'text' ? message.content[0].text : ''
-  const report = JSON.parse(text.replace(/```json|```/g, '').trim())
-
-  await supabase
-    .from('form_submissions')
-    .update({
-      fna_report: report,
-      fna_generated_at: new Date().toISOString(),
-      fna_urgency: report.urgency,
-    })
-    .eq('submission_id', submission_id)
 }

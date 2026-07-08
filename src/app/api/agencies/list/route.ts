@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
+import { requireInternalAuth } from '@/lib/http'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-// GET /api/agencies/list
+// GET /api/agencies/list — internal
 // Agency Owners page live data — each agency enriched with referral stats.
 // Ordered by last_referral DESC NULLS LAST.
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
+  const unauthorized = requireInternalAuth(req)
+  if (unauthorized) return unauthorized
   try {
     const db = getDb()
 
@@ -39,13 +42,17 @@ export async function GET(_req: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const enriched = ((agencies || []) as any[]).map((a) => {
       const stats = byAgency.get(a.agency_id) || { count: 0, pending: 0, last: null }
+      const lastReferral = stats.last ?? a.last_referral ?? null
+      const daysSince = lastReferral
+        ? Math.floor((Date.now() - new Date(lastReferral).getTime()) / 86400000)
+        : 999
       return {
         ...a,
         referral_count: stats.count,
         pending_referrals: stats.pending,
-        last_referral: stats.last ?? a.last_referral ?? null,
-        days_since_referral: a.days_since_referral,
-        needs_attention: a.needs_attention,
+        last_referral: lastReferral,
+        days_since_referral: daysSince,
+        needs_attention: lastReferral ? daysSince > 30 : stats.pending > 0,
       }
     })
 

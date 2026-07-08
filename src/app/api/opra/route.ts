@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
+import { requireInternalAuth, readJson, parseLimit } from '@/lib/http'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 // GET /api/opra — OPRA Center page live data
 export async function GET(req: NextRequest) {
+  const unauthorized = requireInternalAuth(req)
+  if (unauthorized) return unauthorized
   try {
     const db = getDb()
     const contactedParam = req.nextUrl.searchParams.get('contacted')
-    const limit = Math.min(parseInt(req.nextUrl.searchParams.get('limit') || '50'), 200)
+    const limit = parseLimit(req.nextUrl.searchParams.get('limit'), 50, 200)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let query: any = db
@@ -57,10 +60,13 @@ export async function GET(req: NextRequest) {
 
 // PATCH /api/opra — update OPRA case status (one-click toggles)
 export async function PATCH(req: NextRequest) {
+  const unauthorized = requireInternalAuth(req)
+  if (unauthorized) return unauthorized
   try {
     const db = getDb()
-    const body = await req.json()
-    const { opra_id, ...rest } = body as Record<string, unknown> & { opra_id?: string }
+    const parsed = await readJson<Record<string, unknown> & { opra_id?: string }>(req)
+    if ('error' in parsed) return parsed.error
+    const { opra_id, ...rest } = parsed.data
 
     if (!opra_id) {
       return NextResponse.json({ error: 'opra_id required' }, { status: 400 })

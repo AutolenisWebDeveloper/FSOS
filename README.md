@@ -2,7 +2,7 @@
 
 **Private internal tool. Not for public distribution.**
 
-A full-stack command center for **Markist**, a licensed Farmers Financial Services Agent in McKinney, TX. Integrates GoHighLevel CRM, Supabase database, Anthropic AI, Resend email, and Make.com automations into a single operational interface.
+A full-stack command center for **Markist**, a licensed Farmers Financial Services Agent in McKinney, TX. Integrates a Supabase database, Anthropic AI, Resend email, Calendly booking, direct Twilio SMS, and Make.com automations into a single operational interface.
 
 ---
 
@@ -11,12 +11,13 @@ A full-stack command center for **Markist**, a licensed Farmers Financial Servic
 | Layer | Technology |
 |-------|-----------|
 | Framework | Next.js 14 (App Router, TypeScript strict) |
-| Database | Supabase (PostgreSQL + RLS + pg_cron) |
+| Database | Supabase (PostgreSQL + RLS + pg_cron + private Storage) |
 | Deployment | Vercel (`iad1` region) |
-| CRM | GoHighLevel (pipelines, AI agents, webhooks) |
-| AI | Anthropic Claude API (`claude-sonnet-4-20250514`) |
+| Booking / calendar | Calendly (webhook-driven) |
+| AI (text) | Anthropic Claude API (`claude-sonnet-5`) |
+| AI voice | Retell AI (config only; not yet wired into routes) |
 | Email | Resend |
-| SMS | Twilio via GHL |
+| SMS | Twilio (direct REST API) |
 | Automation | Make.com |
 
 ---
@@ -25,22 +26,22 @@ A full-stack command center for **Markist**, a licensed Farmers Financial Servic
 
 | # | Page | Description |
 |---|------|-------------|
-| 1 | ☀️ Daily Briefing | Morning snapshot — urgent actions, priority scores, OPRA/conversion alerts |
-| 2 | 🏠 Dashboard | Real-time KPIs, GDC YTD, pipeline totals, activity feed |
-| 3 | 🎯 Opportunities | Scored lead list — all pipelines ranked by priority |
-| 4 | 🏢 Agency Owners | 4 agency partners — referral tracking, last contact, needs-attention flags |
-| 5 | ⏰ Conversions | Term policies with conversion deadlines — urgency-sorted |
-| 6 | 🔄 OPRA Center | Open Policy Rate Adjustment cases — contacted/pending status |
-| 7 | 📅 Calendar | Appointment view — pre-meeting form status per client |
-| 8 | 🤖 AI Control Center | GHL AI agent status — Receptionist, Appt Setter, Conversion, Follow-Up |
-| 9 | 🎓 Workshops | Event registrations, attendee management |
-| 10 | 💰 GDC & Commission | Tier-aware GDC calculator (40%/60%/80%), YTD tracking, pipeline value |
-| 11 | 📝 Review Prep | Pre-meeting checklist — form status, FNA readiness per appointment |
-| 12 | 🗺 Needs Map | Age-cohort product matrix from FFS guide |
-| 13 | 📐 Sales Calculator | 10-3-1 activity model — calls → appointments → cases |
-| 14 | 📞 FFS Contacts | Matt Anderson, Ryan Anderson, Sales Desk — quick-dial panel |
-| 15 | 📋 Client Forms | Send/track 7 intake forms — Customer Questionnaire through FNA |
-| 16 | ✦ FNA Generator | AI-generated Financial Needs Analysis — Claude API, FINRA Reg BI compliant |
+| 1 | Daily Briefing | Morning snapshot — urgent actions, priority scores, OPRA/conversion alerts |
+| 2 | Dashboard | Real-time KPIs, GDC, pipeline totals, activity feed |
+| 3 | Opportunities | Scored lead list — all pipelines ranked by priority |
+| 4 | Agency Owners | Agency partners — referral tracking, last contact, needs-attention flags |
+| 5 | Conversions | Term policies with conversion deadlines — urgency-sorted |
+| 6 | OPRA Center | Open Policy Rate Adjustment cases — contacted/pending status |
+| 7 | Calendar | Appointment view — pre-meeting form status per client |
+| 8 | AI Control Center | Voice-agent status overview (Retell AI) |
+| 9 | Workshops | Event registrations, attendee management |
+| 10 | GDC & Commission | Tier-aware GDC calculator (40%/60%/80%), rolling-12-mo tracking, pipeline value |
+| 11 | Review Prep | Pre-meeting checklist — form status, FNA readiness per appointment |
+| 12 | Needs Map | Age-cohort product matrix from FFS guide |
+| 13 | Sales Calculator | 10-3-1 activity model — calls → appointments → cases |
+| 14 | FFS Contacts | Matt Anderson, Ryan Anderson, Sales Desk — quick-dial panel |
+| 15 | Client Forms | Send/track intake forms — Customer Questionnaire through FNA |
+| 16 | FNA Generator | AI-generated Financial Needs Analysis — Claude API, FINRA Reg BI compliant |
 
 ---
 
@@ -49,64 +50,70 @@ A full-stack command center for **Markist**, a licensed Farmers Financial Servic
 ```
 fsos/
 ├── src/
+│   ├── middleware.ts                     # Basic-auth gate for the command center ("/")
 │   ├── app/
+│   │   ├── layout.tsx                    # Root layout (DM Sans font, noindex)
 │   │   ├── page.tsx                      # Root → CommandCenter
+│   │   ├── globals.css
+│   │   ├── error.tsx                     # Branded error boundary ('use client')
+│   │   ├── not-found.tsx                 # Branded 404
+│   │   ├── robots.ts                     # Blocks all indexing
+│   │   ├── icon.svg                      # Favicon (auto-served by App Router)
 │   │   ├── [slug]/page.tsx               # Agency referral landing (public)
-│   │   ├── upload/[slug]/page.tsx         # Agency document upload (public)
-│   │   ├── forms/[formId]/page.tsx        # Client intake portal (public)
+│   │   ├── upload/[slug]/page.tsx        # Agency document upload (public)
+│   │   ├── forms/[formId]/page.tsx       # Client intake portal (public)
 │   │   └── api/
 │   │       ├── agencies/
-│   │       │   ├── referral/route.ts      # POST referral, GET by agency
-│   │       │   └── upload/route.ts        # POST document upload
+│   │       │   ├── list/route.ts         # GET agencies (internal)
+│   │       │   ├── referral/route.ts     # GET/POST referral (public)
+│   │       │   └── upload/route.ts       # POST document upload (public)
+│   │       ├── customers/
+│   │       │   └── upsert/route.ts        # GET health, POST upsert (internal)
+│   │       ├── dashboard/route.ts        # GET dashboard data (internal)
 │   │       ├── forms/
-│   │       │   ├── submit/route.ts        # POST submit, GET status by token
-│   │       │   ├── send/route.ts          # POST send form via email/SMS/link
-│   │       │   └── fna/route.ts           # POST generate FNA, GET retrieve
-│   │       ├── webhooks/
-│   │       │   └── ghl/route.ts           # POST GHL events (appointments, pipeline, opt-outs)
-│   │       └── dashboard/route.ts         # GET all dashboard data
+│   │       │   ├── fna/route.ts          # GET/POST FNA (internal)
+│   │       │   ├── responses/route.ts    # GET form responses (internal)
+│   │       │   ├── send/route.ts         # POST send form (internal)
+│   │       │   └── submit/route.ts       # GET/POST submit by token (public)
+│   │       ├── gdc/
+│   │       │   └── cases/route.ts        # GET/POST/PATCH commission cases (internal)
+│   │       ├── opra/route.ts             # GET/PATCH OPRA cases (internal)
+│   │       ├── scores/route.ts           # GET scores (internal)
+│   │       └── webhooks/
+│   │           └── calendly/route.ts     # POST Calendly events (public, signed)
 │   ├── components/
 │   │   └── pages/
-│   │       ├── CommandCenter.tsx          # Dynamic import wrapper (SSR disabled)
-│   │       ├── ClientFormPortal.tsx       # Public client-facing form UI
-│   │       └── fsos_command_center.jsx    # 3,446-line command center (16 pages)
+│   │       ├── CommandCenter.tsx         # Dynamic import wrapper (SSR disabled)
+│   │       ├── ClientFormPortal.tsx      # Public client-facing form UI
+│   │       ├── fsos_command_center.jsx   # Command center (16 pages)
+│   │       └── fsos_forms_system.jsx     # Forms UI module
 │   └── lib/
+│       ├── anthropic.ts                  # Anthropic client + FNA model call
+│       ├── compliance.ts                 # Reg BI / TCPA disclosures & guards
+│       ├── fna.ts                        # FNA prompt + report shaping
+│       ├── forms.ts                      # Form catalog + helpers
+│       ├── http.ts                       # readJson, parseLimit, requireInternalAuth
+│       ├── tokens.ts                     # Secure form-token generation/verification
 │       ├── supabase/
-│       │   └── client.ts                  # Lazy getDb() — never module-level
+│       │   └── client.ts                 # Lazy getDb() — never module-level
 │       └── types/
-│           └── database.ts                # TypeScript types for all 17 tables
+│           └── database.ts               # TypeScript types for all tables
 └── supabase/
     └── migrations/
-        └── 001_initial_schema.sql         # 935-line schema — run once in SQL Editor
+        └── 001_initial_schema.sql        # Schema, functions, RLS, pg_cron, `documents` bucket
 ```
 
 ---
 
-## Database — 17 Tables
+## Database
 
-| Table | Purpose |
-|-------|---------|
-| `agencies` | 4 agency partners — slugs, referral dates, attention flags |
-| `customers` | Full book of business — all clients |
-| `policies` | Term/life policies with conversion deadlines |
-| `scores` | Priority scores per customer per pipeline |
-| `commission_cases` | Cases from submission through paid |
-| `commission_rates` | Carrier/product rate matrix |
-| `opra_cases` | OPRA opportunity tracking |
-| `agency_referrals` | Referral submissions from `/[slug]` |
-| `agency_uploads` | Document uploads from `/upload/[slug]` |
-| `form_submissions` | All sent/opened/completed forms with tokens |
-| `form_sends` | Delivery log per channel (email/SMS) |
-| `activity` | All client interaction history |
-| `consent_ledger` | TCPA consent audit trail — append-only |
-| `workshops` | Workshop events |
-| `workshop_registrations` | Attendee registrations |
-| `daily_briefings` | Nightly-generated briefing snapshots |
-| `customer_profiles` | Extended profile data |
+RLS is enabled on all tables. All API routes use the service role key — bypasses RLS. Client-side uses the anon key.
 
-RLS is enabled on all tables. All API routes use the service role key — bypasses RLS. Client-side uses anon key.
+pg_cron runs `run_nightly_scoring()` at 2AM CT (8AM UTC) to score all customers across the pipelines.
 
-pg_cron runs `run_nightly_scoring()` at 2AM CT (8AM UTC) to score all customers across 5 pipelines.
+Core tables include `agencies`, `customers`, `policies`, `scores`, `commission_cases`, `commission_rates`, `opra_cases`, `agency_referrals`, `agency_uploads`, `form_submissions`, `form_sends`, `activity`, `consent_ledger` (append-only TCPA audit trail), `workshops`, `workshop_registrations`, `daily_briefings`, and `customer_profiles`.
+
+The migration also creates a **private Supabase Storage bucket `documents`**. Uploads are written there and served back via short-lived signed URLs — objects are never public.
 
 ---
 
@@ -123,9 +130,15 @@ Copy `.env.local.example` to `.env.local` and fill in values. Never commit `.env
 | `ANTHROPIC_API_KEY` | console.anthropic.com | ✅ FNA feature |
 | `RESEND_API_KEY` | resend.com → API Keys | ✅ Email sends |
 | `RESEND_FROM_EMAIL` | Verified sender address | ✅ Email sends |
-| `GHL_API_KEY` | GHL → Settings → API | ✅ GHL webhook |
-| `GHL_LOCATION_ID` | GHL → Settings → Business Info | ✅ GHL webhook |
-| `GHL_WEBHOOK_SECRET` | Any 32-char random string | ✅ GHL webhook |
+| `CALENDLY_WEBHOOK_SECRET` | Calendly → Webhooks → signing key | ✅ Calendly webhook |
+| `NEXT_PUBLIC_CALENDLY_URL` | Your Calendly link (reserved for future embed) | ⬜ |
+| `TWILIO_ACCOUNT_SID` | twilio.com → Console → Account Info | ✅ SMS |
+| `TWILIO_AUTH_TOKEN` | twilio.com → Console → Account Info | ✅ SMS |
+| `TWILIO_PHONE_NUMBER` | Twilio sending number (E.164) | ✅ SMS |
+| `RETELL_API_KEY` | retellai.com → API Key | ⬜ Voice (not yet wired) |
+| `FSOS_ADMIN_USER` | Basic-auth username (default `markist`) | ⬜ Auth gate |
+| `FSOS_ADMIN_PASSWORD` | Basic-auth password — set to enable the gate | ⬜ Auth gate |
+| `FSOS_API_SECRET` | Bearer token for server-to-server internal API calls | ⬜ Internal API |
 
 ---
 
@@ -154,7 +167,7 @@ supabase/migrations/001_initial_schema.sql
 
 > If the `cron.schedule()` call errors: go to Database → Extensions → enable `pg_cron`, then re-run.
 
-Creates 17 tables, all indexes, scoring functions, RLS policies, nightly pg_cron job, and 4 seed agencies (Steven Johnson / Sarah Brown / Carlos Vega Sr. / Jack Taylor).
+Creates all tables, indexes, scoring functions, RLS policies, the nightly pg_cron job, the private `documents` Storage bucket, and seed agencies.
 
 ### 4. Local dev
 
@@ -173,41 +186,29 @@ Push to GitHub, import in Vercel, set all env vars, deploy. Build command: `npm 
 
 All routes export `dynamic = 'force-dynamic'` and `runtime = 'nodejs'`. All Supabase operations use the lazy `getDb()` pattern — never module-level instantiation.
 
-### `POST /api/agencies/referral`
-Receives referral form submissions from `/[slug]`. Creates customer + referral record, logs activity, auto-generates questionnaire token.
+**Internal** routes call `requireInternalAuth()` and require an auth header (see [Security](#security)). **Public** routes are open — they are reached by clients, agency partners, or Calendly.
 
-### `GET /api/agencies/referral?agency_id=ag1`
-Returns referrals for a given agency.
-
-### `POST /api/agencies/upload`
-Handles document uploads from `/upload/[slug]`. Writes to Supabase Storage `documents` bucket.
-
-### `POST /api/forms/send`
-Sends a form link via email (Resend) and/or SMS (GHL API). Creates `form_submissions` record with expiring token.
-
-### `POST /api/forms/submit`
-Saves form response by token. Marks submission complete. Triggers async FNA generation if form is `financial-needs-analysis`.
-
-### `GET /api/forms/submit?token=...`
-Returns form status — used by client portal to check state and mark `opened`.
-
-### `POST /api/forms/fna`
-Generates FNA report via Anthropic Claude API for a completed submission. Stores result in `fna_report` JSONB column.
-
-### `GET /api/forms/fna?submission_id=...`
-Retrieves a previously generated FNA report.
-
-### `POST /api/webhooks/ghl`
-Receives GoHighLevel webhook events. Handles: `AppointmentBooked`, `OpportunityStageChanged`, `ContactDNDUpdated`, `ContactCreated`. HMAC-SHA256 signature verified.
-
-### `GET /api/dashboard`
-Returns all data for Daily Briefing and Dashboard pages in a single parallel-query response.
+| Route | Methods | Access | Purpose |
+|-------|---------|--------|---------|
+| `/api/dashboard` | GET | Internal | All Daily Briefing + Dashboard data in one parallel-query response. Supports `?scope=workshops` and `?scope=calendar`. |
+| `/api/scores` | GET | Internal | Priority scores per customer per pipeline. |
+| `/api/opra` | GET, PATCH | Internal | OPRA case list; PATCH updates status. |
+| `/api/gdc/cases` | GET, POST, PATCH | Internal | Commission cases. POST runs `calculate_case_gdc()` server-side. |
+| `/api/agencies/list` | GET | Internal | Agency partner list. |
+| `/api/agencies/referral` | GET, POST | Public | Agency referral submissions from `/[slug]`. POST creates customer + referral, logs activity, generates questionnaire token. |
+| `/api/agencies/upload` | POST | Public | Document upload from `/upload/[slug]` → private `documents` bucket. |
+| `/api/customers/upsert` | GET (health), POST | Internal | Upsert customer/policy (APEX import, etc.). Bad rows return 400, never 500. |
+| `/api/forms/send` | POST | Internal | Sends a form link via Resend email and/or Twilio SMS; creates `form_submissions` with an expiring token. |
+| `/api/forms/submit` | GET, POST | Public | Token flow. GET returns status and marks `opened`; POST saves the response, marks complete, triggers async FNA when the form is the FNA. |
+| `/api/forms/responses` | GET | Internal | Retrieve stored form responses. |
+| `/api/forms/fna` | GET, POST | Internal | POST generates the FNA via Anthropic Claude (`claude-sonnet-5`); GET retrieves a stored report. |
+| `/api/webhooks/calendly` | POST | Public | Calendly events, signature-verified (see below). |
 
 ---
 
-## Public Routes
+## Public Routes (pages)
 
-These three routes require no authentication — they are externally accessible by clients and agency partners:
+These pages require no authentication — they are externally accessible by clients and agency partners:
 
 | Route | Audience | Purpose |
 |-------|----------|---------|
@@ -217,15 +218,28 @@ These three routes require no authentication — they are externally accessible 
 
 ---
 
-## GHL Webhook Events
+## Calendly Webhook
 
-Configure in GHL → Settings → Integrations → Webhooks → `POST https://your-domain.vercel.app/api/webhooks/ghl`
+Configure in Calendly → Integrations & apps → Webhooks →
+`POST https://your-domain.vercel.app/api/webhooks/calendly`
 
 Subscribe to:
-- `AppointmentBooked` — creates/updates customer, auto-sends forms if consent on file
-- `OpportunityStageChanged` — auto-creates commission case on "Application Submitted"
-- `ContactDNDUpdated` — records opt-out in consent ledger, updates customer flags
-- `ContactCreated` — creates customer record from GHL data
+- `invitee.created` — appointment booked
+- `invitee.canceled` — appointment canceled
+
+Calendly signs each request with the header
+`Calendly-Webhook-Signature: t=<timestamp>,v1=<hmac>`. Store the webhook's
+**signing key** as `CALENDLY_WEBHOOK_SECRET`; the route verifies the signature
+before processing.
+
+---
+
+## Security
+
+- **Command-center gate.** `src/middleware.ts` protects the command-center UI at `/` with HTTP Basic auth. It activates only when `FSOS_ADMIN_PASSWORD` is set (username defaults to `markist`, override via `FSOS_ADMIN_USER`). Left unset, the gate is disabled so local/dev deployments keep working.
+- **Internal API auth.** Internal API routes call `requireInternalAuth()`, which accepts **either** `Authorization: Bearer <FSOS_API_SECRET>` **or** the Basic admin credentials (which the browser replays automatically on same-origin fetches). Server-to-server callers (Make.com, cron) should send the Bearer token. Public token/webhook routes stay open.
+- **Security headers.** `next.config.js` sets `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Strict-Transport-Security`, and `X-Robots-Tag: noindex, nofollow` on every response. `robots.ts` also blocks all crawlers.
+- **Private document storage.** Uploads go to the private Supabase `documents` bucket and are served back only via short-lived signed URLs — never public objects.
 
 ---
 
@@ -236,6 +250,8 @@ Subscribe to:
 | 1 | Under $15,000 | 40% |
 | 2 | $15,000 – $54,999 | 60% |
 | 3 | $55,000+ | 80% |
+
+The tier is computed from **rolling 12-month GDC** (the trailing 12 months), not a calendar-year total.
 
 ---
 
@@ -268,16 +284,7 @@ Sales Desk hours: Mon–Fri 7AM–5PM PT
 
 ## Seed Data
 
-The schema seeds 4 agency partners on first run:
-
-| Agency | Owner | City | Slug |
-|--------|-------|------|------|
-| Johnson Agency | Steven Johnson | Corpus Christi, TX | `steven-johnson` |
-| Brown Agency | Sarah Brown | McKinney, TX | `sarah-brown` |
-| Vega Insurance Group | Carlos Vega Sr. | San Antonio, TX | `carlos-vega-sr` |
-| Taylor Agency | Jack Taylor | Plano, TX | `jack-taylor` |
-
-Agency referral URLs: `https://your-domain.vercel.app/steven-johnson`
+The schema seeds agency partners on first run, each with a referral slug. Agency referral URLs look like `https://your-domain.vercel.app/steven-johnson`.
 
 ---
 

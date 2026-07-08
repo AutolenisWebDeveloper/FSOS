@@ -22,8 +22,25 @@ export default function AgencyUploadPage() {
   })
   const [file, setFile] = useState<File | null>(null)
 
+  const MAX_BYTES = 10 * 1024 * 1024
+  const ALLOWED_EXT = ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'csv', 'xlsx', 'xls', 'doc', 'docx']
+
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0] || null
+    if (f) {
+      const ext = (f.name.split('.').pop() || '').toLowerCase()
+      if (!ALLOWED_EXT.includes(ext)) {
+        setError(`File type .${ext} is not allowed. Accepted: ${ALLOWED_EXT.join(', ')}.`)
+        setFile(null); setFileName(''); e.target.value = ''
+        return
+      }
+      if (f.size > MAX_BYTES) {
+        setError('That file is larger than 10MB. Please choose a smaller file.')
+        setFile(null); setFileName(''); e.target.value = ''
+        return
+      }
+    }
+    setError('')
     setFile(f)
     setFileName(f?.name || '')
   }
@@ -185,13 +202,14 @@ function Field({ label, value, onChange, required, type = 'text', placeholder }:
     width: '100%', padding: '10px 12px', border: '1px solid #d1d9e0', borderRadius: 6,
     fontSize: 14, color: '#1a2332', background: '#fff', boxSizing: 'border-box', fontFamily: 'inherit',
   }
+  const fieldId = 'f-' + label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
   return (
     <div style={{ marginBottom: 16 }}>
-      <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#3d4a5c', marginBottom: 5 }}>{label}</label>
+      <label htmlFor={fieldId} style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#3d4a5c', marginBottom: 5 }}>{label}</label>
       {type === 'textarea' ? (
-        <textarea value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} rows={3} style={{ ...inputStyle, resize: 'vertical' }} />
+        <textarea id={fieldId} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} rows={3} style={{ ...inputStyle, resize: 'vertical' }} />
       ) : (
-        <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} required={required} style={inputStyle} />
+        <input id={fieldId} type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} required={required} style={inputStyle} />
       )}
     </div>
   )

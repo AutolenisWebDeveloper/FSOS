@@ -345,25 +345,26 @@ function FormField({
     fontSize: 14, color: '#1a2332', outline: 'none', boxSizing: 'border-box',
     background: '#fff', fontFamily: 'inherit',
   }
+  const fieldId = `field-${name}`
   return (
     <div style={{ marginBottom: 16 }}>
-      <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#3d4a5c', marginBottom: 5 }}>
+      <label htmlFor={fieldId} style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#3d4a5c', marginBottom: 5 }}>
         {label}{required && <span style={{ color: '#e53e3e' }}> *</span>}
       </label>
       {type === 'textarea' ? (
         <textarea
-          name={name} value={value} onChange={e => onChange(e.target.value)}
-          placeholder={placeholder} rows={3}
+          id={fieldId} name={name} value={value} onChange={e => onChange(e.target.value)}
+          placeholder={placeholder} rows={3} required={required}
           style={{ ...base, resize: 'vertical' }}
         />
       ) : type === 'select' ? (
-        <select name={name} value={value} onChange={e => onChange(e.target.value)} style={base}>
+        <select id={fieldId} name={name} value={value} onChange={e => onChange(e.target.value)} required={required} style={base}>
           <option value="">Select…</option>
           {(options || []).map(o => <option key={o} value={o}>{o}</option>)}
         </select>
       ) : (
         <input
-          type={type} name={name} value={value} onChange={e => onChange(e.target.value)}
+          id={fieldId} type={type} name={name} value={value} onChange={e => onChange(e.target.value)}
           placeholder={placeholder} required={required}
           style={base}
         />

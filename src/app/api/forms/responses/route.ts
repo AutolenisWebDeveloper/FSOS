@@ -1,18 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
+import { requireInternalAuth, parseLimit } from '@/lib/http'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-// GET /api/forms/responses
+// GET /api/forms/responses — internal
 // Returns submitted form responses for the FNA Generator page and
 // the Submitted Responses tab. Ordered by submitted_at DESC NULLS LAST.
 export async function GET(req: NextRequest) {
+  const unauthorized = requireInternalAuth(req)
+  if (unauthorized) return unauthorized
   try {
     const db = getDb()
     const form_id = req.nextUrl.searchParams.get('form_id')
     const status = req.nextUrl.searchParams.get('status')
-    const limit = Math.min(parseInt(req.nextUrl.searchParams.get('limit') || '50'), 200)
+    const limit = parseLimit(req.nextUrl.searchParams.get('limit'), 50, 200)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let query: any = db

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
 import { requireInternalAuth, parseLimit } from '@/lib/http'
+import { findStageById } from '@/lib/ghl'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -24,6 +25,7 @@ export async function GET(req: NextRequest) {
         customers!inner (
           customer_id, first_name, last_name, phone, email, age,
           has_life, has_auto, has_home,
+          ghl_contact_id, ghl_opportunity_id, ghl_stage_id, ghl_pipeline_id,
           agencies (agency_id, name, owner)
         )
       `)
@@ -37,6 +39,25 @@ export async function GET(req: NextRequest) {
     if (error) {
       console.error('[scores] query error:', error)
       return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    // Resolve each customer's live GHL pipeline stage (id → human names) from
+    // the authoritative stage-ID map, so the Opportunities UI can show where the
+    // contact sits in the GHL workflow without a second round-trip.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const o of (opportunities || []) as any[]) {
+      const c = o.customers
+      const loc = findStageById(c?.ghl_stage_id)
+      o.ghl = loc
+        ? {
+            in_ghl: true,
+            stage: loc.stageName,
+            stage_position: loc.position,
+            pipeline: loc.pipeline.name,
+            pipeline_key: loc.pipeline.key,
+            opportunity_id: c?.ghl_opportunity_id || null,
+          }
+        : { in_ghl: !!c?.ghl_contact_id, stage: null, pipeline: null }
     }
 
     // Pipeline counts across the full scores table

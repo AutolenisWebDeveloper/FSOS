@@ -39,6 +39,8 @@ export type SendFormResult =
       submission_id: string
       email_sent: boolean
       sms_sent: boolean
+      email_error?: string
+      sms_error?: string
       reused?: boolean
     }
   | { ok: false; status: number; error: string; reason?: string }
@@ -121,26 +123,49 @@ export async function sendForm(input: SendFormInput): Promise<SendFormResult> {
 
   let email_sent = false
   let sms_sent = false
+  let email_error: string | undefined
+  let sms_error: string | undefined
 
   if ((channel === 'email' || channel === 'both') && email) {
-    try {
-      const resend = new Resend(process.env.RESEND_API_KEY)
-      await resend.emails.send({
-        from: process.env.RESEND_FROM_EMAIL || 'Markist — Farmers Financial <forms@yourdomain.com>',
-        to: email,
-        subject: `Action Required — ${FORM_TITLES[form_id]}`,
-        html: buildEmailHTML(client_name || 'Client', FORM_TITLES[form_id], link, form_id),
-      })
-      email_sent = true
-      await db.from('form_sends').insert({
-        submission_id: submission.submission_id,
-        customer_id: customer_id || null,
-        form_id,
-        channel: 'email',
-        destination: email,
-      })
-    } catch (err) {
-      console.error('[forms] email send error:', err)
+    const apiKey = process.env.RESEND_API_KEY
+    const from = process.env.RESEND_FROM_EMAIL
+    // Fail loudly on misconfiguration instead of reporting a phantom "sent".
+    if (!apiKey) {
+      email_error = 'RESEND_API_KEY is not set in the environment'
+    } else if (!from || /yourdomain\.com/i.test(from)) {
+      email_error =
+        'RESEND_FROM_EMAIL is not set to a Resend-verified sender (currently ' +
+        (from ? `"${from}"` : 'unset') + ')'
+    } else {
+      try {
+        const resend = new Resend(apiKey)
+        // resend.emails.send() resolves with { data, error } — it does NOT throw
+        // on API/validation errors (e.g. unverified domain), so we must inspect
+        // `error` rather than assume success.
+        const { data, error } = await resend.emails.send({
+          from,
+          to: email,
+          subject: `Action Required — ${FORM_TITLES[form_id]}`,
+          html: buildEmailHTML(client_name || 'Client', FORM_TITLES[form_id], link, form_id),
+        })
+        if (error) {
+          email_error = error.message || String(error)
+          console.error('[forms] Resend rejected the email:', error)
+        } else {
+          email_sent = true
+          await db.from('form_sends').insert({
+            submission_id: submission.submission_id,
+            customer_id: customer_id || null,
+            form_id,
+            channel: 'email',
+            destination: email,
+          })
+          if (data?.id) console.log('[forms] Resend accepted email id', data.id)
+        }
+      } catch (err) {
+        email_error = err instanceof Error ? err.message : String(err)
+        console.error('[forms] email send exception:', err)
+      }
     }
   }
 
@@ -149,6 +174,9 @@ export async function sendForm(input: SendFormInput): Promise<SendFormResult> {
       const accountSid = process.env.TWILIO_ACCOUNT_SID
       const authToken = process.env.TWILIO_AUTH_TOKEN
       const fromNumber = process.env.TWILIO_PHONE_NUMBER
+      if (!accountSid || !authToken || !fromNumber) {
+        sms_error = 'Twilio env not set (TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_PHONE_NUMBER)'
+      }
       if (accountSid && authToken && fromNumber) {
         const smsBody = `Hi ${client_name || 'there'}, Markist sent you a secure form to complete before your appointment. Tap to open: ${link}\n\n${TRAIGA_SMS_FOOTER}`
         const res = await fetch(
@@ -176,10 +204,12 @@ export async function sendForm(input: SendFormInput): Promise<SendFormResult> {
             destination: phone,
           })
         } else {
-          console.error('[forms] Twilio SMS error:', await res.text())
+          sms_error = `Twilio ${res.status}: ${(await res.text()).slice(0, 200)}`
+          console.error('[forms] Twilio SMS error:', sms_error)
         }
       }
     } catch (err) {
+      sms_error = err instanceof Error ? err.message : String(err)
       console.error('[forms] SMS send error:', err)
     }
   }
@@ -203,6 +233,8 @@ export async function sendForm(input: SendFormInput): Promise<SendFormResult> {
     submission_id: submission.submission_id,
     email_sent,
     sms_sent,
+    email_error,
+    sms_error,
   }
 }
 

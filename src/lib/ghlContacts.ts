@@ -26,6 +26,7 @@ const HEADER_ALIASES: Record<string, string[]> = {
   company: ['company', 'companyname', 'business', 'businessname', 'organization', 'employer'],
   product_interest: ['productinterest', 'product', 'interest'],
   life_stage: ['lifestage', 'stage', 'segment'],
+  agency_owner: ['agencyowner', 'agencyownername', 'referringowner', 'referringagencyowner', 'owner', 'agent', 'agentname'],
   notes: ['notes', 'note', 'comment', 'comments'],
 }
 
@@ -129,7 +130,7 @@ export interface MapResult {
 export function mapAndValidateRow(
   record: Record<string, string>,
   colMap: Record<string, CanonicalField>,
-  defaults: { tags?: string[]; source?: string } = {},
+  defaults: { tags?: string[]; source?: string; agencyOwner?: string } = {},
 ): MapResult {
   const errors: string[] = []
 
@@ -162,9 +163,11 @@ export function mapAndValidateRow(
   const customFields: Record<string, string> = {}
   const productInterest = pick(record, colMap, 'product_interest')
   const lifeStage = pick(record, colMap, 'life_stage')
+  const agencyOwner = pick(record, colMap, 'agency_owner') || defaults.agencyOwner || ''
   const leadSource = pick(record, colMap, 'source') || defaults.source || ''
   if (productInterest) customFields[GHL_CUSTOM_FIELDS.product_interest] = productInterest
   if (lifeStage) customFields[GHL_CUSTOM_FIELDS.life_stage] = lifeStage
+  if (agencyOwner) customFields[GHL_CUSTOM_FIELDS.referring_owner] = agencyOwner
   if (leadSource) customFields[GHL_CUSTOM_FIELDS.lead_source] = leadSource
 
   const dedupeKey = email || (phone as string)

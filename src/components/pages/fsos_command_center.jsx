@@ -1157,6 +1157,7 @@ function ContactUploadPage({toast}) {
   const [headers, setHeaders]   = useState([]);
   const [tags, setTags]         = useState("");
   const [source, setSource]     = useState("csv_upload");
+  const [agencyOwner, setAgencyOwner] = useState("");
   const [pipeline, setPipeline] = useState("");
   const [stage, setStage]       = useState(1);
   const [busy, setBusy]         = useState(false);
@@ -1194,6 +1195,7 @@ function ContactUploadPage({toast}) {
       fd.append("file", file);
       if (tags.trim()) fd.append("tags", tags.trim());
       if (source.trim()) fd.append("source", source.trim());
+      if (agencyOwner.trim()) fd.append("agency_owner", agencyOwner.trim());
       if (pipeline) { fd.append("pipeline", pipeline); fd.append("stage", String(stage)); }
       const res = await fetch("/api/ghl/contacts/upload", { method: "POST", body: fd });
       const data = await res.json().catch(() => ({}));
@@ -1283,6 +1285,11 @@ function ContactUploadPage({toast}) {
               <input value={source} onChange={e=>setSource(e.target.value)} placeholder="csv_upload"
                 style={{width:"100%", padding:"7px 9px", border:"1px solid var(--border)", borderRadius:6, fontSize:11, fontFamily:"DM Sans,sans-serif"}}/>
             </label>
+            <label style={{fontSize:11, gridColumn:"1 / -1"}}>
+              <div style={{fontWeight:600, marginBottom:4, color:"var(--navy)"}}>Agency Owner (optional)</div>
+              <input value={agencyOwner} onChange={e=>setAgencyOwner(e.target.value)} placeholder="Referring agency owner — applied when a row has no Agency Owner column"
+                style={{width:"100%", padding:"7px 9px", border:"1px solid var(--border)", borderRadius:6, fontSize:11, fontFamily:"DM Sans,sans-serif"}}/>
+            </label>
             <label style={{fontSize:11}}>
               <div style={{fontWeight:600, marginBottom:4, color:"var(--navy)"}}>Pipeline (optional)</div>
               <select value={pipeline} onChange={e=>{setPipeline(e.target.value); setStage(1);}}
@@ -1305,8 +1312,8 @@ function ContactUploadPage({toast}) {
           </button>
           <div style={{fontSize:9, color:"var(--muted)", marginTop:8, lineHeight:1.5}}>
             Detected columns are auto-mapped: <b>name / first / last</b>, <b>email</b>, <b>phone</b>, <b>tags</b>,
-            <b> source</b>, plus product interest &amp; life stage into GHL custom fields. A name column and either
-            email or phone are required.
+            <b> source</b>, <b>agency owner</b>, plus product interest &amp; life stage into GHL custom fields. A name
+            column and either email or phone are required.
           </div>
         </div>
 

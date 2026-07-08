@@ -95,6 +95,7 @@ export async function POST(req: NextRequest) {
     .map((t) => t.trim())
     .filter(Boolean)
   const source = String(formData.get('source') || '').trim() || 'csv_upload'
+  const agencyOwner = String(formData.get('agency_owner') || '').trim()
   const pipelineKey = String(formData.get('pipeline') || '').trim() as GhlPipeline['key'] | ''
   const stageRaw = String(formData.get('stage') || '').trim()
   const stagePosition = stageRaw ? Number.parseInt(stageRaw, 10) : null
@@ -176,7 +177,7 @@ export async function POST(req: NextRequest) {
 
   rows.forEach((record, i) => {
     const rowNumber = i + 1
-    const { contact, errors } = mapAndValidateRow(record, colMap, { tags, source })
+    const { contact, errors } = mapAndValidateRow(record, colMap, { tags, source, agencyOwner })
     if (!contact) {
       results[i] = {
         row_number: rowNumber,

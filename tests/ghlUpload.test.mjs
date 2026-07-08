@@ -81,6 +81,22 @@ await t('splits a full-name column when no first/last', () => {
   assert.equal(contact.firstName, 'John')
   assert.equal(contact.lastName, 'Q Public')
 })
+await t('maps an Agency Owner column into the referring_agency_owner custom field', () => {
+  const map = detectColumnMap(['name', 'email', 'Agency Owner'])
+  assert.equal(map['Agency Owner'], 'agency_owner')
+  const { contact } = mapAndValidateRow({ name: 'Jane Doe', email: 'a@b.co', 'Agency Owner': 'Markist Athelus' }, map, {})
+  assert.equal(contact.customFields.referring_agency_owner, 'Markist Athelus')
+})
+await t('applies the batch agencyOwner default when a row has no owner column', () => {
+  const map = detectColumnMap(['name', 'email'])
+  const { contact } = mapAndValidateRow({ name: 'Jane Doe', email: 'a@b.co' }, map, { agencyOwner: 'Sarah Chen' })
+  assert.equal(contact.customFields.referring_agency_owner, 'Sarah Chen')
+})
+await t('row-level Agency Owner overrides the batch default', () => {
+  const map = detectColumnMap(['name', 'email', 'agency owner'])
+  const { contact } = mapAndValidateRow({ name: 'Jane Doe', email: 'a@b.co', 'agency owner': 'Row Owner' }, map, { agencyOwner: 'Batch Owner' })
+  assert.equal(contact.customFields.referring_agency_owner, 'Row Owner')
+})
 await t('rejects a row with no name', () => {
   const { contact, errors } = mapAndValidateRow({ email: 'a@b.co' }, detectColumnMap(['email']), {})
   assert.equal(contact, null)

@@ -3,6 +3,19 @@
 // size guards, HTML escaping, and internal-endpoint authorization.
 
 import { NextRequest, NextResponse } from 'next/server'
+import { ConfigError } from '@/lib/supabase/client'
+
+/**
+ * If `err` is a configuration error (missing env vars), return a clear 503 the
+ * UI can display verbatim; otherwise return null so the caller falls through to
+ * its normal error handling.
+ */
+export function configErrorResponse(err: unknown): NextResponse | null {
+  if (err instanceof ConfigError) {
+    return NextResponse.json({ error: err.message, code: 'not_configured' }, { status: 503 })
+  }
+  return null
+}
 
 /**
  * Parse a `limit` query param safely. Never returns NaN, always capped.

@@ -46,21 +46,25 @@ function useAppData() {
   const [error, setError]     = useState(null);
   const [lastFetch, setLastFetch] = useState(null);
 
-  const fetch_ = useCallback(() => {
+  const fetch_ = useCallback(async () => {
     setLoading(true);
     setError(null);
-    fetch("/api/dashboard")
-      .then(r => { if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
-      .then(d => {
-        setData(d);
-        setLastFetch(new Date());
-        setLoading(false);
-      })
-      .catch(e => {
-        console.error("Dashboard fetch error:", e);
-        setError(e.message);
-        setLoading(false);
-      });
+    try {
+      const r = await fetch("/api/dashboard");
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        // Surface the server's message (e.g. "Supabase is not configured …")
+        // instead of an opaque status code.
+        throw new Error(d.error || ("HTTP " + r.status));
+      }
+      setData(d);
+      setLastFetch(new Date());
+    } catch (e) {
+      console.error("Dashboard fetch error:", e);
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { fetch_(); }, [fetch_]);

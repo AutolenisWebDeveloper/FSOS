@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { requireInternalAuth } from '@/lib/http'
+import { requireInternalAuth, configErrorResponse } from '@/lib/http'
 import { getTier } from '@/lib/compliance'
 import { ghlSummary } from '@/lib/ghl'
 
@@ -27,6 +27,8 @@ export async function GET(req: NextRequest) {
     if (scope === 'calendar') return await calendarScope()
     return await dashboardScope()
   } catch (err) {
+    const configErr = configErrorResponse(err)
+    if (configErr) return configErr
     console.error('Dashboard API error:', err)
     return NextResponse.json({ error: 'Failed to load dashboard data' }, { status: 500 })
   }

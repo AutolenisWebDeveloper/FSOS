@@ -5,7 +5,8 @@
 -- ═══════════════════════════════════════════════════════════════════
 
 -- Enable required extensions
-create extension if not exists "uuid-ossp";
+-- gen_random_uuid() is built into modern Postgres (pgcrypto/core), so uuid-ossp
+-- is not needed. pg_cron powers the nightly scoring job.
 create extension if not exists "pg_cron";
 
 -- ─────────────────────────────────────────────────────────
@@ -28,15 +29,9 @@ create table agencies (
   last_call       date,
   last_meeting    date,
   last_email      date,
-  days_since_referral integer generated always as (
-    case when last_referral is null then 999
-    else (current_date - last_referral)::integer end
-  ) stored,
-  needs_attention boolean generated always as (
-    case when last_referral is null then false
-    when (current_date - last_referral) > 30 then true
-    else false end
-  ) stored,
+  -- days_since_referral / needs_attention are time-dependent, so they cannot be
+  -- STORED generated columns (the generation expression must be IMMUTABLE).
+  -- The /api/agencies/list route computes them from last_referral at read time.
   created_at      timestamptz default now(),
   updated_at      timestamptz default now()
 );
@@ -54,10 +49,10 @@ create table customers (
   phone           text,
   cell_phone      text,
   dob             date,
-  age             integer generated always as (
-    case when dob is null then null
-    else date_part('year', age(dob))::integer end
-  ) stored,
+  -- age is maintained from dob by the customers_set_age trigger (on insert /
+  -- dob update) and refreshed nightly. It cannot be a STORED generated column
+  -- because age(dob) is not IMMUTABLE.
+  age             integer,
   address         text,
   city            text,
   state           text default 'TX',
@@ -73,8 +68,7 @@ create table customers (
   has_umbrella    boolean default false,
   policy_count    integer default 0,
   -- Source tracking
-  source          text default 'apex',           -- apex|agency_referral|agency_upload|manual
-  ghl_contact_id  text,                          -- GHL contact ID for sync
+  source          text default 'apex',           -- apex|agency_referral|agency_upload|calendly|manual
   apex_id         text,                          -- APEX policy number or ID
   -- Consent
   consent_sms     boolean default false,
@@ -88,7 +82,6 @@ create table customers (
 create index idx_customers_agency on customers(agency_id);
 create index idx_customers_email on customers(email);
 create index idx_customers_phone on customers(phone);
-create index idx_customers_ghl on customers(ghl_contact_id);
 create index idx_customers_apex on customers(apex_id);
 create index idx_customers_age on customers(age);
 create index idx_customers_state on customers(state);
@@ -109,10 +102,8 @@ create table policies (
   issue_date          date,
   expiry_date         date,
   conversion_deadline date,                      -- for term life — when conversion window closes
-  days_to_deadline    integer generated always as (
-    case when conversion_deadline is null then null
-    else (conversion_deadline - current_date)::integer end
-  ) stored,
+  -- days_to_deadline is derived from conversion_deadline at read time (routes
+  -- and scoring functions); a STORED generated column can't reference current_date.
   status              text default 'active',     -- active|lapsed|cancelled|converted
   is_employer_group   boolean default false,
   notes               text,
@@ -174,7 +165,7 @@ create table consent_ledger (
   channel         text not null,                 -- sms|email|voice
   status          text not null,                 -- opted_in|opted_out|pending
   recorded_at     timestamptz default now(),
-  source          text,                          -- form|ghl_webhook|manual|api
+  source          text,                          -- form|calendly|manual|api
   ip_address      text,
   notes           text
 );
@@ -234,7 +225,6 @@ create table activity (
   subject         text,
   notes           text,
   ai_agent        text,                          -- which AI agent if automated
-  ghl_activity_id text,
   created_at      timestamptz default now()
 );
 
@@ -267,10 +257,11 @@ create table form_submissions (
   created_at      timestamptz default now()
 );
 
-create unique index idx_form_submissions_token on form_submissions(token);
+-- token already has a unique index from the column-level `unique` constraint.
 create index idx_form_submissions_customer on form_submissions(customer_id);
 create index idx_form_submissions_form on form_submissions(form_id);
 create index idx_form_submissions_status on form_submissions(status);
+create index idx_form_submissions_pending on form_submissions(status, expires_at);
 
 -- ─────────────────────────────────────────────────────────
 -- FORM SENDS LOG
@@ -360,7 +351,6 @@ create table commission_cases (
   paid_date       date,
   -- Links
   fna_submission_id uuid references form_submissions(submission_id) on delete set null,
-  ghl_opportunity_id text,
   notes           text,
   created_at      timestamptz default now(),
   updated_at      timestamptz default now()
@@ -383,7 +373,6 @@ create table workshops (
   max_attendees   integer default 50,
   location        text,                          -- virtual | physical address
   registration_link text,
-  ghl_calendar_id text,
   created_at      timestamptz default now()
 );
 
@@ -424,7 +413,6 @@ create table opra_cases (
   transferred_date date,
   status          text default 'identified',     -- identified|contacted|scheduled|reviewed|transferred|declined
   notes           text,
-  ghl_contact_id  text,
   created_at      timestamptz default now(),
   updated_at      timestamptz default now()
 );
@@ -432,6 +420,7 @@ create table opra_cases (
 create index idx_opra_customer on opra_cases(customer_id);
 create index idx_opra_status on opra_cases(status);
 create index idx_opra_transfer_date on opra_cases(transfer_date);
+create index idx_opra_uncontacted on opra_cases(created_at) where contacted = false;
 
 -- ─────────────────────────────────────────────────────────
 -- AGENCY REFERRALS
@@ -498,7 +487,7 @@ create table daily_briefings (
   pipeline_gdc        numeric(12,2),
   submitted_gdc       numeric(12,2),
   issued_gdc_ytd      numeric(12,2),
-  -- AI activity (from GHL)
+  -- AI activity (from Retell / Twilio)
   ai_calls_made       integer default 0,
   ai_texts_sent       integer default 0,
   ai_emails_sent      integer default 0,
@@ -528,6 +517,22 @@ create trigger agencies_updated_at before update on agencies
 
 create trigger customers_updated_at before update on customers
   for each row execute function update_updated_at();
+
+-- Maintain customers.age from dob (age(dob) is not IMMUTABLE, so it can't be a
+-- generated column). Recomputed on insert and whenever dob changes; the nightly
+-- scoring job refreshes every row so ages don't drift across birthdays.
+create or replace function set_customer_age()
+returns trigger language plpgsql as $$
+begin
+  new.age := case when new.dob is null then null
+                  else date_part('year', age(new.dob))::integer end;
+  return new;
+end;
+$$;
+
+create trigger customers_set_age
+  before insert or update of dob on customers
+  for each row execute function set_customer_age();
 
 create trigger policies_updated_at before update on policies
   for each row execute function update_updated_at();
@@ -586,7 +591,7 @@ returns integer language plpgsql as $$
 declare
   v_days integer;
 begin
-  select min(days_to_deadline)
+  select min((conversion_deadline - current_date)::integer)
   into v_days
   from policies
   where customer_id = p_customer_id
@@ -702,6 +707,12 @@ $$;
 create or replace function run_nightly_scoring()
 returns void language plpgsql as $$
 begin
+  -- Keep ages current before scoring (age drives several scores).
+  update customers
+    set age = date_part('year', age(dob))::integer
+    where dob is not null
+      and age is distinct from date_part('year', age(dob))::integer;
+
   insert into scores (
     customer_id,
     opra_score,
@@ -871,7 +882,7 @@ create trigger agency_referral_inserted
 
 -- ─────────────────────────────────────────────────────────
 -- pg_cron SCHEDULE
--- Nightly scoring at 2AM CT = 8AM UTC
+-- Nightly scoring at 08:00 UTC (= 2AM CST / 3AM CDT).
 -- ─────────────────────────────────────────────────────────
 select cron.schedule(
   'fsos-nightly-scoring',
@@ -920,9 +931,19 @@ create policy "service_role_all" on agency_referrals       for all using (auth.r
 create policy "service_role_all" on agency_uploads         for all using (auth.role() = 'service_role');
 create policy "service_role_all" on daily_briefings        for all using (auth.role() = 'service_role');
 
--- Public read for form submissions (client portal — reads by token only)
-create policy "public_form_token_read" on form_submissions
-  for select using (true);  -- filtered by token in API route, not RLS
+-- NOTE: There is intentionally NO public/anon read policy on form_submissions.
+-- All client-portal reads go through the service-role API routes (scoped by
+-- token in code). A blanket `using (true)` select policy would expose every
+-- row — response_data, fna_report, ip_address, and every live token — to the
+-- anon key that ships to the browser.
+
+-- ─────────────────────────────────────────────────────────
+-- STORAGE — private bucket for agency document uploads
+-- Files are served only via short-lived signed URLs from the API route.
+-- ─────────────────────────────────────────────────────────
+insert into storage.buckets (id, name, public)
+  values ('documents', 'documents', false)
+  on conflict (id) do nothing;
 
 -- ─────────────────────────────────────────────────────────
 -- SEED DATA — Your 4 agency owners

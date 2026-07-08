@@ -4,8 +4,13 @@ import { getDb } from '@/lib/supabase/client'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-// POST /api/agencies/upload
-// Handles document uploads from agency partners at /upload/[slug]
+// POST /api/agencies/upload — public (agency partners upload client documents
+// at /upload/[slug]). Files go to a PRIVATE bucket; only signed URLs are handed
+// back, never public URLs.
+const MAX_FILE_BYTES = 10 * 1024 * 1024 // 10 MB
+const ALLOWED_EXT = new Set(['pdf', 'png', 'jpg', 'jpeg', 'webp', 'csv', 'xlsx', 'xls', 'doc', 'docx'])
+const SIGNED_URL_TTL = 60 * 60 * 24 * 7 // 7 days
+
 export async function POST(req: NextRequest) {
   try {
     const supabase = getDb()
@@ -22,7 +27,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'agency_slug and document_type required' }, { status: 400 })
     }
 
-    // 1. Look up agency
+    if (file && file.size > 0) {
+      if (file.size > MAX_FILE_BYTES) {
+        return NextResponse.json({ error: 'File exceeds the 10MB limit' }, { status: 413 })
+      }
+      const ext = (file.name.split('.').pop() || '').toLowerCase()
+      if (!ALLOWED_EXT.has(ext)) {
+        return NextResponse.json({ error: `File type .${ext} is not allowed` }, { status: 415 })
+      }
+    }
+
     const { data: agency, error: agencyErr } = await supabase
       .from('agencies')
       .select('agency_id, name, owner')
@@ -33,13 +47,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Agency not found' }, { status: 404 })
     }
 
-    // 2. Find or create customer
     let customer_id: string | null = null
     if (customer_email) {
       const { data: existing } = await supabase
         .from('customers')
         .select('customer_id')
-        .eq('email', customer_email)
+        .eq('email', customer_email.toLowerCase())
         .maybeSingle()
 
       if (existing) {
@@ -52,7 +65,7 @@ export async function POST(req: NextRequest) {
             agency_id: agency.agency_id,
             first_name: parts[0] || 'Unknown',
             last_name: parts.slice(1).join(' ') || '',
-            email: customer_email || null,
+            email: customer_email.toLowerCase(),
             source: 'agency_upload',
           })
           .select('customer_id')
@@ -61,15 +74,14 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 3. Upload file to Supabase Storage (if file present)
     let file_url: string | null = null
     let file_name: string | null = null
     let file_size: number | null = null
 
     if (file && file.size > 0) {
       const fileBuffer = Buffer.from(await file.arrayBuffer())
-      const ext = file.name.split('.').pop() || 'pdf'
-      const storagePath = `agency-uploads/${agency_slug}/${Date.now()}-${file.name.replace(/[^a-z0-9._-]/gi, '_')}`
+      const safeName = file.name.replace(/[^a-z0-9._-]/gi, '_')
+      const storagePath = `agency-uploads/${agency_slug}/${Date.now()}-${safeName}`
 
       const { error: uploadErr } = await supabase.storage
         .from('documents')
@@ -78,18 +90,33 @@ export async function POST(req: NextRequest) {
           upsert: false,
         })
 
+      // Upload failure is FATAL — the caller must not see a false success.
       if (uploadErr) {
         console.error('Storage upload error:', uploadErr)
-        // Non-fatal — still record the submission
-      } else {
-        const { data: urlData } = supabase.storage.from('documents').getPublicUrl(storagePath)
-        file_url = urlData?.publicUrl || null
-        file_name = file.name
-        file_size = file.size
+        return NextResponse.json(
+          { error: 'Failed to store the uploaded file. Please try again.' },
+          { status: 502 },
+        )
       }
+
+      const { data: signed } = await supabase.storage
+        .from('documents')
+        .createSignedUrl(storagePath, SIGNED_URL_TTL)
+      file_url = signed?.signedUrl || null
+      file_name = file.name
+      file_size = file.size
     }
 
-    // 4. Log activity
+    // Always record the upload event, even when there is no linked customer.
+    await supabase.from('agency_uploads').insert({
+      agency_id: agency.agency_id,
+      filename: file_name,
+      upload_type: document_type,
+      record_count: file ? 1 : 0,
+      status: 'complete',
+      processed_at: new Date().toISOString(),
+    })
+
     if (customer_id) {
       await supabase.from('activity').insert({
         customer_id,
@@ -109,7 +136,6 @@ export async function POST(req: NextRequest) {
       file_size,
       document_type,
     })
-
   } catch (err) {
     console.error('Agency upload error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

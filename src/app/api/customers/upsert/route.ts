@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
+import { requireInternalAuth } from '@/lib/http'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -52,6 +53,8 @@ function policyFlags(policyType?: string) {
 }
 
 export async function POST(req: NextRequest) {
+  const unauthorized = requireInternalAuth(req)
+  if (unauthorized) return unauthorized
   try {
     const body = (await req.json()) as UpsertBody
 
@@ -76,17 +79,24 @@ export async function POST(req: NextRequest) {
 
     const db = getDb()
 
-    // 1. Look up existing customer by normalized email OR phone
-    const orParts: string[] = []
-    if (email) orParts.push(`email.eq.${email}`)
-    if (phone) orParts.push(`phone.eq.${phone}`)
-
+    // 1. Look up existing customer by normalized email, then phone.
+    // Uses separate .eq() queries (never string-interpolated .or(), which is
+    // vulnerable to PostgREST filter injection via crafted email values).
     let existing: { customer_id: string } | null = null
-    if (orParts.length > 0) {
+    if (email) {
       const { data } = await db
         .from('customers')
         .select('customer_id')
-        .or(orParts.join(','))
+        .eq('email', email)
+        .limit(1)
+        .maybeSingle()
+      existing = data as { customer_id: string } | null
+    }
+    if (!existing && phone) {
+      const { data } = await db
+        .from('customers')
+        .select('customer_id')
+        .eq('phone', phone)
         .limit(1)
         .maybeSingle()
       existing = data as { customer_id: string } | null
@@ -149,9 +159,11 @@ export async function POST(req: NextRequest) {
       customer_id = created.customer_id
     }
 
-    // 5. Upsert a policy row if a policy_type was provided
+    // 5. Upsert a policy row if a policy_type was provided. Idempotent: a
+    // re-run of the same APEX row updates the existing policy instead of
+    // duplicating it. Dedupe key: (customer_id, policy_type, conversion_deadline).
     if (body.policy_type) {
-      const { error: polErr } = await db.from('policies').insert({
+      const policyPayload = {
         customer_id,
         policy_type: body.policy_type,
         face_amount: toNumber(body.face_amount),
@@ -159,10 +171,30 @@ export async function POST(req: NextRequest) {
         conversion_deadline: body.conversion_deadline || null,
         issue_date: body.issue_date || null,
         status: 'active',
-      })
+      }
+
+      let existingPolicy: { policy_id: string } | null = null
+      {
+        let pq = db
+          .from('policies')
+          .select('policy_id')
+          .eq('customer_id', customer_id)
+          .eq('policy_type', body.policy_type)
+          .limit(1)
+        pq = body.conversion_deadline
+          ? pq.eq('conversion_deadline', body.conversion_deadline)
+          : pq.is('conversion_deadline', null)
+        const { data } = await pq.maybeSingle()
+        existingPolicy = data as { policy_id: string } | null
+      }
+
+      const { error: polErr } = existingPolicy
+        ? await db.from('policies').update(policyPayload).eq('policy_id', existingPolicy.policy_id)
+        : await db.from('policies').insert(policyPayload)
+
       if (polErr) {
         // Log but don't fail the whole row — customer upsert already succeeded
-        console.error('[customers/upsert] policy insert error:', polErr)
+        console.error('[customers/upsert] policy upsert error:', polErr)
       }
     }
 
@@ -179,10 +211,12 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, customer_id, action })
   } catch (err) {
+    // Genuine server faults return 500 so Make.com retries rather than dropping
+    // the row. Intentional bad-row rejections above return 400.
     console.error('[customers/upsert] unexpected error:', err)
     return NextResponse.json(
       { success: false, error: 'Internal server error' },
-      { status: 400 }
+      { status: 500 }
     )
   }
 }

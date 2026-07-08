@@ -6,8 +6,19 @@ exactly as specified. Project URLs:
 - App: `https://fsos-seven.vercel.app`
 - Supabase REST: `https://ynxaqeejjmeilpwmuuie.supabase.co`
 
-Secrets referenced below (`[SUPABASE_SERVICE_KEY]`, `[GHL_API_KEY]`) live in your
+Secrets referenced below (`[SUPABASE_SERVICE_KEY]`, `[FSOS_API_SECRET]`) live in your
 Make.com connection/keychain — never paste raw values into module bodies.
+
+> **Internal API auth.** Internal FSOS API routes now require an auth header. Any
+> HTTP module that POSTs/GETs/PATCHes an `/api/...` internal route (e.g.
+> `/api/customers/upsert`, `/api/gdc/cases`, `/api/dashboard`) MUST send:
+>
+> ```
+> Authorization: Bearer [FSOS_API_SECRET]
+> ```
+>
+> The public token/webhook routes (`/api/forms/submit`, `/api/agencies/referral`,
+> `/api/agencies/upload`, `/api/webhooks/calendly`) do **not** need this header.
 
 ---
 
@@ -29,7 +40,9 @@ Module 3: Iterator (loops each row)
 Module 4: HTTP → POST
   URL: https://fsos-seven.vercel.app/api/customers/upsert
   Method: POST
-  Headers: Content-Type: application/json
+  Headers:
+    Content-Type: application/json
+    Authorization: Bearer [FSOS_API_SECRET]
   Body: {
     "first_name": "{{first_name}}",
     "last_name": "{{last_name}}",
@@ -51,39 +64,14 @@ with `{ success: false, error }` and never a 500, so the iterator continues.
 
 ---
 
-## Scenario 2 — Nightly Score Push to GHL
+## Scenario 2 — Nightly Score Sync (retired)
 
-Pushes each customer's pipeline scores into GHL contact custom fields.
-
-```
-Trigger: Schedule → Daily at 2:30AM CT
-
-Module 2: HTTP → GET
-  URL: https://ynxaqeejjmeilpwmuuie.supabase.co/rest/v1/scores
-  Headers:
-    apikey: [SUPABASE_SERVICE_KEY]
-    Authorization: Bearer [SUPABASE_SERVICE_KEY]
-  Query: ?select=*,customers(email,first_name,last_name)&scored_at=gte.[yesterday]&limit=500
-
-Module 3: Iterator
-
-Module 4: HTTP → GET (find GHL contact by email)
-  URL: https://services.leadconnectorhq.com/contacts/search?email={{email}}
-  Headers: Authorization: Bearer [GHL_API_KEY]
-
-Module 5: HTTP → PUT (update GHL contact custom fields)
-  URL: https://services.leadconnectorhq.com/contacts/{{ghl_contact_id}}
-  Body: {
-    "customField": {
-      "fsa_opra_score": "{{opra_score}}",
-      "fsa_conversion_score": "{{conversion_score}}",
-      "fsa_life_score": "{{life_score}}",
-      "fsa_retirement_score": "{{retirement_score}}",
-      "fsa_primary_pipeline": "{{primary_pipeline}}",
-      "fsa_scored_at": "{{scored_at}}"
-    }
-  }
-```
+> **Retired.** This scenario used to push pipeline scores into GHL contact custom
+> fields. GHL has been removed from the stack, so there is no CRM to sync scores
+> to. Scores are read directly from the command center via `GET /api/scores` and
+> from Supabase `scores`. Delete this scenario, or repurpose it: if you later want
+> outbound follow-ups on high scores, retarget it to a direct Twilio SMS send or a
+> Retell AI outbound call instead of a GHL contact update.
 
 ---
 
@@ -96,6 +84,8 @@ Trigger: Schedule → Daily at 7AM CT
 
 Module 2: HTTP → GET
   URL: https://fsos-seven.vercel.app/api/dashboard
+  Headers:
+    Authorization: Bearer [FSOS_API_SECRET]
 
 Module 3: HTTP → POST (store briefing in Supabase)
   URL: https://ynxaqeejjmeilpwmuuie.supabase.co/rest/v1/daily_briefings
@@ -119,16 +109,23 @@ Module 3: HTTP → POST (store briefing in Supabase)
 `Prefer: resolution=merge-duplicates` upserts on the unique `briefing_date`, so
 re-running the scenario for the same day overwrites rather than duplicates.
 
+> **Note on `counts.appointments`.** The `/api/dashboard` response includes a
+> `counts.appointments` field, but nothing currently populates appointment data,
+> so it returns `0` until appointment ingestion is wired up (e.g. from the
+> Calendly webhook). Store it as-is; it will begin reflecting real numbers once
+> that pipeline exists.
+
 ---
 
-## Scenario 4 — GHL Pipeline → Commission Case Auto-Create
+## Scenario 4 — Commission Case Auto-Create (Calendly / manual trigger)
 
-Creates a `commission_cases` row when a GHL opportunity reaches
-"Application Submitted".
+Creates a `commission_cases` row when an application is submitted. GHL pipelines
+no longer exist, so trigger this from whatever now signals "application submitted"
+— a Make.com webhook you fire manually, an incoming Calendly `invitee.created`
+event, or a Google Sheet/form row.
 
 ```
-Trigger: Webhook (GHL sends to Make.com webhook URL when stage changes)
-Event filter: pipelineStage.name = "Application Submitted"
+Trigger: Webhook (fired when an application is submitted)
 
 Module 2: HTTP → GET (find customer in Supabase)
   URL: https://ynxaqeejjmeilpwmuuie.supabase.co/rest/v1/customers
@@ -137,14 +134,17 @@ Module 2: HTTP → GET (find customer in Supabase)
 
 Module 3: HTTP → POST (create commission case)
   URL: https://fsos-seven.vercel.app/api/gdc/cases
+  Method: POST
+  Headers:
+    Content-Type: application/json
+    Authorization: Bearer [FSOS_API_SECRET]
   Body: {
     "customer_id": "{{customer_id}}",
-    "carrier": "{{opportunity.fsa_carrier}}",
-    "product_name": "{{opportunity.fsa_product}}",
-    "product_type": "{{opportunity.fsa_product_type}}",
-    "premium": "{{opportunity.monetaryValue}}",
-    "pipeline": "{{determinePipelineFromOpportunityName}}",
-    "ghl_opportunity_id": "{{opportunity.id}}"
+    "carrier": "{{carrier}}",
+    "product_name": "{{product}}",
+    "product_type": "{{product_type}}",
+    "premium": "{{premium}}",
+    "pipeline": "{{pipeline}}"
   }
 ```
 

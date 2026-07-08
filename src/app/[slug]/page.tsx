@@ -64,7 +64,7 @@ export default function AgencyReferralPage() {
       const data = await res.json()
       if (data.success) {
         setSubmitted(true)
-        if (data.message) setAgency(a => a ? { ...a, owner: data.message.split('!')[0].replace('Thank you! ', '') } : a)
+        if (data.owner) setAgency(a => a ? { ...a, owner: data.owner } : a)
       } else {
         setError(data.error || 'Submission failed. Please try again.')
       }
@@ -199,13 +199,14 @@ function Field({ label, value, onChange, required, type = 'text', placeholder }:
     width: '100%', padding: '10px 12px', border: '1px solid #d1d9e0', borderRadius: 6,
     fontSize: 14, color: '#1a2332', background: '#fff', boxSizing: 'border-box', fontFamily: 'inherit',
   }
+  const fieldId = 'f-' + label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
   return (
     <div style={{ marginBottom: 16 }}>
-      <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#3d4a5c', marginBottom: 5 }}>{label}</label>
+      <label htmlFor={fieldId} style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#3d4a5c', marginBottom: 5 }}>{label}</label>
       {type === 'textarea' ? (
-        <textarea value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} rows={3} style={{ ...inputStyle, resize: 'vertical' }} />
+        <textarea id={fieldId} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} rows={3} style={{ ...inputStyle, resize: 'vertical' }} />
       ) : (
-        <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} required={required} style={inputStyle} />
+        <input id={fieldId} type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} required={required} style={inputStyle} />
       )}
     </div>
   )

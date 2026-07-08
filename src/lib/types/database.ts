@@ -8,8 +8,8 @@ export interface Database {
     Tables: {
       agencies: {
         Row: Agency
-        Insert: Omit<Agency, 'days_since_referral' | 'needs_attention'>
-        Update: Partial<Omit<Agency, 'agency_id' | 'days_since_referral' | 'needs_attention'>>
+        Insert: Agency
+        Update: Partial<Omit<Agency, 'agency_id'>>
       }
       customers: {
         Row: Customer
@@ -18,8 +18,8 @@ export interface Database {
       }
       policies: {
         Row: Policy
-        Insert: Omit<Policy, 'policy_id' | 'days_to_deadline' | 'created_at' | 'updated_at'>
-        Update: Partial<Omit<Policy, 'policy_id' | 'days_to_deadline'>>
+        Insert: Omit<Policy, 'policy_id' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<Policy, 'policy_id'>>
       }
       scores: {
         Row: Score
@@ -105,10 +105,10 @@ export interface Database {
           p_carrier: string
           p_product: string
           p_option: string | null
-          p_age: number
+          p_age: number | null
           p_state: string
-          p_premium: number
-          p_target_premium?: number
+          p_premium: number | null
+          p_target_premium?: number | null
           p_fsa_tier_rate?: number
         }
         Returns: {
@@ -136,7 +136,6 @@ export interface Activity {
   subject: string | null
   notes: string | null
   ai_agent: string | null
-  ghl_activity_id: string | null
   created_at: string
 }
 
@@ -156,8 +155,6 @@ export interface Agency {
   last_call: string | null
   last_meeting: string | null
   last_email: string | null
-  days_since_referral: number        // generated
-  needs_attention: boolean           // generated
   created_at: string
   updated_at: string
 }
@@ -171,7 +168,7 @@ export interface Customer {
   phone: string | null
   cell_phone: string | null
   dob: string | null
-  age: number | null                 // generated
+  age: number | null                 // maintained from dob by trigger
   address: string | null
   city: string | null
   state: string
@@ -186,7 +183,6 @@ export interface Customer {
   has_umbrella: boolean
   policy_count: number
   source: string
-  ghl_contact_id: string | null
   apex_id: string | null
   consent_sms: boolean
   consent_email: boolean
@@ -207,7 +203,6 @@ export interface Policy {
   issue_date: string | null
   expiry_date: string | null
   conversion_deadline: string | null
-  days_to_deadline: number | null    // generated
   status: string
   is_employer_group: boolean
   notes: string | null
@@ -311,7 +306,6 @@ export interface CommissionCase {
   issued_date: string | null
   paid_date: string | null
   fna_submission_id: string | null
-  ghl_opportunity_id: string | null
   notes: string | null
   created_at: string
   updated_at: string
@@ -334,7 +328,6 @@ export interface OpraCase {
   transferred_date: string | null
   status: string
   notes: string | null
-  ghl_contact_id: string | null
   created_at: string
   updated_at: string
 }
@@ -379,7 +372,6 @@ export interface Workshop {
   max_attendees: number
   location: string | null
   registration_link: string | null
-  ghl_calendar_id: string | null
   created_at: string
 }
 
@@ -473,8 +465,9 @@ export type CaseWithCustomer = CommissionCase & {
 
 export type AgencyWithStats = Agency & {
   referral_count: number
-  opportunity_count: number
-  issued_gdc: number
+  pending_referrals: number
+  days_since_referral: number
+  needs_attention: boolean
 }
 
 export type PipelineType = 'conversions' | 'opra' | 'life' | 'retirement' | 'business' | 'general'

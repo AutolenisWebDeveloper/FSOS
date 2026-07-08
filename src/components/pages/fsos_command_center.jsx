@@ -13,8 +13,9 @@ function useAppData() {
 
   const fetch_ = useCallback(() => {
     setLoading(true);
+    setError(null);
     fetch("/api/dashboard")
-      .then(r => r.json())
+      .then(r => { if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
       .then(d => {
         setData(d);
         setLastFetch(new Date());
@@ -46,55 +47,6 @@ function useAppData() {
   };
 }
 
-// Live hook for form submissions (responses viewer)
-function useFormResponses() {
-  const [responses, setResponses] = useState([]);
-  const [loading, setLoading]     = useState(true);
-
-  useEffect(() => {
-    fetch("/api/forms/submit?limit=50")
-      .then(r => r.json())
-      .then(d => { setResponses(d.submissions ?? []); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, []);
-
-  return { responses, loading };
-}
-
-// Live hook for agencies
-function useAgencies() {
-  const [agencies, setAgencies] = useState([]);
-  const [loading, setLoading]   = useState(true);
-
-  const refresh = useCallback(() => {
-    fetch("/api/agencies/referral?limit=100")
-      .then(r => r.json())
-      .then(d => {
-        // Group referrals by agency and merge with base agency data
-        setAgencies(d.agencies ?? []);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, []);
-
-  useEffect(() => { refresh(); }, [refresh]);
-  return { agencies, loading, refresh };
-}
-
-// Live hook for workshops
-function useWorkshops() {
-  const [workshops, setWorkshops] = useState([]);
-  const [loading, setLoading]     = useState(true);
-
-  useEffect(() => {
-    fetch("/api/dashboard?scope=workshops")
-      .then(r => r.json())
-      .then(d => { setWorkshops(d.workshops ?? []); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, []);
-
-  return { workshops, loading };
-}
 
 // ─────────────────────────────────────────────────────────
 // MARKIST FSA COMMAND CENTER — v2
@@ -434,6 +386,93 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;fon
 @media(max-width:1100px){.kpi-strip{grid-template-columns:repeat(3,1fr);}.main-grid{grid-template-columns:1fr 1fr;}.col:last-child{display:none;}.agents-grid{grid-template-columns:1fr;}}
 @media(max-width:700px){.sidebar{display:none;}.kpi-strip{grid-template-columns:repeat(2,1fr);}.main-grid{grid-template-columns:1fr;}}
 
+/* BUTTONS */
+.btn-primary,.btn-secondary,.btn-gold,.btn-green{padding:8px 16px;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;border:1px solid transparent;}
+.btn-primary{background:#2b6cb0;color:#fff;}.btn-primary:hover{background:#2c5282;}
+.btn-secondary{background:var(--card);color:var(--text);border-color:var(--border);}.btn-secondary:hover{border-color:#bee3f8;color:#2b6cb0;background:var(--blue-bg);}
+.btn-gold{background:var(--gold);color:#fff;}.btn-gold:hover{filter:brightness(.94);}
+.btn-green{background:var(--green2);color:#fff;}.btn-green:hover{background:var(--green);}
+.btn-primary:disabled,.btn-secondary:disabled,.btn-gold:disabled,.btn-green:disabled{opacity:.5;cursor:not-allowed;}
+
+/* TABS */
+.tab-bar{display:flex;gap:4px;margin-bottom:16px;border-bottom:1px solid var(--border);}
+.tab-btn{padding:9px 16px;border:none;background:none;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:12px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s;}
+.tab-btn:hover{color:#2b6cb0;}
+.tab-btn.active{color:#2b6cb0;border-bottom-color:#2b6cb0;font-weight:600;}
+
+/* MODAL */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(15,30,54,.5);z-index:200;align-items:center;justify-content:center;padding:20px;}
+.modal-overlay.open{display:flex;animation:toastIn .15s ease;}
+.modal{background:var(--card);border-radius:11px;box-shadow:var(--shadow2);width:100%;max-width:460px;max-height:90vh;overflow-y:auto;padding:22px;}
+.modal-title{font-size:16px;font-weight:600;color:var(--text);margin-bottom:16px;}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px;}
+.field{margin-bottom:12px;}
+.field label{display:block;font-size:11px;font-weight:500;color:var(--muted);margin-bottom:5px;}
+.field input,.field select,.field textarea{width:100%;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:8px 11px;font-family:'DM Sans',sans-serif;font-size:13px;color:var(--text);outline:none;}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:#bee3f8;}
+.link-preview{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:9px 11px;font-family:'DM Mono',monospace;font-size:11px;color:#2b6cb0;word-break:break-all;display:flex;align-items:center;gap:8px;justify-content:space-between;}
+.copy-btn{padding:5px 11px;border-radius:5px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:11px;font-family:'DM Sans',sans-serif;cursor:pointer;white-space:nowrap;flex-shrink:0;}
+.copy-btn:hover{border-color:#bee3f8;color:#2b6cb0;}
+
+/* FORMS LIBRARY */
+.forms-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;}
+.form-card{background:var(--card);border:1px solid var(--border);border-radius:9px;box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column;}
+.form-card-head{display:flex;align-items:center;gap:10px;padding:13px 15px;border-bottom:1px solid var(--border);background:var(--bg);}
+.form-icon{width:34px;height:34px;border-radius:8px;background:var(--blue-bg);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;}
+.form-title{font-size:12px;font-weight:600;color:var(--text);}
+.form-id{font-family:'DM Mono',monospace;font-size:9px;color:var(--dim);margin-top:1px;}
+.form-card-body{padding:14px 15px;flex:1;display:flex;flex-direction:column;gap:10px;}
+.form-desc{font-size:11px;color:var(--muted);line-height:1.5;flex:1;}
+.form-meta{display:flex;gap:6px;flex-wrap:wrap;}
+.fm-tag{font-size:8px;font-family:'DM Mono',monospace;padding:2px 6px;border-radius:3px;background:var(--bg2);color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
+
+/* FNA */
+.fna-wrap{display:grid;grid-template-columns:300px 1fr;gap:16px;align-items:start;}
+.fna-left{display:flex;flex-direction:column;gap:12px;}
+.fna-card{background:var(--card);border:1px solid var(--border);border-radius:9px;box-shadow:var(--shadow);padding:16px;}
+.fna-card-title{font-size:12px;font-weight:600;color:var(--text);margin-bottom:12px;}
+.fna-report{background:var(--card);border:1px solid var(--border);border-radius:9px;box-shadow:var(--shadow);padding:22px;min-height:300px;}
+.loading-state{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:60px 20px;color:var(--muted);font-size:12px;}
+.loading-spinner{width:32px;height:32px;border:3px solid var(--border);border-top-color:#2b6cb0;border-radius:50%;animation:spin .8s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.report-header{border-bottom:2px solid var(--navy);padding-bottom:12px;margin-bottom:16px;}
+.report-title{font-size:18px;font-weight:700;color:var(--navy);}
+.report-sub{font-size:11px;color:var(--muted);margin-top:3px;}
+.report-section{margin-bottom:18px;}
+.rs-title{font-size:11px;font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:.08em;color:#2b6cb0;font-weight:600;margin-bottom:8px;}
+.rs-content{font-size:13px;color:var(--text);line-height:1.65;}
+.rs-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;}
+.rs-item{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px;}
+.rs-item-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;}
+.rs-item-val{font-size:15px;font-weight:700;color:var(--text);}
+.priority-rec{display:flex;gap:11px;padding:11px;border:1px solid var(--border);border-radius:7px;background:var(--bg);margin-bottom:8px;}
+.pr-num{width:22px;height:22px;border-radius:50%;background:#2b6cb0;color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;}
+.pr-title{font-size:12px;font-weight:600;color:var(--text);margin-bottom:2px;}
+.pr-body{font-size:11px;color:var(--muted);line-height:1.5;}
+.disclaimer{background:var(--gold-bg);border:1px solid var(--gold-border);border-radius:6px;padding:11px 13px;font-size:10px;color:var(--gold);line-height:1.5;margin-top:16px;}
+
+/* RESPONSES TABLE */
+.resp-table{width:100%;border-collapse:collapse;font-size:11px;}
+.resp-table th{text-align:left;padding:8px 10px;font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);background:var(--bg);}
+.resp-table td{padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:middle;}
+.resp-table tr:last-child td{border-bottom:none;}
+.resp-table tr:hover td{background:var(--bg);}
+.status-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;}
+.status-dot.complete{background:var(--green2);}
+.status-dot.opened{background:var(--blue);}
+.status-dot.sent{background:var(--orange);}
+.status-dot.expired{background:var(--dim);}
+
+/* MISC */
+.page-sub{font-size:12px;color:var(--muted);margin:-8px 0 16px;}
+.sp-issued{background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);}
+.empty-state{text-align:center;padding:48px 20px;color:var(--muted);}
+.empty-state-icon{font-size:34px;margin-bottom:10px;opacity:.5;}
+.empty-state-title{font-size:14px;font-weight:600;color:var(--text);margin-bottom:5px;}
+.empty-state-sub{font-size:12px;color:var(--muted);}
+.error-banner{background:var(--red-bg);border:1px solid var(--red-border);color:var(--red);border-radius:7px;padding:11px 15px;margin-bottom:14px;font-size:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.error-banner button{background:var(--red);color:#fff;border:none;border-radius:5px;padding:5px 12px;font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;}
+
 `;
 
 const today = new Date().toLocaleDateString("en-US",{weekday:"long",year:"numeric",month:"long",day:"numeric"});
@@ -469,56 +508,11 @@ const NEEDS_MAP = [
   {cohort:"Later Retirement", age:"80+", products:["Emergency","Indexed Ann.","VA","VUL"]},
 ];
 
-const PRIORITIES=[
-  {name:"Mary Jones",pri:"HIGH",reason:"Conversion expires in 32 days",face:"$250,000",policy:"Term Policy",agency:"Johnson Agency",score:95,action:"CONV",calls:2,sms:1,booked:true,biz:false,formDone:true},
-  {name:"Robert Smith",pri:"HIGH",reason:"New Homeowner — No Life Insurance",face:"$425,000",policy:"Home Value",agency:"Brown Agency",score:88,action:"LIFE",calls:1,sms:2,booked:false,biz:false,formDone:false},
-  {name:"Carlos Vega",pri:"MED",reason:"IRA Rollover Opportunity",face:"$350,000",policy:"Est. Value",agency:"Vega Insurance Group",score:75,action:"RETIRE",calls:0,sms:1,booked:false,biz:false,formDone:true},
-  {name:"TechCorp LLC",pri:"HIGH",reason:"No buy-sell agreement · No key-man life",face:"$1.2M",policy:"Business Value",agency:"Brown Agency",score:92,action:"BIZ",calls:1,sms:0,booked:true,biz:true,formDone:true},
-  {name:"Jennifer Brown",pri:"MED",reason:"OPRA Transfer — Mono-line customer",face:"$1,840",policy:"Annual Premium",agency:"Brown Agency",score:68,action:"OPRA",calls:1,sms:0,booked:true,biz:false,formDone:false},
-  {name:"John Smith",pri:"LOW",reason:"Life Review — No life policy on file",face:"$320,000",policy:"Home Value",agency:"Johnson Agency",score:61,action:"LIFE",calls:0,sms:1,booked:false,biz:false,formDone:false},
-];
-const APPOINTMENTS=[
-  {time:"9:00 AM",name:"Mary Jones",type:"Conversion Review",agency:"Johnson Agency",status:"confirmed",color:"#e53e3e",formDone:true},
-  {time:"10:00 AM",name:"Robert Smith",type:"Life Insurance Review",agency:"Brown Agency",status:"confirmed",color:"#4299e1",formDone:false},
-  {time:"11:00 AM",name:"TechCorp LLC",type:"Business Owner Review",agency:"Brown Agency",status:"confirmed",color:"#553c9a",formDone:true},
-  {time:"2:00 PM",name:"Jennifer Brown",type:"OPRA Review",agency:"Brown Agency",status:"pending",color:"#dd6b20",formDone:false},
-  {time:"4:00 PM",name:"John Smith",type:"Life Review",agency:"Johnson Agency",status:"confirmed",color:"#4299e1",formDone:false},
-];
-const PIPELINES=[
-  {name:"OPRA Transfers",count:4,pct:40,color:"#e53e3e",gdc:"$18,500"},
-  {name:"Conversions",count:3,pct:30,color:"#f0b429",gdc:"$24,000"},
-  {name:"Life Reviews",count:6,pct:60,color:"#38a169",gdc:"$20,000"},
-  {name:"Retirement",count:4,pct:40,color:"#553c9a",gdc:"$10,000"},
-  {name:"Business Owners",count:2,pct:15,color:"#7b2d8b",gdc:"$28,000"},
-  {name:"Workshops",count:12,pct:50,color:"#0a5060",gdc:"—"},
-];
-const AGENTS=[
-  {name:"Receptionist AI",status:"online",m:[{v:12,l:"Calls Answered"},{v:3,l:"Appointments"},{v:0,l:"Transfers"}]},
-  {name:"Appointment Setter AI",status:"running",m:[{v:41,l:"Calls Made"},{v:2,l:"Appointments"},{v:8,l:"Voicemails"}]},
-  {name:"Conversion AI",status:"running",m:[{v:17,l:"Conv. Calls"},{v:1,l:"Appointments"},{v:5,l:"Follow-ups"}]},
-  {name:"Follow Up AI",status:"running",m:[{v:89,l:"Texts Sent"},{v:14,l:"Responses"},{v:4,l:"Booked"}]},
-];
-const CONVERSIONS=[
-  {urgency:30,name:"Mary Jones",face:"$250,000",premium:"$87/mo",agency:"Johnson Agency",status:"Appointment Scheduled",days:32},
-  {urgency:60,name:"David Lee",face:"$150,000",premium:"$62/mo",agency:"Brown Agency",status:"Needs Contact",days:47},
-  {urgency:60,name:"Robert Smith",face:"$500,000",premium:"$124/mo",agency:"Brown Agency",status:"Needs Contact",days:58},
-  {urgency:90,name:"Sandra Kim",face:"$300,000",premium:"$94/mo",agency:"Vega Insurance Group",status:"SMS Sent",days:72},
-];
-const GDC_CASES=[
-  {client:"John Smith",product:"Legend 7 Opt 1",carrier:"MassMutual Ascend",type:"FIA",premium:150000,gdcRate:0.08,status:"issued",issued_date:"2026-05-12",paid_date:"2026-05-28"},
-  {client:"Maria Gonzalez",product:"Pacific Horizon IUL",carrier:"Pacific Life",type:"Life",premium:80000,gdcRate:0.95,status:"submitted",isTarget:true,targetPremium:12000,issued_date:null,paid_date:null},
-  {client:"Carlos Vega",product:"Agility 10 Opt 1",carrier:"Athene",type:"FIA",premium:200000,gdcRate:0.07,status:"issued",issued_date:"2026-05-20",paid_date:null},
-  {client:"TechCorp LLC",product:"Key-Man Term",carrier:"FNWL",type:"Life",premium:85000,gdcRate:null,status:"flagged",issued_date:null,paid_date:null},
-  {client:"Robert Davis",product:"Mutual Fund IRA",carrier:"Voya",type:"MF",premium:50000,gdcRate:0.01,trail:0.005,status:"pending",issued_date:null,paid_date:null},
-];
-const WORKSHOPS=[
-  {title:"Retirement Planning Workshop",date:"Jun 15 · 6:30 PM · In-person",registered:28,attended:null,hot:8,booked:3,topic:"retire"},
-  {title:"Life Insurance Workshop",date:"Jun 28 · 11:00 AM · Virtual",registered:14,attended:null,hot:null,booked:null,topic:"life"},
-];
 const numColors=["#e53e3e","#553c9a","#dd6b20","#2b6cb0","#38a169","#0a5060"];
-const pbCls={HIGH:"hi",MED:"md",LOW:"lo",BIZ:"biz"};
-const pbLbl={HIGH:"HIGH PRIORITY",MED:"MED PRIORITY",LOW:"LOW PRIORITY",BIZ:"BUSINESS OWNER"};
-const actionMap={CONV:"CONV",OPRA:"OPRA",LIFE:"LIFE",RETIRE:"RETIRE",BIZ:"BIZ"};
+// Hoisted to module scope — referenced by Dashboard (priority list) and Daily
+// Briefing (top opportunities). Was previously only a local const inside
+// OpportunityDashboard, which threw a ReferenceError once live data rendered.
+const actionLabel={CONV:"Conversion",OPRA:"OPRA",LIFE:"Life Review",RETIRE:"Retirement",BIZ:"Business Owner"};
 
 function Donut({segs,total}){
   const r=52,cx=60,cy=60,circ=2*Math.PI*r;let off=0;
@@ -547,16 +541,17 @@ function GDCPage({tier,setTier,toast,appData={}}){
   const [cases, setCases] = useState([]);
   const [summary, setSummary] = useState(null);
   const [casesLoading, setCasesLoading] = useState(true);
+  const [casesError, setCasesError] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [newCase, setNewCase] = useState({carrier:"",product_name:"",product_type:"fia",premium:"",client_age:"",state_code:"TX",pipeline:"general",notes:""});
   const [saving, setSaving] = useState(false);
 
   const refreshCases = useCallback(() => {
-    setCasesLoading(true);
+    setCasesLoading(true); setCasesError(null);
     fetch("/api/gdc/cases?limit=100")
-      .then(r=>r.json())
+      .then(r=>{ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
       .then(d=>{ setCases(d.cases||[]); setSummary(d.summary||null); setCasesLoading(false); })
-      .catch(()=>setCasesLoading(false));
+      .catch(e=>{ setCasesError(e.message||"Failed to load"); setCasesLoading(false); });
   }, []);
   useEffect(()=>{ refreshCases(); },[refreshCases]);
 
@@ -601,7 +596,6 @@ function GDCPage({tier,setTier,toast,appData={}}){
     finally{ setSaving(false); }
   };
 
-  const usingLiveCases = cases.length > 0;
   const totalGDC = summary ? summary.total_pipeline : (appData.gdc?.pipeline || 0);
   const totalFSA = totalGDC*t.rate;
   return(<>
@@ -659,6 +653,7 @@ function GDCPage({tier,setTier,toast,appData={}}){
         <div className="gdc-sub">At current tier</div>
       </div>
     </div>
+    {casesError && <div className="error-banner"><span>⚠ Couldn't load commission cases ({casesError}).</span><button onClick={refreshCases}>Retry</button></div>}
     <div className="card">
       <div className="card-head">
         <div className="card-title">Active Cases {casesLoading && <span style={{fontSize:10,color:"var(--muted)",fontWeight:400}}>· loading…</span>}</div>
@@ -670,7 +665,15 @@ function GDCPage({tier,setTier,toast,appData={}}){
       <div style={{overflowX:"auto"}}>
         <table className="cases-table">
           <thead><tr><th>Client</th><th>Carrier</th><th>Product</th><th>Type</th><th>Premium</th><th>GDC Rate</th><th>Est. GDC</th><th>FSA</th><th>Issued Date</th><th>Paid Date</th><th>Status</th><th>Action</th></tr></thead>
-          <tbody>{usingLiveCases ? cases.map((c)=>{
+          <tbody>{cases.length===0 ? (
+            <tr><td colSpan={12} style={{padding:0}}>
+              <div className="empty-state" style={{padding:"32px 20px"}}>
+                <div className="empty-state-icon">💰</div>
+                <div className="empty-state-title">{casesLoading?"Loading cases…":"No active cases yet"}</div>
+                <div className="empty-state-sub">{casesLoading?"":"Log a case with “+ Log New Case” to start tracking GDC."}</div>
+              </div>
+            </td></tr>
+          ) : cases.map((c)=>{
             const name = `${c.customers?.first_name||""} ${c.customers?.last_name||""}`.trim() || "—";
             const ss = statusStyle(c.case_status);
             return(<tr key={c.case_id}>
@@ -686,24 +689,6 @@ function GDCPage({tier,setTier,toast,appData={}}){
               <td className="td-mono" style={{fontSize:10,color:c.paid_date?"var(--green2)":"var(--dim)"}}>{c.paid_date||"—"}</td>
               <td><button onClick={()=>cycleStatus(c)} title="Click to advance status" style={{cursor:"pointer",border:"none",borderRadius:4,padding:"3px 9px",fontSize:10,fontWeight:600,fontFamily:"DM Mono,monospace",background:ss.bg,color:ss.color}}>{c.case_status}</button></td>
               <td><button style={{fontSize:9,padding:"2px 7px",borderRadius:3,border:"1px solid var(--border)",background:"transparent",color:"var(--muted)",cursor:"pointer"}} onClick={()=>cycleStatus(c)}>→ Next</button></td>
-            </tr>);
-          }) : GDC_CASES.map((c,i)=>{
-            const base=c.isTarget?c.targetPremium:c.premium;
-            const gdc=c.gdcRate?base*c.gdcRate:null;
-            const fsa=gdc?gdc*TIERS[tier-1].rate:null;
-            return(<tr key={i}>
-              <td style={{fontWeight:500}}>{c.client}</td>
-              <td className="td-mono" style={{color:"var(--muted)",fontSize:10}}>{c.carrier||"—"}</td>
-              <td className="td-mono" style={{color:"var(--muted)"}}>{c.product}</td>
-              <td><span className={`sp sp-${c.type==="FIA"||c.type==="FA"?"submitted":c.type==="Life"?"confirmed":"pending"}`}>{c.type}</span></td>
-              <td className="td-mono">{fmtD(c.premium)}</td>
-              <td className="td-gold td-mono">{c.gdcRate?fmtPct(c.gdcRate):<span style={{color:"var(--red)"}}>MISSING</span>}</td>
-              <td className="td-mono" style={{color:"#2b6cb0"}}>{fmtD(gdc)}</td>
-              <td className="td-green td-mono">{fmtD(fsa)}</td>
-              <td className="td-mono" style={{fontSize:10,color:c.issued_date?"var(--green2)":"var(--dim)"}}>{c.issued_date||"—"}</td>
-              <td className="td-mono" style={{fontSize:10,color:c.paid_date?"var(--green2)":"var(--dim)"}}>{c.paid_date||"—"}</td>
-              <td><span className={`sp sp-${c.status}`}>{c.status}</span></td>
-              <td><button style={{fontSize:9,padding:"2px 7px",borderRadius:3,border:"1px solid var(--border)",background:"transparent",color:"var(--muted)",cursor:"pointer"}} onClick={()=>toast("Demo row — log a real case to persist","info")}>→ Next</button></td>
             </tr>);
           })}</tbody>
         </table>
@@ -839,42 +824,47 @@ function SalesCalcPage(){
 }
 
 function WorkshopsPage({toast}){
-  const [workshops, setWorkshops] = useState(WORKSHOPS);
+  const [workshops, setWorkshops] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  useEffect(() => {
+  const refresh = useCallback(() => {
+    setLoading(true); setError(null);
     fetch("/api/dashboard?scope=workshops")
-      .then(r => r.json())
+      .then(r => { if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
       .then(d => {
-        const liveWorkshops = d.workshops || [];
-        if(liveWorkshops.length > 0) {
-          setWorkshops(liveWorkshops.map(w => ({
-            title: w.title,
-            date: `${new Date(w.scheduled_at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})} · ${w.location||"TBD"}`,
-            registered: w.registered_count || 0,
-            attended: w.attended_count || null,
-            hot: w.hot_leads || null,
-            booked: w.appointments_booked || null,
-            topic: w.topic,
-          })));
-        }
+        setWorkshops((d.workshops || []).map(w => ({
+          title: w.title,
+          date: `${w.scheduled_at?new Date(w.scheduled_at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):"TBD"} · ${w.location||"TBD"}`,
+          registered: w.registered_count || 0,
+          attended: w.attended_count || null,
+          hot: w.hot_leads || null,
+          booked: w.appointments_booked || null,
+          topic: w.topic,
+        })));
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch(e => { setError(e.message||"Failed to load"); setLoading(false); });
   }, []);
+  useEffect(() => { refresh(); }, [refresh]);
 
   return(<>
-    <div className="page-title">Workshops</div>
-    {loading && <div style={{textAlign:"center",color:"var(--muted)",padding:20,fontSize:12}}>Loading workshops…</div>}
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+      <div className="page-title" style={{marginBottom:0}}>Workshops</div>
+      <button className="btn-secondary" style={{fontSize:10,padding:"5px 12px"}} onClick={refresh}>↻ Refresh</button>
+    </div>
+    {error && <div className="error-banner"><span>⚠ Couldn't load workshops ({error}).</span><button onClick={refresh}>Retry</button></div>}
+    {loading && <div className="loading-state"><div className="loading-spinner"/><div>Loading workshops…</div></div>}
+    {!loading && !error && workshops.length===0 && (
+      <div className="empty-state">
+        <div className="empty-state-icon">🎓</div>
+        <div className="empty-state-title">No workshops scheduled yet</div>
+        <div className="empty-state-sub">Scheduled workshops and their registration stats will appear here.</div>
+      </div>
+    )}
     {workshops.map((w,i)=><div className="workshop-card" key={i}>
       <div className="wk-head">
         <div><div className="wk-title">{w.title}</div><div className="wk-date">{w.date}</div></div>
-        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-          <button className="view-btn" onClick={()=>{navigator.clipboard?.writeText(`${typeof window!=="undefined"?window.location.origin:""}/workshop/${w.title.toLowerCase().split(" ").join("-")}`);toast("Registration link copied!","success");}}>Copy Link</button>
-          <button className="view-btn" onClick={()=>toast(`Adding attendee to ${w.title}`,"info")}>+ Attendee</button>
-          <button className="view-btn" onClick={()=>toast(`Managing ${w.title}`,"info")}>Manage</button>
-          <button className="import-btn" onClick={()=>toast("Sending invitation sequence","success")}>Send Invites</button>
-        </div>
       </div>
       <div className="wk-stats">
         <div className="wk-stat"><div className="wk-stat-val" style={{color:"#2b6cb0"}}>{w.registered}</div><div className="wk-stat-lbl">Registered</div></div>
@@ -883,15 +873,11 @@ function WorkshopsPage({toast}){
         <div className="wk-stat"><div className="wk-stat-val" style={{color:w.booked?"#38a169":"var(--muted)"}}>{w.booked??"-"}</div><div className="wk-stat-lbl">1-on-1 Booked</div></div>
       </div>
       <div className="wk-tags">
-        <span className="ai-tag">Pre-workshop reminders active</span>
         <span className={`ai-tag ${w.registered>20?"green":""}`}>{w.registered} registrants</span>
         {w.topic==="retire"&&<span className="ai-tag purple">Retirement audience</span>}
         {w.topic==="life"&&<span className="ai-tag">Life audience</span>}
       </div>
     </div>)}
-    <div style={{background:"var(--card)",border:"1px dashed var(--border)",borderRadius:9,padding:"20px",textAlign:"center",color:"var(--muted)",fontSize:12,cursor:"pointer"}} onClick={()=>toast("Opening workshop creation","info")}>
-      + Schedule new workshop — retirement, life, financial planning, or business owner
-    </div>
   </>);
 }
 
@@ -972,14 +958,14 @@ function Dashboard({onNav,toast,appData={}}){
           </div>
         </div>
         <div className="card">
-          <div className="card-head"><div className="card-title">🤖 AI Activity Today</div><button className="card-link" onClick={()=>onNav("agents")}>Report →</button></div>
+          <div className="card-head"><div className="card-title">🤖 AI Activity Today</div><button className="card-link" onClick={()=>onNav("ai")}>Report →</button></div>
           <div className="card-body">
             <div className="ai-stat-grid">
               {[
-                {icon:"📞",val:appData.briefing?.ai_calls_made??63,lbl:"Calls Made"},
-                {icon:"💬",val:appData.briefing?.ai_texts_sent??148,lbl:"Texts Sent"},
-                {icon:"📧",val:appData.briefing?.ai_emails_sent??29,lbl:"Emails Sent"},
-                {icon:"📅",val:appData.briefing?.ai_appointments_booked??4,lbl:"Appointments Booked"}
+                {icon:"📞",val:appData.briefing?.ai_calls_made??0,lbl:"Calls Made"},
+                {icon:"💬",val:appData.briefing?.ai_texts_sent??0,lbl:"Texts Sent"},
+                {icon:"📧",val:appData.briefing?.ai_emails_sent??0,lbl:"Emails Sent"},
+                {icon:"📅",val:appData.briefing?.ai_appointments_booked??0,lbl:"Appointments Booked"}
               ].map((s,i)=>(
                 <div className="ai-stat" key={i}><div className="ai-stat-icon">{s.icon}</div><div className="ai-stat-val">{s.val}</div><div className="ai-stat-lbl">{s.lbl}</div></div>
               ))}
@@ -1070,92 +1056,6 @@ function Dashboard({onNav,toast,appData={}}){
   </>);
 }
 
-function Opportunities({toast}){
-  const [filter,setFilter]=useState("All");
-  const filters=["All","Conversions","OPRA","Life Reviews","Retirement","Business","Workshops"];
-  const aMap={Conversions:"CONV",OPRA:"OPRA","Life Reviews":"LIFE","Retirement":"RETIRE","Business":"BIZ","Workshops":"WRK"};
-  const filtered=filter==="All"?PRIORITIES:PRIORITIES.filter(p=>p.action===aMap[filter]);
-  return(<>
-    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
-      <div className="page-title" style={{marginBottom:0}}>Opportunities</div>
-      <button className="btn-secondary" style={{fontSize:10,padding:"5px 12px"}} onClick={()=>toast("Exporting opportunities to CSV...","success")}>Export CSV</button>
-    </div>
-    <div className="opp-filters">{filters.map(f=><button key={f} className={`opp-filter${filter===f?" active":""}`} onClick={()=>setFilter(f)}>{f}</button>)}</div>
-    {filtered.map((p,i)=>(
-      <div className="opp-card" key={i}>
-        <div>
-          <div className="opp-hdr"><div className={`opp-avatar${p.biz?" biz":""}`}>{ini(p.name)}</div><div><div className="opp-name">{p.name}</div><div className="opp-meta">Agency: {p.agency}</div></div></div>
-          <div className="opp-dets"><span className="opp-det">Type: {p.action}</span><span className="opp-det">Face: {p.face}</span><span className="opp-det">{p.policy}</span></div>
-          <div className="ai-tags">
-            {p.calls>0&&<span className="ai-tag">{p.calls} Calls</span>}
-            {p.sms>0&&<span className="ai-tag">{p.sms} SMS</span>}
-            {p.booked&&<span className="ai-tag green">Appointment Booked</span>}
-            {p.biz&&<span className="ai-tag purple">Business Owner</span>}
-            {p.formDone?<span className="ai-tag green">Forms Complete ✓</span>:<span className="ai-tag" style={{background:"var(--orange-bg)",color:"var(--orange)",borderColor:"var(--orange-border)"}}>Forms Pending ⚠</span>}
-          </div>
-        </div>
-        <div className="opp-r">
-          <div><div className="opp-score">{p.score}</div><div className="opp-slbl">Score</div></div>
-          <span className={`sp ${p.booked?"sp-confirmed":"sp-pending"}`}>{p.booked?"Appt Scheduled":"Needs Call"}</span>
-          <button className="open-btn" onClick={()=>toast(`Opening ${p.name} — full detail panel in Vercel deployment`,"info")}>
-            OPEN →
-          </button>
-        </div>
-      </div>
-    ))}
-  </>);
-}
-
-function Conversions({toast}){
-  const byU=[30,60,90];
-  const lbls={30:"Expiring in 30 Days",60:"Expiring in 60 Days",90:"Expiring in 90 Days"};
-  const cols={30:"#e53e3e",60:"#dd6b20",90:"#2b6cb0"};
-  const dlc={30:"dl-urgent",60:"dl-soon",90:"dl-ok"};
-  return(<>
-    <div className="page-title">Term Conversions</div>
-    {byU.map(u=>{const items=CONVERSIONS.filter(c=>c.urgency===u);if(!items.length)return null;
-      return(<div className="conv-section" key={u}>
-        <div className="conv-head" style={{color:cols[u],borderBottomColor:cols[u]+"44"}}>⚡ {lbls[u]}</div>
-        {items.map((c,i)=>(<div className="conv-card" key={i}>
-          <div>
-            <div className="conv-name">{c.name}</div>
-            <div className="conv-dets"><span className="conv-det">Face Amount: {c.face}</span><span className="conv-det">Premium: {c.premium}</span><span className="conv-det">Agency: {c.agency}</span></div>
-            <span className={`sp ${c.status.includes("Scheduled")?"sp-confirmed":"sp-pending"}`}>{c.status}</span>
-          </div>
-          <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:7}}>
-            <div className={`deadline ${dlc[u]}`}>{c.days} days</div>
-            <div style={{display:"flex",gap:5}}>
-              <button className="open-btn" onClick={()=>toast(`Calling ${c.name}`,"success")}>Call Now</button>
-              <button style={{padding:"6px 10px",borderRadius:5,border:"none",background:"var(--green-bg)",color:"var(--green)",fontSize:11,cursor:"pointer",fontWeight:500}} onClick={()=>toast(`${c.name} marked complete`,"success")}>✓ Done</button>
-            </div>
-          </div>
-        </div>))}
-      </div>);
-    })}
-  </>);
-}
-
-function AIAgents({toast}){
-  return(<>
-    <div className="page-title">AI Agent Workforce</div>
-    <div className="agents-grid">
-      {AGENTS.map((a,i)=>(<div className="agent-card" key={i}>
-        <div className="agent-card-head">
-          <div className="agent-card-name">{a.name}</div>
-          <div className={`asb ${a.status}`}><div className="asb-dot"/>{a.status==="online"?"Online":"Running"}</div>
-        </div>
-        <div className="agent-stats">{a.m.map((m,j)=><div className="agent-stat" key={j}><div className="agent-stat-val">{m.v}</div><div className="agent-stat-lbl">{m.l}</div></div>)}</div>
-        <div className="agent-foot" style={{flexWrap:"wrap"}}>
-          <button className="a-btn" onClick={()=>toast(`Pausing ${a.name}`,"info")}>Pause</button>
-          <button className="a-btn" onClick={()=>toast(`${a.name} activity log`,"info")}>View Log</button>
-          <button className="a-btn" onClick={()=>toast(`${a.name} script & knowledge base`,"info")}>Script</button>
-          <button className="a-btn pri" style={{flexBasis:"100%",marginTop:4}} onClick={()=>toast(`${a.name} triggered`,"success")}>▶ Run Now</button>
-        </div>
-      </div>))}
-    </div>
-  </>);
-}
-
 // ─────────────────────────────────────────────────────────
 // AGENCY OWNERS — Full relationship + referral management
 // ─────────────────────────────────────────────────────────
@@ -1164,22 +1064,23 @@ function AgencyOwners({toast}) {
   const [selected, setSelected]   = useState(null);
   const [detailTab, setDetailTab] = useState("referrals");
   const [addForm, setAddForm]     = useState({name:"",owner:"",phone:"",email:"",city:""});
-  const [agencies, setAgencies]   = useState(AGENCY_DATA);
+  const [agencies, setAgencies]   = useState([]);
   const [referralsByAgency, setReferralsByAgency] = useState({});
   const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState(null);
 
   const fmtK = n => n >= 1000 ? "$"+(n/1000).toFixed(0)+"k" : "$"+n;
   const fmtD = n => "$"+Number(n||0).toLocaleString("en-US");
   const BASE = typeof window !== "undefined" ? window.location.origin : "https://fsos.vercel.app";
 
-  // Load live agencies (with referral stats) + raw referral list
-  useEffect(() => {
+  // Load live agencies (source of truth) + raw referral list
+  const refresh = useCallback(() => {
+    setLoading(true); setError(null);
     Promise.all([
-      fetch("/api/agencies/list").then(r=>r.json()).catch(()=>({agencies:[]})),
-      fetch("/api/agencies/referral?limit=200").then(r=>r.json()).catch(()=>({referrals:[]})),
+      fetch("/api/agencies/list").then(r=>{ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); }),
+      fetch("/api/agencies/referral?limit=200").then(r=>r.ok?r.json():{referrals:[]}).catch(()=>({referrals:[]})),
     ]).then(([listData, refData]) => {
       const refs = refData.referrals || [];
-      // Group referrals by agency_id
       const byAgency = {};
       refs.forEach(r => {
         if(!byAgency[r.agency_id]) byAgency[r.agency_id] = [];
@@ -1187,45 +1088,52 @@ function AgencyOwners({toast}) {
       });
       setReferralsByAgency(byAgency);
 
-      // Merge live agency stats onto the base AGENCY_DATA records (matched by id)
+      // Build the agency list PURELY from the live API. Fields the API does not
+      // provide are shown as 0 / "—" — never fabricated.
       const live = listData.agencies || [];
-      if (live.length > 0) {
-        const byId = {};
-        live.forEach(a => { byId[a.agency_id] = a; });
-        setAgencies(prev => prev.map(ag => {
-          const L = byId[ag.id];
-          if (!L) return ag;
-          const days = L.days_since_referral ?? ag.daysSinceReferral;
-          return {
-            ...ag,
-            owner: L.owner || ag.owner,
-            city: L.city || ag.city,
-            referrals: L.referral_count ?? ag.referrals,
-            pendingReferrals: L.pending_referrals ?? 0,
-            lastReferral: L.last_referral ? new Date(L.last_referral).toISOString().split("T")[0] : ag.lastReferral,
-            daysSinceReferral: days,
-            needsAttention: !!L.needs_attention || (days != null && days > 30),
-          };
-        }));
-      }
+      setAgencies(live.map(a => {
+        const days = a.days_since_referral ?? null;
+        return {
+          id: a.agency_id,
+          name: a.name || "Agency",
+          owner: a.owner || "—",
+          city: a.city || "—",
+          phone: a.phone || "—",
+          email: a.email || "—",
+          slug: a.slug || "",
+          agencyZoom: null, apex: null,
+          firstReferral: "—",
+          lastReferral: a.last_referral ? new Date(a.last_referral).toISOString().split("T")[0] : "—",
+          referrals: a.referral_count ?? 0,
+          pendingReferrals: a.pending_referrals ?? 0,
+          daysSinceReferral: days,
+          lastActivity: days,
+          needsAttention: !!a.needs_attention,
+          // Metrics the API doesn't expose yet → honest 0 / "—".
+          uploads: 0, contacts: 0, appts: 0, apps: 0, issued: 0, issuedGDC: 0, pendingOpp: 0,
+          opra: 0, conv: 0, life: 0, retire: 0, biz: 0,
+          notes: "",
+          lastCall: "—", lastMeeting: "—", lastEmail: "—",
+          uploadHistory: [],
+        };
+      }));
       setLoading(false);
-    });
+    }).catch(e => { setError(e.message||"Failed to load"); setAgencies([]); setLoading(false); });
   }, []);
+  useEffect(() => { refresh(); }, [refresh]);
 
-  // Merge live referral counts into AGENCY_DATA
+  // Attach the live referral list to each agency (source of truth for referrals).
   const enrichedAgencies = agencies.map(ag => {
     const refs = referralsByAgency[ag.id] || [];
-    const liveReferrals = refs.length;
     return {
       ...ag,
-      referrals: liveReferrals > 0 ? liveReferrals : ag.referrals,
       referralList: refs.slice(0,20).map(r => ({
         client: r.client_name || "Unknown",
         type: r.referral_type || "general",
         submitted: r.submitted_at ? new Date(r.submitted_at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "—",
         appt: null,
-        status: r.status === "new" ? "Received" : r.status.charAt(0).toUpperCase()+r.status.slice(1),
-      })).concat(ag.referralList.length > 0 && refs.length === 0 ? ag.referralList : []),
+        status: r.status === "new" ? "Received" : (r.status ? r.status.charAt(0).toUpperCase()+r.status.slice(1) : "—"),
+      })),
     };
   });
 
@@ -1274,7 +1182,7 @@ function AgencyOwners({toast}) {
                   <div style={{fontSize:10,color:"var(--muted)",marginTop:1}}>{ag.city}</div>
                 </div>
               </div>
-              {[["Owner",ag.owner],["Phone",ag.phone],["Email",ag.email],["AgencyZoom",ag.agencyZoom?"Connected":"Not connected"],["APEX",ag.apex?"Connected":"Not connected"],["First Referral",ag.firstReferral],["Last Referral",ag.lastReferral]].map(([l,v],i)=>(
+              {[["Owner",ag.owner],["Phone",ag.phone],["Email",ag.email],["AgencyZoom",ag.agencyZoom==null?"—":ag.agencyZoom?"Connected":"Not connected"],["APEX",ag.apex==null?"—":ag.apex?"Connected":"Not connected"],["First Referral",ag.firstReferral],["Last Referral",ag.lastReferral]].map(([l,v],i)=>(
                 <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid var(--border)",fontSize:11}}>
                   <span style={{color:"var(--muted)"}}>{l}</span>
                   <span style={{fontWeight:500,color:l==="AgencyZoom"||l==="APEX"?(v==="Connected"?"var(--green2)":"var(--red)"):"var(--text)",fontSize:l==="Phone"||l==="Email"?11:11}}>
@@ -1443,10 +1351,21 @@ function AgencyOwners({toast}) {
           <div style={{fontSize:12,color:"var(--muted)"}}>Your distribution channel · {enrichedAgencies.length} agencies · Last sync: today</div>
         </div>
         <div style={{display:"flex",gap:8}}>
+          <button className="btn-secondary" style={{fontSize:11}} onClick={refresh}>↻ Refresh</button>
           <button className="btn-secondary" style={{fontSize:11}} onClick={()=>setTab("leaderboard")}>🏆 Leaderboard</button>
           <button className="btn-primary" style={{fontSize:11}} onClick={()=>setTab("add")}>+ Add Agency</button>
         </div>
       </div>
+
+      {error && <div className="error-banner"><span>⚠ Couldn't load agencies ({error}).</span><button onClick={refresh}>Retry</button></div>}
+      {loading && <div className="loading-state"><div className="loading-spinner"/><div>Loading agencies…</div></div>}
+      {!loading && !error && enrichedAgencies.length===0 && (
+        <div className="empty-state">
+          <div className="empty-state-icon">🏢</div>
+          <div className="empty-state-title">No agencies yet</div>
+          <div className="empty-state-sub">Add an agency owner to generate their referral and upload links.</div>
+        </div>
+      )}
 
       {/* TOP METRICS */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:16}}>
@@ -1625,25 +1544,56 @@ function AgencyOwners({toast}) {
 }
 
 function Calendar(){
+  const [appts, setAppts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const refresh = useCallback(() => {
+    setLoading(true); setError(null);
+    fetch("/api/dashboard?scope=calendar")
+      .then(r => { if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
+      .then(d => { setAppts(d.appointments || []); setLoading(false); })
+      .catch(e => { setError(e.message||"Failed to load"); setLoading(false); });
+  }, []);
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const fmtWhen = s => s ? new Date(s).toLocaleString("en-US",{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}) : "—";
+  const colorFor = ch => ({sms:"#dd6b20",email:"#4299e1",phone:"#38a169"}[(ch||"").toLowerCase()] || "#553c9a");
+
   return(<>
-    <div className="page-title">Today's Calendar</div>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+      <div className="page-title" style={{marginBottom:0}}>Calendar</div>
+      <button className="btn-secondary" style={{fontSize:10,padding:"5px 12px"}} onClick={refresh}>↻ Refresh</button>
+    </div>
     <div style={{marginBottom:10,fontSize:12,color:"var(--muted)"}}>
-      🟢 Forms complete = customer submitted pre-meeting forms · 🟡 Forms pending = send reminder before appointment
+      Appointments booked through Calendly appear here automatically.
     </div>
-    <div className="cal-card">
-      <div className="cal-hdr">TODAY — {today}</div>
-      {APPOINTMENTS.map((a,i)=>(
-        <div className="cal-item" key={i}>
-          <div className="cal-time">{a.time}</div>
-          <div className="cal-dot2" style={{background:a.color}}/>
-          <div className="cal-info">
-            <div className="cal-name">{a.name}<span className={`form-badge ${a.formDone?"fb-done":"fb-pending"}`}>{a.formDone?"Forms ✓":"Forms ⚠"}</span></div>
-            <div className="cal-type">{a.type} · {a.agency}</div>
+    {error && <div className="error-banner"><span>⚠ Couldn't load appointments ({error}).</span><button onClick={refresh}>Retry</button></div>}
+    {loading && <div className="loading-state"><div className="loading-spinner"/><div>Loading appointments…</div></div>}
+    {!loading && !error && appts.length===0 && (
+      <div className="empty-state">
+        <div className="empty-state-icon">📅</div>
+        <div className="empty-state-title">No appointments booked yet</div>
+        <div className="empty-state-sub">Bookings arrive automatically via Calendly.</div>
+      </div>
+    )}
+    {!loading && appts.length>0 && (
+      <div className="cal-card">
+        <div className="cal-hdr">UPCOMING</div>
+        {appts.map((a,i)=>(
+          <div className="cal-item" key={a.activity_id||i}>
+            <div className="cal-time" style={{width:120,fontSize:10}}>{fmtWhen(a.booked_at)}</div>
+            <div className="cal-dot2" style={{background:colorFor(a.channel)}}/>
+            <div className="cal-info">
+              <div className="cal-name">{a.client||"Unknown"}</div>
+              <div className="cal-type">{a.subject||"Appointment"}{a.notes?` · ${a.notes}`:""}</div>
+              <div style={{fontSize:9,color:"var(--dim)",fontFamily:"DM Mono,monospace",marginTop:2}}>{[a.phone,a.email].filter(Boolean).join(" · ")}</div>
+            </div>
+            {a.channel && <span className="sp sp-submitted">{a.channel}</span>}
           </div>
-          <span className={`sp ${a.status==="confirmed"?"sp-confirmed":"sp-pending"}`}>{a.status==="confirmed"?"Confirmed":"Pending"}</span>
-        </div>
-      ))}
-    </div>
+        ))}
+      </div>
+    )}
   </>);
 }
 
@@ -1965,17 +1915,13 @@ function SendModal({form, onClose, toast}) {
   const [channel, setChannel] = useState("email");
   const [sending, setSending] = useState(false);
   const [sentLink, setSentLink] = useState("");
-  const BASE = typeof window !== "undefined" ? window.location.origin : "";
-  const previewLink = `${BASE}/forms/${form?.id}?client=${encodeURIComponent(client)}&t=preview`;
 
   const send = async () => {
     if(!client) { toast("Client name is required", "error"); return; }
-    if((channel === "email" || channel === "both") && !email) { toast("Email is required", "error"); return; }
-    if(channel === "copy-link") {
-      navigator.clipboard?.writeText(previewLink);
-      toast("Form link copied to clipboard!", "success");
-      return;
-    }
+    const wantsLink = channel === "copy-link";
+    const effChannel = wantsLink ? "link" : channel;
+    if((effChannel === "email" || effChannel === "both") && !email) { toast("Email is required", "error"); return; }
+    if((effChannel === "sms" || effChannel === "both") && !phone) { toast("Phone is required", "error"); return; }
 
     setSending(true);
     try {
@@ -1984,18 +1930,24 @@ function SendModal({form, onClose, toast}) {
         headers: {"Content-Type":"application/json"},
         body: JSON.stringify({
           form_id: form?.id,
-          channel,
-          destination: channel === "sms" ? phone : email,
+          channel: effChannel,
+          email,
+          phone,
           client_name: client,
         }),
       });
       const data = await res.json();
       if(data.success) {
         setSentLink(data.link || "");
-        toast(`✓ ${form?.title} sent to ${client} via ${channel}`, "success");
-        setTimeout(onClose, 1500);
+        if(wantsLink) {
+          navigator.clipboard?.writeText(data.link || "");
+          toast("Form link created & copied to clipboard", "success");
+        } else {
+          toast(`✓ ${form?.title} sent to ${client} via ${channel}`, "success");
+          setTimeout(onClose, 1500);
+        }
       } else {
-        toast(data.error || "Failed to send form", "error");
+        toast(data.message || data.error || "Failed to send form", data.reason === "already_complete" ? "info" : "error");
       }
     } catch(e) {
       toast("Network error sending form", "error");
@@ -2019,12 +1971,12 @@ function SendModal({form, onClose, toast}) {
         </div>
         {(channel === "email" || channel === "both") && <div className="field"><label>Client Email</label><input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="client@email.com"/></div>}
         {(channel === "sms" || channel === "both") && <div className="field"><label>Client Phone</label><input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="2145551234"/></div>}
-        {client && (
+        {sentLink && (
           <div className="field">
-            <label>Link Preview</label>
+            <label>Secure Link</label>
             <div className="link-preview">
-              <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sentLink||previewLink}</span>
-              <button className="copy-btn" onClick={() => { navigator.clipboard?.writeText(sentLink||previewLink); toast("Link copied!", "success"); }}>Copy</button>
+              <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sentLink}</span>
+              <button className="copy-btn" onClick={() => { navigator.clipboard?.writeText(sentLink); toast("Link copied!", "success"); }}>Copy</button>
             </div>
             <div style={{fontSize:10, color:"var(--muted)", marginTop:5}}>Link expires in 30 days. Client fills out the form — response stored in Supabase automatically.</div>
           </div>
@@ -2113,17 +2065,6 @@ function FNAGenerator({toast}) {
               ✦ Generate FNA Report with Claude AI →
             </button>
             <div style={{fontSize:10,color:"var(--muted)",marginTop:8,textAlign:"center"}}>Uses Claude Sonnet via your Max plan. No extra cost.</div>
-          </div>
-
-          <div className="fna-card">
-            <div className="fna-card-title">📤 Send FNA Intake Form</div>
-            <div style={{fontSize:11,color:"var(--muted)",marginBottom:10}}>Send the Financial Needs Analysis intake form to a client before their appointment. They complete it online — their answers auto-populate this report generator.</div>
-            <div className="field"><label>Client Name</label><input placeholder="e.g. John Smith"/></div>
-            <div className="field"><label>Client Email</label><input type="email" placeholder="john@email.com"/></div>
-            <div style={{display:"flex",gap:6}}>
-              <button className="btn-primary" style={{flex:1}} onClick={()=>toast("FNA intake form sent","success")}>Send FNA Intake →</button>
-              <button className="btn-secondary" onClick={()=>toast("Link copied","info")}>Copy Link</button>
-            </div>
           </div>
 
           <div className="fna-card" style={{background:"var(--navy)",color:"#fff"}}>
@@ -2245,17 +2186,20 @@ function ResponsesViewer({toast}) {
   const [filter, setFilter] = useState("all");
   const [submissions, setSubmissions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [search, setSearch] = useState("");
 
-  useEffect(() => {
+  const refresh = useCallback(() => {
+    setLoading(true); setError(null);
     fetch("/api/forms/responses?limit=100")
-      .then(r => r.json())
+      .then(r => { if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
       .then(d => {
         setSubmissions(d.submissions || []);
         setLoading(false);
       })
-      .catch(() => { setSubmissions([]); setLoading(false); });
+      .catch(e => { setError(e.message||"Failed to load"); setSubmissions([]); setLoading(false); });
   }, []);
+  useEffect(() => { refresh(); }, [refresh]);
 
   const allResponses = submissions;
   const filtered = allResponses.filter(r => {
@@ -2291,9 +2235,10 @@ function ResponsesViewer({toast}) {
           </select>
           <span style={{fontSize:10,color:"var(--muted)",alignSelf:"center",marginLeft:"auto"}}>{filtered.length} responses</span>
         </div>
+        {error && <div className="error-banner"><span>⚠ Couldn't load responses ({error}).</span><button onClick={refresh}>Retry</button></div>}
         <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:10,overflow:"hidden",boxShadow:"var(--shadow)"}}>
           {loading && <div style={{padding:"20px",textAlign:"center",color:"var(--muted)",fontSize:12}}>Loading responses…</div>}
-          {!loading && filtered.length === 0 && <div style={{padding:"20px",textAlign:"center",color:"var(--muted)",fontSize:12}}>No submitted forms yet</div>}
+          {!loading && !error && filtered.length === 0 && <div style={{padding:"20px",textAlign:"center",color:"var(--muted)",fontSize:12}}>No submitted forms yet</div>}
           {!loading && filtered.length > 0 && (
             <table className="resp-table">
               <thead><tr><th>Client</th><th>Form</th><th>Date</th><th>Status</th></tr></thead>
@@ -2679,7 +2624,7 @@ function InlineFormFiller({ form, onSave, onCancel, toast }) {
             </button>
           )}
           {isLast && (
-            <button onClick={()=>{ onSave(data); toast(`✓ ${form.title} saved for client`,"success"); }}
+            <button onClick={()=>{ onSave({...data, client_name: clientName}); }}
               style={{padding:"8px 20px",borderRadius:5,border:"none",background:"var(--green2)",color:"#fff",fontFamily:"DM Sans,sans-serif",fontSize:12,fontWeight:600,cursor:"pointer"}}>
               ✓ Save & Submit
             </button>
@@ -2723,7 +2668,7 @@ function FormsPage({ toast, onNav }) {
             });
             const sendData = await sendRes.json();
             if (!sendData.success || !sendData.token) {
-              toast(sendData.error || "Failed to create submission", "error");
+              toast(sendData.message || sendData.error || "Failed to create submission", sendData.reason === "already_complete" ? "info" : "error");
               return;
             }
             const subRes = await fetch("/api/forms/submit", {
@@ -2811,8 +2756,33 @@ function FormsPage({ toast, onNav }) {
 function FNAPage({ toast, onNav }) {
   const [mode, setMode] = useState(null); // null | "fill" | "send" | "generate"
   const [fnaCount, setFnaCount] = useState(0);
+  const [sendName, setSendName] = useState("");
+  const [sendEmail, setSendEmail] = useState("");
+  const [sending, setSending] = useState(false);
 
   const fnaForm = FORMS.find(f => f.id === "financial-needs-analysis");
+
+  const sendFnaLink = async () => {
+    if(!sendName){ toast("Enter client name","error"); return; }
+    setSending(true);
+    try {
+      const ch = sendEmail ? "email" : "link";
+      const res = await fetch("/api/forms/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ form_id: "financial-needs-analysis", channel: ch, client_name: sendName, email: sendEmail }),
+      });
+      const d = await res.json();
+      if(d.success) {
+        if(ch === "link" && d.link) { navigator.clipboard?.writeText(d.link); toast(`✓ FNA link created & copied for ${sendName}`,"success"); }
+        else toast(`✓ FNA intake link sent to ${sendName}`,"success");
+        setSendName(""); setSendEmail("");
+      } else {
+        toast(d.message || d.error || "Failed to send FNA link", d.reason === "already_complete" ? "info" : "error");
+      }
+    } catch { toast("Network error sending FNA link","error"); }
+    finally { setSending(false); }
+  };
 
   useEffect(() => {
     fetch("/api/forms/responses?form_id=financial-needs-analysis&status=complete&limit=100")
@@ -2828,10 +2798,35 @@ function FNAPage({ toast, onNav }) {
         form={fnaForm}
         toast={toast}
         onCancel={() => setMode(null)}
-        onSave={data => {
-          // Store submission then go straight to report generation
-          toast("✓ FNA intake saved — generating report...","success");
-          setMode("generate");
+        onSave={async data => {
+          // Persist the intake: create a submission + token, then submit the data.
+          try {
+            const clientName = data.client_name || data.full_name || "";
+            const sendRes = await fetch("/api/forms/send", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ form_id: "financial-needs-analysis", channel: "link", client_name: clientName }),
+            });
+            const sendData = await sendRes.json();
+            if (!sendData.success || !sendData.token) {
+              toast(sendData.message || sendData.error || "Failed to create submission", sendData.reason === "already_complete" ? "info" : "error");
+              return;
+            }
+            const subRes = await fetch("/api/forms/submit", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ token: sendData.token, form_id: "financial-needs-analysis", response_data: { ...data, client_name: clientName } }),
+            });
+            const subData = await subRes.json();
+            if (subData.success) {
+              toast("✓ FNA intake saved", "success");
+              setMode("generate");
+            } else {
+              toast(subData.error || "Failed to save form", "error");
+            }
+          } catch {
+            toast("Network error saving form", "error");
+          }
         }}
       />
     );
@@ -2903,23 +2898,18 @@ function FNAPage({ toast, onNav }) {
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
               <div className="field" style={{marginBottom:0}}>
                 <label style={{fontSize:10,color:"var(--muted)",display:"block",marginBottom:3}}>Client Name</label>
-                <input id="fna-send-name" placeholder="John Smith"
+                <input value={sendName} onChange={e=>setSendName(e.target.value)} placeholder="John Smith"
                   style={{width:"100%",background:"var(--bg)",border:"1px solid var(--border)",borderRadius:4,padding:"6px 8px",fontSize:11,fontFamily:"DM Sans,sans-serif",outline:"none"}}/>
               </div>
               <div className="field" style={{marginBottom:0}}>
-                <label style={{fontSize:10,color:"var(--muted)",display:"block",marginBottom:3}}>Email</label>
-                <input id="fna-send-email" type="email" placeholder="john@email.com"
+                <label style={{fontSize:10,color:"var(--muted)",display:"block",marginBottom:3}}>Email (optional — blank = copy link)</label>
+                <input value={sendEmail} onChange={e=>setSendEmail(e.target.value)} type="email" placeholder="john@email.com"
                   style={{width:"100%",background:"var(--bg)",border:"1px solid var(--border)",borderRadius:4,padding:"6px 8px",fontSize:11,fontFamily:"DM Sans,sans-serif",outline:"none"}}/>
               </div>
             </div>
-            <button className="btn-green" style={{width:"100%",padding:10,fontSize:12}}
-              onClick={()=>{
-                const n=document.getElementById("fna-send-name")?.value;
-                const e=document.getElementById("fna-send-email")?.value;
-                if(!n){toast("Enter client name","error");return;}
-                toast(`✓ FNA intake link sent to ${n}`,"success");
-              }}>
-              📤 Send FNA Link →
+            <button className="btn-green" style={{width:"100%",padding:10,fontSize:12}} disabled={sending}
+              onClick={sendFnaLink}>
+              {sending ? "Sending…" : "📤 Send FNA Link →"}
             </button>
           </div>
         </div>
@@ -2946,111 +2936,6 @@ function FNAPage({ toast, onNav }) {
 }
 
 // ─────────────────────────────────────────────────────────
-// NEW DATA — Extended for new pages
-// ─────────────────────────────────────────────────────────
-const CONV_CASES = [
-  {id:"c1",client:"Mary Jones",agency:"Johnson Agency",policyNum:"TRM-2041-7823",face:250000,premium:87,deadline:"2026-07-15",days:32,status:"Appt Scheduled",contacted:true,apptBooked:true},
-  {id:"c2",client:"David Lee",agency:"Brown Agency",policyNum:"TRM-1988-4421",face:150000,premium:62,deadline:"2026-08-01",days:47,status:"Needs Contact",contacted:false,apptBooked:false},
-  {id:"c3",client:"Robert Smith",agency:"Brown Agency",policyNum:"TRM-2203-9910",face:500000,premium:124,deadline:"2026-08-20",days:58,status:"Needs Contact",contacted:false,apptBooked:false},
-  {id:"c4",client:"Sandra Kim",agency:"Vega Insurance Group",policyNum:"TRM-1776-3312",face:300000,premium:94,deadline:"2026-09-12",days:72,status:"SMS Sent",contacted:true,apptBooked:false},
-  {id:"c5",client:"Marcus Turner",agency:"Johnson Agency",policyNum:"TRM-2099-6651",face:200000,premium:71,deadline:"2026-09-28",days:88,status:"Appt Scheduled",contacted:true,apptBooked:true},
-  {id:"c6",client:"Patricia White",agency:"Brown Agency",policyNum:"TRM-1901-2278",face:400000,premium:108,deadline:"2026-10-15",days:105,status:"Not Started",contacted:false,apptBooked:false},
-];
-const OPRA_CASES = [
-  {id:"o1",client:"Jennifer Brown",agency:"Brown Agency",transferDate:"2026-06-20",premium:1840,contacted:true,apptScheduled:true,reviewDone:false,status:"Appt Scheduled"},
-  {id:"o2",client:"Carlos Vega",agency:"Vega Insurance Group",transferDate:"2026-06-25",premium:2200,contacted:true,apptScheduled:false,reviewDone:false,status:"Needs Appt"},
-  {id:"o3",client:"Linda Park",agency:"Johnson Agency",transferDate:"2026-07-01",premium:1560,contacted:false,apptScheduled:false,reviewDone:false,status:"Not Contacted"},
-  {id:"o4",client:"James Rivera",agency:"Brown Agency",transferDate:"2026-07-05",premium:3100,contacted:false,apptScheduled:false,reviewDone:false,status:"Not Contacted"},
-];
-// ── AGENCY DATA ──────────────────────────────────────────
-// Combines Scoreboard data + relationship management data per the design spec
-const AGENCY_DATA = [
-  {
-    id:"ag1", name:"Johnson Agency", owner:"Steven Johnson",
-    city:"Corpus Christi, TX", phone:"(361) 555-0142", email:"steven@farmersagent.com",
-    agencyZoom:true, apex:true,
-    firstReferral:"2026-01-15", lastReferral:"2026-06-03", lastActivity:2,
-    slug:"steven-johnson",
-    customers:1842, referrals:43, uploads:12, contacts:3481,
-    appts:17, apps:8, issued:5, issuedGDC:38000, pendingOpp:22,
-    opra:3, conv:4, life:18, retire:7, biz:5,
-    notes:"Interested in conversion program. Needs OPRA support.",
-    lastCall:"2026-05-30", lastMeeting:"2026-05-15", lastEmail:"2026-06-01",
-    daysSinceReferral:0, needsAttention:false,
-    referralList:[
-      {client:"John Smith",type:"Retirement",submitted:"2026-06-01",appt:"2026-06-12",status:"Scheduled"},
-      {client:"Mary Jones",type:"Conversion",submitted:"2026-05-28",appt:null,status:"Application Submitted"},
-      {client:"Robert Garcia",type:"Life Review",submitted:"2026-05-20",appt:"2026-05-27",status:"Issued"},
-      {client:"Jennifer Brown",type:"OPRA",submitted:"2026-05-10",appt:"2026-05-18",status:"Review Complete"},
-    ],
-    uploadHistory:[
-      {date:"2026-06-03",type:"AgencyZoom Export",records:1248,opps:42},
-      {date:"2026-05-29",type:"Customer List",records:764,opps:16},
-      {date:"2026-05-10",type:"OPRA Export",records:312,opps:8},
-    ]
-  },
-  {
-    id:"ag2", name:"Brown Agency", owner:"Sarah Brown",
-    city:"McKinney, TX", phone:"(972) 555-0288", email:"sarah@farmersagent.com",
-    agencyZoom:true, apex:false,
-    firstReferral:"2026-02-03", lastReferral:"2026-05-28", lastActivity:6,
-    slug:"sarah-brown",
-    customers:1240, referrals:31, uploads:8, contacts:2100,
-    appts:14, apps:6, issued:4, issuedGDC:28500, pendingOpp:15,
-    opra:3, conv:4, life:12, retire:5, biz:2,
-    notes:"Very active. Wants monthly check-in call. Strong on life reviews.",
-    lastCall:"2026-05-25", lastMeeting:"2026-05-27", lastEmail:"2026-05-28",
-    daysSinceReferral:6, needsAttention:false,
-    referralList:[
-      {client:"Patricia White",type:"Life Review",submitted:"2026-05-28",appt:"2026-06-05",status:"Scheduled"},
-      {client:"David Lee",type:"Conversion",submitted:"2026-05-15",appt:null,status:"Needs Contact"},
-    ],
-    uploadHistory:[
-      {date:"2026-05-28",type:"Customer List",records:890,opps:22},
-      {date:"2026-05-01",type:"AgencyZoom Export",records:1210,opps:31},
-    ]
-  },
-  {
-    id:"ag3", name:"Vega Insurance Group", owner:"Carlos Vega Sr.",
-    city:"San Antonio, TX", phone:"(210) 555-0371", email:"carlos@farmersagent.com",
-    agencyZoom:false, apex:true,
-    firstReferral:"2026-03-10", lastReferral:"2026-05-12", lastActivity:22,
-    slug:"carlos-vega-sr",
-    customers:980, referrals:14, uploads:3, contacts:890,
-    appts:6, apps:2, issued:1, issuedGDC:9500, pendingOpp:11,
-    opra:2, conv:2, life:4, retire:3, biz:1,
-    notes:"Slower to adopt. Needs coaching on referral process. Follow up on AgencyZoom setup.",
-    lastCall:"2026-05-10", lastMeeting:"2026-04-22", lastEmail:"2026-05-12",
-    daysSinceReferral:22, needsAttention:true,
-    referralList:[
-      {client:"Carlos Vega Jr.",type:"Retirement",submitted:"2026-05-12",appt:"2026-05-20",status:"Application Submitted"},
-    ],
-    uploadHistory:[
-      {date:"2026-05-01",type:"Customer List",records:890,opps:14},
-    ]
-  },
-  {
-    id:"ag4", name:"Taylor Agency", owner:"Jack Taylor",
-    city:"Plano, TX", phone:"(469) 555-0199", email:"jack@farmersagent.com",
-    agencyZoom:true, apex:true,
-    firstReferral:"2026-04-01", lastReferral:"2026-04-18", lastActivity:46,
-    slug:"jack-taylor",
-    customers:640, referrals:6, uploads:1, contacts:640,
-    appts:3, apps:1, issued:0, issuedGDC:0, pendingOpp:8,
-    opra:1, conv:1, life:2, retire:2, biz:0,
-    notes:"No referrals in 46 days. Call to re-engage. Has 3 unworked opportunities.",
-    lastCall:"2026-04-20", lastMeeting:"2026-03-15", lastEmail:"2026-04-18",
-    daysSinceReferral:46, needsAttention:true,
-    referralList:[],
-    uploadHistory:[
-      {date:"2026-04-01",type:"Customer List",records:640,opps:8},
-    ]
-  },
-];
-// Keep AGENCY_SCORES as alias for backward compat with AgencyScoreboard
-const AGENCY_SCORES = AGENCY_DATA;
-
-// ─────────────────────────────────────────────────────────
 // 1. CONVERSION CENTER — Dedicated deadline tracker
 // ─────────────────────────────────────────────────────────
 function ConversionCenter({toast,appData={}}) {
@@ -3072,8 +2957,7 @@ function ConversionCenter({toast,appData={}}) {
     apptBooked: overrides[c.policy_id]?.apptBooked||false,
   }));
 
-  // Fall back to mock if DB empty (dev mode)
-  const displayCases = cases.length > 0 ? cases : CONV_CASES;
+  const displayCases = cases;
 
   const urgencyColor = d => d <= 30 ? "var(--red)" : d <= 90 ? "var(--orange)" : "var(--green2)";
   const urgencyBg   = d => d <= 30 ? "var(--red-bg)" : d <= 90 ? "var(--orange-bg)" : "var(--green-bg)";
@@ -3116,7 +3000,7 @@ function ConversionCenter({toast,appData={}}) {
         {label:"Total Conversions",val:total,color:"var(--text)",bg:"var(--card)"},
         {label:"Expiring < 30 Days",val:urgent,color:"var(--red)",bg:"var(--red-bg)",bdr:"var(--red-border)"},
         {label:"Appointments Booked",val:booked,color:"var(--green2)",bg:"var(--green-bg)",bdr:"var(--green-border)"},
-        {label:"Total Face Amount",val:"$"+cases.reduce((s,c)=>s+c.face,0).toLocaleString("en-US"),color:"#2b6cb0",bg:"var(--blue-bg)",bdr:"var(--blue-border)"},
+        {label:"Total Face Amount",val:"$"+displayCases.reduce((s,c)=>s+c.face,0).toLocaleString("en-US"),color:"#2b6cb0",bg:"var(--blue-bg)",bdr:"var(--blue-border)"},
       ].map((s,i)=>(
         <div key={i} style={{background:s.bg,border:`1px solid ${s.bdr||"var(--border)"}`,borderRadius:9,padding:"14px 16px",boxShadow:"var(--shadow)"}}>
           <div style={{fontSize:10,color:"var(--muted)",marginBottom:5}}>{s.label}</div>
@@ -3135,6 +3019,13 @@ function ConversionCenter({toast,appData={}}) {
     </div>
 
     {/* TABLE */}
+    {displayCases.length===0 ? (
+      <div className="empty-state">
+        <div className="empty-state-icon">⏰</div>
+        <div className="empty-state-title">No conversions in the pipeline yet</div>
+        <div className="empty-state-sub">Import a term-conversion report from APEX to start tracking deadlines.</div>
+      </div>
+    ) : (
     <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:10,overflow:"auto",boxShadow:"var(--shadow)"}}>
       <table className="cases-table" style={{minWidth:860}}>
         <thead><tr>
@@ -3174,6 +3065,7 @@ function ConversionCenter({toast,appData={}}) {
         </tbody>
       </table>
     </div>
+    )}
   </>);
 }
 
@@ -3184,40 +3076,38 @@ function OPRACenter({toast,appData={}}) {
   const [liveData, setLiveData] = useState([]);
   const [counts, setCounts] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   const refresh = useCallback(() => {
-    setLoading(true);
-    // Show uncontacted first
-    fetch("/api/opra?contacted=false&limit=100")
-      .then(r => r.json())
+    setLoading(true); setError(null);
+    // Fetch the full list (no contacted filter) so marking a row "Contacted"
+    // doesn't make it vanish; sort uncontacted-first client-side.
+    fetch("/api/opra?limit=100")
+      .then(r => { if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
       .then(d => {
         setLiveData(d.cases || []);
         setCounts(d.counts || null);
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch(e => { setError(e.message||"Failed to load"); setLoading(false); });
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  const usingLive = liveData.length > 0;
-  const cases = (usingLive ? liveData : OPRA_CASES).map(c => {
-    const isLive = !!c.opra_id;
-    const id = isLive ? c.opra_id : c.id;
-    return {
-      id,
-      isLive,
-      client: isLive ? `${c.customers?.first_name||""} ${c.customers?.last_name||""}`.trim()||"Unknown" : c.client,
-      agency: isLive ? (c.customers?.agencies?.name||"—") : c.agency,
-      transferDate: isLive ? c.transfer_date : c.transferDate,
-      premium: isLive ? (c.annual_premium||0) : c.premium,
-      contacted: isLive ? c.contacted : c.contacted,
-      apptScheduled: isLive ? c.appt_scheduled : c.apptScheduled,
-      reviewDone: isLive ? c.review_complete : c.reviewDone,
-      transferred: isLive ? c.transferred : false,
-      status: isLive ? c.status : c.status,
-    };
-  });
+  const cases = liveData.map(c => ({
+      id: c.opra_id,
+      isLive: true,
+      client: `${c.customers?.first_name||""} ${c.customers?.last_name||""}`.trim()||"Unknown",
+      agency: c.customers?.agencies?.name||"—",
+      transferDate: c.transfer_date,
+      premium: c.annual_premium||0,
+      contacted: c.contacted,
+      apptScheduled: c.appt_scheduled,
+      reviewDone: c.review_complete,
+      transferred: c.transferred,
+      status: c.status,
+    }))
+    .sort((a,b) => (a.contacted===b.contacted ? 0 : a.contacted ? 1 : -1));
 
   // Persist a status change to the OPRA case, then refresh from the server
   const patchCase = async (c, body, label) => {
@@ -3268,10 +3158,19 @@ function OPRACenter({toast,appData={}}) {
       ))}
     </div>
 
+    {error && <div className="error-banner"><span>⚠ Couldn't load OPRA cases ({error}).</span><button onClick={refresh}>Retry</button></div>}
     {loading && <div style={{fontSize:12,color:"var(--muted)",marginBottom:10}}>Loading OPRA cases…</div>}
 
+    {!loading && !error && cases.length===0 && (
+      <div className="empty-state">
+        <div className="empty-state-icon">🔄</div>
+        <div className="empty-state-title">No OPRA cases yet</div>
+        <div className="empty-state-sub">Import an OPRA list from APEX to start tracking transfers.</div>
+      </div>
+    )}
+
     {/* TABLE */}
-    <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:10,overflow:"auto",boxShadow:"var(--shadow)"}}>
+    {cases.length>0 && <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:10,overflow:"auto",boxShadow:"var(--shadow)"}}>
       <table className="cases-table" style={{minWidth:760}}>
         <thead><tr>
           <th>Customer</th><th>Agency</th><th>Transfer Date</th>
@@ -3315,7 +3214,7 @@ function OPRACenter({toast,appData={}}) {
           ))}
         </tbody>
       </table>
-    </div>
+    </div>}
 
     <div style={{marginTop:12,padding:"10px 14px",background:"var(--blue-bg)",border:"1px solid var(--blue-border)",borderRadius:7,fontSize:11,color:"var(--blue)"}}>
       💡 <strong>OPRA tip:</strong> Click any ✅/⭕ or 📅 directly in the table to toggle status instantly. Import from APEX exports the full current OPRA list.
@@ -3332,22 +3231,25 @@ function OpportunityDashboard({toast,appData={}}) {
   const [pipelineCounts, setPipelineCounts] = useState({});
   const [pipeFilter, setPipeFilter] = useState("all");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   const actionColor = {CONV:"var(--orange)",OPRA:"var(--red)",LIFE:"var(--blue)",RETIRE:"var(--purple)",BIZ:"#7b2d8b"};
   const actionLabel = {CONV:"Conversion",OPRA:"OPRA",LIFE:"Life Review",RETIRE:"Retirement",BIZ:"Business Owner"};
   const actionMap2 = {conversions:"CONV",opra:"OPRA",life:"LIFE",retirement:"RETIRE",business:"BIZ"};
 
-  useEffect(() => {
-    setLoading(true);
+  const refresh = useCallback(() => {
+    setLoading(true); setError(null);
     fetch(`/api/scores?limit=100${pipeFilter!=="all"?`&pipeline=${pipeFilter}`:""}`)
-      .then(r => r.json())
+      .then(r => { if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
       .then(d => {
         setOpps(d.opportunities || []);
         setPipelineCounts(d.pipeline_counts || {});
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch(e => { setError(e.message||"Failed to load"); setLoading(false); });
   }, [pipeFilter]);
+
+  useEffect(() => { refresh(); }, [refresh]);
 
   // Map live scored customers to display format
   const priorities = opps.map(o => {
@@ -3373,8 +3275,7 @@ function OpportunityDashboard({toast,appData={}}) {
     };
   });
 
-  // Fall back to hardcoded data only if DB is empty AND no filter is applied
-  const displayPriorities = priorities.length > 0 ? priorities : (pipeFilter==="all" && !loading ? PRIORITIES : []);
+  const displayPriorities = priorities;
 
   const high = displayPriorities.filter(p=>p.pri==="HIGH"||p.biz);
   const med  = displayPriorities.filter(p=>p.pri==="MED"&&!p.biz);
@@ -3442,7 +3343,7 @@ function OpportunityDashboard({toast,appData={}}) {
         <div style={{fontSize:12,color:"var(--muted)"}}>Every revenue opportunity ranked by priority · Click any card to take action</div>
       </div>
       <div style={{display:"flex",gap:6}}>
-        <button className="btn-secondary" style={{fontSize:10,padding:"5px 12px"}} onClick={()=>setPipeFilter(f=>f)}>↻ Refresh Scores</button>
+        <button className="btn-secondary" style={{fontSize:10,padding:"5px 12px"}} onClick={refresh}>↻ Refresh Scores</button>
         <button className="btn-secondary" style={{fontSize:10,padding:"5px 12px"}} onClick={()=>toast("Exporting opportunities...","success")}>Export CSV</button>
       </div>
     </div>
@@ -3454,8 +3355,15 @@ function OpportunityDashboard({toast,appData={}}) {
         </button>
       ))}
     </div>
+    {error && <div className="error-banner"><span>⚠ Couldn't load opportunities ({error}).</span><button onClick={refresh}>Retry</button></div>}
     {loading && <div style={{fontSize:12,color:"var(--muted)",marginBottom:12}}>Loading opportunities…</div>}
-    {!loading && displayPriorities.length===0 && <div style={{fontSize:12,color:"var(--muted)",marginBottom:12}}>No opportunities for this pipeline yet.</div>}
+    {!loading && !error && displayPriorities.length===0 && (
+      <div className="empty-state">
+        <div className="empty-state-icon">🎯</div>
+        <div className="empty-state-title">No opportunities yet</div>
+        <div className="empty-state-sub">Nothing scored for this pipeline. Run nightly scoring or add customers.</div>
+      </div>
+    )}
     <OppGroup title="High Priority" items={high} color="var(--red)" icon="🔥"/>
     <OppGroup title="Medium Priority" items={med} color="var(--orange)" icon="⚡"/>
     <OppGroup title="Low Priority / Follow-up" items={low} color="var(--blue)" icon="📌"/>
@@ -3489,8 +3397,11 @@ function AIControlCenter({toast}) {
 
   return (<>
     <div className="page-title">AI Agent Control Center</div>
-    <div style={{fontSize:12,color:"var(--muted)",marginBottom:16}}>
+    <div style={{fontSize:12,color:"var(--muted)",marginBottom:12}}>
       All 4 AI agents powered by Retell AI · Calendly handles booking · Pay-per-minute voice, pay-per-message SMS — no platform fee · Compliant with TCPA, Texas SB 140, TRAIGA
+    </div>
+    <div className="error-banner" style={{background:"var(--orange-bg)",border:"1px solid var(--orange-border)",color:"var(--orange)"}}>
+      <span>⚠ Sample metrics — the per-agent counts below are illustrative placeholders. Connect Retell/Twilio to show live activity.</span>
     </div>
 
     <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:14}}>
@@ -3545,100 +3456,13 @@ function AIControlCenter({toast}) {
 }
 
 // ─────────────────────────────────────────────────────────
-// 5. AGENCY SCOREBOARD — Multi-agency performance
-// ─────────────────────────────────────────────────────────
-function AgencyScoreboard({toast}) {
-  const [sort, setSort] = useState("issuedGDC");
-  const sorted = [...AGENCY_SCORES].sort((a,b)=>b[sort]-a[sort]);
-  const fmtK = n => n>=1000 ? "$"+(n/1000).toFixed(0)+"k" : "$"+n;
-  const maxGDC = Math.max(...AGENCY_SCORES.map(a=>a.issuedGDC));
-
-  return (<>
-    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
-      <div>
-        <div className="page-title" style={{marginBottom:2}}>Agency Scoreboard</div>
-        <div style={{fontSize:12,color:"var(--muted)"}}>Performance across all agencies · YTD issued GDC and pipeline opportunities</div>
-      </div>
-      <div style={{display:"flex",gap:6,alignItems:"center"}}>
-        <span style={{fontSize:10,color:"var(--muted)"}}>Sort by:</span>
-        {[["issuedGDC","GDC"],["appts","Appts"],["apps","Apps"],["pendingOpp","Pipeline"]].map(([k,l])=>(
-          <button key={k} className={`opp-filter${sort===k?" active":""}`} style={{padding:"4px 10px",fontSize:10}} onClick={()=>setSort(k)}>{l}</button>
-        ))}
-      </div>
-    </div>
-
-    {/* TOTAL ROW */}
-    <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:16}}>
-      {[
-        {l:"Total Agencies",v:AGENCY_SCORES.length,c:"var(--text)"},
-        {l:"Total Customers",v:AGENCY_SCORES.reduce((s,a)=>s+a.customers,0).toLocaleString(),c:"var(--text)"},
-        {l:"Total Appts",v:AGENCY_SCORES.reduce((s,a)=>s+a.appts,0),c:"#2b6cb0"},
-        {l:"Total Issued GDC",v:"$"+AGENCY_SCORES.reduce((s,a)=>s+a.issuedGDC,0).toLocaleString(),c:"var(--green2)"},
-        {l:"Total Pipeline",v:AGENCY_SCORES.reduce((s,a)=>s+a.pendingOpp,0)+" opps",c:"var(--orange)"},
-      ].map((s,i)=>(
-        <div key={i} style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:9,padding:"12px 14px",boxShadow:"var(--shadow)"}}>
-          <div style={{fontSize:10,color:"var(--muted)",marginBottom:4}}>{s.l}</div>
-          <div style={{fontSize:20,fontWeight:700,color:s.c,lineHeight:1}}>{s.v}</div>
-        </div>
-      ))}
-    </div>
-
-    {/* AGENCY CARDS */}
-    {sorted.map((a,i)=>(
-      <div key={i} style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:10,padding:"18px 20px",marginBottom:10,boxShadow:"var(--shadow)"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14,paddingBottom:12,borderBottom:"1px solid var(--border)"}}>
-          <div>
-            <div style={{fontSize:15,fontWeight:700,color:"var(--navy)",marginBottom:2}}>#{i+1} {a.name}</div>
-            <div style={{fontSize:11,color:"var(--muted)"}}>Owner: {a.owner} · {a.customers.toLocaleString()} customers</div>
-          </div>
-          <div style={{textAlign:"right"}}>
-            <div style={{fontSize:22,fontWeight:700,color:"var(--green2)",lineHeight:1}}>{fmtK(a.issuedGDC)}</div>
-            <div style={{fontSize:9,color:"var(--muted)",fontFamily:"DM Mono,monospace",textTransform:"uppercase",marginTop:2}}>Issued GDC YTD</div>
-          </div>
-        </div>
-
-        {/* GDC bar */}
-        <div style={{height:6,background:"var(--bg2)",borderRadius:3,marginBottom:14,overflow:"hidden"}}>
-          <div style={{height:"100%",width:`${(a.issuedGDC/maxGDC)*100}%`,background:"var(--green2)",borderRadius:3,transition:"width .6s"}}/>
-        </div>
-
-        {/* KPI row */}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8,marginBottom:10}}>
-          {[
-            {l:"Appointments",v:a.appts,c:"#2b6cb0"},
-            {l:"Applications",v:a.apps,c:"var(--orange)"},
-            {l:"Issued Cases",v:a.issued,c:"var(--green2)"},
-            {l:"Pending Opps",v:a.pendingOpp,c:"var(--purple)"},
-            {l:"Revenue Pipeline",v:fmtK(a.issuedGDC*3),c:"var(--text)"},
-          ].map((k,j)=>(
-            <div key={j} style={{background:"var(--bg)",border:"1px solid var(--border)",borderRadius:6,padding:"8px 10px",textAlign:"center"}}>
-              <div style={{fontSize:18,fontWeight:700,color:k.c,lineHeight:1}}>{k.v}</div>
-              <div style={{fontSize:9,color:"var(--muted)",marginTop:2}}>{k.l}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Opportunity breakdown */}
-        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          {[{l:"OPRA",v:a.opra,c:"var(--red)"},{l:"Conversions",v:a.conv,c:"var(--orange)"},{l:"Life",v:a.life,c:"#2b6cb0"},{l:"Retirement",v:a.retire,c:"var(--purple)"},{l:"Business",v:a.biz,c:"#7b2d8b"}].map((o,k)=>(
-            <div key={k} style={{display:"flex",alignItems:"center",gap:4,background:"var(--bg)",borderRadius:5,padding:"4px 9px",fontSize:10}}>
-              <span style={{fontWeight:700,color:o.c,fontSize:13}}>{o.v}</span>
-              <span style={{color:"var(--muted)"}}>{o.l}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    ))}
-  </>);
-}
-
-// ─────────────────────────────────────────────────────────
 // 6. DAILY BRIEFING — Full standalone page
 // ─────────────────────────────────────────────────────────
 function DailyBriefing({onNav, toast, appData={}}) {
-  const { counts={}, urgentConversions=[], topOpportunities=[], gdc={}, loading=false } = appData;
+  const { counts={}, urgentConversions=[], topOpportunities=[], gdc={}, pendingForms=[], briefing=null, loading=false } = appData;
 
   const expectedGDC = (gdc.pipeline||0) / 30; // rough daily estimate
+  const fmtK1 = n => "$"+Math.round((n||0)/1000)+"k";
 
   return (<>
     <div style={{marginBottom:20}}>
@@ -3695,20 +3519,13 @@ function DailyBriefing({onNav, toast, appData={}}) {
             </div>
           );
         })}
-        {!loading && topOpportunities.length===0 && PRIORITIES.slice(0,4).map((p,i)=>(
-          <div key={i} style={{display:"flex",gap:12,padding:"12px 14px",background:"var(--card)",border:"1px solid var(--border)",borderRadius:8,marginBottom:8,boxShadow:"var(--shadow)",cursor:"pointer"}}
-            onClick={()=>{onNav("opps");toast(`Opening ${p.name}`,"info");}}>
-            <div style={{width:28,height:28,borderRadius:"50%",background:["#e53e3e","#553c9a","#dd6b20","#2b6cb0"][i],display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:"#fff",flexShrink:0}}>{i+1}</div>
-            <div style={{flex:1}}>
-              <div style={{fontSize:12,fontWeight:600,color:"var(--text)"}}>{p.name}</div>
-              <div style={{fontSize:11,color:"var(--muted)",marginTop:1}}>{p.reason}</div>
-            </div>
-            <div style={{textAlign:"right",flexShrink:0}}>
-              <div style={{fontSize:18,fontWeight:700,color:"#2b6cb0"}}>{p.score}</div>
-              <div style={{fontSize:8,color:"var(--muted)",fontFamily:"DM Mono,monospace",textTransform:"uppercase"}}>Score</div>
-            </div>
+        {!loading && topOpportunities.length===0 && (
+          <div className="empty-state" style={{padding:"32px 20px"}}>
+            <div className="empty-state-icon">🎯</div>
+            <div className="empty-state-title">No scored opportunities yet</div>
+            <div className="empty-state-sub">Run nightly scoring or add customers to populate today's priorities.</div>
           </div>
-        ))}
+        )}
         <button className="btn-primary" style={{width:"100%",marginTop:4,padding:9}} onClick={()=>onNav("opps")}>View All Opportunities →</button>
       </div>
 
@@ -3719,33 +3536,39 @@ function DailyBriefing({onNav, toast, appData={}}) {
             <span>📋 Pending Forms ({counts.pending_forms||0})</span>
             <button style={{fontSize:9,padding:"2px 8px",borderRadius:3,border:"1px solid rgba(255,255,255,.2)",background:"transparent",color:"rgba(255,255,255,.7)",cursor:"pointer"}} onClick={()=>onNav("forms")}>Send Forms</button>
           </div>
-          {APPOINTMENTS.map((a,i)=>(
+          {pendingForms.length===0 && (
+            <div style={{padding:"18px 14px",textAlign:"center",fontSize:11,color:"var(--green2)"}}>✓ No pending forms</div>
+          )}
+          {pendingForms.slice(0,6).map((f,i)=>{
+            const name = f.customers ? `${f.customers.first_name||""} ${f.customers.last_name||""}`.trim() : (f.client_name||"Unknown");
+            return(
             <div key={i} style={{display:"flex",gap:10,padding:"9px 14px",borderBottom:"1px solid var(--border)",alignItems:"center"}}>
-              <div style={{fontFamily:"DM Mono,monospace",fontSize:10,color:"var(--muted)",width:48,flexShrink:0}}>{a.time}</div>
-              <div style={{width:8,height:8,borderRadius:"50%",background:a.color,flexShrink:0}}/>
+              <div style={{fontFamily:"DM Mono,monospace",fontSize:10,color:"var(--muted)",width:48,flexShrink:0}}>{f.sent_at?new Date(f.sent_at).toLocaleDateString("en-US",{month:"short",day:"numeric"}):"—"}</div>
+              <div style={{width:8,height:8,borderRadius:"50%",background:"#dd6b20",flexShrink:0}}/>
               <div style={{flex:1}}>
-                <div style={{fontSize:11,fontWeight:500}}>{a.name}</div>
-                <div style={{fontSize:9,color:"var(--muted)"}}>{a.type}</div>
+                <div style={{fontSize:11,fontWeight:500}}>{name}</div>
+                <div style={{fontSize:9,color:"var(--muted)"}}>{f.form_title||f.form_id}</div>
               </div>
-              <span style={{fontSize:8,fontFamily:"DM Mono,monospace",padding:"1px 5px",borderRadius:3,background:a.formDone?"var(--green-bg)":"var(--orange-bg)",color:a.formDone?"var(--green)":"var(--orange)",border:`1px solid ${a.formDone?"var(--green-border)":"var(--orange-border)"}`}}>
-                {a.formDone?"Forms ✓":"Forms ⚠"}
+              <span style={{fontSize:8,fontFamily:"DM Mono,monospace",padding:"1px 5px",borderRadius:3,background:"var(--orange-bg)",color:"var(--orange)",border:"1px solid var(--orange-border)"}}>
+                Pending ⚠
               </span>
             </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* AI ACTIVITY SUMMARY */}
         <div style={{background:"var(--navy)",borderRadius:10,padding:"16px",color:"#fff"}}>
           <div style={{fontSize:11,fontWeight:600,marginBottom:12,color:"rgba(255,255,255,.8)"}}>🤖 AI Activity Today</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-            {[{l:"Calls Made",v:63},{l:"Texts Sent",v:148},{l:"Emails Sent",v:29},{l:"Appts Booked",v:4}].map((s,i)=>(
+            {[{l:"Calls Made",v:briefing?.ai_calls_made??0},{l:"Texts Sent",v:briefing?.ai_texts_sent??0},{l:"Emails Sent",v:briefing?.ai_emails_sent??0},{l:"Appts Booked",v:briefing?.ai_appointments_booked??0}].map((s,i)=>(
               <div key={i} style={{textAlign:"center",background:"rgba(255,255,255,.06)",borderRadius:7,padding:"10px 8px"}}>
                 <div style={{fontSize:22,fontWeight:700,color:["#4299e1","#9b72ff","#48bb78","#f0b429"][i],lineHeight:1}}>{s.v}</div>
                 <div style={{fontSize:9,color:"rgba(255,255,255,.5)",marginTop:3}}>{s.l}</div>
               </div>
             ))}
           </div>
-          <button style={{width:"100%",marginTop:10,padding:7,borderRadius:5,border:"1px solid rgba(255,255,255,.15)",background:"rgba(255,255,255,.06)",color:"rgba(255,255,255,.7)",fontSize:10,cursor:"pointer",fontFamily:"DM Sans,sans-serif"}} onClick={()=>onNav("agents")}>
+          <button style={{width:"100%",marginTop:10,padding:7,borderRadius:5,border:"1px solid rgba(255,255,255,.15)",background:"rgba(255,255,255,.06)",color:"rgba(255,255,255,.7)",fontSize:10,cursor:"pointer",fontFamily:"DM Sans,sans-serif"}} onClick={()=>onNav("ai")}>
             View AI Agent Details →
           </button>
         </div>
@@ -3754,9 +3577,9 @@ function DailyBriefing({onNav, toast, appData={}}) {
         <div style={{background:"var(--card)",border:"1px solid var(--green-border)",borderRadius:10,padding:"16px",boxShadow:"var(--shadow)"}}>
           <div style={{fontSize:11,fontWeight:600,color:"var(--navy)",marginBottom:10}}>💰 GDC Pipeline Snapshot</div>
           {[
-            {l:"Pipeline GDC",v:"$284,500",c:"#2b6cb0"},
-            {l:"Est. FSA Payout (80%)",v:"$227,600",c:"var(--green2)"},
-            {l:"Cases This Month",v:"5",c:"var(--text)"},
+            {l:"Pipeline GDC",v:fmtK1(gdc.pipeline||0),c:"#2b6cb0"},
+            {l:`Est. FSA Payout (${gdc.tier_rate?Math.round(gdc.tier_rate*100)+"%":"—"})`,v:fmtK1(gdc.pipeline_fsa||0),c:"var(--green2)"},
+            {l:"Issued GDC (YTD)",v:fmtK1(gdc.issued_ytd||0),c:"var(--text)"},
           ].map((r,i)=>(
             <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid var(--border)",fontSize:12}}>
               <span style={{color:"var(--muted)"}}>{r.l}</span>
@@ -3921,10 +3744,10 @@ export default function App(){
     {id:"fna",       icon:"✦",  label:"FNA Generator"},
   ];
   const sideAgents=[
-    {name:"Receptionist AI",status:"online",ct:"12 calls"},
-    {name:"Appt Setter AI",status:"running",ct:"41 calls"},
-    {name:"Conversion AI",status:"running",ct:"17 calls"},
-    {name:"Follow Up AI",status:"running",ct:"89 texts"},
+    {name:"Receptionist AI",status:"online",ct:"—"},
+    {name:"Appt Setter AI",status:"running",ct:"—"},
+    {name:"Conversion AI",status:"running",ct:"—"},
+    {name:"Follow Up AI",status:"running",ct:"—"},
   ];
   const pageTitle={briefing:"Daily Briefing",dashboard:"Dashboard",opps:"Opportunities",agencies:"Agency Owners",conv:"Conversion Center",opra:"OPRA Center",calendar:"Calendar",ai:"AI Control Center",workshops:"Workshops",gdc:"GDC & Commission",prep:"Financial Review Prep",needs:"Customer Needs Map",calc:"Sales Calculator",contacts:"FFS Contacts",forms:"Client Forms",fna:"Financial Needs Analysis"};
 
@@ -3947,6 +3770,7 @@ export default function App(){
         <div className="agents-box">
           <div className="ab-title">Live Status</div>
           {sideAgents.map((a,i)=>(<div className="agent-row" key={i}><div className={`a-dot ${a.status}`}/><div className="a-name">{a.name}</div><div className="a-ct">{a.ct}</div></div>))}
+          <div style={{fontSize:8,color:"var(--dim)",marginTop:6,lineHeight:1.4}}>Counts unavailable — connect Retell/Twilio to populate.</div>
         </div>
         <div className="tier-box">
           <div className="tier-label">Current GDC Tier</div>
@@ -3992,12 +3816,17 @@ export default function App(){
           <button className="import-btn" onClick={()=>{appData.refresh();toast("Refreshing data...","info");}}>↻ Refresh Data</button>
         </div>
         <div className="page">
+          {appData.error && (
+            <div className="error-banner">
+              <span>⚠ Live data failed to load ({appData.error}). Showing what's available.</span>
+              <button onClick={()=>{appData.refresh();toast("Retrying…","info");}}>Retry</button>
+            </div>
+          )}
           {page==="briefing"   &&<DailyBriefing onNav={setPage} toast={toast} appData={appData}/>}
           {page==="dashboard"  &&<Dashboard onNav={setPage} toast={toast} appData={appData}/>}
           {page==="opps"       &&<OpportunityDashboard toast={toast} appData={appData}/>}
           {page==="conv"       &&<ConversionCenter toast={toast} appData={appData}/>}
           {page==="opra"       &&<OPRACenter toast={toast} appData={appData}/>}
-          {page==="agents"     &&<AIAgents toast={toast}/>}
           {page==="ai"         &&<AIControlCenter toast={toast}/>}
           {page==="agencies"   &&<AgencyOwners toast={toast}/>}
           {page==="calendar"   &&<Calendar toast={toast} appData={appData}/>}

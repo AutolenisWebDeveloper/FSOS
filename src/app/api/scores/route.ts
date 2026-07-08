@@ -1,16 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
+import { requireInternalAuth, parseLimit } from '@/lib/http'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 // GET /api/scores — Opportunities page. Scored customers across all pipelines.
 export async function GET(req: NextRequest) {
+  const unauthorized = requireInternalAuth(req)
+  if (unauthorized) return unauthorized
   try {
     const db = getDb()
     const pipeline = req.nextUrl.searchParams.get('pipeline')
-    const minScore = parseInt(req.nextUrl.searchParams.get('min_score') || '0')
-    const limit = Math.min(parseInt(req.nextUrl.searchParams.get('limit') || '50'), 200)
+    const minScoreRaw = parseInt(req.nextUrl.searchParams.get('min_score') || '0')
+    const minScore = Number.isFinite(minScoreRaw) ? minScoreRaw : 0
+    const limit = parseLimit(req.nextUrl.searchParams.get('limit'), 50, 200)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let query: any = db
@@ -23,7 +27,7 @@ export async function GET(req: NextRequest) {
           agencies (agency_id, name, owner)
         )
       `)
-      .gte('priority_score', isNaN(minScore) ? 0 : minScore)
+      .gte('priority_score', minScore)
       .order('priority_score', { ascending: false })
       .limit(limit)
 

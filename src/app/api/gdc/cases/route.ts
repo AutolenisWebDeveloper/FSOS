@@ -1,18 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
 import { getTier } from '@/lib/compliance'
+import { requireInternalAuth, readJson, parseLimit } from '@/lib/http'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-// Compute the current FSA tier rate from this year's issued/paid GDC.
+const ROLLING_12MO_CUTOFF = () => new Date(Date.now() - 365 * 24 * 60 * 60 * 1000)
+
+// Compute the current FSA tier rate from rolling 12-month issued/paid GDC.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function computeTierRate(cases: any[]): { tier: 1 | 2 | 3; rate: 0.40 | 0.60 | 0.80; issued: number } {
-  const year = new Date().getFullYear()
+  const cutoff = ROLLING_12MO_CUTOFF()
   let issued = 0
   for (const c of cases) {
     if ((c.case_status === 'issued' || c.case_status === 'paid') &&
-        c.issued_date && new Date(c.issued_date).getFullYear() === year) {
+        c.issued_date && new Date(c.issued_date) >= cutoff) {
       issued += Number(c.actual_gdc || c.estimated_gdc || 0)
     }
   }
@@ -22,10 +25,12 @@ function computeTierRate(cases: any[]): { tier: 1 | 2 | 3; rate: 0.40 | 0.60 | 0
 
 // GET /api/gdc/cases — GDC & Commission page live data
 export async function GET(req: NextRequest) {
+  const unauthorized = requireInternalAuth(req)
+  if (unauthorized) return unauthorized
   try {
     const db = getDb()
     const status = req.nextUrl.searchParams.get('status')
-    const limit = Math.min(parseInt(req.nextUrl.searchParams.get('limit') || '50'), 200)
+    const limit = parseLimit(req.nextUrl.searchParams.get('limit'), 50, 200)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let query: any = db
@@ -54,13 +59,13 @@ export async function GET(req: NextRequest) {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rows = (allCases || []) as any[]
-    const year = new Date().getFullYear()
+    const cutoff = ROLLING_12MO_CUTOFF()
     let total_issued_ytd = 0
     let total_pipeline = 0
     let total_fsa_ytd = 0
     for (const c of rows) {
-      const thisYear = c.issued_date && new Date(c.issued_date).getFullYear() === year
-      if ((c.case_status === 'issued' || c.case_status === 'paid') && thisYear) {
+      const inWindow = c.issued_date && new Date(c.issued_date) >= cutoff
+      if ((c.case_status === 'issued' || c.case_status === 'paid') && inWindow) {
         total_issued_ytd += Number(c.actual_gdc || c.estimated_gdc || 0)
         total_fsa_ytd += Number(c.actual_fsa || 0)
       }
@@ -90,14 +95,16 @@ export async function GET(req: NextRequest) {
 
 // POST /api/gdc/cases — log a new commission case
 export async function POST(req: NextRequest) {
+  const unauthorized = requireInternalAuth(req)
+  if (unauthorized) return unauthorized
   try {
     const db = getDb()
-    const body = await req.json()
+    const parsed = await readJson<Record<string, unknown>>(req)
+    if ('error' in parsed) return parsed.error
     const {
       customer_id, carrier, product_name, product_type, product_option,
       client_age, state_code, premium, target_premium, pipeline, notes,
-      ghl_opportunity_id,
-    } = body as Record<string, unknown>
+    } = parsed.data
 
     if (!carrier || !product_name || !product_type) {
       return NextResponse.json(
@@ -155,7 +162,6 @@ export async function POST(req: NextRequest) {
         annual_trail: gdc.annual_trail ?? null,
         rate_missing: gdc.rate_missing ?? true,
         case_status: 'pending',
-        ghl_opportunity_id: (ghl_opportunity_id as string) || null,
         notes: (notes as string) || null,
       })
       .select(`*, customers (first_name, last_name), agencies (name)`)
@@ -178,10 +184,13 @@ export async function POST(req: NextRequest) {
 
 // PATCH /api/gdc/cases — update status, actual amounts, dates
 export async function PATCH(req: NextRequest) {
+  const unauthorized = requireInternalAuth(req)
+  if (unauthorized) return unauthorized
   try {
     const db = getDb()
-    const body = await req.json()
-    const { case_id, ...rest } = body as Record<string, unknown> & { case_id?: string }
+    const parsed = await readJson<Record<string, unknown> & { case_id?: string }>(req)
+    if ('error' in parsed) return parsed.error
+    const { case_id, ...rest } = parsed.data
 
     if (!case_id) {
       return NextResponse.json({ error: 'case_id required' }, { status: 400 })

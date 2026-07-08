@@ -64,14 +64,41 @@ with `{ success: false, error }` and never a 500, so the iterator continues.
 
 ---
 
-## Scenario 2 — Nightly Score Sync (retired)
+## Scenario 2 — Nightly Score → GHL Sync (reinstated)
 
-> **Retired.** This scenario used to push pipeline scores into GHL contact custom
-> fields. GHL has been removed from the stack, so there is no CRM to sync scores
-> to. Scores are read directly from the command center via `GET /api/scores` and
-> from Supabase `scores`. Delete this scenario, or repurpose it: if you later want
-> outbound follow-ups on high scores, retarget it to a direct Twilio SMS send or a
-> Retell AI outbound call instead of a GHL contact update.
+> **Reinstated.** GHL is back in the stack as the pipeline/workflow engine (see
+> `docs/ghl_integration.md`). Scores can again drive GHL contact custom fields
+> (e.g. `contact.lead_score`) so the lead-scoring workflows fire. You do **not**
+> need raw GHL API modules for this — call the FSOS sync route, which upserts the
+> contact and moves its opportunity using the authoritative stage-ID map.
+
+```
+Trigger: Schedule → Daily at 6AM CT (after 2AM nightly scoring)
+
+Module 2: HTTP → GET (top-priority customers)
+  URL: https://fsos-seven.vercel.app/api/scores?min=41
+  Headers: Authorization: Bearer [FSOS_API_SECRET]
+
+Module 3: Iterator (loops each customer)
+
+Module 4: HTTP → POST (sync into GHL)
+  URL: https://fsos-seven.vercel.app/api/ghl/sync
+  Method: POST
+  Headers:
+    Content-Type: application/json
+    Authorization: Bearer [FSOS_API_SECRET]
+  Body: {
+    "customer_id": "{{customer_id}}",
+    "pipeline": "prospect_client",
+    "stage": 2,
+    "tags": ["sales-ready"]
+  }
+```
+
+The route no-ops safely if `GHL_API_KEY` is unset. Alternatively, keep this fully
+inside GHL: the native lead-scoring workflow (WF, §7 of the blueprint) already
+increments `contact.lead_score`; use this scenario only if you score in Supabase
+and want those numbers reflected on the GHL contact.
 
 ---
 

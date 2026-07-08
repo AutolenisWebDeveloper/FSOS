@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
 import { requireInternalAuth, readJson, parseLimit } from '@/lib/http'
+import { ghlSummary } from '@/lib/ghl'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -21,6 +22,7 @@ export async function GET(req: NextRequest) {
         *,
         customers (
           customer_id, first_name, last_name, phone, email,
+          ghl_contact_id, ghl_opportunity_id, ghl_stage_id, ghl_pipeline_id,
           agencies (name)
         )
       `)
@@ -36,6 +38,9 @@ export async function GET(req: NextRequest) {
       console.error('[opra] query error:', error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const c of (cases || []) as any[]) c.ghl = ghlSummary(c.customers)
 
     // Compute counts across the full table (independent of the contacted filter)
     const { data: allCases } = await db
@@ -99,6 +104,7 @@ export async function PATCH(req: NextRequest) {
         *,
         customers (
           customer_id, first_name, last_name, phone, email,
+          ghl_contact_id, ghl_opportunity_id, ghl_stage_id, ghl_pipeline_id,
           agencies (name)
         )
       `)
@@ -109,6 +115,8 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: error?.message || 'Case not found' }, { status: 404 })
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(data as any).ghl = ghlSummary((data as any).customers)
     return NextResponse.json({ case: data })
   } catch (err) {
     console.error('[opra] unexpected error:', err)

@@ -1,5 +1,40 @@
 import { useState, useEffect, useCallback } from "react";
 
+// Small GHL stage chip shown across pages (Opportunities, Conversions, OPRA,
+// Agency Owners). `stage`/`pos` come from the API's per-row `ghl` object.
+function GhlBadge({ stage, pos, pipeline, inGhl }) {
+  if (stage) return (
+    <span title={pipeline ? `GHL · ${pipeline}` : "GoHighLevel pipeline stage"}
+      style={{fontSize:9,background:"#f0e9ff",color:"#6b46c1",border:"1px solid #d6bcfa",borderRadius:3,padding:"2px 6px",fontFamily:"DM Mono,monospace",whiteSpace:"nowrap"}}>
+      ◆ {pos ? `${pos}. ` : ""}{stage}
+    </span>
+  );
+  if (inGhl) return (
+    <span title="Synced to GoHighLevel (no opportunity stage yet)"
+      style={{fontSize:9,background:"transparent",color:"var(--muted)",border:"1px dashed var(--border)",borderRadius:3,padding:"2px 6px",fontFamily:"DM Mono,monospace",whiteSpace:"nowrap"}}>
+      ◇ In GHL
+    </span>
+  );
+  return null;
+}
+
+// POST to /api/ghl/sync (same-origin, replays the command-center auth cookie).
+// Returns { ok, data }. Callers toast the outcome. Gracefully reports the
+// "GHL not configured" (503) case so the button is safe before GHL_API_KEY set.
+async function syncToGhl(body) {
+  try {
+    const res = await fetch("/api/ghl/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    return { ok: res.ok, status: res.status, data };
+  } catch (e) {
+    return { ok: false, status: 0, data: { error: e?.message || "Network error" } };
+  }
+}
+
 // ─────────────────────────────────────────────────────────
 // LIVE DATA HOOK — single fetch, shared across all pages
 // Fetches /api/dashboard once on mount, exposes all live data
@@ -1135,6 +1170,10 @@ function AgencyOwners({toast}) {
           daysSinceReferral: days,
           lastActivity: days,
           needsAttention: !!a.needs_attention,
+          ghlStage: a.ghl?.stage||null,
+          ghlPos: a.ghl?.stage_position||null,
+          ghlPipeline: a.ghl?.pipeline||null,
+          inGhl: !!a.ghl?.in_ghl,
           // Metrics the API doesn't expose yet → honest 0 / "—".
           uploads: 0, contacts: 0, appts: 0, apps: 0, issued: 0, issuedGDC: 0, pendingOpp: 0,
           opra: 0, conv: 0, life: 0, retire: 0, biz: 0,
@@ -1447,6 +1486,7 @@ function AgencyOwners({toast}) {
                 <div>
                   <div style={{fontWeight:600,fontSize:13,color:"var(--navy)"}}>{a.name}</div>
                   <div style={{fontSize:10,color:"var(--muted)",marginTop:1}}>{a.city} · {a.owner}</div>
+                  {(a.ghlStage||a.inGhl) && <div style={{marginTop:4}}><GhlBadge stage={a.ghlStage} pos={a.ghlPos} pipeline={a.ghlPipeline} inGhl={a.inGhl}/></div>}
                 </div>
               </div>
               <div style={{textAlign:"right"}}>
@@ -1484,9 +1524,19 @@ function AgencyOwners({toast}) {
                 ))}
               </div>
 
-              <button className="btn-primary" style={{width:"100%",fontSize:11,padding:8}} onClick={()=>setSelected(a.id)}>
-                Open {a.name} →
-              </button>
+              <div style={{display:"flex",gap:6}}>
+                <button className="btn-primary" style={{flex:1,fontSize:11,padding:8}} onClick={()=>setSelected(a.id)}>
+                  Open {a.name} →
+                </button>
+                <button title="Push this owner into the GHL Agency Owner pipeline"
+                  style={{fontSize:11,padding:"8px 10px",borderRadius:5,border:"1px solid #d6bcfa",background:"#f0e9ff",color:"#6b46c1",cursor:"pointer",whiteSpace:"nowrap"}}
+                  onClick={async ()=>{
+                    toast(`Syncing ${a.owner||a.name} to GHL…`,"info");
+                    const r=await syncToGhl({agency_id:a.id, pipeline:"agency_owner", stage:a.inGhl?(a.ghlPos||1):1});
+                    if(r.ok){toast(`${a.name} synced to GHL`,"success");refresh();}
+                    else toast(r.data?.error||`GHL sync failed (${r.status})`,"error");
+                  }}>◆ {a.inGhl?"Re-sync":"Sync GHL"}</button>
+              </div>
             </div>
           </div>
         ))}
@@ -2981,6 +3031,10 @@ function ConversionCenter({toast,appData={}}) {
     status: overrides[c.policy_id]?.status||"Not Started",
     contacted: overrides[c.policy_id]?.contacted||false,
     apptBooked: overrides[c.policy_id]?.apptBooked||false,
+    ghlStage: c.ghl?.stage||null,
+    ghlPos: c.ghl?.stage_position||null,
+    ghlPipeline: c.ghl?.pipeline||null,
+    inGhl: !!c.ghl?.in_ghl,
   }));
 
   const displayCases = cases;
@@ -3066,7 +3120,12 @@ function ConversionCenter({toast,appData={}}) {
         <tbody>
           {filtered.map(c=>(
             <tr key={c.id}>
-              <td style={{fontWeight:600}}>{c.client}</td>
+              <td style={{fontWeight:600}}>
+                <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                  {c.client}
+                  <GhlBadge stage={c.ghlStage} pos={c.ghlPos} pipeline={c.ghlPipeline} inGhl={c.inGhl}/>
+                </div>
+              </td>
               <td style={{fontSize:10,color:"var(--muted)"}}>{c.agency}</td>
               <td><span className="td-mono" style={{fontSize:9,color:"var(--dim)"}}>{c.policyNum}</span></td>
               <td className="td-mono" style={{textAlign:"right",fontWeight:600}}>{fmtCur(c.face)}</td>
@@ -3132,6 +3191,10 @@ function OPRACenter({toast,appData={}}) {
       reviewDone: c.review_complete,
       transferred: c.transferred,
       status: c.status,
+      ghlStage: c.ghl?.stage||null,
+      ghlPos: c.ghl?.stage_position||null,
+      ghlPipeline: c.ghl?.pipeline||null,
+      inGhl: !!c.ghl?.in_ghl,
     }))
     .sort((a,b) => (a.contacted===b.contacted ? 0 : a.contacted ? 1 : -1));
 
@@ -3209,7 +3272,12 @@ function OPRACenter({toast,appData={}}) {
         <tbody>
           {cases.map(c=>(
             <tr key={c.id}>
-              <td style={{fontWeight:600}}>{c.client}</td>
+              <td style={{fontWeight:600}}>
+                <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                  {c.client}
+                  <GhlBadge stage={c.ghlStage} pos={c.ghlPos} pipeline={c.ghlPipeline} inGhl={c.inGhl}/>
+                </div>
+              </td>
               <td style={{fontSize:10,color:"var(--muted)"}}>{c.agency}</td>
               <td className="td-mono" style={{fontSize:10,color:"var(--muted)"}}>{c.transferDate}</td>
               <td className="td-mono" style={{textAlign:"right",fontWeight:600}}>${c.premium.toLocaleString()}</td>
@@ -3302,6 +3370,7 @@ function OpportunityDashboard({toast,appData={}}) {
       ghlPipeline: o.ghl?.pipeline || null,
       ghlPos: o.ghl?.stage_position || null,
       inGhl: !!o.ghl?.in_ghl,
+      customerId: o.customers?.customer_id || null,
     };
   });
 
@@ -3360,6 +3429,14 @@ function OpportunityDashboard({toast,appData={}}) {
               <button className="btn-secondary" style={{fontSize:10,padding:"5px 12px"}} onClick={e=>{e.stopPropagation();toast(`SMS sent to ${p.name}`,"success");}}>💬 Send SMS</button>
               <button className="btn-secondary" style={{fontSize:10,padding:"5px 12px"}} onClick={e=>{e.stopPropagation();toast(`Booking appointment for ${p.name}`,"info");}}>📅 Book Appt</button>
               <button className="btn-secondary" style={{fontSize:10,padding:"5px 12px"}} onClick={e=>{e.stopPropagation();toast(`Opening forms for ${p.name}`,"info");}}>📋 Send Forms</button>
+              <button style={{fontSize:10,padding:"5px 12px",borderRadius:5,border:"1px solid #d6bcfa",background:"#f0e9ff",color:"#6b46c1",cursor:"pointer"}} disabled={!p.customerId}
+                onClick={async e=>{e.stopPropagation();
+                  if(!p.customerId){toast("No linked customer to sync","error");return;}
+                  toast(`Syncing ${p.name} to GHL…`,"info");
+                  const r=await syncToGhl({customer_id:p.customerId, pipeline:"prospect_client", stage:p.inGhl?(p.ghlPos||1):1});
+                  if(r.ok){toast(`${p.name} synced to GHL`,"success");refresh();}
+                  else toast(r.data?.error||`GHL sync failed (${r.status})`,"error");
+                }}>◆ {p.inGhl?"Re-sync GHL":"Sync to GHL"}</button>
               {p.action==="RETIRE"||p.action==="LIFE" ?
                 <button style={{fontSize:10,padding:"5px 12px",borderRadius:5,border:"none",background:"#b7791f",color:"#fff",cursor:"pointer"}} onClick={e=>{e.stopPropagation();toast(`Generating FNA for ${p.name}`,"success");}}>✦ Generate FNA</button>:null}
             </div>

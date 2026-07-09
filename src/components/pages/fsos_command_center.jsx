@@ -3909,15 +3909,32 @@ function AIControlCenter({toast}) {
 // ─────────────────────────────────────────────────────────
 function DailyBriefing({onNav, toast, appData={}}) {
   const { counts={}, urgentConversions=[], topOpportunities=[], gdc={}, pendingForms=[], briefing=null, loading=false } = appData;
+  const [emailing, setEmailing] = useState(false);
 
   const expectedGDC = (gdc.pipeline||0) / 30; // rough daily estimate
   const fmtK1 = n => "$"+Math.round((n||0)/1000)+"k";
 
+  const emailBriefing = async () => {
+    setEmailing(true);
+    try {
+      const res = await fetch("/api/briefing/send", { method:"POST", headers:{"Content-Type":"application/json"}, body:"{}" });
+      const d = await res.json().catch(()=>({}));
+      if (!res.ok) toast(d.error || `Could not send (HTTP ${res.status})`, "error");
+      else toast(`Briefing emailed to ${d.to}`, "success");
+    } catch { toast("Network error sending briefing", "error"); }
+    finally { setEmailing(false); }
+  };
+
   return (<>
-    <div style={{marginBottom:20}}>
-      <div style={{fontSize:11,color:"var(--muted)",fontFamily:"DM Mono,monospace",letterSpacing:".08em",textTransform:"uppercase",marginBottom:4}}>Daily Briefing · {today}</div>
-      <div style={{fontSize:28,fontWeight:700,color:"var(--navy)",marginBottom:4}}>Good Morning, Markist 👋</div>
-      <div style={{fontSize:13,color:"var(--muted)"}}>Here's everything you need for today — your priorities, appointments, pipeline, and AI activity.</div>
+    <div style={{marginBottom:20, display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:12, flexWrap:"wrap"}}>
+      <div>
+        <div style={{fontSize:11,color:"var(--muted)",fontFamily:"DM Mono,monospace",letterSpacing:".08em",textTransform:"uppercase",marginBottom:4}}>Daily Briefing · {today}</div>
+        <div style={{fontSize:28,fontWeight:700,color:"var(--navy)",marginBottom:4}}>Good Morning, Markist 👋</div>
+        <div style={{fontSize:13,color:"var(--muted)"}}>Here's everything you need for today — your priorities, appointments, pipeline, and AI activity.</div>
+      </div>
+      <button className="btn-secondary" disabled={emailing} style={{fontSize:11, padding:"8px 14px", whiteSpace:"nowrap", opacity:emailing?.6:1}} onClick={emailBriefing} title="AI-writes today's briefing and emails it to you">
+        {emailing ? "Sending…" : "✉ Email me this briefing"}
+      </button>
     </div>
 
     {/* TOP METRICS */}
@@ -4231,6 +4248,103 @@ function AssistantModal({open,onClose}){
           <button className="asst-send" disabled={sending||!input.trim()} onClick={()=>send()}>Send</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
+// REPORTS — analytics dashboard (#14) · GET /api/reports
+// ─────────────────────────────────────────────────────────
+const CHART_COLORS = ["#4299e1","#38a169","#6b46c1","#b7791f","#e53e3e","#0bc5ea","#ed8936","#805ad5"];
+const PIPELINE_LABELS = { general:"General", conversions:"Conversions", opra:"OPRA", life:"Life", retirement:"Retirement", business:"Business", owner:"Owner" };
+
+function BarList({ items, valueKey="count", labelMap, money }) {
+  const max = Math.max(1, ...items.map(i => Number(i[valueKey])||0));
+  const fmt = v => money ? "$"+Number(v).toLocaleString("en-US") : Number(v).toLocaleString("en-US");
+  if (!items.length) return <div style={{fontSize:11, color:"var(--muted)", padding:"8px 0"}}>No data yet.</div>;
+  return (
+    <div style={{display:"flex", flexDirection:"column", gap:8}}>
+      {items.map((it,i)=>{
+        const v = Number(it[valueKey])||0;
+        const label = (labelMap && labelMap[it.label]) || it.label || "—";
+        return (
+          <div key={i} style={{display:"grid", gridTemplateColumns:"110px 1fr 56px", gap:10, alignItems:"center"}}>
+            <span style={{fontSize:11, color:"var(--text)", textTransform:"capitalize", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}} title={label}>{label}</span>
+            <div style={{background:"var(--bg2)", borderRadius:4, height:14, overflow:"hidden"}}>
+              <div style={{width:`${(v/max)*100}%`, height:"100%", background:CHART_COLORS[i%CHART_COLORS.length], borderRadius:4, minWidth: v>0?4:0}}/>
+            </div>
+            <span style={{fontSize:11, fontWeight:600, textAlign:"right", color:"var(--navy)"}}>{fmt(v)}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function GdcTrend({ data }) {
+  const max = Math.max(1, ...data.map(d => d.gdc));
+  return (
+    <div style={{display:"flex", alignItems:"flex-end", gap:10, height:130, paddingTop:8}}>
+      {data.map((d,i)=>(
+        <div key={i} style={{flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:4}}>
+          <div style={{fontSize:9, color:"var(--muted)", fontWeight:600}}>{d.gdc>0?"$"+(d.gdc/1000).toFixed(d.gdc>=10000?0:1)+"k":""}</div>
+          <div style={{width:"100%", maxWidth:34, height:`${Math.max((d.gdc/max)*90,2)}px`, background:"linear-gradient(180deg,#4299e1,#2b6cb0)", borderRadius:"4px 4px 0 0", minHeight:2}}/>
+          <div style={{fontSize:9, color:"var(--muted)"}}>{d.month.slice(5)}/{d.month.slice(2,4)}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ReportsPage({ toast }) {
+  const [rep, setRep] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const load = () => {
+    setLoading(true); setError(null);
+    fetch("/api/reports").then(async r=>{ if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error||`HTTP ${r.status}`); return r.json(); })
+      .then(setRep).catch(e=>setError(String(e.message||e))).finally(()=>setLoading(false));
+  };
+  useEffect(load, []);
+
+  const card = { background:"var(--card)", border:"1px solid var(--border)", borderRadius:10, padding:16, boxShadow:"var(--shadow)" };
+  const T = rep?.totals || {};
+  const kpi = (label,val,color) => (
+    <div style={{...card, padding:14}}>
+      <div style={{fontSize:24, fontWeight:700, color:color||"var(--navy)"}}>{val}</div>
+      <div style={{fontSize:10, color:"var(--muted)", textTransform:"uppercase", letterSpacing:".04em", marginTop:2}}>{label}</div>
+    </div>
+  );
+  const panel = (title, node) => (
+    <div style={card}><div style={{fontSize:12, fontWeight:700, color:"var(--navy)", marginBottom:12}}>{title}</div>{node}</div>
+  );
+
+  return (
+    <div>
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14}}>
+        <div style={{fontSize:11, color:"var(--muted)"}}>{rep?`Generated ${new Date(rep.generated_at).toLocaleString("en-US",{hour:"numeric",minute:"2-digit"})}`:""}</div>
+        <button className="btn-secondary" style={{fontSize:11, padding:"5px 12px"}} onClick={load}>↻ Refresh</button>
+      </div>
+      {loading && <div style={{fontSize:12, color:"var(--muted)"}}>Loading analytics…</div>}
+      {error && <div style={{...card, color:"var(--red)", fontSize:12}}>Could not load reports: {error}</div>}
+      {rep && !error && (<>
+        <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))", gap:12, marginBottom:16}}>
+          {kpi("Customers", (T.customers||0).toLocaleString())}
+          {kpi("Policies", (T.policies||0).toLocaleString())}
+          {kpi("Open Cases", T.open_cases||0)}
+          {kpi("Issued Cases", T.issued_cases||0, "var(--green2)")}
+          {kpi("GDC Issued", "$"+(T.gdc_issued||0).toLocaleString(), "var(--green2)")}
+          {kpi("Overdue Tasks", T.overdue_tasks||0, (T.overdue_tasks>0)?"var(--red)":"var(--navy)")}
+        </div>
+        <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))", gap:14}}>
+          {panel("GDC by Month (issued)", <GdcTrend data={rep.gdc_by_month||[]}/>)}
+          {panel("Pipeline Mix", <BarList items={rep.pipelines||[]} labelMap={PIPELINE_LABELS}/>)}
+          {panel("Lead Sources", <BarList items={rep.sources||[]}/>)}
+          {panel("Case Status", <BarList items={rep.case_status||[]}/>)}
+          {panel("Activity — last 30 days", <BarList items={rep.activity_30d||[]}/>)}
+        </div>
+      </>)}
     </div>
   );
 }
@@ -4742,6 +4856,7 @@ export default function App(){
     {id:"agencies",  icon:"🏢", label:"Agency Owners",  badge:null, bc:"red"},
     {id:"upload",    icon:"📥", label:"Contact Upload"},
     {id:"followups", icon:"✅", label:"Follow-Ups"},
+    {id:"reports",   icon:"📊", label:"Reports"},
     {id:"conv",      icon:"⏰", label:"Conversions",    badge:liveConvUrgent||null, bc:"red"},
     {id:"opra",      icon:"🔄", label:"OPRA Center",    badge:liveOpraUncontacted||null, bc:"orange"},
     {id:"calendar",  icon:"📅", label:"Calendar"},
@@ -4761,7 +4876,7 @@ export default function App(){
     {name:"Conversion AI",status:"running",ct:"—"},
     {name:"Follow Up AI",status:"running",ct:"—"},
   ];
-  const pageTitle={briefing:"Daily Briefing",dashboard:"Dashboard",opps:"Opportunities",agencies:"Agency Owners",upload:"Contact Upload",followups:"Follow-Ups",conv:"Conversion Center",opra:"OPRA Center",calendar:"Calendar",ai:"AI Control Center",workshops:"Workshops",gdc:"GDC & Commission",prep:"Financial Review Prep",needs:"Customer Needs Map",calc:"Sales Calculator",contacts:"FFS Contacts",forms:"Client Forms",fna:"Financial Needs Analysis"};
+  const pageTitle={briefing:"Daily Briefing",dashboard:"Dashboard",opps:"Opportunities",agencies:"Agency Owners",upload:"Contact Upload",followups:"Follow-Ups",reports:"Reports & Analytics",conv:"Conversion Center",opra:"OPRA Center",calendar:"Calendar",ai:"AI Control Center",workshops:"Workshops",gdc:"GDC & Commission",prep:"Financial Review Prep",needs:"Customer Needs Map",calc:"Sales Calculator",contacts:"FFS Contacts",forms:"Client Forms",fna:"Financial Needs Analysis"};
 
   return(<>
     <style>{G}</style>
@@ -4839,6 +4954,7 @@ export default function App(){
           {page==="agencies"   &&<AgencyOwners toast={toast} onNav={setPage}/>}
           {page==="upload"     &&<ContactUploadPage toast={toast}/>}
           {page==="followups"  &&<FollowUpsPage toast={toast} onOpenCustomer={setDrawerCustomerId}/>}
+          {page==="reports"    &&<ReportsPage toast={toast}/>}
           {page==="calendar"   &&<Calendar toast={toast} appData={appData}/>}
           {page==="workshops"  &&<WorkshopsPage toast={toast}/>}
           {page==="gdc"        &&<GDCPage tier={tier} setTier={setTier} toast={toast} appData={appData}/>}

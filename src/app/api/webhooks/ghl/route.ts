@@ -175,9 +175,16 @@ async function handleContactUpsert(c: Evt): Promise<string | null> {
       phone,
       ghl_contact_id: ghlContactId,
       source: 'ghl',
-      // Consent is captured explicitly in GHL; do not infer SMS consent here.
-      consent_email: !!email,
-      consent_date: email ? new Date().toISOString() : null,
+      // Never infer consent from a webhook. A GHL ContactCreate can fire for an
+      // imported/purchased/scraped contact who gave no express consent, so the
+      // mere presence of an email is NOT consent (TCPA/CAN-SPAM + roadmap rule
+      // "do not assume consent on import"). Consent must arrive as its own
+      // recorded event (opt-in form, Calendly funnel, or GHL consent webhook)
+      // that writes an immutable consent_ledger row. Leave the flags at their
+      // DB default of false so the campaign runner will not message this
+      // contact until real consent is captured.
+      consent_email: false,
+      consent_sms: false,
     })
     .select('customer_id')
     .single()
@@ -299,19 +306,26 @@ async function handleOptOut(evt: Evt) {
   if (!customerId) return
 
   const dnd = (evt.dnd as Evt) || {}
-  const channel = (dnd.channel as string) || (evt.channel as string) || 'sms'
+  const rawChannel = ((dnd.channel as string) || (evt.channel as string) || 'sms').toLowerCase()
+  // Normalize GHL's channel value. Case-sensitive matching previously let
+  // "Email", "all", or "both" fall through and clear only SMS consent, so a
+  // contact who opted out of email kept receiving campaign emails. Treat any
+  // all/both/*/dnd value as an opt-out of BOTH channels — the safe default.
+  const optOutEmail = ['email', 'all', 'both', '*', 'dnd'].includes(rawChannel)
+  const optOutSms = rawChannel !== 'email' // everything except an email-only opt-out clears SMS
 
   await supabase.from('consent_ledger').insert({
     customer_id: customerId,
-    channel,
+    channel: rawChannel,
     status: 'opted_out',
     source: 'ghl_webhook',
-    notes: `GHL opt-out (${channel})`,
+    notes: `GHL opt-out (${rawChannel})`,
   })
 
-  if (channel === 'email') {
-    await supabase.from('customers').update({ consent_email: false }).eq('customer_id', customerId)
-  } else {
-    await supabase.from('customers').update({ consent_sms: false }).eq('customer_id', customerId)
+  const patch: Record<string, boolean> = {}
+  if (optOutEmail) patch.consent_email = false
+  if (optOutSms) patch.consent_sms = false
+  if (Object.keys(patch).length) {
+    await supabase.from('customers').update(patch).eq('customer_id', customerId)
   }
 }

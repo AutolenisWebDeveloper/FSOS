@@ -26,14 +26,27 @@ export const AI_PROHIBITED_ACTIONS = [
   'Make securities recommendations',
 ] as const
 
+// Half-open bands [minGdc, maxGdc): each tier's maxGdc equals the next tier's
+// minGdc so there is NO gap between tiers. (The previous inclusive maxGdc of
+// 14999/54999 left the ranges 14999–15000 and 54999–55000 unowned, so a
+// fractional-dollar rolling total like $54,999.50 matched no tier and silently
+// fell back to Tier 1 / 40%.)
 export const GDC_TIERS = [
-  { tier: 1, label: 'Tier 1', minGdc: 0,     maxGdc: 14999,   rate: 0.40, rateLabel: '40%', range: 'Under $14,999' },
-  { tier: 2, label: 'Tier 2', minGdc: 15000,  maxGdc: 54999,   rate: 0.60, rateLabel: '60%', range: '$15,000 – $54,999' },
-  { tier: 3, label: 'Tier 3', minGdc: 55000,  maxGdc: Infinity, rate: 0.80, rateLabel: '80%', range: '$55,000+' },
+  { tier: 1, label: 'Tier 1', minGdc: 0,     maxGdc: 15000,    rate: 0.40, rateLabel: '40%', range: 'Under $15,000' },
+  { tier: 2, label: 'Tier 2', minGdc: 15000, maxGdc: 55000,    rate: 0.60, rateLabel: '60%', range: '$15,000 – $54,999' },
+  { tier: 3, label: 'Tier 3', minGdc: 55000, maxGdc: Infinity, rate: 0.80, rateLabel: '80%', range: '$55,000+' },
 ] as const
 
 export function getTier(rollingGdc: number): typeof GDC_TIERS[number] {
-  return GDC_TIERS.find(t => rollingGdc >= t.minGdc && rollingGdc <= t.maxGdc) ?? GDC_TIERS[0]
+  // Round to whole cents first: a rolling GDC is summed from many numeric(12,2)
+  // cases in JS floating point, so a true $55,000.00 can land as 54999.9999998
+  // and demote a producer a full tier. Then select the highest tier whose lower
+  // threshold is met — gap-free by construction.
+  const g = Number.isFinite(rollingGdc) ? Math.round(rollingGdc * 100) / 100 : 0
+  for (let i = GDC_TIERS.length - 1; i >= 0; i--) {
+    if (g >= GDC_TIERS[i].minGdc) return GDC_TIERS[i]
+  }
+  return GDC_TIERS[0]
 }
 
 export const FFS_CONTACTS = [

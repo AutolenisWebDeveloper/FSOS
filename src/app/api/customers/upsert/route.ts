@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { requireInternalAuth } from '@/lib/http'
+import { requireInternalAuth, readJson } from '@/lib/http'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -56,7 +56,11 @@ export async function POST(req: NextRequest) {
   const unauthorized = requireInternalAuth(req)
   if (unauthorized) return unauthorized
   try {
-    const body = (await req.json()) as UpsertBody
+    // Use readJson so this route honors the shared 100 KB payload cap and
+    // returns a clean 400/413 on bad/oversized input, like every other route.
+    const parsed = await readJson<UpsertBody>(req)
+    if ('error' in parsed) return parsed.error
+    const body = parsed.data
 
     const first_name = (body.first_name || '').trim()
     const last_name = (body.last_name || '').trim()

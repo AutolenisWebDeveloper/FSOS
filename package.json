@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
-    "test": "node tests/ghlUpload.test.mjs"
+    "test": "node tests/ghlUpload.test.mjs && node tests/compliance.test.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.21.1",

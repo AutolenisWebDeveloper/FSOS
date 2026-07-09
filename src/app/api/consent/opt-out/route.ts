@@ -37,7 +37,11 @@ export async function POST(req: NextRequest) {
   } else {
     const digits = contact.replace(/\D/g, '')
     if (digits.length >= 7) {
-      const { data } = await supabase.from('customers').select('customer_id').or(`phone.ilike.%${digits}%,cell_phone.ilike.%${digits}%`).limit(1)
+      // Anchor to the END of the stored number so we match a phone that ENDS
+      // WITH these digits (tolerant of a stored "+1" country-code prefix)
+      // rather than one that merely CONTAINS them anywhere — a contains-match
+      // could opt out an unrelated customer whose number shares the substring.
+      const { data } = await supabase.from('customers').select('customer_id').or(`phone.ilike.%${digits},cell_phone.ilike.%${digits}`).limit(1)
       customer = data && data[0] ? data[0] : null
     }
   }

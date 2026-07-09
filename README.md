@@ -223,6 +223,7 @@ All routes export `dynamic = 'force-dynamic'` and `runtime = 'nodejs'`. All Supa
 | `/api/forms/responses` | GET | Internal | Retrieve stored form responses. |
 | `/api/forms/fna` | GET, POST | Internal | POST generates the FNA via Anthropic Claude (`claude-sonnet-5`); GET retrieves a stored report. |
 | `/api/assistant` | POST | Internal | Compliance-aware in-app AI assistant (Anthropic Claude). Backs the sidebar "AI Assistant" panel. |
+| `/api/health` | GET | Public | Setup diagnostics — reports (as booleans, never secret values) whether env vars are present, Supabase is reachable, and the schema has been applied. Returns `200` when healthy, `503` with `hints` otherwise. |
 | `/api/webhooks/calendly` | POST | Public | Calendly events, signature-verified (see below). |
 | `/api/webhooks/ghl` | POST | Public | GoHighLevel events (opportunity stage moves, contacts, appointments, opt-outs), `x-ghl-signature`-verified. Creates commission cases at *Application Submitted*. See `docs/ghl_integration.md`. |
 | `/api/ghl/sync` | POST | Internal | Push a customer into GHL — upsert contact + open/move opportunity at a pipeline stage (bound to the authoritative stage-ID map). |
@@ -309,6 +310,23 @@ Sales Desk hours: Mon–Fri 7AM–5PM PT
 ## Seed Data
 
 The schema seeds agency partners on first run, each with a referral slug. Agency referral URLs look like `https://your-domain.vercel.app/steven-johnson`.
+
+---
+
+## Troubleshooting
+
+**"Live data failed to load" banner in the command center.** The internal API can't reach the database. Hit `GET /api/health` on your deployment — it reports (as booleans, no secrets) exactly what's missing:
+
+```
+curl https://your-domain.vercel.app/api/health
+```
+
+Common causes:
+- **Supabase env vars not set** — set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_KEY` in your Vercel project settings, then redeploy. When these are missing the API now returns a clear `503 "Supabase is not configured …"` (shown in the banner) rather than an opaque 500.
+- **Migration not applied** — `schema_present: false` from `/api/health` means the tables don't exist yet. Run `supabase/migrations/001_initial_schema.sql` in the Supabase SQL Editor.
+- **Supabase project paused/unreachable** — `supabase_reachable: false` means the URL/key is wrong or the project is paused.
+
+After changing environment variables in Vercel you must **redeploy** for them to take effect.
 
 ---
 

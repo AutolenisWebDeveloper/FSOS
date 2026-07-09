@@ -1,5 +1,17 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
+/**
+ * Thrown when required environment configuration is missing (e.g. Supabase
+ * credentials). Distinct from runtime/query errors so API routes can return a
+ * clear "not configured yet" message (503) instead of an opaque 500.
+ */
+export class ConfigError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ConfigError'
+  }
+}
+
 // Lazy singleton — initialized on first call inside a request handler.
 // Module-level instantiation fails at Next.js build time (env vars unavailable).
 //
@@ -26,9 +38,9 @@ export function getDb(): SupabaseClient<any> {
   const key = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY
 
   if (!url || !key) {
-    throw new Error(
-      '[FSOS] Supabase env vars missing: set NEXT_PUBLIC_SUPABASE_URL (or SUPABASE_URL) and ' +
-        'SUPABASE_SERVICE_KEY (or SUPABASE_SERVICE_ROLE_KEY)'
+    throw new ConfigError(
+      'Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL (or SUPABASE_URL) and ' +
+        'SUPABASE_SERVICE_KEY (or SUPABASE_SERVICE_ROLE_KEY) in your deployment environment.'
     )
   }
 

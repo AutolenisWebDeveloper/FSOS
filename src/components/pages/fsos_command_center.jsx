@@ -4772,8 +4772,8 @@ function ClientDrawer({ customerId, onClose, toast }) {
   };
 
   useEffect(() => {
-    if (!customerId) { setData(null); setNa(null); setMp(null); setError(null); setTasks([]); setDocs([]); return; }
-    setLoading(true); setError(null); setNa(null); setMp(null);
+    if (!customerId) { setData(null); setNa(null); setMp(null); setEnr(null); setError(null); setTasks([]); setDocs([]); return; }
+    setLoading(true); setError(null); setNa(null); setMp(null); setEnr(null);
     fetch(`/api/customers/detail?id=${encodeURIComponent(customerId)}`)
       .then(async r => { if (!r.ok) throw new Error((await r.json().catch(()=>({}))).error || `HTTP ${r.status}`); return r.json(); })
       .then(setData)
@@ -4831,6 +4831,20 @@ function ClientDrawer({ customerId, onClose, toast }) {
     finally { setMpLoading(false); }
   };
 
+  const [enr, setEnr] = useState(null);
+  const [enrLoading, setEnrLoading] = useState(false);
+  const runEnrich = async () => {
+    setEnrLoading(true);
+    try {
+      const res = await fetch("/api/customers/enrich", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ customer_id: customerId }) });
+      const d = await res.json().catch(()=>({}));
+      if (!res.ok) toast(d.error || `Enrichment unavailable (HTTP ${res.status})`, "error");
+      else if (!d.matched) { toast("No Apollo match found", "info"); setEnr({ none:true }); }
+      else { setEnr(d.person); toast("Contact enriched", "success"); }
+    } catch { toast("Network error", "error"); }
+    finally { setEnrLoading(false); }
+  };
+
   if (!customerId) return null;
   const c = data?.customer || {};
   const money = v => v==null ? "—" : "$"+Number(v).toLocaleString("en-US");
@@ -4864,8 +4878,22 @@ function ClientDrawer({ customerId, onClose, toast }) {
             <div style={{display:"flex", gap:8, marginTop:14, flexWrap:"wrap"}}>
               {c.phone && <a className="btn-secondary" style={{fontSize:11, padding:"6px 12px", textDecoration:"none"}} href={`tel:${c.phone}`}>📞 Call</a>}
               {c.email && <a className="btn-secondary" style={{fontSize:11, padding:"6px 12px", textDecoration:"none"}} href={`mailto:${c.email}`}>✉ Email</a>}
+              <button className="btn-secondary" disabled={enrLoading} style={{fontSize:11, padding:"6px 12px", opacity:enrLoading?.6:1}} onClick={runEnrich} title="Enrich with Apollo (title, company, LinkedIn)">{enrLoading?"Enriching…":"✨ Enrich"}</button>
               {data.ghl?.stage && <span style={{fontSize:10, background:"#f0e9ff", color:"#6b46c1", border:"1px solid #d6bcfa", borderRadius:4, padding:"5px 9px"}}>◆ {data.ghl.pipeline} · {data.ghl.stage}</span>}
             </div>
+            {enr && !enr.none && (
+              <div style={{marginTop:10, border:"1px solid var(--border)", background:"var(--bg2)", borderRadius:8, padding:12, fontSize:11}}>
+                <div style={{fontSize:9, fontWeight:700, color:"var(--muted)", textTransform:"uppercase", marginBottom:6}}>Apollo enrichment</div>
+                <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:"4px 12px"}}>
+                  {enr.title && <div><b>Title:</b> {enr.title}</div>}
+                  {enr.company && <div><b>Company:</b> {enr.company}</div>}
+                  {enr.industry && <div><b>Industry:</b> {enr.industry}</div>}
+                  {enr.seniority && <div><b>Seniority:</b> {enr.seniority}</div>}
+                  {(enr.city||enr.state) && <div><b>Location:</b> {[enr.city,enr.state].filter(Boolean).join(", ")}</div>}
+                </div>
+                {enr.linkedin_url && <a href={enr.linkedin_url} target="_blank" rel="noreferrer" style={{color:"var(--blue)", fontSize:11, display:"inline-block", marginTop:6}}>LinkedIn ↗</a>}
+              </div>
+            )}
 
             {/* AI Next Best Action */}
             <div style={{marginTop:16, border:"1px solid #d6bcfa", background:"#faf7ff", borderRadius:10, padding:14}}>

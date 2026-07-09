@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
 import { requireInternalAuth, parseLimit } from '@/lib/http'
-import { parseCsvRecords } from '@/lib/csv'
-import { detectColumnMap, mapAndValidateRow, type CanonicalField } from '@/lib/ghlContacts'
+import { parseSpreadsheet, extensionOf, SUPPORTED_EXTENSIONS } from '@/lib/spreadsheet'
+import { resolveColumns, mapAndValidateRow, type CanonicalField } from '@/lib/ghlContacts'
+import { aiDetectColumns, columnAiEnabled } from '@/lib/columnAI'
 import {
   ghlEnabled,
   ghlLocationId,
@@ -79,14 +80,18 @@ export async function POST(req: NextRequest) {
 
   const file = formData.get('file')
   if (!(file instanceof File) || file.size === 0) {
-    return NextResponse.json({ error: 'A non-empty CSV file is required.' }, { status: 400 })
+    return NextResponse.json({ error: 'A non-empty CSV or Excel (.xlsx) file is required.' }, { status: 400 })
   }
   if (file.size > MAX_FILE_BYTES) {
     return NextResponse.json({ error: 'File exceeds the 5MB limit.' }, { status: 413 })
   }
-  const ext = (file.name.split('.').pop() || '').toLowerCase()
-  if (ext && ext !== 'csv') {
-    return NextResponse.json({ error: `Only .csv files are accepted (got .${ext}).` }, { status: 415 })
+  const ext = extensionOf(file.name)
+  if (ext && !SUPPORTED_EXTENSIONS.includes(ext as (typeof SUPPORTED_EXTENSIONS)[number])) {
+    const hint = ext === 'xls' ? ' Re-save legacy .xls as .xlsx or .csv.' : ''
+    return NextResponse.json(
+      { error: `Only .csv and .xlsx files are accepted (got .${ext}).${hint}` },
+      { status: 415 },
+    )
   }
 
   // Batch-wide defaults.
@@ -96,6 +101,8 @@ export async function POST(req: NextRequest) {
     .filter(Boolean)
   const source = String(formData.get('source') || '').trim() || 'csv_upload'
   const agencyOwner = String(formData.get('agency_owner') || '').trim()
+  // AI column recognition is on by default when configured; `ai=false` disables it.
+  const useAi = String(formData.get('ai') || 'true').trim().toLowerCase() !== 'false'
   const pipelineKey = String(formData.get('pipeline') || '').trim() as GhlPipeline['key'] | ''
   const stageRaw = String(formData.get('stage') || '').trim()
   const stagePosition = stageRaw ? Number.parseInt(stageRaw, 10) : null
@@ -114,11 +121,23 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Parse + inspect the file.
-  const text = await file.text()
-  const { headers, rows } = parseCsvRecords(text)
-  if (rows.length === 0) {
-    return NextResponse.json({ error: 'The CSV has a header row but no data rows.' }, { status: 400 })
+  // Parse + inspect the file (CSV or .xlsx).
+  let headers: string[]
+  let rows: Array<Record<string, string>>
+  try {
+    const buffer = Buffer.from(await file.arrayBuffer())
+    const parsed = await parseSpreadsheet(buffer, file.name)
+    headers = parsed.headers
+    rows = parsed.rows
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'Could not read the file.' },
+      { status: 415 },
+    )
+  }
+
+  if (headers.length === 0 || rows.length === 0) {
+    return NextResponse.json({ error: 'The file has no data rows to import.' }, { status: 400 })
   }
   if (rows.length > MAX_ROWS) {
     return NextResponse.json(
@@ -127,7 +146,12 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const colMap: Record<string, CanonicalField> = detectColumnMap(headers)
+  // Intelligent column recognition: exact header aliases → AI (reads headers +
+  // sample rows) → content inference from the values themselves.
+  const aiResult = useAi ? await aiDetectColumns(headers, rows) : null
+  const resolved = resolveColumns(headers, rows, aiResult?.map)
+  const colMap: Record<string, CanonicalField> = resolved.map
+
   const mappedFields = new Set(Object.values(colMap))
   const hasName = mappedFields.has('first_name') || mappedFields.has('last_name') || mappedFields.has('full_name')
   const hasContact = mappedFields.has('email') || mappedFields.has('phone')
@@ -135,9 +159,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         error:
-          'Could not detect the required columns. The CSV needs a name column (name / first name / last name) ' +
-          'and at least one of email or phone.',
+          'Could not recognize the required columns. The file needs a name (full name, or first + last) ' +
+          'and at least one of email or phone. Detected columns are listed below — rename the headers or ' +
+          'check the data and try again.',
         detected_columns: colMap,
+        detection_method: resolved.method,
         headers,
       },
       { status: 422 },
@@ -328,6 +354,9 @@ export async function POST(req: NextRequest) {
     total: rows.length,
     counts,
     detected_columns: colMap,
+    detection_method: resolved.method,
+    ai_used: !!aiResult,
+    ai_available: columnAiEnabled(),
     // Return only the rows that need operator attention to keep the payload lean.
     rows: results.filter((r) => r.status !== 'success'),
   })

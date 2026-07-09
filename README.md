@@ -14,7 +14,8 @@ A full-stack command center for **Markist**, a licensed Farmers Financial Servic
 | Database | Supabase (PostgreSQL + RLS + pg_cron + private Storage) |
 | Deployment | Vercel (`iad1` region) |
 | Booking / calendar | Calendly (webhook-driven) |
-| AI (text) | Anthropic Claude API (`claude-sonnet-5`) |
+| AI (text) | Anthropic Claude API (`claude-sonnet-5`) — FNA, assistant, contact-upload column recognition |
+| Spreadsheets | ExcelJS (`.xlsx` reader) + dependency-free CSV parser |
 | AI voice | Retell AI (config only; not yet wired into routes) |
 | Email | Resend |
 | SMS | Twilio (direct REST API) |
@@ -99,7 +100,9 @@ fsos/
 │       ├── fna.ts                        # FNA prompt + report shaping
 │       ├── forms.ts                      # Form catalog + helpers
 │       ├── ghl.ts                        # GHL pipeline/stage ID map + REST client + retry
-│       ├── ghlContacts.ts                # CSV → GHL contact field mapping + validation
+│       ├── ghlContacts.ts                # Contact field mapping + validation + column inference
+│       ├── columnAI.ts                   # AI column recognition (Claude reads headers + sample rows)
+│       ├── spreadsheet.ts                # Unified CSV + Excel (.xlsx) loader
 │       ├── csv.ts                        # Dependency-free RFC-4180 CSV parser
 │       ├── http.ts                       # readJson, parseLimit, requireInternalAuth
 │       ├── tokens.ts                     # Secure form-token generation/verification
@@ -226,7 +229,7 @@ All routes export `dynamic = 'force-dynamic'` and `runtime = 'nodejs'`. All Supa
 | `/api/webhooks/calendly` | POST | Public | Calendly events, signature-verified (see below). |
 | `/api/webhooks/ghl` | POST | Public | GoHighLevel events (opportunity stage moves, contacts, appointments, opt-outs), `x-ghl-signature`-verified. Creates commission cases at *Application Submitted*. See `docs/ghl_integration.md`. |
 | `/api/ghl/sync` | POST | Internal | Push a customer into GHL — upsert contact + open/move opportunity at a pipeline stage (bound to the authoritative stage-ID map). |
-| `/api/ghl/contacts/upload` | GET, POST | Internal | CSV bulk contact import → GHL. POST validates, de-dupes, maps fields, upserts (no duplicates), tags/stages, retries transient failures, logs the batch. GET returns upload history (`?batch_id=` for rows). See `docs/ghl_integration.md` §5. |
+| `/api/ghl/contacts/upload` | GET, POST | Internal | CSV/Excel bulk contact import → GHL. POST reads the file, **intelligently recognizes columns** (header alias → AI reading headers+rows → value patterns), validates, de-dupes, maps fields, upserts (no duplicates), tags/stages, retries transient failures, logs the batch. GET returns upload history (`?batch_id=` for rows). See `docs/ghl_integration.md` §5. |
 
 ---
 

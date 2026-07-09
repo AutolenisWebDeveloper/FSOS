@@ -178,3 +178,121 @@ export function mapAndValidateRow(
     errors: [],
   }
 }
+
+// ── Content-based column inference ────────────────────────────────────────
+// When a header can't be resolved by name (e.g. "Col3", a non-English header,
+// or a headerless export), infer the field from the *values* in the column.
+
+const US_STATES = new Set(
+  (
+    'AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM ' +
+    'NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY DC ' +
+    'alabama alaska arizona arkansas california colorado connecticut delaware florida georgia hawaii idaho ' +
+    'illinois indiana iowa kansas kentucky louisiana maine maryland massachusetts michigan minnesota ' +
+    'mississippi missouri montana nebraska nevada ohio oklahoma oregon pennsylvania tennessee texas utah ' +
+    'vermont virginia washington wisconsin wyoming'
+  )
+    .toLowerCase()
+    .split(/\s+/),
+)
+
+function isUsState(v: string): boolean {
+  const t = v.trim().toLowerCase()
+  return t.length > 0 && US_STATES.has(t)
+}
+
+function isFullName(v: string): boolean {
+  const t = v.trim()
+  if (!t || /[@\d]/.test(t)) return false
+  return /^[A-Za-z][A-Za-z .,'-]*$/.test(t) && t.split(/\s+/).length >= 2
+}
+
+function isZip(v: string): boolean {
+  return /^\d{5}(-\d{4})?$/.test(v.trim())
+}
+
+// Detectors for the pattern-recognizable fields, most specific first.
+const CONTENT_DETECTORS: Array<{ field: CanonicalField; test: (v: string) => boolean }> = [
+  { field: 'email', test: (v) => !!normalizeEmail(v) },
+  { field: 'phone', test: (v) => !!normalizePhone(v) },
+  { field: 'postal_code', test: isZip },
+  { field: 'state', test: isUsState },
+  { field: 'full_name', test: isFullName },
+]
+
+const CONTENT_MIN_CONFIDENCE = 0.6 // ≥60% of non-empty cells must match
+const CONTENT_SAMPLE = 40
+
+/**
+ * Infer a column→field map purely from cell values. Each column is scored
+ * against every detector over a sample of its non-empty cells; the highest
+ * confident, non-conflicting assignments win (email/phone before name, etc.).
+ */
+export function inferColumnMap(
+  headers: string[],
+  rows: Array<Record<string, string>>,
+): Record<string, CanonicalField> {
+  const sample = rows.slice(0, CONTENT_SAMPLE)
+  const candidates: Array<{ header: string; field: CanonicalField; score: number }> = []
+
+  for (const header of headers) {
+    const values = sample.map((r) => (r[header] ?? '').trim()).filter(Boolean)
+    if (values.length === 0) continue
+    for (const { field, test } of CONTENT_DETECTORS) {
+      const hits = values.reduce((n, v) => n + (test(v) ? 1 : 0), 0)
+      const score = hits / values.length
+      if (score >= CONTENT_MIN_CONFIDENCE) candidates.push({ header, field, score })
+    }
+  }
+
+  candidates.sort((a, b) => b.score - a.score)
+  const map: Record<string, CanonicalField> = {}
+  const usedFields = new Set<CanonicalField>()
+  for (const c of candidates) {
+    if (map[c.header] || usedFields.has(c.field)) continue
+    map[c.header] = c.field
+    usedFields.add(c.field)
+  }
+  return map
+}
+
+export type DetectionMethod = 'header' | 'content' | 'ai'
+
+export interface ResolvedColumns {
+  map: Record<string, CanonicalField>
+  method: Record<string, DetectionMethod>
+}
+
+/**
+ * Merge the three detection strategies into one authoritative column map,
+ * in precedence order: exact header aliases (highest precision) → AI mapping
+ * (reads headers + sample data) → content inference (value patterns). The
+ * first strategy to claim a header/field wins; `method` records which did.
+ */
+export function resolveColumns(
+  headers: string[],
+  rows: Array<Record<string, string>>,
+  aiMap?: Record<string, CanonicalField> | null,
+): ResolvedColumns {
+  const map: Record<string, CanonicalField> = {}
+  const method: Record<string, DetectionMethod> = {}
+  const usedFields = new Set<CanonicalField>()
+
+  const assign = (header: string, field: CanonicalField | undefined, how: DetectionMethod) => {
+    if (!field || map[header] || usedFields.has(field)) return
+    map[header] = field
+    method[header] = how
+    usedFields.add(field)
+  }
+
+  const headerMap = detectColumnMap(headers)
+  for (const h of headers) assign(h, headerMap[h], 'header')
+  if (aiMap) for (const h of headers) assign(h, aiMap[h], 'ai')
+  const contentMap = inferColumnMap(headers, rows)
+  for (const h of headers) assign(h, contentMap[h], 'content')
+
+  return { map, method }
+}
+
+/** The canonical fields the AI mapper is allowed to choose from. */
+export const CANONICAL_FIELDS = Object.keys(HEADER_ALIASES) as CanonicalField[]

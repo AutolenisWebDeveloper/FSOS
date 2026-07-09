@@ -4253,6 +4253,121 @@ function AssistantModal({open,onClose}){
 }
 
 // ─────────────────────────────────────────────────────────
+// SETTINGS — integration & health status (GET /api/health)
+// ─────────────────────────────────────────────────────────
+const INTEGRATIONS = [
+  { key:"supabase", label:"Supabase (database)", powers:"All data, storage, scoring", test:h=>h.env?.supabase_url && h.env?.supabase_service_key },
+  { key:"anthropic_key", label:"Anthropic Claude (AI)", powers:"FNA, assistant, next-action, meeting prep, briefing", test:h=>h.env?.anthropic_key },
+  { key:"resend_key", label:"Resend (email)", powers:"Form sends, briefing, campaigns, confirmations", test:h=>h.env?.resend_key },
+  { key:"twilio", label:"Twilio (SMS)", powers:"Form sends & SMS campaign steps", test:h=>h.env?.twilio },
+  { key:"ghl_key", label:"GoHighLevel", powers:"Pipeline sync & contact upload", test:h=>h.env?.ghl_key },
+  { key:"apollo_key", label:"Apollo (enrichment)", powers:"Contact enrichment in the client drawer", test:h=>h.env?.apollo_key },
+  { key:"calendly_secret", label:"Calendly", powers:"Appointment booking webhook", test:h=>h.env?.calendly_secret },
+  { key:"admin_gate_enabled", label:"Admin auth gate", powers:"Password-protects the command center", test:h=>h.env?.admin_gate_enabled },
+  { key:"internal_api_secret", label:"Internal API secret", powers:"Bearer auth for server-to-server calls", test:h=>h.env?.internal_api_secret },
+];
+function SettingsPage({ toast }) {
+  const [health, setHealth] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const load = () => { setLoading(true); fetch("/api/health").then(r=>r.json().catch(()=>({}))).then(setHealth).catch(()=>setHealth(null)).finally(()=>setLoading(false)); };
+  useEffect(load, []);
+  const card = { background:"var(--card)", border:"1px solid var(--border)", borderRadius:10, padding:16, boxShadow:"var(--shadow)" };
+  const pill = (ok) => (
+    <span style={{fontSize:9, fontWeight:700, textTransform:"uppercase", padding:"2px 9px", borderRadius:20, background:ok?"#dcfce7":"#fee2e2", color:ok?"#166534":"#991b1b"}}>{ok?"✓ Configured":"Not set"}</span>
+  );
+  return (
+    <div>
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14}}>
+        <div style={{fontSize:11, color:"var(--muted)"}}>Read-only status. Configure secrets in your Vercel project → Settings → Environment Variables.</div>
+        <button className="btn-secondary" style={{fontSize:11, padding:"5px 12px"}} onClick={load}>↻ Refresh</button>
+      </div>
+      {loading && <div style={{fontSize:12, color:"var(--muted)"}}>Checking…</div>}
+      {!loading && health && (<>
+        <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))", gap:12, marginBottom:16}}>
+          <div style={{...card, textAlign:"center"}}><div style={{fontSize:22}}>{health.ok?"🟢":"🟠"}</div><div style={{fontSize:11, color:"var(--muted)", marginTop:4}}>{health.ok?"All systems go":"Needs setup"}</div></div>
+          <div style={{...card, textAlign:"center"}}><div style={{fontSize:22}}>{health.supabase_reachable?"🟢":"🔴"}</div><div style={{fontSize:11, color:"var(--muted)", marginTop:4}}>Supabase reachable</div></div>
+          <div style={{...card, textAlign:"center"}}><div style={{fontSize:22}}>{health.schema_present?"🟢":"🔴"}</div><div style={{fontSize:11, color:"var(--muted)", marginTop:4}}>Schema present</div></div>
+        </div>
+        <div style={{...card, marginBottom:16, padding:0, overflow:"hidden"}}>
+          <div style={{padding:"10px 16px", fontSize:12, fontWeight:700, color:"var(--navy)", borderBottom:"1px solid var(--border)"}}>Integrations</div>
+          {INTEGRATIONS.map(it=>{
+            const ok = !!it.test(health);
+            return (
+              <div key={it.key} style={{display:"grid", gridTemplateColumns:"1fr auto", gap:10, alignItems:"center", padding:"11px 16px", borderBottom:"1px solid var(--border)"}}>
+                <div><div style={{fontSize:12, fontWeight:600, color:"var(--navy)"}}>{it.label}</div><div style={{fontSize:10, color:"var(--muted)"}}>{it.powers}</div></div>
+                {pill(ok)}
+              </div>
+            );
+          })}
+        </div>
+        {health.hints && health.hints.length>0 && (
+          <div style={{...card, borderColor:"#fbd38d", background:"#fffaf0"}}>
+            <div style={{fontSize:12, fontWeight:700, color:"#b7791f", marginBottom:8}}>Setup hints</div>
+            <ul style={{margin:0, paddingLeft:18}}>{health.hints.map((h,i)=><li key={i} style={{fontSize:11, color:"var(--text)", lineHeight:1.6}}>{h}</li>)}</ul>
+          </div>
+        )}
+        <div style={{fontSize:9, color:"var(--muted)", marginTop:14, lineHeight:1.5}}>
+          Migrations required for full functionality: 001–007 in <b>supabase/migrations/</b>. This screen shows only
+          whether each secret is present — never the values.
+        </div>
+      </>)}
+      {!loading && !health && <div style={{...card, color:"var(--red)"}}>Could not reach the health endpoint.</div>}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
+// HELP — quick reference + support contacts
+// ─────────────────────────────────────────────────────────
+function HelpPage() {
+  const card = { background:"var(--card)", border:"1px solid var(--border)", borderRadius:10, padding:18, boxShadow:"var(--shadow)" };
+  const guide = [
+    ["🔍 Search & Client 360", "Search any client or agency in the top bar, then open the profile for policies, scores, activity, documents, follow-ups, and AI actions."],
+    ["✦ AI actions", "In a client's drawer: Next Best Action drafts an SMS/email, Meeting Prep builds a pre-appointment one-pager, and Enrich pulls Apollo firmographics."],
+    ["✅ Follow-Ups", "Track tasks (Overdue / Today / Week) and turn upcoming renewals, anniversaries, and birthdays into one-click follow-ups."],
+    ["📣 Campaigns", "Build multi-step email/SMS drip sequences, enroll contacts by pipeline or source, and run due sends (schedule /api/campaigns/run for automation)."],
+    ["📊 Reports", "Pipeline mix, lead sources, case status, GDC by month, and activity — refreshed on demand."],
+    ["📥 Contact Upload", "Import CSV/Excel contacts into GoHighLevel with intelligent column recognition, de-dupe, and validation."],
+    ["📋 Client Forms & FNA", "Send intake forms and generate a compliant Financial Needs Analysis with the AI."],
+    ["📅 Workshops", "Share the public registration link at /events/<id>; registrants are auto-added to your book."],
+  ];
+  return (
+    <div style={{display:"grid", gridTemplateColumns:"minmax(0,1.4fr) minmax(0,1fr)", gap:16, alignItems:"start"}}>
+      <div style={card}>
+        <div style={{fontSize:15, fontWeight:700, color:"var(--navy)", marginBottom:12}}>Feature guide</div>
+        {guide.map((g,i)=>(
+          <div key={i} style={{padding:"10px 0", borderBottom:i<guide.length-1?"1px solid var(--border)":"none"}}>
+            <div style={{fontSize:13, fontWeight:600, color:"var(--navy)"}}>{g[0]}</div>
+            <div style={{fontSize:11, color:"var(--muted)", lineHeight:1.6, marginTop:3}}>{g[1]}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{display:"flex", flexDirection:"column", gap:16}}>
+        <div style={card}>
+          <div style={{fontSize:14, fontWeight:700, color:"var(--navy)", marginBottom:10}}>Support</div>
+          {FFS_CONTACTS.map((c,i)=>(
+            <div key={i} style={{padding:"7px 0", borderBottom:i<FFS_CONTACTS.length-1?"1px solid var(--border)":"none"}}>
+              <div style={{fontSize:11, fontWeight:600}}>{c.role}</div>
+              <div style={{fontSize:10, color:"var(--muted)"}}>{c.name}</div>
+              <a href={"tel:"+toTel(c.tel)} style={{fontSize:11, color:"var(--blue)", fontFamily:"DM Mono,monospace", textDecoration:"none"}}>{c.tel}</a>
+            </div>
+          ))}
+        </div>
+        <div style={card}>
+          <div style={{fontSize:14, fontWeight:700, color:"var(--navy)", marginBottom:8}}>Legal &amp; public pages</div>
+          <div style={{display:"flex", flexDirection:"column", gap:6}}>
+            <a href="/privacy" target="_blank" rel="noreferrer" style={{fontSize:12, color:"var(--blue)"}}>Privacy Policy ↗</a>
+            <a href="/terms" target="_blank" rel="noreferrer" style={{fontSize:12, color:"var(--blue)"}}>Terms of Service ↗</a>
+            <a href="/unsubscribe" target="_blank" rel="noreferrer" style={{fontSize:12, color:"var(--blue)"}}>Opt-Out / Unsubscribe ↗</a>
+            <a href="/events" target="_blank" rel="noreferrer" style={{fontSize:12, color:"var(--blue)"}}>Public workshops index ↗</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
 // CAMPAIGNS — drip SMS/email sequences (#6)
 // GET/POST /api/campaigns · POST /api/campaigns/enroll · /run
 // ─────────────────────────────────────────────────────────
@@ -5104,6 +5219,8 @@ export default function App(){
     {id:"needs",     icon:"🗺", label:"Needs Map"},
     {id:"calc",      icon:"📐", label:"Sales Calculator"},
     {id:"contacts",  icon:"📞", label:"FFS Contacts"},
+    {id:"settings",  icon:"⚙️", label:"Settings"},
+    {id:"help",      icon:"❓", label:"Help"},
     {id:"forms",     icon:"📋", label:"Client Forms",   badge:livePendingForms||null, bc:"orange"},
     {id:"fna",       icon:"✦",  label:"FNA Generator"},
   ];
@@ -5113,7 +5230,7 @@ export default function App(){
     {name:"Conversion AI",status:"running",ct:"—"},
     {name:"Follow Up AI",status:"running",ct:"—"},
   ];
-  const pageTitle={briefing:"Daily Briefing",dashboard:"Dashboard",opps:"Opportunities",agencies:"Agency Owners",upload:"Contact Upload",followups:"Follow-Ups",campaigns:"Drip Campaigns",reports:"Reports & Analytics",conv:"Conversion Center",opra:"OPRA Center",calendar:"Calendar",ai:"AI Control Center",workshops:"Workshops",gdc:"GDC & Commission",prep:"Financial Review Prep",needs:"Customer Needs Map",calc:"Sales Calculator",contacts:"FFS Contacts",forms:"Client Forms",fna:"Financial Needs Analysis"};
+  const pageTitle={briefing:"Daily Briefing",dashboard:"Dashboard",opps:"Opportunities",agencies:"Agency Owners",upload:"Contact Upload",followups:"Follow-Ups",campaigns:"Drip Campaigns",reports:"Reports & Analytics",conv:"Conversion Center",opra:"OPRA Center",calendar:"Calendar",ai:"AI Control Center",workshops:"Workshops",gdc:"GDC & Commission",prep:"Financial Review Prep",needs:"Customer Needs Map",calc:"Sales Calculator",contacts:"FFS Contacts",settings:"Settings & Integrations",help:"Help & Support",forms:"Client Forms",fna:"Financial Needs Analysis"};
 
   return(<>
     <style>{G}</style>
@@ -5193,6 +5310,8 @@ export default function App(){
           {page==="followups"  &&<FollowUpsPage toast={toast} onOpenCustomer={setDrawerCustomerId}/>}
           {page==="campaigns"  &&<CampaignsPage toast={toast}/>}
           {page==="reports"    &&<ReportsPage toast={toast}/>}
+          {page==="settings"   &&<SettingsPage toast={toast}/>}
+          {page==="help"       &&<HelpPage/>}
           {page==="calendar"   &&<Calendar toast={toast} appData={appData}/>}
           {page==="workshops"  &&<WorkshopsPage toast={toast}/>}
           {page==="gdc"        &&<GDCPage tier={tier} setTier={setTier} toast={toast} appData={appData}/>}

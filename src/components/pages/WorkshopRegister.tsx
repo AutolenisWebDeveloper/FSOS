@@ -5,6 +5,7 @@
 // attendee via the public POST /api/workshops/register endpoint.
 
 import { useEffect, useState } from 'react'
+import PublicFooter from '@/components/PublicFooter'
 
 interface Workshop {
   workshop_id: string
@@ -20,6 +21,7 @@ const wrap: React.CSSProperties = {
   minHeight: '100vh',
   background: '#f4f6f9',
   display: 'flex',
+  flexDirection: 'column',
   alignItems: 'center',
   justifyContent: 'center',
   padding: 20,
@@ -139,6 +141,7 @@ export default function WorkshopRegister({ workshopId }: { workshopId: string })
           )}
         </div>
       </div>
+      <PublicFooter />
     </div>
   )
 }

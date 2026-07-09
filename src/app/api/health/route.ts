@@ -15,6 +15,8 @@ export async function GET() {
     anthropic_key: !!process.env.ANTHROPIC_API_KEY,
     resend_key: !!process.env.RESEND_API_KEY,
     twilio: !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER),
+    ghl_key: !!process.env.GHL_API_KEY,
+    apollo_key: !!process.env.APOLLO_API_KEY,
     calendly_secret: !!process.env.CALENDLY_WEBHOOK_SECRET,
     admin_gate_enabled: !!process.env.FSOS_ADMIN_PASSWORD,
     internal_api_secret: !!process.env.FSOS_API_SECRET,

@@ -96,6 +96,22 @@ export function requireInternalAuth(req: NextRequest): NextResponse | null {
   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 }
 
+/** Best-effort identity of the operator behind an internal request, for audit fields. */
+export function callerLabel(req: NextRequest): string {
+  const header = req.headers.get('authorization') || ''
+  if (header.startsWith('Basic ')) {
+    try {
+      const decoded = Buffer.from(header.slice(6), 'base64').toString('utf8')
+      const user = decoded.slice(0, decoded.indexOf(':'))
+      if (user) return user
+    } catch {
+      /* ignore */
+    }
+  }
+  if (header.startsWith('Bearer ')) return 'api'
+  return 'internal'
+}
+
 /** Authorization header a server-to-server caller should send for internal routes. */
 export function internalAuthHeader(): Record<string, string> {
   const apiSecret = process.env.FSOS_API_SECRET

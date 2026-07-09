@@ -3909,15 +3909,32 @@ function AIControlCenter({toast}) {
 // ─────────────────────────────────────────────────────────
 function DailyBriefing({onNav, toast, appData={}}) {
   const { counts={}, urgentConversions=[], topOpportunities=[], gdc={}, pendingForms=[], briefing=null, loading=false } = appData;
+  const [emailing, setEmailing] = useState(false);
 
   const expectedGDC = (gdc.pipeline||0) / 30; // rough daily estimate
   const fmtK1 = n => "$"+Math.round((n||0)/1000)+"k";
 
+  const emailBriefing = async () => {
+    setEmailing(true);
+    try {
+      const res = await fetch("/api/briefing/send", { method:"POST", headers:{"Content-Type":"application/json"}, body:"{}" });
+      const d = await res.json().catch(()=>({}));
+      if (!res.ok) toast(d.error || `Could not send (HTTP ${res.status})`, "error");
+      else toast(`Briefing emailed to ${d.to}`, "success");
+    } catch { toast("Network error sending briefing", "error"); }
+    finally { setEmailing(false); }
+  };
+
   return (<>
-    <div style={{marginBottom:20}}>
-      <div style={{fontSize:11,color:"var(--muted)",fontFamily:"DM Mono,monospace",letterSpacing:".08em",textTransform:"uppercase",marginBottom:4}}>Daily Briefing · {today}</div>
-      <div style={{fontSize:28,fontWeight:700,color:"var(--navy)",marginBottom:4}}>Good Morning, Markist 👋</div>
-      <div style={{fontSize:13,color:"var(--muted)"}}>Here's everything you need for today — your priorities, appointments, pipeline, and AI activity.</div>
+    <div style={{marginBottom:20, display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:12, flexWrap:"wrap"}}>
+      <div>
+        <div style={{fontSize:11,color:"var(--muted)",fontFamily:"DM Mono,monospace",letterSpacing:".08em",textTransform:"uppercase",marginBottom:4}}>Daily Briefing · {today}</div>
+        <div style={{fontSize:28,fontWeight:700,color:"var(--navy)",marginBottom:4}}>Good Morning, Markist 👋</div>
+        <div style={{fontSize:13,color:"var(--muted)"}}>Here's everything you need for today — your priorities, appointments, pipeline, and AI activity.</div>
+      </div>
+      <button className="btn-secondary" disabled={emailing} style={{fontSize:11, padding:"8px 14px", whiteSpace:"nowrap", opacity:emailing?.6:1}} onClick={emailBriefing} title="AI-writes today's briefing and emails it to you">
+        {emailing ? "Sending…" : "✉ Email me this briefing"}
+      </button>
     </div>
 
     {/* TOP METRICS */}
@@ -4235,11 +4252,821 @@ function AssistantModal({open,onClose}){
   );
 }
 
+// ─────────────────────────────────────────────────────────
+// CAMPAIGNS — drip SMS/email sequences (#6)
+// GET/POST /api/campaigns · POST /api/campaigns/enroll · /run
+// ─────────────────────────────────────────────────────────
+const ENROLL_PIPELINES = ["","general","conversions","opra","life","retirement","business","owner"];
+function CampaignsPage({ toast }) {
+  const [campaigns, setCampaigns] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [name, setName] = useState("");
+  const [channel, setChannel] = useState("email");
+  const [steps, setSteps] = useState([{ delay_days:0, subject:"", body:"" }]);
+  const [saving, setSaving] = useState(false);
+  const [enrollFor, setEnrollFor] = useState(null); // campaign_id
+  const [enrollPipeline, setEnrollPipeline] = useState("");
+  const [enrollSource, setEnrollSource] = useState("");
+
+  const load = () => { setLoading(true); fetch("/api/campaigns").then(r=>r.ok?r.json():{campaigns:[]}).then(d=>setCampaigns(d.campaigns||[])).catch(()=>setCampaigns([])).finally(()=>setLoading(false)); };
+  useEffect(load, []);
+
+  const setStep = (i, key, val) => setSteps(s => s.map((st,idx)=> idx===i ? {...st,[key]:val} : st));
+  const create = async () => {
+    if (!name.trim()) { toast("Name the campaign","error"); return; }
+    if (steps.some(s=>!s.body.trim())) { toast("Every step needs a message body","error"); return; }
+    setSaving(true);
+    try {
+      const res = await fetch("/api/campaigns", { method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ name:name.trim(), channel, steps: steps.map(s=>({ delay_days:Number(s.delay_days)||0, subject:s.subject||undefined, body:s.body })) }) });
+      if (!res.ok) { const d=await res.json().catch(()=>({})); toast(d.error||"Could not create","error"); }
+      else { setName(""); setSteps([{delay_days:0,subject:"",body:""}]); toast("Campaign created","success"); load(); }
+    } catch { toast("Network error","error"); } finally { setSaving(false); }
+  };
+  const enroll = async (campaign_id) => {
+    if (!enrollPipeline && !enrollSource.trim()) { toast("Choose a pipeline or enter a source","error"); return; }
+    try {
+      const res = await fetch("/api/campaigns/enroll", { method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ campaign_id, pipeline:enrollPipeline||undefined, source:enrollSource.trim()||undefined }) });
+      const d = await res.json().catch(()=>({}));
+      if (!res.ok) toast(d.error||"Enroll failed","error");
+      else { toast(`Enrolled ${d.enrolled} of ${d.matched} matched`,"success"); setEnrollFor(null); setEnrollPipeline(""); setEnrollSource(""); load(); }
+    } catch { toast("Network error","error"); }
+  };
+  const run = async (campaign_id) => {
+    try {
+      const res = await fetch("/api/campaigns/run", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ campaign_id }) });
+      const d = await res.json().catch(()=>({}));
+      if (!res.ok) toast(d.error||"Run failed","error");
+      else { const c=d.counts||{}; toast(`Sent ${c.sent||0} · skipped ${c.skipped||0} · failed ${c.failed||0} · completed ${c.completed||0}`, (c.failed?"info":"success")); load(); }
+    } catch { toast("Network error","error"); }
+  };
+
+  const card = { background:"var(--card)", border:"1px solid var(--border)", borderRadius:10, padding:16, boxShadow:"var(--shadow)" };
+  const inp = { padding:"7px 9px", border:"1px solid var(--border)", borderRadius:6, fontSize:11, fontFamily:"DM Sans,sans-serif", width:"100%" };
+
+  return (
+    <div style={{display:"grid", gridTemplateColumns:"minmax(0,1fr) minmax(0,1.2fr)", gap:16, alignItems:"start"}}>
+      {/* Create */}
+      <div style={card}>
+        <div style={{fontSize:14, fontWeight:700, color:"var(--navy)", marginBottom:12}}>New Drip Campaign</div>
+        <div style={{display:"grid", gridTemplateColumns:"1fr 110px", gap:8, marginBottom:10}}>
+          <input value={name} onChange={e=>setName(e.target.value)} placeholder="Campaign name" style={inp}/>
+          <select value={channel} onChange={e=>setChannel(e.target.value)} style={{...inp, background:"#fff"}}>
+            <option value="email">Email</option><option value="sms">SMS</option>
+          </select>
+        </div>
+        <div style={{fontSize:10, color:"var(--muted)", marginBottom:8}}>Steps send in order; delay is days after the previous step. Use {"{first_name}"} for personalization.</div>
+        {steps.map((s,i)=>(
+          <div key={i} style={{border:"1px solid var(--border)", borderRadius:8, padding:10, marginBottom:8}}>
+            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6}}>
+              <span style={{fontSize:10, fontWeight:700, color:"var(--navy)"}}>Step {i+1}</span>
+              <div style={{display:"flex", alignItems:"center", gap:6}}>
+                <span style={{fontSize:9, color:"var(--muted)"}}>after</span>
+                <input type="number" min="0" value={s.delay_days} onChange={e=>setStep(i,"delay_days",e.target.value)} style={{...inp, width:52, padding:"4px 6px"}}/>
+                <span style={{fontSize:9, color:"var(--muted)"}}>days</span>
+                {steps.length>1 && <button className="btn-secondary" style={{fontSize:9, padding:"2px 7px"}} onClick={()=>setSteps(steps.filter((_,idx)=>idx!==i))}>✕</button>}
+              </div>
+            </div>
+            {channel==="email" && <input value={s.subject} onChange={e=>setStep(i,"subject",e.target.value)} placeholder="Subject" style={{...inp, marginBottom:6}}/>}
+            <textarea value={s.body} onChange={e=>setStep(i,"body",e.target.value)} placeholder="Message body…" rows={3} style={{...inp, resize:"vertical"}}/>
+          </div>
+        ))}
+        <button className="btn-secondary" style={{fontSize:10, padding:"5px 10px", marginRight:8}} onClick={()=>setSteps([...steps,{delay_days:3,subject:"",body:""}])}>+ Add step</button>
+        <button className="btn-primary" disabled={saving} style={{fontSize:11, padding:"7px 16px"}} onClick={create}>{saving?"Saving…":"Create Campaign"}</button>
+      </div>
+
+      {/* List */}
+      <div>
+        <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10}}>
+          <div style={{fontSize:14, fontWeight:700, color:"var(--navy)"}}>Campaigns</div>
+          <button className="btn-secondary" style={{fontSize:10, padding:"4px 10px"}} onClick={load}>↻ Refresh</button>
+        </div>
+        {loading && <div style={{fontSize:12, color:"var(--muted)"}}>Loading…</div>}
+        {!loading && campaigns.length===0 && <div style={{...card, textAlign:"center", fontSize:12, color:"var(--muted)"}}>No campaigns yet. Build one on the left.</div>}
+        <div style={{display:"flex", flexDirection:"column", gap:12}}>
+          {campaigns.map(c=>(
+            <div key={c.campaign_id} style={card}>
+              <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start"}}>
+                <div>
+                  <div style={{fontSize:13, fontWeight:700, color:"var(--navy)"}}>{c.name}</div>
+                  <div style={{fontSize:10, color:"var(--muted)"}}>{c.channel} · {(c.steps||[]).length} steps · {c.enrollments?.active||0} active / {c.enrollments?.completed||0} done / {c.enrollments?.total||0} total</div>
+                </div>
+                <span style={{fontSize:14}}>{c.channel==="email"?"✉":"💬"}</span>
+              </div>
+              <div style={{display:"flex", gap:6, marginTop:10}}>
+                <button className="btn-secondary" style={{fontSize:10, padding:"5px 11px"}} onClick={()=>setEnrollFor(enrollFor===c.campaign_id?null:c.campaign_id)}>Enroll</button>
+                <button className="btn-primary" style={{fontSize:10, padding:"5px 11px"}} onClick={()=>run(c.campaign_id)}>▶ Run due sends</button>
+              </div>
+              {enrollFor===c.campaign_id && (
+                <div style={{marginTop:10, padding:10, background:"var(--bg2)", borderRadius:8, display:"grid", gridTemplateColumns:"1fr 1fr auto", gap:8, alignItems:"center"}}>
+                  <select value={enrollPipeline} onChange={e=>setEnrollPipeline(e.target.value)} style={{...inp, background:"#fff"}}>
+                    {ENROLL_PIPELINES.map(p=><option key={p} value={p}>{p?`Pipeline: ${p}`:"— pipeline —"}</option>)}
+                  </select>
+                  <input value={enrollSource} onChange={e=>setEnrollSource(e.target.value)} placeholder="or source (e.g. apex)" style={inp}/>
+                  <button className="btn-primary" style={{fontSize:10, padding:"6px 12px"}} onClick={()=>enroll(c.campaign_id)}>Enroll</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+        <div style={{fontSize:9, color:"var(--muted)", marginTop:12, lineHeight:1.5}}>
+          Sends respect consent (email → email consent, SMS → SMS consent) and skip contacts without it. Point a daily
+          scheduler (Make.com / cron) at <b>POST /api/campaigns/run</b> to advance sequences automatically.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
+// REPORTS — analytics dashboard (#14) · GET /api/reports
+// ─────────────────────────────────────────────────────────
+const CHART_COLORS = ["#4299e1","#38a169","#6b46c1","#b7791f","#e53e3e","#0bc5ea","#ed8936","#805ad5"];
+const PIPELINE_LABELS = { general:"General", conversions:"Conversions", opra:"OPRA", life:"Life", retirement:"Retirement", business:"Business", owner:"Owner" };
+
+function BarList({ items, valueKey="count", labelMap, money }) {
+  const max = Math.max(1, ...items.map(i => Number(i[valueKey])||0));
+  const fmt = v => money ? "$"+Number(v).toLocaleString("en-US") : Number(v).toLocaleString("en-US");
+  if (!items.length) return <div style={{fontSize:11, color:"var(--muted)", padding:"8px 0"}}>No data yet.</div>;
+  return (
+    <div style={{display:"flex", flexDirection:"column", gap:8}}>
+      {items.map((it,i)=>{
+        const v = Number(it[valueKey])||0;
+        const label = (labelMap && labelMap[it.label]) || it.label || "—";
+        return (
+          <div key={i} style={{display:"grid", gridTemplateColumns:"110px 1fr 56px", gap:10, alignItems:"center"}}>
+            <span style={{fontSize:11, color:"var(--text)", textTransform:"capitalize", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}} title={label}>{label}</span>
+            <div style={{background:"var(--bg2)", borderRadius:4, height:14, overflow:"hidden"}}>
+              <div style={{width:`${(v/max)*100}%`, height:"100%", background:CHART_COLORS[i%CHART_COLORS.length], borderRadius:4, minWidth: v>0?4:0}}/>
+            </div>
+            <span style={{fontSize:11, fontWeight:600, textAlign:"right", color:"var(--navy)"}}>{fmt(v)}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function GdcTrend({ data }) {
+  const max = Math.max(1, ...data.map(d => d.gdc));
+  return (
+    <div style={{display:"flex", alignItems:"flex-end", gap:10, height:130, paddingTop:8}}>
+      {data.map((d,i)=>(
+        <div key={i} style={{flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:4}}>
+          <div style={{fontSize:9, color:"var(--muted)", fontWeight:600}}>{d.gdc>0?"$"+(d.gdc/1000).toFixed(d.gdc>=10000?0:1)+"k":""}</div>
+          <div style={{width:"100%", maxWidth:34, height:`${Math.max((d.gdc/max)*90,2)}px`, background:"linear-gradient(180deg,#4299e1,#2b6cb0)", borderRadius:"4px 4px 0 0", minHeight:2}}/>
+          <div style={{fontSize:9, color:"var(--muted)"}}>{d.month.slice(5)}/{d.month.slice(2,4)}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ReportsPage({ toast }) {
+  const [rep, setRep] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const load = () => {
+    setLoading(true); setError(null);
+    fetch("/api/reports").then(async r=>{ if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error||`HTTP ${r.status}`); return r.json(); })
+      .then(setRep).catch(e=>setError(String(e.message||e))).finally(()=>setLoading(false));
+  };
+  useEffect(load, []);
+
+  const card = { background:"var(--card)", border:"1px solid var(--border)", borderRadius:10, padding:16, boxShadow:"var(--shadow)" };
+  const T = rep?.totals || {};
+  const kpi = (label,val,color) => (
+    <div style={{...card, padding:14}}>
+      <div style={{fontSize:24, fontWeight:700, color:color||"var(--navy)"}}>{val}</div>
+      <div style={{fontSize:10, color:"var(--muted)", textTransform:"uppercase", letterSpacing:".04em", marginTop:2}}>{label}</div>
+    </div>
+  );
+  const panel = (title, node) => (
+    <div style={card}><div style={{fontSize:12, fontWeight:700, color:"var(--navy)", marginBottom:12}}>{title}</div>{node}</div>
+  );
+
+  return (
+    <div>
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14}}>
+        <div style={{fontSize:11, color:"var(--muted)"}}>{rep?`Generated ${new Date(rep.generated_at).toLocaleString("en-US",{hour:"numeric",minute:"2-digit"})}`:""}</div>
+        <button className="btn-secondary" style={{fontSize:11, padding:"5px 12px"}} onClick={load}>↻ Refresh</button>
+      </div>
+      {loading && <div style={{fontSize:12, color:"var(--muted)"}}>Loading analytics…</div>}
+      {error && <div style={{...card, color:"var(--red)", fontSize:12}}>Could not load reports: {error}</div>}
+      {rep && !error && (<>
+        <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))", gap:12, marginBottom:16}}>
+          {kpi("Customers", (T.customers||0).toLocaleString())}
+          {kpi("Policies", (T.policies||0).toLocaleString())}
+          {kpi("Open Cases", T.open_cases||0)}
+          {kpi("Issued Cases", T.issued_cases||0, "var(--green2)")}
+          {kpi("GDC Issued", "$"+(T.gdc_issued||0).toLocaleString(), "var(--green2)")}
+          {kpi("Overdue Tasks", T.overdue_tasks||0, (T.overdue_tasks>0)?"var(--red)":"var(--navy)")}
+        </div>
+        <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))", gap:14}}>
+          {panel("GDC by Month (issued)", <GdcTrend data={rep.gdc_by_month||[]}/>)}
+          {panel("Pipeline Mix", <BarList items={rep.pipelines||[]} labelMap={PIPELINE_LABELS}/>)}
+          {panel("Lead Sources", <BarList items={rep.sources||[]}/>)}
+          {panel("Case Status", <BarList items={rep.case_status||[]}/>)}
+          {panel("Activity — last 30 days", <BarList items={rep.activity_30d||[]}/>)}
+        </div>
+      </>)}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
+// FOLLOW-UPS — Tasks (#9) + Renewal & anniversary tracker (#10)
+// GET/POST/PATCH /api/tasks · GET /api/renewals
+// ─────────────────────────────────────────────────────────
+const todayStr = () => new Date().toISOString().slice(0,10);
+const addDaysStr = (n) => { const d=new Date(); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
+const PRI_STYLE = { high:{bg:"#fed7d7",fg:"#c53030"}, medium:{bg:"#feebc8",fg:"#b7791f"}, low:{bg:"#e2e8f0",fg:"#4a5568"} };
+
+function TasksPanel({ toast, onOpenCustomer }) {
+  const [tasks, setTasks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [title, setTitle] = useState("");
+  const [due, setDue] = useState(todayStr());
+  const [priority, setPriority] = useState("medium");
+  const [saving, setSaving] = useState(false);
+
+  const load = () => {
+    setLoading(true);
+    fetch("/api/tasks?status=open&limit=300").then(r=>r.ok?r.json():{tasks:[]})
+      .then(d=>setTasks(d.tasks||[])).catch(()=>setTasks([])).finally(()=>setLoading(false));
+  };
+  useEffect(load, []);
+
+  const add = async () => {
+    if (!title.trim()) { toast("Enter a task title", "error"); return; }
+    setSaving(true);
+    try {
+      const res = await fetch("/api/tasks", { method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ title: title.trim(), due_date: due || undefined, priority }) });
+      if (!res.ok) { const d=await res.json().catch(()=>({})); toast(d.error||"Could not add task","error"); }
+      else { setTitle(""); toast("Task added","success"); load(); }
+    } catch { toast("Network error","error"); } finally { setSaving(false); }
+  };
+  const patch = async (task_id, body, msg) => {
+    try {
+      const res = await fetch("/api/tasks", { method:"PATCH", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ task_id, ...body }) });
+      if (!res.ok) { toast("Update failed","error"); return; }
+      if (msg) toast(msg,"success"); load();
+    } catch { toast("Network error","error"); }
+  };
+
+  const t0 = todayStr(), t7 = addDaysStr(7);
+  const buckets = { overdue:[], today:[], week:[], later:[] };
+  for (const t of tasks) {
+    const d = t.due_date;
+    if (!d) buckets.later.push(t);
+    else if (d < t0) buckets.overdue.push(t);
+    else if (d === t0) buckets.today.push(t);
+    else if (d <= t7) buckets.week.push(t);
+    else buckets.later.push(t);
+  }
+  const card = { background:"var(--card)", border:"1px solid var(--border)", borderRadius:10, boxShadow:"var(--shadow)" };
+  const inp = { padding:"8px 10px", border:"1px solid var(--border)", borderRadius:6, fontSize:12, fontFamily:"DM Sans,sans-serif" };
+
+  const Row = (t) => {
+    const cust = t.customers ? `${t.customers.first_name||""} ${t.customers.last_name||""}`.trim() : null;
+    const ps = PRI_STYLE[t.priority] || PRI_STYLE.medium;
+    return (
+      <div key={t.task_id} style={{display:"grid", gridTemplateColumns:"auto 1fr auto", gap:10, alignItems:"center", padding:"10px 14px", borderBottom:"1px solid var(--border)"}}>
+        <input type="checkbox" onChange={()=>patch(t.task_id,{status:"done"},"Task completed")} style={{width:16,height:16,cursor:"pointer"}}/>
+        <div style={{minWidth:0}}>
+          <div style={{fontSize:12, fontWeight:600, color:"var(--navy)"}}>{t.title}</div>
+          <div style={{fontSize:10, color:"var(--muted)"}}>
+            {t.due_date||"no date"}
+            {cust && <> · <span style={{color:"var(--blue)", cursor:"pointer"}} onClick={()=>t.customer_id&&onOpenCustomer(t.customer_id)}>{cust}</span></>}
+            {t.source==="renewal" && " · renewal"}
+          </div>
+        </div>
+        <div style={{display:"flex", alignItems:"center", gap:6}}>
+          <span style={{fontSize:8, fontWeight:700, textTransform:"uppercase", background:ps.bg, color:ps.fg, borderRadius:20, padding:"2px 7px"}}>{t.priority}</span>
+          <button className="btn-secondary" style={{fontSize:9, padding:"3px 7px"}} onClick={()=>patch(t.task_id,{due_date:addDaysStr(7)},"Snoozed 7 days")} title="Snooze 7 days">⏰</button>
+        </div>
+      </div>
+    );
+  };
+  const Bucket = (label, items, color) => items.length>0 && (
+    <div style={{...card, marginBottom:12, overflow:"hidden"}}>
+      <div style={{padding:"8px 14px", fontSize:11, fontWeight:700, color, borderBottom:"1px solid var(--border)", background:"var(--bg2)"}}>{label} ({items.length})</div>
+      {items.map(Row)}
+    </div>
+  );
+
+  return (
+    <div>
+      <div style={{...card, padding:12, marginBottom:16, display:"grid", gridTemplateColumns:"1fr 130px 120px auto", gap:8, alignItems:"center"}}>
+        <input value={title} onChange={e=>setTitle(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")add();}} placeholder="New follow-up task…" style={inp}/>
+        <input type="date" value={due} onChange={e=>setDue(e.target.value)} style={inp}/>
+        <select value={priority} onChange={e=>setPriority(e.target.value)} style={{...inp, background:"#fff"}}>
+          <option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
+        </select>
+        <button className="btn-primary" disabled={saving} style={{fontSize:12, padding:"8px 16px"}} onClick={add}>{saving?"…":"+ Add"}</button>
+      </div>
+      {loading && <div style={{fontSize:12, color:"var(--muted)"}}>Loading tasks…</div>}
+      {!loading && tasks.length===0 && <div style={{...card, padding:24, textAlign:"center", fontSize:12, color:"var(--muted)"}}>No open tasks. Add one above or create follow-ups from the Renewals tab.</div>}
+      {!loading && <>
+        {Bucket("Overdue", buckets.overdue, "var(--red)")}
+        {Bucket("Today", buckets.today, "var(--navy)")}
+        {Bucket("This Week", buckets.week, "#b7791f")}
+        {Bucket("Later", buckets.later, "var(--muted)")}
+      </>}
+    </div>
+  );
+}
+
+const RENEWAL_META = {
+  term_conversion: { icon:"⏳", color:"var(--red)", },
+  policy_renewal: { icon:"🔁", color:"#b7791f" },
+  policy_anniversary: { icon:"📆", color:"#2b6cb0" },
+  birthday: { icon:"🎂", color:"#6b46c1" },
+};
+function RenewalsPanel({ toast, onOpenCustomer }) {
+  const [events, setEvents] = useState([]);
+  const [counts, setCounts] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [win, setWin] = useState(90);
+
+  const load = (w) => {
+    setLoading(true);
+    fetch(`/api/renewals?window=${w}`).then(r=>r.ok?r.json():{events:[]})
+      .then(d=>{ setEvents(d.events||[]); setCounts(d.counts||{}); }).catch(()=>setEvents([])).finally(()=>setLoading(false));
+  };
+  useEffect(()=>load(win), [win]);
+
+  const createTask = async (e) => {
+    const labels = { term_conversion:"Term conversion review", policy_renewal:"Policy renewal review", policy_anniversary:"Policy anniversary check-in", birthday:"Birthday outreach" };
+    try {
+      const res = await fetch("/api/tasks", { method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ title:`${labels[e.type]||"Follow up"} — ${e.customer_name}`, customer_id:e.customer_id||undefined, due_date:e.date, priority:e.type==="term_conversion"?"high":"medium", source:"renewal" }) });
+      if (!res.ok) toast("Could not create task","error"); else toast("Follow-up task created","success");
+    } catch { toast("Network error","error"); }
+  };
+
+  const card = { background:"var(--card)", border:"1px solid var(--border)", borderRadius:10, boxShadow:"var(--shadow)" };
+  return (
+    <div>
+      <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:14, flexWrap:"wrap"}}>
+        <span style={{fontSize:11, color:"var(--muted)"}}>Window:</span>
+        {[30,60,90,180].map(w=>(
+          <button key={w} onClick={()=>setWin(w)} className={win===w?"btn-primary":"btn-secondary"} style={{fontSize:10, padding:"4px 10px"}}>{w}d</button>
+        ))}
+        <div style={{marginLeft:"auto", display:"flex", gap:10, fontSize:10, color:"var(--muted)"}}>
+          {Object.entries(RENEWAL_META).map(([k,m])=> counts[k]>0 && <span key={k}>{m.icon} {counts[k]}</span>)}
+        </div>
+      </div>
+      {loading && <div style={{fontSize:12, color:"var(--muted)"}}>Loading upcoming events…</div>}
+      {!loading && events.length===0 && <div style={{...card, padding:24, textAlign:"center", fontSize:12, color:"var(--muted)"}}>No renewals, anniversaries, or birthdays in the next {win} days.</div>}
+      {!loading && events.length>0 && (
+        <div style={{...card, overflow:"hidden"}}>
+          {events.map((e,i)=>{
+            const m = RENEWAL_META[e.type] || {icon:"•",color:"var(--muted)"};
+            return (
+              <div key={i} style={{display:"grid", gridTemplateColumns:"auto 1fr auto auto", gap:12, alignItems:"center", padding:"11px 14px", borderBottom:"1px solid var(--border)"}}>
+                <span style={{fontSize:16}}>{m.icon}</span>
+                <div style={{minWidth:0}}>
+                  <div style={{fontSize:12, fontWeight:600, color:"var(--navy)", cursor:e.customer_id?"pointer":"default"}} onClick={()=>e.customer_id&&onOpenCustomer(e.customer_id)}>{e.customer_name}</div>
+                  <div style={{fontSize:10, color:"var(--muted)"}}>{e.label}{e.detail?` · ${e.detail}`:""}</div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{fontSize:11, fontWeight:600, color:m.color}}>{e.date}</div>
+                  <div style={{fontSize:9, color:"var(--muted)"}}>{e.days_until===0?"today":`in ${e.days_until}d`}</div>
+                </div>
+                <div style={{display:"flex", gap:5}}>
+                  {e.phone && <a className="btn-secondary" href={`tel:${e.phone}`} style={{fontSize:9, padding:"3px 7px", textDecoration:"none"}}>📞</a>}
+                  <button className="btn-primary" style={{fontSize:9, padding:"3px 8px"}} onClick={()=>createTask(e)}>+ Task</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FollowUpsPage({ toast, onOpenCustomer }) {
+  const [tab, setTab] = useState("tasks");
+  const tabBtn = (id, label) => (
+    <button onClick={()=>setTab(id)} style={{background:"transparent", border:"none", borderBottom:tab===id?"2px solid var(--blue)":"2px solid transparent", color:tab===id?"var(--navy)":"var(--muted)", fontWeight:tab===id?700:500, fontSize:13, padding:"8px 4px", marginRight:18, cursor:"pointer", fontFamily:"DM Sans,sans-serif"}}>{label}</button>
+  );
+  return (
+    <div>
+      <div style={{display:"flex", borderBottom:"1px solid var(--border)", marginBottom:16}}>
+        {tabBtn("tasks","✅ Tasks")}
+        {tabBtn("renewals","🔔 Renewals & Anniversaries")}
+      </div>
+      {tab==="tasks" ? <TasksPanel toast={toast} onOpenCustomer={onOpenCustomer}/> : <RenewalsPanel toast={toast} onOpenCustomer={onOpenCustomer}/>}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
+// TOP SEARCH — live search across clients + agencies (GET /api/search)
+// ─────────────────────────────────────────────────────────
+function TopSearch({ onOpenCustomer, toast }) {
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const boxRef = useRef(null);
+
+  useEffect(() => {
+    if (q.trim().length < 2) { setResults([]); setLoading(false); return; }
+    setLoading(true);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => {
+      fetch(`/api/search?q=${encodeURIComponent(q.trim())}`, { signal: ctrl.signal })
+        .then(r => r.ok ? r.json() : { results: [] })
+        .then(d => { setResults(d.results || []); setOpen(true); })
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    }, 250);
+    return () => { clearTimeout(timer); ctrl.abort(); };
+  }, [q]);
+
+  useEffect(() => {
+    const onDoc = e => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+
+  const choose = (r) => {
+    setOpen(false); setQ("");
+    if (r.type === "customer") onOpenCustomer(r.id);
+    else toast("Open the Agency Owners page to manage this partner", "info");
+  };
+
+  return (
+    <div ref={boxRef} style={{flex:1, maxWidth:320, margin:"0 16px", position:"relative"}}>
+      <span style={{position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", color:"var(--muted)", fontSize:13, pointerEvents:"none"}}>🔍</span>
+      <input placeholder="Search clients, agencies…" value={q}
+        onChange={e=>setQ(e.target.value)} onFocus={()=>{ if(results.length) setOpen(true); }}
+        style={{width:"100%", background:"var(--bg)", border:"1px solid var(--border)", borderRadius:6, padding:"7px 10px 7px 32px", fontFamily:"DM Sans,sans-serif", fontSize:11, color:"var(--text)", outline:"none"}}/>
+      {open && (q.trim().length >= 2) && (
+        <div style={{position:"absolute", top:"110%", left:0, right:0, background:"var(--card)", border:"1px solid var(--border)", borderRadius:8, boxShadow:"var(--shadow2)", zIndex:60, maxHeight:360, overflowY:"auto"}}>
+          {loading && <div style={{padding:"10px 12px", fontSize:11, color:"var(--muted)"}}>Searching…</div>}
+          {!loading && results.length === 0 && <div style={{padding:"10px 12px", fontSize:11, color:"var(--muted)"}}>No matches for “{q}”.</div>}
+          {!loading && results.map((r,i)=>(
+            <div key={i} onClick={()=>choose(r)} style={{display:"flex", alignItems:"center", gap:9, padding:"8px 12px", cursor:"pointer", borderBottom:"1px solid var(--border)"}}
+              onMouseEnter={e=>e.currentTarget.style.background="var(--bg2)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+              <span style={{fontSize:13}}>{r.type==="customer"?"👤":"🏢"}</span>
+              <div style={{minWidth:0, flex:1}}>
+                <div style={{fontSize:12, fontWeight:600, color:"var(--navy)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{r.title}</div>
+                <div style={{fontSize:10, color:"var(--muted)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{r.subtitle}</div>
+              </div>
+              {r.stage && <span style={{fontSize:8, background:"#f0e9ff", color:"#6b46c1", border:"1px solid #d6bcfa", borderRadius:3, padding:"2px 5px", whiteSpace:"nowrap"}}>◆ {r.stage}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
+// CLIENT DRAWER — 360° profile + AI next-best-action
+// GET /api/customers/detail · POST /api/customers/next-action
+// ─────────────────────────────────────────────────────────
+function ClientDrawer({ customerId, onClose, toast }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [na, setNa] = useState(null);
+  const [naLoading, setNaLoading] = useState(false);
+  const [mp, setMp] = useState(null);
+  const [mpLoading, setMpLoading] = useState(false);
+  const [tasks, setTasks] = useState([]);
+  const [taskTitle, setTaskTitle] = useState("");
+  const [docs, setDocs] = useState([]);
+  const [docBusy, setDocBusy] = useState(false);
+
+  const loadTasks = () => {
+    if (!customerId) return;
+    fetch(`/api/tasks?status=open&customer_id=${encodeURIComponent(customerId)}`)
+      .then(r=>r.ok?r.json():{tasks:[]}).then(d=>setTasks(d.tasks||[])).catch(()=>setTasks([]));
+  };
+  const loadDocs = () => {
+    if (!customerId) return;
+    fetch(`/api/customers/documents?customer_id=${encodeURIComponent(customerId)}`)
+      .then(r=>r.ok?r.json():{documents:[]}).then(d=>setDocs(d.documents||[])).catch(()=>setDocs([]));
+  };
+  const uploadDoc = async (fileList) => {
+    const f = fileList && fileList[0];
+    if (!f) return;
+    if (f.size > 15*1024*1024) { toast("File exceeds the 15MB limit","error"); return; }
+    setDocBusy(true);
+    try {
+      const fd = new FormData(); fd.append("customer_id", customerId); fd.append("file", f);
+      const res = await fetch("/api/customers/documents", { method:"POST", body: fd });
+      const d = await res.json().catch(()=>({}));
+      if (!res.ok) toast(d.error || "Upload failed","error");
+      else { toast("Document uploaded","success"); loadDocs(); }
+    } catch { toast("Network error","error"); } finally { setDocBusy(false); }
+  };
+
+  useEffect(() => {
+    if (!customerId) { setData(null); setNa(null); setMp(null); setEnr(null); setError(null); setTasks([]); setDocs([]); return; }
+    setLoading(true); setError(null); setNa(null); setMp(null); setEnr(null);
+    fetch(`/api/customers/detail?id=${encodeURIComponent(customerId)}`)
+      .then(async r => { if (!r.ok) throw new Error((await r.json().catch(()=>({}))).error || `HTTP ${r.status}`); return r.json(); })
+      .then(setData)
+      .catch(e => setError(String(e.message || e)))
+      .finally(() => setLoading(false));
+    loadTasks();
+    loadDocs();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerId]);
+
+  const addTask = async () => {
+    if (!taskTitle.trim()) return;
+    try {
+      const res = await fetch("/api/tasks", { method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ title: taskTitle.trim(), customer_id: customerId }) });
+      if (!res.ok) { toast("Could not add follow-up","error"); return; }
+      setTaskTitle(""); toast("Follow-up added","success"); loadTasks();
+    } catch { toast("Network error","error"); }
+  };
+  const completeTask = async (id) => {
+    try {
+      await fetch("/api/tasks", { method:"PATCH", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ task_id:id, status:"done" }) });
+      loadTasks();
+    } catch { /* ignore */ }
+  };
+
+  useEffect(() => {
+    const onKey = e => { if (e.key === "Escape") onClose(); };
+    if (customerId) document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [customerId, onClose]);
+
+  const runNextAction = async () => {
+    setNaLoading(true);
+    try {
+      const res = await fetch("/api/customers/next-action", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ customer_id: customerId }),
+      });
+      const d = await res.json().catch(()=>({}));
+      if (!res.ok) { toast(d.error || `AI unavailable (HTTP ${res.status})`, "error"); }
+      else setNa(d);
+    } catch { toast("Network error requesting recommendation", "error"); }
+    finally { setNaLoading(false); }
+  };
+
+  const runMeetingPrep = async () => {
+    setMpLoading(true);
+    try {
+      const res = await fetch("/api/customers/meeting-prep", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ customer_id: customerId }) });
+      const d = await res.json().catch(()=>({}));
+      if (!res.ok) toast(d.error || `AI unavailable (HTTP ${res.status})`, "error");
+      else setMp(d);
+    } catch { toast("Network error", "error"); }
+    finally { setMpLoading(false); }
+  };
+
+  const [enr, setEnr] = useState(null);
+  const [enrLoading, setEnrLoading] = useState(false);
+  const runEnrich = async () => {
+    setEnrLoading(true);
+    try {
+      const res = await fetch("/api/customers/enrich", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ customer_id: customerId }) });
+      const d = await res.json().catch(()=>({}));
+      if (!res.ok) toast(d.error || `Enrichment unavailable (HTTP ${res.status})`, "error");
+      else if (!d.matched) { toast("No Apollo match found", "info"); setEnr({ none:true }); }
+      else { setEnr(d.person); toast("Contact enriched", "success"); }
+    } catch { toast("Network error", "error"); }
+    finally { setEnrLoading(false); }
+  };
+
+  if (!customerId) return null;
+  const c = data?.customer || {};
+  const money = v => v==null ? "—" : "$"+Number(v).toLocaleString("en-US");
+  const date = v => v ? new Date(v).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "—";
+  const copy = (txt,label) => { navigator.clipboard?.writeText(txt||""); toast(`${label} copied`, "success"); };
+  const sec = { fontSize:11, fontWeight:700, color:"var(--navy)", textTransform:"uppercase", letterSpacing:".04em", margin:"16px 0 8px" };
+  const chip = (label,val) => (
+    <div><div style={{fontSize:9, color:"var(--muted)", textTransform:"uppercase", letterSpacing:".03em"}}>{label}</div>
+      <div style={{fontSize:12, color:"var(--text)", fontWeight:500}}>{val==null||val===""?"—":val}</div></div>
+  );
+  const priColor = { high:"var(--red)", medium:"#b7791f", low:"var(--muted)" };
+
+  return (
+    <div style={{position:"fixed", inset:0, zIndex:120, display:"flex", justifyContent:"flex-end"}}>
+      <div onClick={onClose} style={{position:"absolute", inset:0, background:"rgba(15,30,54,.35)"}}/>
+      <div style={{position:"relative", width:"min(480px,94vw)", height:"100%", background:"var(--bg)", boxShadow:"var(--shadow2)", overflowY:"auto"}}>
+        <div style={{position:"sticky", top:0, background:"var(--navy)", color:"#fff", padding:"14px 18px", display:"flex", justifyContent:"space-between", alignItems:"flex-start", zIndex:2}}>
+          <div>
+            <div style={{fontSize:16, fontWeight:700}}>{loading?"Loading…":`${c.first_name||""} ${c.last_name||""}`.trim()||"Client"}</div>
+            {data && <div style={{fontSize:11, opacity:.8, marginTop:2}}>
+              {[c.email, c.phone].filter(Boolean).join(" · ")||"No contact info"}
+            </div>}
+          </div>
+          <button onClick={onClose} style={{background:"transparent", border:"none", color:"#fff", fontSize:20, cursor:"pointer", lineHeight:1}}>×</button>
+        </div>
+
+        <div style={{padding:"4px 18px 28px"}}>
+          {error && <div style={{marginTop:14, fontSize:12, color:"var(--red)", background:"#fef2f2", border:"1px solid #fecaca", borderRadius:8, padding:12}}>{error}</div>}
+          {data && (<>
+            {/* Quick actions */}
+            <div style={{display:"flex", gap:8, marginTop:14, flexWrap:"wrap"}}>
+              {c.phone && <a className="btn-secondary" style={{fontSize:11, padding:"6px 12px", textDecoration:"none"}} href={`tel:${c.phone}`}>📞 Call</a>}
+              {c.email && <a className="btn-secondary" style={{fontSize:11, padding:"6px 12px", textDecoration:"none"}} href={`mailto:${c.email}`}>✉ Email</a>}
+              <button className="btn-secondary" disabled={enrLoading} style={{fontSize:11, padding:"6px 12px", opacity:enrLoading?.6:1}} onClick={runEnrich} title="Enrich with Apollo (title, company, LinkedIn)">{enrLoading?"Enriching…":"✨ Enrich"}</button>
+              {data.ghl?.stage && <span style={{fontSize:10, background:"#f0e9ff", color:"#6b46c1", border:"1px solid #d6bcfa", borderRadius:4, padding:"5px 9px"}}>◆ {data.ghl.pipeline} · {data.ghl.stage}</span>}
+            </div>
+            {enr && !enr.none && (
+              <div style={{marginTop:10, border:"1px solid var(--border)", background:"var(--bg2)", borderRadius:8, padding:12, fontSize:11}}>
+                <div style={{fontSize:9, fontWeight:700, color:"var(--muted)", textTransform:"uppercase", marginBottom:6}}>Apollo enrichment</div>
+                <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:"4px 12px"}}>
+                  {enr.title && <div><b>Title:</b> {enr.title}</div>}
+                  {enr.company && <div><b>Company:</b> {enr.company}</div>}
+                  {enr.industry && <div><b>Industry:</b> {enr.industry}</div>}
+                  {enr.seniority && <div><b>Seniority:</b> {enr.seniority}</div>}
+                  {(enr.city||enr.state) && <div><b>Location:</b> {[enr.city,enr.state].filter(Boolean).join(", ")}</div>}
+                </div>
+                {enr.linkedin_url && <a href={enr.linkedin_url} target="_blank" rel="noreferrer" style={{color:"var(--blue)", fontSize:11, display:"inline-block", marginTop:6}}>LinkedIn ↗</a>}
+              </div>
+            )}
+
+            {/* AI Next Best Action */}
+            <div style={{marginTop:16, border:"1px solid #d6bcfa", background:"#faf7ff", borderRadius:10, padding:14}}>
+              <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
+                <div style={{fontSize:12, fontWeight:700, color:"#6b46c1"}}>✦ AI Next Best Action</div>
+                {!na && <button className="btn-primary" disabled={naLoading} style={{fontSize:10, padding:"5px 11px", opacity:naLoading?.6:1}} onClick={runNextAction}>{naLoading?"Thinking…":"Suggest"}</button>}
+              </div>
+              {na && (<div style={{marginTop:10}}>
+                <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:6}}>
+                  <span style={{fontSize:9, fontWeight:700, textTransform:"uppercase", color:"#fff", background:priColor[na.priority]||"var(--muted)", borderRadius:20, padding:"2px 8px"}}>{na.priority}</span>
+                  <span style={{fontSize:13, fontWeight:600, color:"var(--navy)"}}>{na.action}</span>
+                </div>
+                <div style={{fontSize:11, color:"var(--muted)", lineHeight:1.5, marginBottom:10}}>{na.rationale}</div>
+                {na.draft_sms && <div style={{marginBottom:8}}>
+                  <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:3}}>
+                    <span style={{fontSize:9, fontWeight:700, color:"var(--muted)", textTransform:"uppercase"}}>Draft SMS</span>
+                    <button className="btn-secondary" style={{fontSize:8, padding:"2px 7px"}} onClick={()=>copy(na.draft_sms,"SMS")}>Copy</button>
+                  </div>
+                  <div style={{fontSize:11, background:"#fff", border:"1px solid var(--border)", borderRadius:6, padding:8, lineHeight:1.5}}>{na.draft_sms}</div>
+                </div>}
+                {na.draft_email_body && <div>
+                  <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:3}}>
+                    <span style={{fontSize:9, fontWeight:700, color:"var(--muted)", textTransform:"uppercase"}}>Draft Email — {na.draft_email_subject}</span>
+                    <button className="btn-secondary" style={{fontSize:8, padding:"2px 7px"}} onClick={()=>copy(`Subject: ${na.draft_email_subject}\n\n${na.draft_email_body}`,"Email")}>Copy</button>
+                  </div>
+                  <div style={{fontSize:11, background:"#fff", border:"1px solid var(--border)", borderRadius:6, padding:8, lineHeight:1.5, whiteSpace:"pre-wrap"}}>{na.draft_email_body}</div>
+                </div>}
+                <div style={{fontSize:8, color:"var(--dim)", marginTop:8, lineHeight:1.4}}>{na.disclaimer}</div>
+              </div>)}
+              {!na && !naLoading && <div style={{fontSize:10, color:"var(--muted)", marginTop:6}}>Get an AI recommendation for the best next step with this client, with ready-to-send drafts.</div>}
+            </div>
+
+            {/* AI Meeting Prep */}
+            <div style={{marginTop:12, border:"1px solid #bee3f8", background:"#f0f9ff", borderRadius:10, padding:14}}>
+              <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
+                <div style={{fontSize:12, fontWeight:700, color:"#2b6cb0"}}>📋 Meeting Prep</div>
+                {!mp && <button className="btn-primary" disabled={mpLoading} style={{fontSize:10, padding:"5px 11px", opacity:mpLoading?.6:1}} onClick={runMeetingPrep}>{mpLoading?"Preparing…":"Generate"}</button>}
+              </div>
+              {mp && (<div style={{marginTop:10}}>
+                <div style={{fontSize:11, color:"var(--text)", lineHeight:1.5, marginBottom:10, fontWeight:500}}>{mp.summary}</div>
+                {[["Key facts","key_facts"],["Coverage gaps","coverage_gaps"],["Talking points","talking_points"],["Topics to explore","suggested_topics"],["Questions to ask","questions_to_ask"]].map(([label,key])=>(
+                  (mp[key]&&mp[key].length>0) ? (
+                    <div key={key} style={{marginBottom:8}}>
+                      <div style={{fontSize:9, fontWeight:700, color:"var(--muted)", textTransform:"uppercase", marginBottom:3}}>{label}</div>
+                      <ul style={{margin:0, paddingLeft:16}}>
+                        {mp[key].map((x,i)=><li key={i} style={{fontSize:11, color:"var(--text)", lineHeight:1.5, marginBottom:2}}>{x}</li>)}
+                      </ul>
+                    </div>
+                  ) : null
+                ))}
+                <div style={{display:"flex", gap:6, marginTop:6}}>
+                  <button className="btn-secondary" style={{fontSize:9, padding:"3px 8px"}} onClick={()=>{const txt=`Meeting prep — ${c.first_name} ${c.last_name}\n\n${mp.summary}\n\nKey facts:\n${(mp.key_facts||[]).map(x=>"• "+x).join("\n")}\n\nCoverage gaps:\n${(mp.coverage_gaps||[]).map(x=>"• "+x).join("\n")}\n\nTalking points:\n${(mp.talking_points||[]).map(x=>"• "+x).join("\n")}\n\nTopics:\n${(mp.suggested_topics||[]).map(x=>"• "+x).join("\n")}\n\nQuestions:\n${(mp.questions_to_ask||[]).map(x=>"• "+x).join("\n")}`; copy(txt,"Meeting prep");}}>Copy sheet</button>
+                </div>
+                <div style={{fontSize:8, color:"var(--dim)", marginTop:8, lineHeight:1.4}}>{mp.disclaimer}</div>
+              </div>)}
+              {!mp && !mpLoading && <div style={{fontSize:10, color:"var(--muted)", marginTop:6}}>Generate a pre-appointment one-pager: key facts, gaps, talking points, and questions.</div>}
+            </div>
+
+            {/* Follow-ups */}
+            <div style={sec}>Follow-Ups {tasks.length>0?`(${tasks.length})`:""}</div>
+            <div style={{background:"var(--card)", border:"1px solid var(--border)", borderRadius:10, overflow:"hidden"}}>
+              <div style={{display:"flex", gap:8, padding:10, borderBottom:tasks.length?"1px solid var(--border)":"none"}}>
+                <input value={taskTitle} onChange={e=>setTaskTitle(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")addTask();}} placeholder="Add a follow-up for this client…"
+                  style={{flex:1, padding:"7px 9px", border:"1px solid var(--border)", borderRadius:6, fontSize:11, fontFamily:"DM Sans,sans-serif"}}/>
+                <button className="btn-primary" style={{fontSize:11, padding:"7px 12px"}} onClick={addTask}>+ Add</button>
+              </div>
+              {tasks.map(t=>(
+                <div key={t.task_id} style={{display:"grid", gridTemplateColumns:"auto 1fr auto", gap:9, alignItems:"center", padding:"8px 12px", borderBottom:"1px solid var(--border)"}}>
+                  <input type="checkbox" onChange={()=>completeTask(t.task_id)} style={{width:15,height:15,cursor:"pointer"}}/>
+                  <div style={{fontSize:11, fontWeight:500}}>{t.title}</div>
+                  <div style={{fontSize:9, color:"var(--muted)"}}>{t.due_date||""}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Documents */}
+            <div style={sec}>Documents {docs.length>0?`(${docs.length})`:""}</div>
+            <div style={{background:"var(--card)", border:"1px solid var(--border)", borderRadius:10, overflow:"hidden"}}>
+              <div style={{padding:10, borderBottom:docs.length?"1px solid var(--border)":"none"}}>
+                <label className="btn-secondary" style={{fontSize:11, padding:"7px 12px", cursor:docBusy?"default":"pointer", display:"inline-block", opacity:docBusy?.6:1}}>
+                  {docBusy?"Uploading…":"⬆ Upload document"}
+                  <input type="file" style={{display:"none"}} disabled={docBusy} onChange={e=>uploadDoc(e.target.files)}
+                    accept=".pdf,.png,.jpg,.jpeg,.webp,.csv,.xlsx,.xls,.doc,.docx,.txt"/>
+                </label>
+              </div>
+              {docs.map(d=>(
+                <div key={d.doc_id} style={{display:"grid", gridTemplateColumns:"1fr auto", gap:9, alignItems:"center", padding:"8px 12px", borderBottom:"1px solid var(--border)"}}>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontSize:11, fontWeight:500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{d.filename}</div>
+                    <div style={{fontSize:9, color:"var(--muted)"}}>{d.size_bytes?`${(d.size_bytes/1024).toFixed(0)} KB · `:""}{new Date(d.created_at).toLocaleDateString("en-US",{month:"short",day:"numeric"})}</div>
+                  </div>
+                  {d.url && <a className="btn-secondary" href={d.url} target="_blank" rel="noreferrer" style={{fontSize:9, padding:"3px 9px", textDecoration:"none"}}>Open</a>}
+                </div>
+              ))}
+            </div>
+
+            {/* Overview */}
+            <div style={sec}>Overview</div>
+            <div style={{display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, background:"var(--card)", border:"1px solid var(--border)", borderRadius:10, padding:14}}>
+              {chip("Age", c.age)}
+              {chip("Marital", c.marital_status)}
+              {chip("Dependents", c.dependents)}
+              {chip("Location", [c.city, c.state].filter(Boolean).join(", "))}
+              {chip("Source", c.source)}
+              {chip("Client since", date(c.created_at))}
+              {chip("SMS consent", c.consent_sms?"✓ Yes":"No")}
+              {chip("Email consent", c.consent_email?"✓ Yes":"No")}
+              {chip("Policies", c.policy_count)}
+            </div>
+
+            {/* Scores */}
+            {data.scores && <>
+              <div style={sec}>Priority Scores</div>
+              <div style={{background:"var(--card)", border:"1px solid var(--border)", borderRadius:10, padding:14, display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10}}>
+                {[["Priority",data.scores.priority_score],["Pipeline",data.scores.primary_pipeline],["Conversion",data.scores.conversion_score],["OPRA",data.scores.opra_score],["Life",data.scores.life_score],["Retirement",data.scores.retirement_score]].map((s,i)=>(
+                  <div key={i}>{chip(s[0], s[1])}</div>
+                ))}
+              </div>
+            </>}
+
+            {/* Policies */}
+            <div style={sec}>Policies ({data.policies.length})</div>
+            {data.policies.length===0 ? <div style={{fontSize:11, color:"var(--muted)"}}>No policies on record.</div> :
+              <div style={{background:"var(--card)", border:"1px solid var(--border)", borderRadius:10, overflow:"hidden"}}>
+                {data.policies.map((p,i)=>(
+                  <div key={i} style={{display:"grid", gridTemplateColumns:"1fr auto", gap:8, padding:"10px 12px", borderBottom:"1px solid var(--border)"}}>
+                    <div><div style={{fontSize:12, fontWeight:600, textTransform:"capitalize"}}>{p.policy_type} · {p.carrier||"—"}</div>
+                      <div style={{fontSize:10, color:"var(--muted)"}}>{p.status}{p.conversion_deadline?` · conv. deadline ${date(p.conversion_deadline)}`:""}</div></div>
+                    <div style={{textAlign:"right", fontSize:11, fontWeight:600}}>{money(p.annual_premium)}<div style={{fontSize:8, color:"var(--muted)", fontWeight:400}}>/yr</div></div>
+                  </div>
+                ))}
+              </div>}
+
+            {/* Cases */}
+            {data.cases.length>0 && <>
+              <div style={sec}>Commission Cases ({data.cases.length})</div>
+              <div style={{background:"var(--card)", border:"1px solid var(--border)", borderRadius:10, overflow:"hidden"}}>
+                {data.cases.map((k,i)=>(
+                  <div key={i} style={{display:"grid", gridTemplateColumns:"1fr auto", gap:8, padding:"10px 12px", borderBottom:"1px solid var(--border)"}}>
+                    <div><div style={{fontSize:12, fontWeight:600}}>{k.product_name}</div>
+                      <div style={{fontSize:10, color:"var(--muted)"}}>{k.carrier} · {k.case_status}</div></div>
+                    <div style={{textAlign:"right", fontSize:11, fontWeight:600, color:"var(--green2)"}}>{money(k.estimated_gdc)}<div style={{fontSize:8, color:"var(--muted)", fontWeight:400}}>est. GDC</div></div>
+                  </div>
+                ))}
+              </div>
+            </>}
+
+            {/* Activity */}
+            <div style={sec}>Activity Timeline</div>
+            {data.activity.length===0 ? <div style={{fontSize:11, color:"var(--muted)"}}>No activity logged yet.</div> :
+              <div style={{borderLeft:"2px solid var(--border)", marginLeft:6, paddingLeft:14}}>
+                {data.activity.map((a,i)=>(
+                  <div key={i} style={{position:"relative", paddingBottom:12}}>
+                    <span style={{position:"absolute", left:-21, top:2, width:8, height:8, borderRadius:"50%", background:"#4299e1"}}/>
+                    <div style={{fontSize:11, fontWeight:600, textTransform:"capitalize"}}>{a.type}{a.subject?`: ${a.subject}`:""}</div>
+                    {a.notes && <div style={{fontSize:10, color:"var(--muted)", lineHeight:1.5}}>{a.notes}</div>}
+                    <div style={{fontSize:9, color:"var(--dim)"}}>{new Date(a.created_at).toLocaleString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}{a.ai_agent?` · ${a.ai_agent}`:""}</div>
+                  </div>
+                ))}
+              </div>}
+          </>)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App(){
   const [page,setPage]=useState("briefing");
   const [tier,setTier]=useState(3);
   const [toasts,setToasts]=useState([]);
   const [assistantOpen,setAssistantOpen]=useState(false);
+  const [drawerCustomerId,setDrawerCustomerId]=useState(null);
   const toast=(msg,type="info")=>{const id=Date.now();setToasts(t=>[...t,{id,msg,type}]);setTimeout(()=>setToasts(t=>t.filter(x=>x.id!==id)),3000);};
 
   // ── LIVE DATA ──────────────────────────────────────────
@@ -4264,6 +5091,9 @@ export default function App(){
     {id:"opps",      icon:"🎯", label:"Opportunities",  badge:liveOpps||null},
     {id:"agencies",  icon:"🏢", label:"Agency Owners",  badge:null, bc:"red"},
     {id:"upload",    icon:"📥", label:"Contact Upload"},
+    {id:"followups", icon:"✅", label:"Follow-Ups"},
+    {id:"campaigns", icon:"📣", label:"Campaigns"},
+    {id:"reports",   icon:"📊", label:"Reports"},
     {id:"conv",      icon:"⏰", label:"Conversions",    badge:liveConvUrgent||null, bc:"red"},
     {id:"opra",      icon:"🔄", label:"OPRA Center",    badge:liveOpraUncontacted||null, bc:"orange"},
     {id:"calendar",  icon:"📅", label:"Calendar"},
@@ -4283,7 +5113,7 @@ export default function App(){
     {name:"Conversion AI",status:"running",ct:"—"},
     {name:"Follow Up AI",status:"running",ct:"—"},
   ];
-  const pageTitle={briefing:"Daily Briefing",dashboard:"Dashboard",opps:"Opportunities",agencies:"Agency Owners",upload:"Contact Upload",conv:"Conversion Center",opra:"OPRA Center",calendar:"Calendar",ai:"AI Control Center",workshops:"Workshops",gdc:"GDC & Commission",prep:"Financial Review Prep",needs:"Customer Needs Map",calc:"Sales Calculator",contacts:"FFS Contacts",forms:"Client Forms",fna:"Financial Needs Analysis"};
+  const pageTitle={briefing:"Daily Briefing",dashboard:"Dashboard",opps:"Opportunities",agencies:"Agency Owners",upload:"Contact Upload",followups:"Follow-Ups",campaigns:"Drip Campaigns",reports:"Reports & Analytics",conv:"Conversion Center",opra:"OPRA Center",calendar:"Calendar",ai:"AI Control Center",workshops:"Workshops",gdc:"GDC & Commission",prep:"Financial Review Prep",needs:"Customer Needs Map",calc:"Sales Calculator",contacts:"FFS Contacts",forms:"Client Forms",fna:"Financial Needs Analysis"};
 
   return(<>
     <style>{G}</style>
@@ -4334,13 +5164,7 @@ export default function App(){
             <span className="tb-title">{pageTitle[page]||"Dashboard"}</span>
             {page==="briefing"&&<span className="tb-sub"> {appData.counts?.opra_due+appData.counts?.urgent_conversions || 0} urgent items · {appData.topOpportunities?.length || 0} opportunities today</span>}
           </div>
-          <div style={{flex:1,maxWidth:280,margin:"0 16px",position:"relative"}}>
-            <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"var(--muted)",fontSize:13,pointerEvents:"none"}}>🔍</span>
-            <input placeholder="Search client, carrier, product..."
-              style={{width:"100%",background:"var(--bg)",border:"1px solid var(--border)",borderRadius:6,padding:"7px 10px 7px 32px",fontFamily:"DM Sans,sans-serif",fontSize:11,color:"var(--text)",outline:"none"}}
-              onFocus={e=>e.target.style.borderColor="#bee3f8"} onBlur={e=>e.target.style.borderColor="var(--border)"}
-              onChange={e=>{if(e.target.value.length>1)toast(`Searching: "${e.target.value}"...`,"info");}}/>
-          </div>
+          <TopSearch onOpenCustomer={setDrawerCustomerId} toast={toast}/>
           <div style={{position:"relative",cursor:"pointer"}} onClick={()=>toast("3 alerts: 1 flagged GDC case · 2 forms pending · 1 opt-out","info")}>
             <span style={{fontSize:18,lineHeight:1}}>🔔</span>
             <span style={{position:"absolute",top:-3,right:-4,background:"var(--red)",color:"#fff",borderRadius:"50%",width:14,height:14,fontSize:8,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontFamily:"DM Mono,monospace"}}>3</span>
@@ -4366,6 +5190,9 @@ export default function App(){
           {page==="ai"         &&<AIControlCenter toast={toast}/>}
           {page==="agencies"   &&<AgencyOwners toast={toast} onNav={setPage}/>}
           {page==="upload"     &&<ContactUploadPage toast={toast}/>}
+          {page==="followups"  &&<FollowUpsPage toast={toast} onOpenCustomer={setDrawerCustomerId}/>}
+          {page==="campaigns"  &&<CampaignsPage toast={toast}/>}
+          {page==="reports"    &&<ReportsPage toast={toast}/>}
           {page==="calendar"   &&<Calendar toast={toast} appData={appData}/>}
           {page==="workshops"  &&<WorkshopsPage toast={toast}/>}
           {page==="gdc"        &&<GDCPage tier={tier} setTier={setTier} toast={toast} appData={appData}/>}
@@ -4404,5 +5231,6 @@ export default function App(){
     </div>
     <div className="toast-wrap">{toasts.map(t=><div key={t.id} className={`toast ${t.type}`}>{t.msg}</div>)}</div>
     <AssistantModal open={assistantOpen} onClose={()=>setAssistantOpen(false)}/>
+    <ClientDrawer customerId={drawerCustomerId} onClose={()=>setDrawerCustomerId(null)} toast={toast}/>
   </>);
 }

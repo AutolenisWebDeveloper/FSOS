@@ -4253,6 +4253,133 @@ function AssistantModal({open,onClose}){
 }
 
 // ─────────────────────────────────────────────────────────
+// CAMPAIGNS — drip SMS/email sequences (#6)
+// GET/POST /api/campaigns · POST /api/campaigns/enroll · /run
+// ─────────────────────────────────────────────────────────
+const ENROLL_PIPELINES = ["","general","conversions","opra","life","retirement","business","owner"];
+function CampaignsPage({ toast }) {
+  const [campaigns, setCampaigns] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [name, setName] = useState("");
+  const [channel, setChannel] = useState("email");
+  const [steps, setSteps] = useState([{ delay_days:0, subject:"", body:"" }]);
+  const [saving, setSaving] = useState(false);
+  const [enrollFor, setEnrollFor] = useState(null); // campaign_id
+  const [enrollPipeline, setEnrollPipeline] = useState("");
+  const [enrollSource, setEnrollSource] = useState("");
+
+  const load = () => { setLoading(true); fetch("/api/campaigns").then(r=>r.ok?r.json():{campaigns:[]}).then(d=>setCampaigns(d.campaigns||[])).catch(()=>setCampaigns([])).finally(()=>setLoading(false)); };
+  useEffect(load, []);
+
+  const setStep = (i, key, val) => setSteps(s => s.map((st,idx)=> idx===i ? {...st,[key]:val} : st));
+  const create = async () => {
+    if (!name.trim()) { toast("Name the campaign","error"); return; }
+    if (steps.some(s=>!s.body.trim())) { toast("Every step needs a message body","error"); return; }
+    setSaving(true);
+    try {
+      const res = await fetch("/api/campaigns", { method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ name:name.trim(), channel, steps: steps.map(s=>({ delay_days:Number(s.delay_days)||0, subject:s.subject||undefined, body:s.body })) }) });
+      if (!res.ok) { const d=await res.json().catch(()=>({})); toast(d.error||"Could not create","error"); }
+      else { setName(""); setSteps([{delay_days:0,subject:"",body:""}]); toast("Campaign created","success"); load(); }
+    } catch { toast("Network error","error"); } finally { setSaving(false); }
+  };
+  const enroll = async (campaign_id) => {
+    if (!enrollPipeline && !enrollSource.trim()) { toast("Choose a pipeline or enter a source","error"); return; }
+    try {
+      const res = await fetch("/api/campaigns/enroll", { method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ campaign_id, pipeline:enrollPipeline||undefined, source:enrollSource.trim()||undefined }) });
+      const d = await res.json().catch(()=>({}));
+      if (!res.ok) toast(d.error||"Enroll failed","error");
+      else { toast(`Enrolled ${d.enrolled} of ${d.matched} matched`,"success"); setEnrollFor(null); setEnrollPipeline(""); setEnrollSource(""); load(); }
+    } catch { toast("Network error","error"); }
+  };
+  const run = async (campaign_id) => {
+    try {
+      const res = await fetch("/api/campaigns/run", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ campaign_id }) });
+      const d = await res.json().catch(()=>({}));
+      if (!res.ok) toast(d.error||"Run failed","error");
+      else { const c=d.counts||{}; toast(`Sent ${c.sent||0} · skipped ${c.skipped||0} · failed ${c.failed||0} · completed ${c.completed||0}`, (c.failed?"info":"success")); load(); }
+    } catch { toast("Network error","error"); }
+  };
+
+  const card = { background:"var(--card)", border:"1px solid var(--border)", borderRadius:10, padding:16, boxShadow:"var(--shadow)" };
+  const inp = { padding:"7px 9px", border:"1px solid var(--border)", borderRadius:6, fontSize:11, fontFamily:"DM Sans,sans-serif", width:"100%" };
+
+  return (
+    <div style={{display:"grid", gridTemplateColumns:"minmax(0,1fr) minmax(0,1.2fr)", gap:16, alignItems:"start"}}>
+      {/* Create */}
+      <div style={card}>
+        <div style={{fontSize:14, fontWeight:700, color:"var(--navy)", marginBottom:12}}>New Drip Campaign</div>
+        <div style={{display:"grid", gridTemplateColumns:"1fr 110px", gap:8, marginBottom:10}}>
+          <input value={name} onChange={e=>setName(e.target.value)} placeholder="Campaign name" style={inp}/>
+          <select value={channel} onChange={e=>setChannel(e.target.value)} style={{...inp, background:"#fff"}}>
+            <option value="email">Email</option><option value="sms">SMS</option>
+          </select>
+        </div>
+        <div style={{fontSize:10, color:"var(--muted)", marginBottom:8}}>Steps send in order; delay is days after the previous step. Use {"{first_name}"} for personalization.</div>
+        {steps.map((s,i)=>(
+          <div key={i} style={{border:"1px solid var(--border)", borderRadius:8, padding:10, marginBottom:8}}>
+            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6}}>
+              <span style={{fontSize:10, fontWeight:700, color:"var(--navy)"}}>Step {i+1}</span>
+              <div style={{display:"flex", alignItems:"center", gap:6}}>
+                <span style={{fontSize:9, color:"var(--muted)"}}>after</span>
+                <input type="number" min="0" value={s.delay_days} onChange={e=>setStep(i,"delay_days",e.target.value)} style={{...inp, width:52, padding:"4px 6px"}}/>
+                <span style={{fontSize:9, color:"var(--muted)"}}>days</span>
+                {steps.length>1 && <button className="btn-secondary" style={{fontSize:9, padding:"2px 7px"}} onClick={()=>setSteps(steps.filter((_,idx)=>idx!==i))}>✕</button>}
+              </div>
+            </div>
+            {channel==="email" && <input value={s.subject} onChange={e=>setStep(i,"subject",e.target.value)} placeholder="Subject" style={{...inp, marginBottom:6}}/>}
+            <textarea value={s.body} onChange={e=>setStep(i,"body",e.target.value)} placeholder="Message body…" rows={3} style={{...inp, resize:"vertical"}}/>
+          </div>
+        ))}
+        <button className="btn-secondary" style={{fontSize:10, padding:"5px 10px", marginRight:8}} onClick={()=>setSteps([...steps,{delay_days:3,subject:"",body:""}])}>+ Add step</button>
+        <button className="btn-primary" disabled={saving} style={{fontSize:11, padding:"7px 16px"}} onClick={create}>{saving?"Saving…":"Create Campaign"}</button>
+      </div>
+
+      {/* List */}
+      <div>
+        <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10}}>
+          <div style={{fontSize:14, fontWeight:700, color:"var(--navy)"}}>Campaigns</div>
+          <button className="btn-secondary" style={{fontSize:10, padding:"4px 10px"}} onClick={load}>↻ Refresh</button>
+        </div>
+        {loading && <div style={{fontSize:12, color:"var(--muted)"}}>Loading…</div>}
+        {!loading && campaigns.length===0 && <div style={{...card, textAlign:"center", fontSize:12, color:"var(--muted)"}}>No campaigns yet. Build one on the left.</div>}
+        <div style={{display:"flex", flexDirection:"column", gap:12}}>
+          {campaigns.map(c=>(
+            <div key={c.campaign_id} style={card}>
+              <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start"}}>
+                <div>
+                  <div style={{fontSize:13, fontWeight:700, color:"var(--navy)"}}>{c.name}</div>
+                  <div style={{fontSize:10, color:"var(--muted)"}}>{c.channel} · {(c.steps||[]).length} steps · {c.enrollments?.active||0} active / {c.enrollments?.completed||0} done / {c.enrollments?.total||0} total</div>
+                </div>
+                <span style={{fontSize:14}}>{c.channel==="email"?"✉":"💬"}</span>
+              </div>
+              <div style={{display:"flex", gap:6, marginTop:10}}>
+                <button className="btn-secondary" style={{fontSize:10, padding:"5px 11px"}} onClick={()=>setEnrollFor(enrollFor===c.campaign_id?null:c.campaign_id)}>Enroll</button>
+                <button className="btn-primary" style={{fontSize:10, padding:"5px 11px"}} onClick={()=>run(c.campaign_id)}>▶ Run due sends</button>
+              </div>
+              {enrollFor===c.campaign_id && (
+                <div style={{marginTop:10, padding:10, background:"var(--bg2)", borderRadius:8, display:"grid", gridTemplateColumns:"1fr 1fr auto", gap:8, alignItems:"center"}}>
+                  <select value={enrollPipeline} onChange={e=>setEnrollPipeline(e.target.value)} style={{...inp, background:"#fff"}}>
+                    {ENROLL_PIPELINES.map(p=><option key={p} value={p}>{p?`Pipeline: ${p}`:"— pipeline —"}</option>)}
+                  </select>
+                  <input value={enrollSource} onChange={e=>setEnrollSource(e.target.value)} placeholder="or source (e.g. apex)" style={inp}/>
+                  <button className="btn-primary" style={{fontSize:10, padding:"6px 12px"}} onClick={()=>enroll(c.campaign_id)}>Enroll</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+        <div style={{fontSize:9, color:"var(--muted)", marginTop:12, lineHeight:1.5}}>
+          Sends respect consent (email → email consent, SMS → SMS consent) and skip contacts without it. Point a daily
+          scheduler (Make.com / cron) at <b>POST /api/campaigns/run</b> to advance sequences automatically.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
 // REPORTS — analytics dashboard (#14) · GET /api/reports
 // ─────────────────────────────────────────────────────────
 const CHART_COLORS = ["#4299e1","#38a169","#6b46c1","#b7791f","#e53e3e","#0bc5ea","#ed8936","#805ad5"];
@@ -4613,6 +4740,8 @@ function ClientDrawer({ customerId, onClose, toast }) {
   const [error, setError] = useState(null);
   const [na, setNa] = useState(null);
   const [naLoading, setNaLoading] = useState(false);
+  const [mp, setMp] = useState(null);
+  const [mpLoading, setMpLoading] = useState(false);
   const [tasks, setTasks] = useState([]);
   const [taskTitle, setTaskTitle] = useState("");
 
@@ -4623,8 +4752,8 @@ function ClientDrawer({ customerId, onClose, toast }) {
   };
 
   useEffect(() => {
-    if (!customerId) { setData(null); setNa(null); setError(null); setTasks([]); return; }
-    setLoading(true); setError(null); setNa(null);
+    if (!customerId) { setData(null); setNa(null); setMp(null); setError(null); setTasks([]); return; }
+    setLoading(true); setError(null); setNa(null); setMp(null);
     fetch(`/api/customers/detail?id=${encodeURIComponent(customerId)}`)
       .then(async r => { if (!r.ok) throw new Error((await r.json().catch(()=>({}))).error || `HTTP ${r.status}`); return r.json(); })
       .then(setData)
@@ -4668,6 +4797,17 @@ function ClientDrawer({ customerId, onClose, toast }) {
       else setNa(d);
     } catch { toast("Network error requesting recommendation", "error"); }
     finally { setNaLoading(false); }
+  };
+
+  const runMeetingPrep = async () => {
+    setMpLoading(true);
+    try {
+      const res = await fetch("/api/customers/meeting-prep", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ customer_id: customerId }) });
+      const d = await res.json().catch(()=>({}));
+      if (!res.ok) toast(d.error || `AI unavailable (HTTP ${res.status})`, "error");
+      else setMp(d);
+    } catch { toast("Network error", "error"); }
+    finally { setMpLoading(false); }
   };
 
   if (!customerId) return null;
@@ -4735,6 +4875,32 @@ function ClientDrawer({ customerId, onClose, toast }) {
                 <div style={{fontSize:8, color:"var(--dim)", marginTop:8, lineHeight:1.4}}>{na.disclaimer}</div>
               </div>)}
               {!na && !naLoading && <div style={{fontSize:10, color:"var(--muted)", marginTop:6}}>Get an AI recommendation for the best next step with this client, with ready-to-send drafts.</div>}
+            </div>
+
+            {/* AI Meeting Prep */}
+            <div style={{marginTop:12, border:"1px solid #bee3f8", background:"#f0f9ff", borderRadius:10, padding:14}}>
+              <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
+                <div style={{fontSize:12, fontWeight:700, color:"#2b6cb0"}}>📋 Meeting Prep</div>
+                {!mp && <button className="btn-primary" disabled={mpLoading} style={{fontSize:10, padding:"5px 11px", opacity:mpLoading?.6:1}} onClick={runMeetingPrep}>{mpLoading?"Preparing…":"Generate"}</button>}
+              </div>
+              {mp && (<div style={{marginTop:10}}>
+                <div style={{fontSize:11, color:"var(--text)", lineHeight:1.5, marginBottom:10, fontWeight:500}}>{mp.summary}</div>
+                {[["Key facts","key_facts"],["Coverage gaps","coverage_gaps"],["Talking points","talking_points"],["Topics to explore","suggested_topics"],["Questions to ask","questions_to_ask"]].map(([label,key])=>(
+                  (mp[key]&&mp[key].length>0) ? (
+                    <div key={key} style={{marginBottom:8}}>
+                      <div style={{fontSize:9, fontWeight:700, color:"var(--muted)", textTransform:"uppercase", marginBottom:3}}>{label}</div>
+                      <ul style={{margin:0, paddingLeft:16}}>
+                        {mp[key].map((x,i)=><li key={i} style={{fontSize:11, color:"var(--text)", lineHeight:1.5, marginBottom:2}}>{x}</li>)}
+                      </ul>
+                    </div>
+                  ) : null
+                ))}
+                <div style={{display:"flex", gap:6, marginTop:6}}>
+                  <button className="btn-secondary" style={{fontSize:9, padding:"3px 8px"}} onClick={()=>{const txt=`Meeting prep — ${c.first_name} ${c.last_name}\n\n${mp.summary}\n\nKey facts:\n${(mp.key_facts||[]).map(x=>"• "+x).join("\n")}\n\nCoverage gaps:\n${(mp.coverage_gaps||[]).map(x=>"• "+x).join("\n")}\n\nTalking points:\n${(mp.talking_points||[]).map(x=>"• "+x).join("\n")}\n\nTopics:\n${(mp.suggested_topics||[]).map(x=>"• "+x).join("\n")}\n\nQuestions:\n${(mp.questions_to_ask||[]).map(x=>"• "+x).join("\n")}`; copy(txt,"Meeting prep");}}>Copy sheet</button>
+                </div>
+                <div style={{fontSize:8, color:"var(--dim)", marginTop:8, lineHeight:1.4}}>{mp.disclaimer}</div>
+              </div>)}
+              {!mp && !mpLoading && <div style={{fontSize:10, color:"var(--muted)", marginTop:6}}>Generate a pre-appointment one-pager: key facts, gaps, talking points, and questions.</div>}
             </div>
 
             {/* Follow-ups */}
@@ -4856,6 +5022,7 @@ export default function App(){
     {id:"agencies",  icon:"🏢", label:"Agency Owners",  badge:null, bc:"red"},
     {id:"upload",    icon:"📥", label:"Contact Upload"},
     {id:"followups", icon:"✅", label:"Follow-Ups"},
+    {id:"campaigns", icon:"📣", label:"Campaigns"},
     {id:"reports",   icon:"📊", label:"Reports"},
     {id:"conv",      icon:"⏰", label:"Conversions",    badge:liveConvUrgent||null, bc:"red"},
     {id:"opra",      icon:"🔄", label:"OPRA Center",    badge:liveOpraUncontacted||null, bc:"orange"},
@@ -4876,7 +5043,7 @@ export default function App(){
     {name:"Conversion AI",status:"running",ct:"—"},
     {name:"Follow Up AI",status:"running",ct:"—"},
   ];
-  const pageTitle={briefing:"Daily Briefing",dashboard:"Dashboard",opps:"Opportunities",agencies:"Agency Owners",upload:"Contact Upload",followups:"Follow-Ups",reports:"Reports & Analytics",conv:"Conversion Center",opra:"OPRA Center",calendar:"Calendar",ai:"AI Control Center",workshops:"Workshops",gdc:"GDC & Commission",prep:"Financial Review Prep",needs:"Customer Needs Map",calc:"Sales Calculator",contacts:"FFS Contacts",forms:"Client Forms",fna:"Financial Needs Analysis"};
+  const pageTitle={briefing:"Daily Briefing",dashboard:"Dashboard",opps:"Opportunities",agencies:"Agency Owners",upload:"Contact Upload",followups:"Follow-Ups",campaigns:"Drip Campaigns",reports:"Reports & Analytics",conv:"Conversion Center",opra:"OPRA Center",calendar:"Calendar",ai:"AI Control Center",workshops:"Workshops",gdc:"GDC & Commission",prep:"Financial Review Prep",needs:"Customer Needs Map",calc:"Sales Calculator",contacts:"FFS Contacts",forms:"Client Forms",fna:"Financial Needs Analysis"};
 
   return(<>
     <style>{G}</style>
@@ -4954,6 +5121,7 @@ export default function App(){
           {page==="agencies"   &&<AgencyOwners toast={toast} onNav={setPage}/>}
           {page==="upload"     &&<ContactUploadPage toast={toast}/>}
           {page==="followups"  &&<FollowUpsPage toast={toast} onOpenCustomer={setDrawerCustomerId}/>}
+          {page==="campaigns"  &&<CampaignsPage toast={toast}/>}
           {page==="reports"    &&<ReportsPage toast={toast}/>}
           {page==="calendar"   &&<Calendar toast={toast} appData={appData}/>}
           {page==="workshops"  &&<WorkshopsPage toast={toast}/>}

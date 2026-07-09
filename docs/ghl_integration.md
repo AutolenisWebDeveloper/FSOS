@@ -161,12 +161,13 @@ curl -X POST https://<domain>/api/ghl/sync \
 
 ---
 
-## 5. CSV contact upload → GHL bulk import
+## 5. CSV / Excel contact upload → GHL bulk import
 
-Bulk-import a book of contacts from a CSV straight into the GHL location. The
-workflow validates, de-duplicates, maps fields, upserts to GHL (so **no
-duplicate contact is ever created**), optionally drops each contact onto a
-pipeline stage, and logs every batch for the audit trail.
+Bulk-import a book of contacts from a **CSV or Excel (`.xlsx`)** file straight
+into the GHL location. The workflow reads the document, **intelligently
+recognizes which column is which**, validates, de-duplicates, maps fields,
+upserts to GHL (so **no duplicate contact is ever created**), optionally drops
+each contact onto a pipeline stage, and logs every batch for the audit trail.
 
 **UI:** Command Center → sidebar → **Contact Upload** (`page==="upload"`), or the
 **+ Upload Contacts to GHL** button on an Agency Owner's Upload History tab.
@@ -175,19 +176,34 @@ pipeline stage, and logs every batch for the audit trail.
 
 | field      | required | notes                                                        |
 | ---------- | -------- | ------------------------------------------------------------ |
-| `file`     | yes      | `.csv`, ≤ 5 MB, ≤ 1,000 rows per import                       |
+| `file`     | yes      | `.csv` or `.xlsx`, ≤ 5 MB, ≤ 1,000 rows per import           |
 | `tags`     | no       | comma-separated; merged onto every contact                   |
 | `source`   | no       | lead source stamped on the batch + `lead_source` custom field |
 | `agency_owner` | no   | referring agency owner → `referring_agency_owner` custom field; applied to any row missing its own Agency Owner column |
 | `pipeline` | no       | `prospect_client` \| `agency_owner` \| `term_conversions`     |
 | `stage`    | with pipeline | 1-based stage position (see the ID map in §1)           |
+| `ai`       | no       | `false` disables AI column recognition for the request (default on when `ANTHROPIC_API_KEY` is set) |
 
-**Column auto-mapping** (header casing/spacing/aliases ignored):
-`name` / `first name` / `last name`, `email`, `phone`, `tags`, `source`,
-`agency owner` (aliases: `owner`, `agent`, `referring agency owner`) → `referring_agency_owner` custom field,
-`product interest` → custom field, `life stage` → custom field. A name column
-**and** at least one of email/phone are required, or the request is rejected
-with the detected headers so the operator can fix the file.
+### Intelligent column recognition
+
+Columns are resolved by three strategies, in precedence order — the response's
+`detection_method` records which one claimed each column:
+
+1. **`header`** — exact header-alias match (`first name`, `e-mail`, `cell`, `owner`, …). Highest precision.
+2. **`ai`** — when `ANTHROPIC_API_KEY` is set, Claude reads the headers **and a
+   sample of the rows** and maps the remaining columns. This handles oddly named,
+   non-English, or ambiguous headers by understanding the data the way a person would.
+3. **`content`** — value-pattern inference for anything still unmapped: a column
+   whose cells look like emails becomes `email`, E.164/US phones → `phone`, US
+   states → `state`, 5-digit ZIPs → `postal_code`, two-word names → `full_name` —
+   even when the header is `Column 3` or blank.
+
+Recognized fields: `first_name` / `last_name` / `full_name`, `email`, `phone`,
+`tags`, `source`, `agency_owner` → `referring_agency_owner`, `city`, `state`,
+`postal_code`, `address`, `company`, `product_interest` & `life_stage` → custom
+fields, `notes`. A name (full, or first + last) **and** at least one of
+email/phone are required, or the request is rejected (422) with the columns it
+did recognize so the operator can fix the file.
 
 - **Validation** — emails are format-checked; phones are normalized to E.164
   (US 10-digit → `+1…`). Rows failing validation are marked `invalid` and skipped.

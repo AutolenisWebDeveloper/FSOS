@@ -15,7 +15,8 @@ execSync(
 )
 const require = createRequire(import.meta.url)
 const { parseCsv, parseCsvRecords } = require(join(out, 'csv.js'))
-const { detectColumnMap, mapAndValidateRow, normalizeEmail, normalizePhone } = require(join(out, 'ghlContacts.js'))
+const { detectColumnMap, mapAndValidateRow, normalizeEmail, normalizePhone, inferColumnMap, resolveColumns } =
+  require(join(out, 'ghlContacts.js'))
 const { withGhlRetry } = require(join(out, 'ghl.js'))
 
 let passed = 0
@@ -107,6 +108,48 @@ await t('rejects a row with neither valid email nor phone', () => {
   const { contact, errors } = mapAndValidateRow({ name: 'X Y', email: 'bad', phone: '12' }, map, {})
   assert.equal(contact, null)
   assert.ok(errors.some((e) => /email or phone/i.test(e)))
+})
+
+console.log('Content-based inference')
+const NOISY = [
+  { 'Col A': 'Jane Doe', 'Col B': 'jane@x.com', 'Col C': '(512) 555-0142', 'Col D': 'TX' },
+  { 'Col A': 'John Smith', 'Col B': 'john@x.com', 'Col C': '512-555-0177', 'Col D': 'CA' },
+  { 'Col A': 'Maria Garcia', 'Col B': 'maria@x.com', 'Col C': '+1 512 555 0188', 'Col D': 'FL' },
+]
+await t('infers field types from values when headers are meaningless', () => {
+  const map = inferColumnMap(['Col A', 'Col B', 'Col C', 'Col D'], NOISY)
+  assert.equal(map['Col A'], 'full_name')
+  assert.equal(map['Col B'], 'email')
+  assert.equal(map['Col C'], 'phone')
+  assert.equal(map['Col D'], 'state')
+})
+await t('does not assign a column below the confidence threshold', () => {
+  const rows = [{ x: 'a@b.co' }, { x: 'not-email' }, { x: 'also not' }, { x: 'nope' }]
+  const map = inferColumnMap(['x'], rows) // 1/4 emails = 25% < 60%
+  assert.equal(map['x'], undefined)
+})
+await t('resolveColumns: header aliases take precedence over content', () => {
+  const rows = [{ Email: 'a@b.co', Phone: '512-555-0000' }]
+  const { map, method } = resolveColumns(['Email', 'Phone'], rows, null)
+  assert.equal(map['Email'], 'email')
+  assert.equal(method['Email'], 'header')
+})
+await t('resolveColumns: AI mapping fills columns aliases miss, content fills the rest', () => {
+  const headers = ['weird_name_col', 'Col C']
+  const rows = [{ 'weird_name_col': 'Jane Doe', 'Col C': '512-555-0142' }]
+  const aiMap = { 'weird_name_col': 'full_name' }
+  const { map, method } = resolveColumns(headers, rows, aiMap)
+  assert.equal(map['weird_name_col'], 'full_name')
+  assert.equal(method['weird_name_col'], 'ai')
+  assert.equal(map['Col C'], 'phone')
+  assert.equal(method['Col C'], 'content')
+})
+await t('resolveColumns: never maps two headers to the same field', () => {
+  const headers = ['Email', 'Contact Email']
+  const rows = [{ Email: 'a@b.co', 'Contact Email': 'c@d.co' }]
+  const { map } = resolveColumns(headers, rows, null)
+  const emailCols = Object.entries(map).filter(([, f]) => f === 'email')
+  assert.equal(emailCols.length, 1)
 })
 
 console.log('Retry helper')

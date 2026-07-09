@@ -83,16 +83,16 @@ export interface CsvTable {
 }
 
 /**
- * Parse CSV into header-keyed records. Header cells are trimmed; duplicate
- * headers get a numeric suffix so no column is silently lost.
+ * Turn a raw cell matrix (row 0 = header) into header-keyed records. Header
+ * cells are trimmed; blank or duplicate headers get a stable synthetic name so
+ * no column is silently dropped. Shared by the CSV and Excel loaders.
  */
-export function parseCsvRecords(input: string): CsvTable {
-  const matrix = parseCsv(input)
+export function matrixToTable(matrix: string[][]): CsvTable {
   if (matrix.length === 0) return { headers: [], rows: [] }
 
   const seen = new Map<string, number>()
-  const headers = matrix[0].map((h) => {
-    const base = h.trim()
+  const headers = matrix[0].map((h, i) => {
+    const base = (h ?? '').trim() || `Column ${i + 1}`
     const n = seen.get(base) || 0
     seen.set(base, n + 1)
     return n === 0 ? base : `${base}_${n}`
@@ -107,4 +107,12 @@ export function parseCsvRecords(input: string): CsvTable {
   })
 
   return { headers, rows }
+}
+
+/**
+ * Parse CSV into header-keyed records. Header cells are trimmed; duplicate
+ * headers get a numeric suffix so no column is silently lost.
+ */
+export function parseCsvRecords(input: string): CsvTable {
+  return matrixToTable(parseCsv(input))
 }

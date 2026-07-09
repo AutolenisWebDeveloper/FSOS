@@ -1183,12 +1183,15 @@ function ContactUploadPage({toast}) {
 
   const acceptFile = (f) => {
     if (!f) return;
-    if (!/\.csv$/i.test(f.name)) { toast("Please choose a .csv file", "error"); return; }
+    if (!/\.(csv|xlsx)$/i.test(f.name)) { toast("Please choose a .csv or .xlsx file", "error"); return; }
     if (f.size > 5 * 1024 * 1024) { toast("File exceeds the 5MB limit", "error"); return; }
-    setFile(f); setResult(null);
-    const reader = new FileReader();
-    reader.onload = e => { try { setHeaders(sniffHeaders(String(e.target.result || ""))); } catch { setHeaders([]); } };
-    reader.readAsText(f.slice(0, 64 * 1024));
+    setFile(f); setResult(null); setHeaders([]);
+    // Client-side header preview only for CSV; Excel columns are recognized server-side.
+    if (/\.csv$/i.test(f.name)) {
+      const reader = new FileReader();
+      reader.onload = e => { try { setHeaders(sniffHeaders(String(e.target.result || ""))); } catch { setHeaders([]); } };
+      reader.readAsText(f.slice(0, 64 * 1024));
+    }
   };
 
   const submit = async () => {
@@ -1238,6 +1241,30 @@ function ContactUploadPage({toast}) {
       <div style={{fontSize:10, color:"var(--muted)", textTransform:"uppercase", letterSpacing:".04em", marginTop:2}}>{label}</div>
     </div>
   );
+  const METHOD_STYLE = {
+    header:  { bg:"#ebf8ff", fg:"#2b6cb0", label:"header" },
+    ai:      { bg:"#f0e9ff", fg:"#6b46c1", label:"AI" },
+    content: { bg:"#e6fffa", fg:"#2c7a7b", label:"values" },
+  };
+  const renderColumns = (map, method) => {
+    const entries = Object.entries(map || {});
+    if (!entries.length) return null;
+    return (
+      <div style={{border:"1px solid var(--border)", borderRadius:6, overflow:"hidden", marginBottom:10}}>
+        {entries.map(([header, field], i) => {
+          const m = METHOD_STYLE[(method||{})[header]] || METHOD_STYLE.content;
+          return (
+            <div key={i} style={{display:"grid", gridTemplateColumns:"1fr auto auto", gap:8, alignItems:"center",
+              padding:"5px 8px", borderBottom:"1px solid var(--border)", fontSize:10}}>
+              <span style={{color:"var(--muted)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}} title={header}>{header}</span>
+              <span style={{fontWeight:600, color:"var(--navy)", fontFamily:"DM Mono,monospace"}}>→ {field}</span>
+              <span style={{fontSize:8, padding:"1px 6px", borderRadius:20, background:m.bg, color:m.fg, fontWeight:600}}>{m.label}</span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
 
   return (
     <div>
@@ -1246,9 +1273,10 @@ function ContactUploadPage({toast}) {
         <div style={card}>
           <div style={{fontSize:15, fontWeight:700, color:"var(--navy)", marginBottom:4}}>Upload Contacts to GoHighLevel</div>
           <div style={{fontSize:11, color:"var(--muted)", marginBottom:14, lineHeight:1.5}}>
-            Import a CSV of contacts. Rows are validated, de-duplicated, mapped, and upserted into your GHL
-            location — no duplicates are ever created. Add tags, a source, and optionally drop everyone onto a
-            pipeline stage.
+            Import a CSV or Excel (.xlsx) file of contacts. The system reads the document and recognizes which
+            column holds the name, email, phone, and more — even when the headers are unusual or missing — then
+            validates, de-duplicates, and upserts each contact into your GHL location. No duplicates are ever
+            created. Add tags, a source, and optionally drop everyone onto a pipeline stage.
           </div>
 
           <div
@@ -1260,12 +1288,14 @@ function ContactUploadPage({toast}) {
               textAlign:"center", cursor:"pointer", background: drag?"#f0f7ff":"var(--bg)", transition:"all .15s"}}>
             <div style={{fontSize:26, marginBottom:6}}>📥</div>
             <div style={{fontSize:12, fontWeight:600, color:"var(--navy)"}}>
-              {file ? file.name : "Drop a CSV here or click to browse"}
+              {file ? file.name : "Drop a CSV or Excel file here or click to browse"}
             </div>
             <div style={{fontSize:10, color:"var(--muted)", marginTop:3}}>
-              {file ? `${(file.size/1024).toFixed(1)} KB · ${headers.length} columns detected` : "Max 5MB · up to 1,000 rows"}
+              {file
+                ? `${(file.size/1024).toFixed(1)} KB${headers.length?` · ${headers.length} columns`:" · columns recognized on upload"}`
+                : "CSV or .xlsx · max 5MB · up to 1,000 rows"}
             </div>
-            <input ref={inputRef} type="file" accept=".csv,text/csv" style={{display:"none"}}
+            <input ref={inputRef} type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style={{display:"none"}}
               onChange={e=>acceptFile(e.target.files?.[0])}/>
           </div>
 
@@ -1315,9 +1345,11 @@ function ContactUploadPage({toast}) {
             {busy ? "Uploading & syncing to GHL…" : "Import & Sync to GoHighLevel"}
           </button>
           <div style={{fontSize:9, color:"var(--muted)", marginTop:8, lineHeight:1.5}}>
-            Detected columns are auto-mapped: <b>name / first / last</b>, <b>email</b>, <b>phone</b>, <b>tags</b>,
-            <b> source</b>, <b>agency owner</b>, plus product interest &amp; life stage into GHL custom fields. A name
-            column and either email or phone are required.
+            Columns are recognized three ways: exact header match → AI reading the headers &amp; sample rows →
+            value patterns (an email-shaped column becomes <b>email</b> even if it&apos;s labelled &quot;Col C&quot;).
+            Recognized: <b>name / first / last</b>, <b>email</b>, <b>phone</b>, <b>tags</b>, <b>source</b>,
+            <b> agency owner</b>, city/state/zip, plus product interest &amp; life stage. A name and either email
+            or phone are required.
           </div>
         </div>
 
@@ -1326,10 +1358,18 @@ function ContactUploadPage({toast}) {
           <div style={{fontSize:13, fontWeight:700, color:"var(--navy)", marginBottom:12}}>Import Result</div>
           {!result && <div style={{fontSize:11, color:"var(--muted)"}}>Run an import to see per-row results here.</div>}
           {result && result.error && (
-            <div style={{fontSize:11, color:"var(--red)", background:"#fef2f2", border:"1px solid #fecaca", borderRadius:7, padding:12}}>
-              {result.error}
-              {result.detail && result.detail.headers &&
-                <div style={{marginTop:8, color:"var(--muted)", fontSize:10}}>Detected headers: {result.detail.headers.join(", ")}</div>}
+            <div>
+              <div style={{fontSize:11, color:"var(--red)", background:"#fef2f2", border:"1px solid #fecaca", borderRadius:7, padding:12}}>
+                {result.error}
+                {result.detail && result.detail.headers &&
+                  <div style={{marginTop:8, color:"var(--muted)", fontSize:10}}>Columns found: {result.detail.headers.join(", ")}</div>}
+              </div>
+              {result.detail && result.detail.detected_columns && Object.keys(result.detail.detected_columns).length > 0 && (
+                <div style={{marginTop:10}}>
+                  <div style={{fontSize:11, fontWeight:600, marginBottom:6}}>What we did recognize</div>
+                  {renderColumns(result.detail.detected_columns, result.detail.detection_method)}
+                </div>
+              )}
             </div>
           )}
           {result && !result.error && (
@@ -1343,7 +1383,14 @@ function ContactUploadPage({toast}) {
               <div style={{fontSize:10, color:"var(--muted)", marginBottom:8}}>
                 {result.total} rows · location {result.location_id}
                 {result.pipeline ? ` · ${result.pipeline} stage ${result.stage}` : ""}
+                {result.ai_used ? " · AI column recognition" : result.ai_available ? "" : " · header/value recognition"}
               </div>
+              {result.detected_columns && Object.keys(result.detected_columns).length > 0 && (
+                <>
+                  <div style={{fontSize:11, fontWeight:600, marginBottom:6}}>Recognized columns</div>
+                  {renderColumns(result.detected_columns, result.detection_method)}
+                </>
+              )}
               {result.rows && result.rows.length > 0 && (
                 <>
                   <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6}}>

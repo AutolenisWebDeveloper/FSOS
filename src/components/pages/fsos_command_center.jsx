@@ -4235,11 +4235,254 @@ function AssistantModal({open,onClose}){
   );
 }
 
+// ─────────────────────────────────────────────────────────
+// TOP SEARCH — live search across clients + agencies (GET /api/search)
+// ─────────────────────────────────────────────────────────
+function TopSearch({ onOpenCustomer, toast }) {
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const boxRef = useRef(null);
+
+  useEffect(() => {
+    if (q.trim().length < 2) { setResults([]); setLoading(false); return; }
+    setLoading(true);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => {
+      fetch(`/api/search?q=${encodeURIComponent(q.trim())}`, { signal: ctrl.signal })
+        .then(r => r.ok ? r.json() : { results: [] })
+        .then(d => { setResults(d.results || []); setOpen(true); })
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    }, 250);
+    return () => { clearTimeout(timer); ctrl.abort(); };
+  }, [q]);
+
+  useEffect(() => {
+    const onDoc = e => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+
+  const choose = (r) => {
+    setOpen(false); setQ("");
+    if (r.type === "customer") onOpenCustomer(r.id);
+    else toast("Open the Agency Owners page to manage this partner", "info");
+  };
+
+  return (
+    <div ref={boxRef} style={{flex:1, maxWidth:320, margin:"0 16px", position:"relative"}}>
+      <span style={{position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", color:"var(--muted)", fontSize:13, pointerEvents:"none"}}>🔍</span>
+      <input placeholder="Search clients, agencies…" value={q}
+        onChange={e=>setQ(e.target.value)} onFocus={()=>{ if(results.length) setOpen(true); }}
+        style={{width:"100%", background:"var(--bg)", border:"1px solid var(--border)", borderRadius:6, padding:"7px 10px 7px 32px", fontFamily:"DM Sans,sans-serif", fontSize:11, color:"var(--text)", outline:"none"}}/>
+      {open && (q.trim().length >= 2) && (
+        <div style={{position:"absolute", top:"110%", left:0, right:0, background:"var(--card)", border:"1px solid var(--border)", borderRadius:8, boxShadow:"var(--shadow2)", zIndex:60, maxHeight:360, overflowY:"auto"}}>
+          {loading && <div style={{padding:"10px 12px", fontSize:11, color:"var(--muted)"}}>Searching…</div>}
+          {!loading && results.length === 0 && <div style={{padding:"10px 12px", fontSize:11, color:"var(--muted)"}}>No matches for “{q}”.</div>}
+          {!loading && results.map((r,i)=>(
+            <div key={i} onClick={()=>choose(r)} style={{display:"flex", alignItems:"center", gap:9, padding:"8px 12px", cursor:"pointer", borderBottom:"1px solid var(--border)"}}
+              onMouseEnter={e=>e.currentTarget.style.background="var(--bg2)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+              <span style={{fontSize:13}}>{r.type==="customer"?"👤":"🏢"}</span>
+              <div style={{minWidth:0, flex:1}}>
+                <div style={{fontSize:12, fontWeight:600, color:"var(--navy)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{r.title}</div>
+                <div style={{fontSize:10, color:"var(--muted)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{r.subtitle}</div>
+              </div>
+              {r.stage && <span style={{fontSize:8, background:"#f0e9ff", color:"#6b46c1", border:"1px solid #d6bcfa", borderRadius:3, padding:"2px 5px", whiteSpace:"nowrap"}}>◆ {r.stage}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
+// CLIENT DRAWER — 360° profile + AI next-best-action
+// GET /api/customers/detail · POST /api/customers/next-action
+// ─────────────────────────────────────────────────────────
+function ClientDrawer({ customerId, onClose, toast }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [na, setNa] = useState(null);
+  const [naLoading, setNaLoading] = useState(false);
+
+  useEffect(() => {
+    if (!customerId) { setData(null); setNa(null); setError(null); return; }
+    setLoading(true); setError(null); setNa(null);
+    fetch(`/api/customers/detail?id=${encodeURIComponent(customerId)}`)
+      .then(async r => { if (!r.ok) throw new Error((await r.json().catch(()=>({}))).error || `HTTP ${r.status}`); return r.json(); })
+      .then(setData)
+      .catch(e => setError(String(e.message || e)))
+      .finally(() => setLoading(false));
+  }, [customerId]);
+
+  useEffect(() => {
+    const onKey = e => { if (e.key === "Escape") onClose(); };
+    if (customerId) document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [customerId, onClose]);
+
+  const runNextAction = async () => {
+    setNaLoading(true);
+    try {
+      const res = await fetch("/api/customers/next-action", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ customer_id: customerId }),
+      });
+      const d = await res.json().catch(()=>({}));
+      if (!res.ok) { toast(d.error || `AI unavailable (HTTP ${res.status})`, "error"); }
+      else setNa(d);
+    } catch { toast("Network error requesting recommendation", "error"); }
+    finally { setNaLoading(false); }
+  };
+
+  if (!customerId) return null;
+  const c = data?.customer || {};
+  const money = v => v==null ? "—" : "$"+Number(v).toLocaleString("en-US");
+  const date = v => v ? new Date(v).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "—";
+  const copy = (txt,label) => { navigator.clipboard?.writeText(txt||""); toast(`${label} copied`, "success"); };
+  const sec = { fontSize:11, fontWeight:700, color:"var(--navy)", textTransform:"uppercase", letterSpacing:".04em", margin:"16px 0 8px" };
+  const chip = (label,val) => (
+    <div><div style={{fontSize:9, color:"var(--muted)", textTransform:"uppercase", letterSpacing:".03em"}}>{label}</div>
+      <div style={{fontSize:12, color:"var(--text)", fontWeight:500}}>{val==null||val===""?"—":val}</div></div>
+  );
+  const priColor = { high:"var(--red)", medium:"#b7791f", low:"var(--muted)" };
+
+  return (
+    <div style={{position:"fixed", inset:0, zIndex:120, display:"flex", justifyContent:"flex-end"}}>
+      <div onClick={onClose} style={{position:"absolute", inset:0, background:"rgba(15,30,54,.35)"}}/>
+      <div style={{position:"relative", width:"min(480px,94vw)", height:"100%", background:"var(--bg)", boxShadow:"var(--shadow2)", overflowY:"auto"}}>
+        <div style={{position:"sticky", top:0, background:"var(--navy)", color:"#fff", padding:"14px 18px", display:"flex", justifyContent:"space-between", alignItems:"flex-start", zIndex:2}}>
+          <div>
+            <div style={{fontSize:16, fontWeight:700}}>{loading?"Loading…":`${c.first_name||""} ${c.last_name||""}`.trim()||"Client"}</div>
+            {data && <div style={{fontSize:11, opacity:.8, marginTop:2}}>
+              {[c.email, c.phone].filter(Boolean).join(" · ")||"No contact info"}
+            </div>}
+          </div>
+          <button onClick={onClose} style={{background:"transparent", border:"none", color:"#fff", fontSize:20, cursor:"pointer", lineHeight:1}}>×</button>
+        </div>
+
+        <div style={{padding:"4px 18px 28px"}}>
+          {error && <div style={{marginTop:14, fontSize:12, color:"var(--red)", background:"#fef2f2", border:"1px solid #fecaca", borderRadius:8, padding:12}}>{error}</div>}
+          {data && (<>
+            {/* Quick actions */}
+            <div style={{display:"flex", gap:8, marginTop:14, flexWrap:"wrap"}}>
+              {c.phone && <a className="btn-secondary" style={{fontSize:11, padding:"6px 12px", textDecoration:"none"}} href={`tel:${c.phone}`}>📞 Call</a>}
+              {c.email && <a className="btn-secondary" style={{fontSize:11, padding:"6px 12px", textDecoration:"none"}} href={`mailto:${c.email}`}>✉ Email</a>}
+              {data.ghl?.stage && <span style={{fontSize:10, background:"#f0e9ff", color:"#6b46c1", border:"1px solid #d6bcfa", borderRadius:4, padding:"5px 9px"}}>◆ {data.ghl.pipeline} · {data.ghl.stage}</span>}
+            </div>
+
+            {/* AI Next Best Action */}
+            <div style={{marginTop:16, border:"1px solid #d6bcfa", background:"#faf7ff", borderRadius:10, padding:14}}>
+              <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
+                <div style={{fontSize:12, fontWeight:700, color:"#6b46c1"}}>✦ AI Next Best Action</div>
+                {!na && <button className="btn-primary" disabled={naLoading} style={{fontSize:10, padding:"5px 11px", opacity:naLoading?.6:1}} onClick={runNextAction}>{naLoading?"Thinking…":"Suggest"}</button>}
+              </div>
+              {na && (<div style={{marginTop:10}}>
+                <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:6}}>
+                  <span style={{fontSize:9, fontWeight:700, textTransform:"uppercase", color:"#fff", background:priColor[na.priority]||"var(--muted)", borderRadius:20, padding:"2px 8px"}}>{na.priority}</span>
+                  <span style={{fontSize:13, fontWeight:600, color:"var(--navy)"}}>{na.action}</span>
+                </div>
+                <div style={{fontSize:11, color:"var(--muted)", lineHeight:1.5, marginBottom:10}}>{na.rationale}</div>
+                {na.draft_sms && <div style={{marginBottom:8}}>
+                  <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:3}}>
+                    <span style={{fontSize:9, fontWeight:700, color:"var(--muted)", textTransform:"uppercase"}}>Draft SMS</span>
+                    <button className="btn-secondary" style={{fontSize:8, padding:"2px 7px"}} onClick={()=>copy(na.draft_sms,"SMS")}>Copy</button>
+                  </div>
+                  <div style={{fontSize:11, background:"#fff", border:"1px solid var(--border)", borderRadius:6, padding:8, lineHeight:1.5}}>{na.draft_sms}</div>
+                </div>}
+                {na.draft_email_body && <div>
+                  <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:3}}>
+                    <span style={{fontSize:9, fontWeight:700, color:"var(--muted)", textTransform:"uppercase"}}>Draft Email — {na.draft_email_subject}</span>
+                    <button className="btn-secondary" style={{fontSize:8, padding:"2px 7px"}} onClick={()=>copy(`Subject: ${na.draft_email_subject}\n\n${na.draft_email_body}`,"Email")}>Copy</button>
+                  </div>
+                  <div style={{fontSize:11, background:"#fff", border:"1px solid var(--border)", borderRadius:6, padding:8, lineHeight:1.5, whiteSpace:"pre-wrap"}}>{na.draft_email_body}</div>
+                </div>}
+                <div style={{fontSize:8, color:"var(--dim)", marginTop:8, lineHeight:1.4}}>{na.disclaimer}</div>
+              </div>)}
+              {!na && !naLoading && <div style={{fontSize:10, color:"var(--muted)", marginTop:6}}>Get an AI recommendation for the best next step with this client, with ready-to-send drafts.</div>}
+            </div>
+
+            {/* Overview */}
+            <div style={sec}>Overview</div>
+            <div style={{display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, background:"var(--card)", border:"1px solid var(--border)", borderRadius:10, padding:14}}>
+              {chip("Age", c.age)}
+              {chip("Marital", c.marital_status)}
+              {chip("Dependents", c.dependents)}
+              {chip("Location", [c.city, c.state].filter(Boolean).join(", "))}
+              {chip("Source", c.source)}
+              {chip("Client since", date(c.created_at))}
+              {chip("SMS consent", c.consent_sms?"✓ Yes":"No")}
+              {chip("Email consent", c.consent_email?"✓ Yes":"No")}
+              {chip("Policies", c.policy_count)}
+            </div>
+
+            {/* Scores */}
+            {data.scores && <>
+              <div style={sec}>Priority Scores</div>
+              <div style={{background:"var(--card)", border:"1px solid var(--border)", borderRadius:10, padding:14, display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10}}>
+                {[["Priority",data.scores.priority_score],["Pipeline",data.scores.primary_pipeline],["Conversion",data.scores.conversion_score],["OPRA",data.scores.opra_score],["Life",data.scores.life_score],["Retirement",data.scores.retirement_score]].map((s,i)=>(
+                  <div key={i}>{chip(s[0], s[1])}</div>
+                ))}
+              </div>
+            </>}
+
+            {/* Policies */}
+            <div style={sec}>Policies ({data.policies.length})</div>
+            {data.policies.length===0 ? <div style={{fontSize:11, color:"var(--muted)"}}>No policies on record.</div> :
+              <div style={{background:"var(--card)", border:"1px solid var(--border)", borderRadius:10, overflow:"hidden"}}>
+                {data.policies.map((p,i)=>(
+                  <div key={i} style={{display:"grid", gridTemplateColumns:"1fr auto", gap:8, padding:"10px 12px", borderBottom:"1px solid var(--border)"}}>
+                    <div><div style={{fontSize:12, fontWeight:600, textTransform:"capitalize"}}>{p.policy_type} · {p.carrier||"—"}</div>
+                      <div style={{fontSize:10, color:"var(--muted)"}}>{p.status}{p.conversion_deadline?` · conv. deadline ${date(p.conversion_deadline)}`:""}</div></div>
+                    <div style={{textAlign:"right", fontSize:11, fontWeight:600}}>{money(p.annual_premium)}<div style={{fontSize:8, color:"var(--muted)", fontWeight:400}}>/yr</div></div>
+                  </div>
+                ))}
+              </div>}
+
+            {/* Cases */}
+            {data.cases.length>0 && <>
+              <div style={sec}>Commission Cases ({data.cases.length})</div>
+              <div style={{background:"var(--card)", border:"1px solid var(--border)", borderRadius:10, overflow:"hidden"}}>
+                {data.cases.map((k,i)=>(
+                  <div key={i} style={{display:"grid", gridTemplateColumns:"1fr auto", gap:8, padding:"10px 12px", borderBottom:"1px solid var(--border)"}}>
+                    <div><div style={{fontSize:12, fontWeight:600}}>{k.product_name}</div>
+                      <div style={{fontSize:10, color:"var(--muted)"}}>{k.carrier} · {k.case_status}</div></div>
+                    <div style={{textAlign:"right", fontSize:11, fontWeight:600, color:"var(--green2)"}}>{money(k.estimated_gdc)}<div style={{fontSize:8, color:"var(--muted)", fontWeight:400}}>est. GDC</div></div>
+                  </div>
+                ))}
+              </div>
+            </>}
+
+            {/* Activity */}
+            <div style={sec}>Activity Timeline</div>
+            {data.activity.length===0 ? <div style={{fontSize:11, color:"var(--muted)"}}>No activity logged yet.</div> :
+              <div style={{borderLeft:"2px solid var(--border)", marginLeft:6, paddingLeft:14}}>
+                {data.activity.map((a,i)=>(
+                  <div key={i} style={{position:"relative", paddingBottom:12}}>
+                    <span style={{position:"absolute", left:-21, top:2, width:8, height:8, borderRadius:"50%", background:"#4299e1"}}/>
+                    <div style={{fontSize:11, fontWeight:600, textTransform:"capitalize"}}>{a.type}{a.subject?`: ${a.subject}`:""}</div>
+                    {a.notes && <div style={{fontSize:10, color:"var(--muted)", lineHeight:1.5}}>{a.notes}</div>}
+                    <div style={{fontSize:9, color:"var(--dim)"}}>{new Date(a.created_at).toLocaleString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}{a.ai_agent?` · ${a.ai_agent}`:""}</div>
+                  </div>
+                ))}
+              </div>}
+          </>)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App(){
   const [page,setPage]=useState("briefing");
   const [tier,setTier]=useState(3);
   const [toasts,setToasts]=useState([]);
   const [assistantOpen,setAssistantOpen]=useState(false);
+  const [drawerCustomerId,setDrawerCustomerId]=useState(null);
   const toast=(msg,type="info")=>{const id=Date.now();setToasts(t=>[...t,{id,msg,type}]);setTimeout(()=>setToasts(t=>t.filter(x=>x.id!==id)),3000);};
 
   // ── LIVE DATA ──────────────────────────────────────────
@@ -4334,13 +4577,7 @@ export default function App(){
             <span className="tb-title">{pageTitle[page]||"Dashboard"}</span>
             {page==="briefing"&&<span className="tb-sub"> {appData.counts?.opra_due+appData.counts?.urgent_conversions || 0} urgent items · {appData.topOpportunities?.length || 0} opportunities today</span>}
           </div>
-          <div style={{flex:1,maxWidth:280,margin:"0 16px",position:"relative"}}>
-            <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"var(--muted)",fontSize:13,pointerEvents:"none"}}>🔍</span>
-            <input placeholder="Search client, carrier, product..."
-              style={{width:"100%",background:"var(--bg)",border:"1px solid var(--border)",borderRadius:6,padding:"7px 10px 7px 32px",fontFamily:"DM Sans,sans-serif",fontSize:11,color:"var(--text)",outline:"none"}}
-              onFocus={e=>e.target.style.borderColor="#bee3f8"} onBlur={e=>e.target.style.borderColor="var(--border)"}
-              onChange={e=>{if(e.target.value.length>1)toast(`Searching: "${e.target.value}"...`,"info");}}/>
-          </div>
+          <TopSearch onOpenCustomer={setDrawerCustomerId} toast={toast}/>
           <div style={{position:"relative",cursor:"pointer"}} onClick={()=>toast("3 alerts: 1 flagged GDC case · 2 forms pending · 1 opt-out","info")}>
             <span style={{fontSize:18,lineHeight:1}}>🔔</span>
             <span style={{position:"absolute",top:-3,right:-4,background:"var(--red)",color:"#fff",borderRadius:"50%",width:14,height:14,fontSize:8,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontFamily:"DM Mono,monospace"}}>3</span>
@@ -4404,5 +4641,6 @@ export default function App(){
     </div>
     <div className="toast-wrap">{toasts.map(t=><div key={t.id} className={`toast ${t.type}`}>{t.msg}</div>)}</div>
     <AssistantModal open={assistantOpen} onClose={()=>setAssistantOpen(false)}/>
+    <ClientDrawer customerId={drawerCustomerId} onClose={()=>setDrawerCustomerId(null)} toast={toast}/>
   </>);
 }

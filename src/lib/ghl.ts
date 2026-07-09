@@ -325,6 +325,39 @@ export async function upsertContact(
   return ghlFetch('/contacts/upsert', { method: 'POST', body })
 }
 
+/**
+ * Retry a GHL call on *transient* failures only: network errors (status 0),
+ * rate limits (429), and 5xx. Client errors (4xx validation) are returned
+ * immediately — retrying them just wastes the location's rate budget.
+ * Backoff is deterministic (250ms, 500ms, 1000ms…) so it is test-friendly.
+ */
+export async function withGhlRetry<T>(
+  fn: () => Promise<GhlResult<T>>,
+  opts: { attempts?: number; baseDelayMs?: number; sleep?: (ms: number) => Promise<void> } = {},
+): Promise<GhlResult<T> & { attempts: number }> {
+  const attempts = Math.max(1, opts.attempts ?? 3)
+  const base = opts.baseDelayMs ?? 250
+  const sleep = opts.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)))
+
+  let last: GhlResult<T> = { ok: false, status: 0, error: 'not attempted' }
+  for (let n = 1; n <= attempts; n++) {
+    last = await fn()
+    if (last.ok || last.skipped) return { ...last, attempts: n }
+    const transient = last.status === 0 || last.status === 429 || last.status >= 500
+    if (!transient || n === attempts) return { ...last, attempts: n }
+    await sleep(base * 2 ** (n - 1))
+  }
+  return { ...last, attempts }
+}
+
+/** Upsert a contact with transient-failure retry. Reports whether GHL treated it as new. */
+export async function upsertContactWithRetry(
+  input: UpsertContactInput,
+  opts?: { attempts?: number; sleep?: (ms: number) => Promise<void> },
+): Promise<GhlResult<{ contact?: { id?: string }; new?: boolean }> & { attempts: number }> {
+  return withGhlRetry(() => upsertContact(input) as Promise<GhlResult<{ contact?: { id?: string }; new?: boolean }>>, opts)
+}
+
 export interface CreateOpportunityInput {
   contactId: string
   pipelineKey: GhlPipeline['key']

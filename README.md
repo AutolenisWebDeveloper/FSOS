@@ -23,7 +23,7 @@ A full-stack command center for **Markist**, a licensed Farmers Financial Servic
 
 ---
 
-## Command Center — 16 Pages
+## Command Center — 17 Pages
 
 | # | Page | Description |
 |---|------|-------------|
@@ -31,6 +31,7 @@ A full-stack command center for **Markist**, a licensed Farmers Financial Servic
 | 2 | Dashboard | Real-time KPIs, GDC, pipeline totals, activity feed |
 | 3 | Opportunities | Scored lead list — all pipelines ranked by priority |
 | 4 | Agency Owners | Agency partners — referral tracking, last contact, needs-attention flags |
+| 4a | Contact Upload | CSV → GoHighLevel bulk import — validate, de-dupe, map, tag/stage, retry, batch history |
 | 5 | Conversions | Term policies with conversion deadlines — urgency-sorted |
 | 6 | OPRA Center | Open Policy Rate Adjustment cases — contacted/pending status |
 | 7 | Calendar | Appointment view — pre-meeting form status per client |
@@ -80,28 +81,42 @@ fsos/
 │   │       │   └── cases/route.ts        # GET/POST/PATCH commission cases (internal)
 │   │       ├── opra/route.ts             # GET/PATCH OPRA cases (internal)
 │   │       ├── scores/route.ts           # GET scores (internal)
+│   │       ├── ghl/
+│   │       │   ├── sync/route.ts         # POST push customer/agency into GHL (internal)
+│   │       │   └── contacts/upload/route.ts  # GET/POST CSV bulk contact import → GHL (internal)
 │   │       └── webhooks/
-│   │           └── calendly/route.ts     # POST Calendly events (public, signed)
+│   │           ├── calendly/route.ts     # POST Calendly events (public, signed)
+│   │           └── ghl/route.ts          # POST GoHighLevel events (public, signed)
 │   ├── components/
 │   │   └── pages/
 │   │       ├── CommandCenter.tsx         # Dynamic import wrapper (SSR disabled)
 │   │       ├── ClientFormPortal.tsx      # Public client-facing form UI
-│   │       ├── fsos_command_center.jsx   # Command center (16 pages)
+│   │       ├── fsos_command_center.jsx   # Command center (17 pages)
 │   │       └── fsos_forms_system.jsx     # Forms UI module
 │   └── lib/
 │       ├── anthropic.ts                  # Anthropic client + FNA model call
 │       ├── compliance.ts                 # Reg BI / TCPA disclosures & guards
 │       ├── fna.ts                        # FNA prompt + report shaping
 │       ├── forms.ts                      # Form catalog + helpers
+│       ├── ghl.ts                        # GHL pipeline/stage ID map + REST client + retry
+│       ├── ghlContacts.ts                # CSV → GHL contact field mapping + validation
+│       ├── csv.ts                        # Dependency-free RFC-4180 CSV parser
 │       ├── http.ts                       # readJson, parseLimit, requireInternalAuth
 │       ├── tokens.ts                     # Secure form-token generation/verification
 │       ├── supabase/
 │       │   └── client.ts                 # Lazy getDb() — never module-level
 │       └── types/
 │           └── database.ts               # TypeScript types for all tables
-└── supabase/
-    └── migrations/
-        └── 001_initial_schema.sql        # Schema, functions, RLS, pg_cron, `documents` bucket
+├── supabase/
+│   └── migrations/
+│       ├── 001_initial_schema.sql        # Schema, functions, RLS, pg_cron, `documents` bucket
+│       ├── 002_ghl_integration.sql       # GHL contact/opportunity linkage on customers
+│       ├── 003_ghl_agency.sql            # GHL owner linkage on agencies (Pipeline B)
+│       └── 004_ghl_contact_uploads.sql   # CSV import audit log (batches + rows, RLS on)
+├── docs/
+│   └── samples/contacts-template.csv     # Ready-to-edit CSV import template
+└── tests/
+    └── ghlUpload.test.mjs                # CSV parse / mapping / retry unit tests (npm test)
 ```
 
 ---
@@ -112,7 +127,8 @@ RLS is enabled on all tables. All API routes use the service role key — bypass
 
 pg_cron runs `run_nightly_scoring()` at 2AM CT (8AM UTC) to score all customers across the pipelines.
 
-Core tables include `agencies`, `customers`, `policies`, `scores`, `commission_cases`, `commission_rates`, `opra_cases`, `agency_referrals`, `agency_uploads`, `form_submissions`, `form_sends`, `activity`, `consent_ledger` (append-only TCPA audit trail), `workshops`, `workshop_registrations`, `daily_briefings`, and `customer_profiles`.
+Core tables include `agencies`, `customers`, `policies`, `scores`, `commission_cases`, `commission_rates`, `opra_cases`, `agency_referrals`, `agency_uploads`, `form_submissions`, `form_sends`, `activity`, `consent_ledger` (append-only TCPA audit trail), `workshops`, `workshop_registrations`, `daily_briefings`, `customer_profiles`, and the GHL
+CSV-import audit tables `ghl_upload_batches` + `ghl_upload_rows` (migration `004`, RLS-locked).
 
 The migration also creates a **private Supabase Storage bucket `documents`**. Uploads are written there and served back via short-lived signed URLs — objects are never public.
 
@@ -210,6 +226,7 @@ All routes export `dynamic = 'force-dynamic'` and `runtime = 'nodejs'`. All Supa
 | `/api/webhooks/calendly` | POST | Public | Calendly events, signature-verified (see below). |
 | `/api/webhooks/ghl` | POST | Public | GoHighLevel events (opportunity stage moves, contacts, appointments, opt-outs), `x-ghl-signature`-verified. Creates commission cases at *Application Submitted*. See `docs/ghl_integration.md`. |
 | `/api/ghl/sync` | POST | Internal | Push a customer into GHL — upsert contact + open/move opportunity at a pipeline stage (bound to the authoritative stage-ID map). |
+| `/api/ghl/contacts/upload` | GET, POST | Internal | CSV bulk contact import → GHL. POST validates, de-dupes, maps fields, upserts (no duplicates), tags/stages, retries transient failures, logs the batch. GET returns upload history (`?batch_id=` for rows). See `docs/ghl_integration.md` §5. |
 
 ---
 

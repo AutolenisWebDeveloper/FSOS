@@ -158,3 +158,57 @@ curl -X POST https://<domain>/api/ghl/sync \
   -H "Authorization: Bearer $FSOS_API_SECRET" -H "Content-Type: application/json" \
   -d '{ "customer_id": "…", "pipeline": "prospect_client", "stage": 2, "tags": ["nurture-active"] }'
 ```
+
+---
+
+## 5. CSV contact upload → GHL bulk import
+
+Bulk-import a book of contacts from a CSV straight into the GHL location. The
+workflow validates, de-duplicates, maps fields, upserts to GHL (so **no
+duplicate contact is ever created**), optionally drops each contact onto a
+pipeline stage, and logs every batch for the audit trail.
+
+**UI:** Command Center → sidebar → **Contact Upload** (`page==="upload"`), or the
+**+ Upload Contacts to GHL** button on an Agency Owner's Upload History tab.
+
+**API:** `POST /api/ghl/contacts/upload` (internal auth) — `multipart/form-data`:
+
+| field      | required | notes                                                        |
+| ---------- | -------- | ------------------------------------------------------------ |
+| `file`     | yes      | `.csv`, ≤ 5 MB, ≤ 1,000 rows per import                       |
+| `tags`     | no       | comma-separated; merged onto every contact                   |
+| `source`   | no       | lead source stamped on the batch + `lead_source` custom field |
+| `agency_owner` | no   | referring agency owner → `referring_agency_owner` custom field; applied to any row missing its own Agency Owner column |
+| `pipeline` | no       | `prospect_client` \| `agency_owner` \| `term_conversions`     |
+| `stage`    | with pipeline | 1-based stage position (see the ID map in §1)           |
+
+**Column auto-mapping** (header casing/spacing/aliases ignored):
+`name` / `first name` / `last name`, `email`, `phone`, `tags`, `source`,
+`agency owner` (aliases: `owner`, `agent`, `referring agency owner`) → `referring_agency_owner` custom field,
+`product interest` → custom field, `life stage` → custom field. A name column
+**and** at least one of email/phone are required, or the request is rejected
+with the detected headers so the operator can fix the file.
+
+- **Validation** — emails are format-checked; phones are normalized to E.164
+  (US 10-digit → `+1…`). Rows failing validation are marked `invalid` and skipped.
+- **De-dupe** — within the file, the first occurrence of an email (or phone) wins;
+  later collisions are marked `duplicate`. Against GHL, the contact is *upserted*
+  (dedupe on email/phone per the location settings), never duplicated.
+- **Retry** — each GHL call retries transient failures (network, 429, 5xx) with
+  backoff; 4xx validation errors fail fast. Per-row `attempts` are logged.
+- **Result** — counts for `success` / `duplicate` / `invalid` / `failed`, plus a
+  downloadable CSV of the rows needing attention.
+
+**History:** `GET /api/ghl/contacts/upload` lists recent batches;
+`?batch_id=<id>` returns that batch's rows; add `&status=failed` for the retry set.
+Persisted in `ghl_upload_batches` + `ghl_upload_rows` (migration `004`).
+
+```bash
+curl -X POST https://<domain>/api/ghl/contacts/upload \
+  -H "Authorization: Bearer $FSOS_API_SECRET" \
+  -F file=@docs/samples/contacts-template.csv \
+  -F tags="apex-import,warm-lead" -F source="apex_import" \
+  -F pipeline="prospect_client" -F stage=1
+```
+
+A ready-to-edit template lives at `docs/samples/contacts-template.csv`.

@@ -4744,15 +4744,35 @@ function ClientDrawer({ customerId, onClose, toast }) {
   const [mpLoading, setMpLoading] = useState(false);
   const [tasks, setTasks] = useState([]);
   const [taskTitle, setTaskTitle] = useState("");
+  const [docs, setDocs] = useState([]);
+  const [docBusy, setDocBusy] = useState(false);
 
   const loadTasks = () => {
     if (!customerId) return;
     fetch(`/api/tasks?status=open&customer_id=${encodeURIComponent(customerId)}`)
       .then(r=>r.ok?r.json():{tasks:[]}).then(d=>setTasks(d.tasks||[])).catch(()=>setTasks([]));
   };
+  const loadDocs = () => {
+    if (!customerId) return;
+    fetch(`/api/customers/documents?customer_id=${encodeURIComponent(customerId)}`)
+      .then(r=>r.ok?r.json():{documents:[]}).then(d=>setDocs(d.documents||[])).catch(()=>setDocs([]));
+  };
+  const uploadDoc = async (fileList) => {
+    const f = fileList && fileList[0];
+    if (!f) return;
+    if (f.size > 15*1024*1024) { toast("File exceeds the 15MB limit","error"); return; }
+    setDocBusy(true);
+    try {
+      const fd = new FormData(); fd.append("customer_id", customerId); fd.append("file", f);
+      const res = await fetch("/api/customers/documents", { method:"POST", body: fd });
+      const d = await res.json().catch(()=>({}));
+      if (!res.ok) toast(d.error || "Upload failed","error");
+      else { toast("Document uploaded","success"); loadDocs(); }
+    } catch { toast("Network error","error"); } finally { setDocBusy(false); }
+  };
 
   useEffect(() => {
-    if (!customerId) { setData(null); setNa(null); setMp(null); setError(null); setTasks([]); return; }
+    if (!customerId) { setData(null); setNa(null); setMp(null); setError(null); setTasks([]); setDocs([]); return; }
     setLoading(true); setError(null); setNa(null); setMp(null);
     fetch(`/api/customers/detail?id=${encodeURIComponent(customerId)}`)
       .then(async r => { if (!r.ok) throw new Error((await r.json().catch(()=>({}))).error || `HTTP ${r.status}`); return r.json(); })
@@ -4760,6 +4780,7 @@ function ClientDrawer({ customerId, onClose, toast }) {
       .catch(e => setError(String(e.message || e)))
       .finally(() => setLoading(false));
     loadTasks();
+    loadDocs();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerId]);
 
@@ -4916,6 +4937,27 @@ function ClientDrawer({ customerId, onClose, toast }) {
                   <input type="checkbox" onChange={()=>completeTask(t.task_id)} style={{width:15,height:15,cursor:"pointer"}}/>
                   <div style={{fontSize:11, fontWeight:500}}>{t.title}</div>
                   <div style={{fontSize:9, color:"var(--muted)"}}>{t.due_date||""}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Documents */}
+            <div style={sec}>Documents {docs.length>0?`(${docs.length})`:""}</div>
+            <div style={{background:"var(--card)", border:"1px solid var(--border)", borderRadius:10, overflow:"hidden"}}>
+              <div style={{padding:10, borderBottom:docs.length?"1px solid var(--border)":"none"}}>
+                <label className="btn-secondary" style={{fontSize:11, padding:"7px 12px", cursor:docBusy?"default":"pointer", display:"inline-block", opacity:docBusy?.6:1}}>
+                  {docBusy?"Uploading…":"⬆ Upload document"}
+                  <input type="file" style={{display:"none"}} disabled={docBusy} onChange={e=>uploadDoc(e.target.files)}
+                    accept=".pdf,.png,.jpg,.jpeg,.webp,.csv,.xlsx,.xls,.doc,.docx,.txt"/>
+                </label>
+              </div>
+              {docs.map(d=>(
+                <div key={d.doc_id} style={{display:"grid", gridTemplateColumns:"1fr auto", gap:9, alignItems:"center", padding:"8px 12px", borderBottom:"1px solid var(--border)"}}>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontSize:11, fontWeight:500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{d.filename}</div>
+                    <div style={{fontSize:9, color:"var(--muted)"}}>{d.size_bytes?`${(d.size_bytes/1024).toFixed(0)} KB · `:""}{new Date(d.created_at).toLocaleDateString("en-US",{month:"short",day:"numeric"})}</div>
+                  </div>
+                  {d.url && <a className="btn-secondary" href={d.url} target="_blank" rel="noreferrer" style={{fontSize:9, padding:"3px 9px", textDecoration:"none"}}>Open</a>}
                 </div>
               ))}
             </div>

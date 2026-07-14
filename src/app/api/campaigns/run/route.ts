@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
 import { requireInternalAuth, readJson, escapeHtml } from '@/lib/http'
 import { sendEmail, sendSms } from '@/lib/messaging'
+import { TRAIGA_SMS_FOOTER } from '@/lib/compliance'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -94,7 +95,9 @@ export async function POST(req: NextRequest) {
     } else {
       const to = cust.phone || cust.cell_phone
       if (!to || !cust.consent_sms) result = { ok: false, skipped: true }
-      else result = await sendSms(to, fill(step.body, cust))
+      // TRAIGA 2026: every automated message must carry an AI-disclosure. The
+      // one-off form sender already appends this; the drip runner must too.
+      else result = await sendSms(to, `${fill(step.body, cust)}\n\n${TRAIGA_SMS_FOOTER}`)
     }
 
     // Provider error (not a consent skip) → retry tomorrow, don't advance.

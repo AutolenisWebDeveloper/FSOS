@@ -5,7 +5,7 @@
 // 010), so this is tamper-evident by construction; this module is the single
 // write path the app uses.
 
-import { getDb } from '@/lib/supabase/client'
+import { getDb } from '../supabase/client'
 
 // Audit event taxonomy (data-api-map §4). Kept as a const union so callers can't
 // invent an untracked action name.

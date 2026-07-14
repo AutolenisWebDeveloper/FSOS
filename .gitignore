@@ -26,6 +26,9 @@ yarn-error.log*
 # TypeScript
 *.tsbuildinfo
 
+# Test compile output (tests/p0-gate.test.mjs)
+.p0-out-*/
+
 # OS
 .DS_Store
 Thumbs.db

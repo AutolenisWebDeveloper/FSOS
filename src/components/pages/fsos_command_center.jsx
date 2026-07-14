@@ -4253,6 +4253,57 @@ function AssistantModal({open,onClose}){
 }
 
 // ─────────────────────────────────────────────────────────
+// AUDIT LOG — unified "who did what" timeline (GET /api/audit)
+// ─────────────────────────────────────────────────────────
+const AUDIT_META = {
+  import:{icon:"📥",color:"#2b6cb0"}, form_send:{icon:"📋",color:"#805ad5"}, consent:{icon:"📜",color:"#38a169"},
+  task:{icon:"✅",color:"#b7791f"}, workshop:{icon:"🎓",color:"#6b46c1"}, email:{icon:"✉",color:"#3182ce"},
+  sms:{icon:"💬",color:"#0bc5ea"}, call:{icon:"📞",color:"#38a169"}, note:{icon:"📝",color:"#718096"},
+  appointment:{icon:"📅",color:"#dd6b20"},
+};
+function AuditLogPage() {
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("all");
+  const load = () => { setLoading(true); fetch("/api/audit?limit=200").then(r=>r.ok?r.json():{events:[]}).then(d=>setEvents(d.events||[])).catch(()=>setEvents([])).finally(()=>setLoading(false)); };
+  useEffect(load, []);
+  const kinds = Array.from(new Set(events.map(e=>e.kind)));
+  const shown = filter==="all" ? events : events.filter(e=>e.kind===filter);
+  const card = { background:"var(--card)", border:"1px solid var(--border)", borderRadius:10, boxShadow:"var(--shadow)" };
+  return (
+    <div>
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14, gap:10, flexWrap:"wrap"}}>
+        <div style={{display:"flex", gap:6, flexWrap:"wrap"}}>
+          <button onClick={()=>setFilter("all")} className={filter==="all"?"btn-primary":"btn-secondary"} style={{fontSize:10, padding:"4px 10px"}}>All</button>
+          {kinds.map(k=><button key={k} onClick={()=>setFilter(k)} className={filter===k?"btn-primary":"btn-secondary"} style={{fontSize:10, padding:"4px 10px", textTransform:"capitalize"}}>{k.replace("_"," ")}</button>)}
+        </div>
+        <button className="btn-secondary" style={{fontSize:11, padding:"5px 12px"}} onClick={load}>↻ Refresh</button>
+      </div>
+      {loading && <div style={{fontSize:12, color:"var(--muted)"}}>Loading audit trail…</div>}
+      {!loading && shown.length===0 && <div style={{...card, padding:24, textAlign:"center", fontSize:12, color:"var(--muted)"}}>No audit events yet.</div>}
+      {!loading && shown.length>0 && (
+        <div style={{...card, overflow:"hidden"}}>
+          {shown.map((e,i)=>{
+            const m = AUDIT_META[e.kind] || {icon:"•",color:"var(--muted)"};
+            return (
+              <div key={i} style={{display:"grid", gridTemplateColumns:"auto 1fr auto", gap:12, alignItems:"center", padding:"10px 14px", borderBottom:"1px solid var(--border)"}}>
+                <span style={{fontSize:14}}>{m.icon}</span>
+                <div style={{minWidth:0}}>
+                  <div style={{fontSize:12, color:"var(--navy)"}}>{e.summary}</div>
+                  <div style={{fontSize:9, color:"var(--muted)"}}>by {e.actor} · <span style={{textTransform:"capitalize"}}>{e.kind.replace("_"," ")}</span></div>
+                </div>
+                <div style={{fontSize:10, color:"var(--muted)", whiteSpace:"nowrap"}}>{new Date(e.when).toLocaleString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <div style={{fontSize:9, color:"var(--muted)", marginTop:12}}>Merged from imports, form sends, consent changes, tasks, activity, and workshop registrations.</div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
 // SETTINGS — integration & health status (GET /api/health)
 // ─────────────────────────────────────────────────────────
 const INTEGRATIONS = [
@@ -5219,6 +5270,7 @@ export default function App(){
     {id:"needs",     icon:"🗺", label:"Needs Map"},
     {id:"calc",      icon:"📐", label:"Sales Calculator"},
     {id:"contacts",  icon:"📞", label:"FFS Contacts"},
+    {id:"audit",     icon:"🧾", label:"Audit Log"},
     {id:"settings",  icon:"⚙️", label:"Settings"},
     {id:"help",      icon:"❓", label:"Help"},
     {id:"forms",     icon:"📋", label:"Client Forms",   badge:livePendingForms||null, bc:"orange"},
@@ -5230,7 +5282,7 @@ export default function App(){
     {name:"Conversion AI",status:"running",ct:"—"},
     {name:"Follow Up AI",status:"running",ct:"—"},
   ];
-  const pageTitle={briefing:"Daily Briefing",dashboard:"Dashboard",opps:"Opportunities",agencies:"Agency Owners",upload:"Contact Upload",followups:"Follow-Ups",campaigns:"Drip Campaigns",reports:"Reports & Analytics",conv:"Conversion Center",opra:"OPRA Center",calendar:"Calendar",ai:"AI Control Center",workshops:"Workshops",gdc:"GDC & Commission",prep:"Financial Review Prep",needs:"Customer Needs Map",calc:"Sales Calculator",contacts:"FFS Contacts",settings:"Settings & Integrations",help:"Help & Support",forms:"Client Forms",fna:"Financial Needs Analysis"};
+  const pageTitle={briefing:"Daily Briefing",dashboard:"Dashboard",opps:"Opportunities",agencies:"Agency Owners",upload:"Contact Upload",followups:"Follow-Ups",campaigns:"Drip Campaigns",reports:"Reports & Analytics",conv:"Conversion Center",opra:"OPRA Center",calendar:"Calendar",ai:"AI Control Center",workshops:"Workshops",gdc:"GDC & Commission",prep:"Financial Review Prep",needs:"Customer Needs Map",calc:"Sales Calculator",contacts:"FFS Contacts",audit:"Audit Log",settings:"Settings & Integrations",help:"Help & Support",forms:"Client Forms",fna:"Financial Needs Analysis"};
 
   return(<>
     <style>{G}</style>
@@ -5310,6 +5362,7 @@ export default function App(){
           {page==="followups"  &&<FollowUpsPage toast={toast} onOpenCustomer={setDrawerCustomerId}/>}
           {page==="campaigns"  &&<CampaignsPage toast={toast}/>}
           {page==="reports"    &&<ReportsPage toast={toast}/>}
+          {page==="audit"      &&<AuditLogPage/>}
           {page==="settings"   &&<SettingsPage toast={toast}/>}
           {page==="help"       &&<HelpPage/>}
           {page==="calendar"   &&<Calendar toast={toast} appData={appData}/>}

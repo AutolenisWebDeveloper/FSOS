@@ -192,14 +192,83 @@ supabase/migrations/001_initial_schema.sql
 
 Creates all tables, indexes, scoring functions, RLS policies, the nightly pg_cron job, the private `documents` Storage bucket, and seed agencies.
 
-### 4. Local dev
+The aggregate-root spine (migrations `009`–`012`) is applied by the migrations runner:
+
+```bash
+DATABASE_URL=postgres://…  npm run migrate    # applies supabase/migrations/*.sql in order
+npm run migrate                                 # no DB → prints the ordered plan
+```
+
+### 4. Bootstrap the first user
+
+A user created in the Supabase dashboard has **no roles** and cannot reach any
+portal — roles come from the JWT `app_metadata.roles` claim **and** the
+`user_roles` table (RLS). Provision the first admin with the bootstrap script,
+which sets **both** and keeps them in sync:
+
+```bash
+# service-role key comes from the environment (or .env.local) — never a flag
+npm run create-user -- --email you@example.com --password 'S3cret!' --roles super_admin
+```
+
+**`npm run create-user`** flags:
+
+| Flag | Required | Meaning |
+|------|----------|---------|
+| `--email` | ✅ | Login email (validated). |
+| `--password` | ✅ to create | Set on create; on an existing user it's updated only if supplied. |
+| `--roles` | ✅ | Comma-separated, validated against the `Role` type in `src/lib/auth/rbac.ts` (parsed at runtime, so it stays in sync). |
+| `--securities-scope` | ⬜ | Boolean flag. Sets `app_metadata.securities_scope=true`; omit to default `false` on create / preserve the existing value on update. |
+
+Behavior:
+
+- Creates the auth user with `email_confirm: true` and writes `app_metadata.roles`
+  (+ `securities_scope`).
+- If the user **already exists**, it **updates** their roles (and scope/password
+  when supplied) instead of failing.
+- Mirrors the granted roles into the `user_roles` table (pruning roles no longer
+  granted) so the JWT claim and the RLS source of truth agree.
+- Reads the service-role key from `SUPABASE_SERVICE_KEY` (or
+  `SUPABASE_SERVICE_ROLE_KEY`) and the URL from `NEXT_PUBLIC_SUPABASE_URL` (or
+  `SUPABASE_URL`). The password and service-role key are **never** printed or logged.
+
+Examples:
+
+```bash
+# licensed staff with securities scope granted
+npm run create-user -- --email fsa@example.com --password 'S3cret!' \
+  --roles fsa,licensed_staff --securities-scope
+
+# re-run to change an existing user's roles (password optional on update)
+npm run create-user -- --email fsa@example.com --roles fsa
+```
+
+### 5. Seed demo data (optional)
+
+Populate a minimal, self-contained demo dataset so every P0 list page has **both**
+a populated and an empty state to test:
+
+```bash
+npm run seed:demo
+```
+
+It seeds one **agency partnership**, one **household + member**, a small
+**product catalog** (with carriers), and one **referral** — so `/app/agencies`,
+`/app/clients`, `/super/products` and `/app/referrals` render real rows, while the
+downstream lists (opportunities, cases, commissions) stay empty and exercise their
+empty states. Rows use fixed demo UUIDs and are upserted, so the seed is safe to
+re-run. Per guardrail 3 (**No Invented Farmers Data**), every seeded
+Farmers-specific value the schema can flag carries `is_assumption = true` (the
+products' conversion window) — config defaults to *verify*, not published facts.
+
+### 6. Local dev
 
 ```bash
 npm run dev
 # http://localhost:3000
 ```
 
-### 5. Deploy
+### 7. Deploy
 
 Push to GitHub, import in Vercel, set all env vars, deploy. Build command: `npm run build`.
 
@@ -313,6 +382,10 @@ Sales Desk hours: Mon–Fri 7AM–5PM PT
 ## Seed Data
 
 The schema seeds agency partners on first run, each with a referral slug. Agency referral URLs look like `https://your-domain.vercel.app/steven-johnson`.
+
+For the aggregate-root portals, run **`npm run seed:demo`** to populate one agency
+partnership, a household + member, a product catalog, and a referral so the P0 list
+pages have both a populated and an empty state to test (see Setup → Seed demo data).
 
 ---
 

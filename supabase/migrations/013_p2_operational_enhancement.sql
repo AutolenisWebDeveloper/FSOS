@@ -266,7 +266,9 @@ create index if not exists idx_webhook_deliveries_wh on webhook_deliveries(webho
 -- ─────────────────────────────────────────────────────────
 
 -- Agency leaderboard — ranked production. Used by /app/agencies/leaderboard (A11).
-create or replace view v_agency_leaderboard as
+-- security_invoker=on so the caller's RLS applies to view reads (see 015).
+create or replace view v_agency_leaderboard
+  with (security_invoker = on) as
 select
   ap.id,
   ap.agency_name,
@@ -286,7 +288,9 @@ where ap.deleted_at is null;
 
 -- Agency health — a composite health signal from contact recency + penetration.
 -- All thresholds here are operational heuristics (not Farmers-published figures).
-create or replace view v_agency_health as
+-- security_invoker=on so the caller's RLS applies to view reads (see 015).
+create or replace view v_agency_health
+  with (security_invoker = on) as
 select
   ap.id,
   ap.agency_name,
@@ -313,7 +317,9 @@ where ap.deleted_at is null;
 -- Policy lapse-risk — in-force policies whose renewal is near or that are already
 -- flagged lapsed/non-renewed. is_security carried so securities rows stay visible
 -- to humans but excluded from any automated outreach. Used by /app/policies/lapse-risk.
-create or replace view v_policy_lapse_risk as
+-- security_invoker=on so the caller's RLS applies to view reads (see 015).
+create or replace view v_policy_lapse_risk
+  with (security_invoker = on) as
 select
   hp.id                              as policy_id,
   hp.household_id,
@@ -342,7 +348,9 @@ where hp.deleted_at is null
 
 -- Missing documents — outstanding case requirements + document requests with no
 -- linked document. Used by /app/documents/missing (A2).
-create or replace view v_missing_documents as
+-- security_invoker=on so the caller's RLS applies to view reads (see 015).
+create or replace view v_missing_documents
+  with (security_invoker = on) as
 select
   'case_requirement'                 as source,
   cr.id                              as source_id,
@@ -368,7 +376,9 @@ where dr.status = 'requested';
 
 -- Referral analytics — funnel counts by engagement + status. Used by
 -- /app/referrals/analytics (A11).
-create or replace view v_referral_analytics as
+-- security_invoker=on so the caller's RLS applies to view reads (see 015).
+create or replace view v_referral_analytics
+  with (security_invoker = on) as
 select
   r.engagement,
   r.status,
@@ -380,7 +390,9 @@ group by r.engagement, r.status;
 
 -- Duplicate detection — households sharing a normalized name/phone. Read-only,
 -- feeds /admin/data/duplicates (A2).
-create or replace view v_duplicate_households as
+-- security_invoker=on so the caller's RLS applies to view reads (see 015).
+create or replace view v_duplicate_households
+  with (security_invoker = on) as
 select
   lower(trim(h.primary_name))        as match_key,
   count(*)                           as dup_count,

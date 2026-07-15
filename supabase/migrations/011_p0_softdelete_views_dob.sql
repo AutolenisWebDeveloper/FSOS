@@ -49,7 +49,9 @@ create index if not exists idx_opportunities_live       on opportunities(deleted
 
 -- Agencies overdue for a relationship check-in (per-partnership interval).
 -- Dormancy badge on /app/agencies must match this view (spec OS-02 acceptance).
-create or replace view v_agencies_overdue_checkin as
+-- security_invoker=on so the caller's RLS applies to view reads (see 015).
+create or replace view v_agencies_overdue_checkin
+  with (security_invoker = on) as
 select
   ap.id,
   ap.agency_name,
@@ -66,7 +68,9 @@ where ap.deleted_at is null;
 
 -- Referrals awaiting action, with SLA/aging state. Colors on /app/referrals must
 -- match this (spec OS-03 acceptance): untouched past SLA = breached.
-create or replace view v_referrals_awaiting_action as
+-- security_invoker=on so the caller's RLS applies to view reads (see 015).
+create or replace view v_referrals_awaiting_action
+  with (security_invoker = on) as
 select
   r.id,
   r.referring_agency_id,

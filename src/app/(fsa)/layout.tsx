@@ -21,6 +21,7 @@ const NAV: NavItem[] = [
   { href: '/app/commissions', label: 'Commissions' },
   { href: '/app/comms', label: 'Comms' },
   { href: '/app/documents', label: 'Documents' },
+  { href: '/app/workflows', label: 'Workflows' },
   { href: '/app/tasks', label: 'Tasks' },
   { href: '/app/calendar', label: 'Calendar' },
   { href: '/app/ai', label: 'AI Operations' },

@@ -422,3 +422,175 @@ export const IncidentStepSchema = z.object({
   status: z.enum(['open', 'assessing', 'notifying', 'closed']),
   note: z.string().trim().max(1000).optional(),
 })
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// P2 (operational enhancement) input schemas. Every P2 API write validates here;
+// no P2 form or route weakens a P0/P1 guardrail.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── OS-14 Automation workflows (builder: triggers/conditions/delays/branching) ──
+export const WORKFLOW_TRIGGERS = [
+  'manual', 'referral_received', 'review_completed', 'opportunity_stage',
+  'policy_x_date', 'case_status', 'schedule', 'conversion_window',
+] as const
+const WorkflowConditionSchema = z.object({
+  field: z.string().trim().min(1).max(80),
+  op: z.enum(['eq', 'neq', 'gt', 'lt', 'contains', 'exists']),
+  value: z.union([z.string(), z.number(), z.boolean()]).optional(),
+})
+const WorkflowStepSchema = z.object({
+  type: z.enum(['action', 'delay', 'branch']),
+  // action: create task / log activity / enqueue comm (comm still passes the gate).
+  action: z.enum(['create_task', 'log_activity', 'enqueue_sequence', 'notify_fsa']).optional(),
+  delay_hours: z.coerce.number().int().min(0).max(8760).optional(),
+  config: z.record(z.unknown()).default({}),
+})
+export const WorkflowCreateSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(160),
+  description: z.string().trim().max(1000).optional(),
+  trigger_type: z.enum(WORKFLOW_TRIGGERS).default('manual'),
+  trigger_config: z.record(z.unknown()).default({}),
+  conditions: z.array(WorkflowConditionSchema).max(20).default([]),
+  steps: z.array(WorkflowStepSchema).max(30).default([]),
+  failure_policy: z
+    .object({
+      max_retries: z.coerce.number().int().min(0).max(10).default(3),
+      backoff: z.enum(['fixed', 'exponential']).default('exponential'),
+    })
+    .default({ max_retries: 3, backoff: 'exponential' }),
+})
+export type WorkflowCreate = z.infer<typeof WorkflowCreateSchema>
+export const WorkflowPatchSchema = z.object({
+  enabled: z.boolean().optional(),
+  archived: z.boolean().optional(),
+}).refine((v) => Object.keys(v).length > 0, 'No fields to update')
+
+// ─── OS-13 Comms — sequences + audience builder ──────────────────────────────────
+export const SequenceCreateSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(160),
+  description: z.string().trim().max(1000).optional(),
+  channel: z.enum(['email', 'sms']).default('email'),
+  category: z.string().trim().max(60).optional(),
+  steps: z
+    .array(
+      z.object({
+        delay_days: z.coerce.number().int().min(0).max(365),
+        template_id: uuid.optional(),
+        subject: z.string().trim().max(200).optional(),
+      }),
+    )
+    .max(20)
+    .default([]),
+})
+export type SequenceCreate = z.infer<typeof SequenceCreateSchema>
+
+export const AudienceCreateSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(160),
+  description: z.string().trim().max(1000).optional(),
+  definition: z
+    .object({
+      base: z.enum(['households', 'agencies', 'policies']).default('households'),
+      has_life: z.enum(['any', 'yes', 'no']).default('any'),
+      status: z.string().trim().max(40).optional(),
+      consented_only: z.boolean().default(true),
+    })
+    .default({ base: 'households', has_life: 'any', consented_only: true }),
+})
+export type AudienceCreate = z.infer<typeof AudienceCreateSchema>
+
+// ─── OS-16 Reports — builder + scheduled ─────────────────────────────────────────
+export const REPORT_SOURCES = [
+  'pipeline', 'commission-by-agency', 'conversion', 'cross-sell', 'production',
+  'agency-leaderboard', 'referral-analytics',
+] as const
+export const ReportDefinitionSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(160),
+  description: z.string().trim().max(1000).optional(),
+  source_key: z.enum(REPORT_SOURCES),
+  columns: z.array(z.string().trim().max(60)).max(40).default([]),
+  filters: z.record(z.unknown()).default({}),
+})
+export type ReportDefinition = z.infer<typeof ReportDefinitionSchema>
+export const ScheduledReportSchema = z.object({
+  report_key: z.enum(REPORT_SOURCES),
+  name: z.string().trim().min(1, 'Name is required').max(160),
+  cadence: z.enum(['daily', 'weekly', 'monthly']).default('weekly'),
+  format: z.enum(['csv', 'pdf']).default('csv'),
+  recipients: z.array(z.string().trim().email()).max(20).default([]),
+})
+export type ScheduledReport = z.infer<typeof ScheduledReportSchema>
+
+// ─── Compliance (P-3) — legal holds, attestations, policies ──────────────────────
+export const LegalHoldSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(160),
+  matter_ref: z.string().trim().max(120).optional(),
+  reason: z.string().trim().min(1, 'Reason is required').max(1000),
+  scope: z
+    .object({
+      entity_type: z.enum(['household', 'agency', 'case', 'document']),
+      entity_ids: z.array(uuid).max(2000).default([]),
+    })
+    .optional(),
+})
+export type LegalHold = z.infer<typeof LegalHoldSchema>
+export const LegalHoldReleaseSchema = z.object({ action: z.literal('release') })
+
+export const AttestationSchema = z.object({
+  title: z.string().trim().min(1, 'Title is required').max(200),
+  body: z.string().trim().min(1, 'Body is required').max(5000),
+  period: z.string().trim().max(40).optional(),
+  required_roles: z.array(z.string().trim().max(40)).max(12).default([]),
+  due_at: z.string().datetime().optional().or(z.literal('').transform(() => undefined)),
+})
+export type Attestation = z.infer<typeof AttestationSchema>
+export const AttestationAckSchema = z.object({
+  response: z.string().trim().max(1000).optional(),
+})
+
+export const CompliancePolicySchema = z.object({
+  title: z.string().trim().min(1, 'Title is required').max(200),
+  category: z.string().trim().max(60).optional(),
+  body: z.string().trim().max(20000).default(''),
+})
+export type CompliancePolicy = z.infer<typeof CompliancePolicySchema>
+export const CompliancePolicyActionSchema = z.object({
+  action: z.enum(['publish', 'retire']),
+})
+
+// ─── Admin — data exports ────────────────────────────────────────────────────────
+export const EXPORT_DATASETS = [
+  'agencies', 'households', 'policies', 'opportunities', 'cases', 'commissions', 'referrals',
+] as const
+export const DataExportSchema = z.object({
+  dataset: z.enum(EXPORT_DATASETS),
+  format: z.enum(['csv', 'json']).default('csv'),
+  notes: z.string().trim().max(500).optional(),
+})
+export type DataExport = z.infer<typeof DataExportSchema>
+
+// ─── Partner training ────────────────────────────────────────────────────────────
+export const TrainingCompleteSchema = z.object({
+  training_id: uuid,
+})
+
+// ─── Super — AI sandbox + webhooks ───────────────────────────────────────────────
+export const SandboxRunSchema = z.object({
+  agent_key: z.string().trim().max(80).optional(),
+  prompt: z.string().trim().min(1, 'Prompt is required').max(8000),
+})
+export type SandboxRun = z.infer<typeof SandboxRunSchema>
+
+export const WEBHOOK_EVENTS = [
+  'referral.received', 'opportunity.stage_changed', 'case.status_changed',
+  'commission.recorded', 'review.completed', 'compliance.escalation',
+] as const
+export const WebhookCreateSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(160),
+  target_url: z.string().trim().url('Enter a valid https URL').max(500),
+  events: z.array(z.enum(WEBHOOK_EVENTS)).min(1, 'Select at least one event').max(WEBHOOK_EVENTS.length),
+  secret: z.string().trim().max(200).optional(),
+})
+export type WebhookCreate = z.infer<typeof WebhookCreateSchema>
+export const WebhookPatchSchema = z.object({
+  enabled: z.boolean(),
+})

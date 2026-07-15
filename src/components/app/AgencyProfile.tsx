@@ -11,7 +11,11 @@ import { LogActivityButton } from '@/components/app/LogActivityButton'
 // Valid P0 tabs (spec p0-core OS-02): overview + referrals. Any other tab param
 // 404s within the shell (acceptance criterion).
 export const AGENCY_P0_TABS = ['overview', 'referrals'] as const
-export type AgencyTab = (typeof AGENCY_P0_TABS)[number]
+// P2 (operational enhancement) tabs — engagement, penetration & health analytics,
+// training, and goals. Added without weakening any P0 gate.
+export const AGENCY_P2_TABS = ['engagement', 'penetration', 'health', 'training', 'goals'] as const
+export const AGENCY_TABS = [...AGENCY_P0_TABS, ...AGENCY_P2_TABS] as const
+export type AgencyTab = (typeof AGENCY_TABS)[number]
 
 interface Agency {
   id: string
@@ -65,10 +69,17 @@ export async function AgencyProfile({ id, tab }: { id: string; tab: AgencyTab })
             Opportunities
           </Link>
         </li>
+        <li>
+          <Link href={`/app/agencies/${id}/health`} className="text-primary hover:underline">
+            Agency health
+          </Link>
+        </li>
+        <li>
+          <Link href="/app/agencies/leaderboard" className="text-primary hover:underline">
+            Leaderboard
+          </Link>
+        </li>
       </ul>
-      <p className="pt-2 text-xs text-muted-foreground">
-        Production, commissions, documents, staff, reviews &amp; health arrive as P1 tabs.
-      </p>
     </div>
   )
 
@@ -93,9 +104,9 @@ export async function AgencyProfile({ id, tab }: { id: string; tab: AgencyTab })
       }
       rail={rail}
     >
-      {/* Tab nav (only resolving P0 tabs — no dead links) */}
-      <nav className="flex gap-1 border-b" aria-label="Agency tabs">
-        {AGENCY_P0_TABS.map((t) => {
+      {/* Tab nav (only resolving tabs — no dead links) */}
+      <nav className="flex flex-wrap gap-1 border-b" aria-label="Agency tabs">
+        {AGENCY_TABS.map((t) => {
           const href = t === 'overview' ? `/app/agencies/${id}` : `/app/agencies/${id}/${t}`
           const active = t === tab
           return (
@@ -114,7 +125,21 @@ export async function AgencyProfile({ id, tab }: { id: string; tab: AgencyTab })
         })}
       </nav>
 
-      {tab === 'overview' ? <OverviewTab id={id} agency={agency} /> : <ReferralsTab id={id} />}
+      {tab === 'overview' ? (
+        <OverviewTab id={id} agency={agency} />
+      ) : tab === 'referrals' ? (
+        <ReferralsTab id={id} />
+      ) : tab === 'penetration' ? (
+        <PenetrationTab id={id} />
+      ) : tab === 'health' ? (
+        <HealthTab id={id} />
+      ) : tab === 'engagement' ? (
+        <EngagementTab id={id} />
+      ) : tab === 'training' ? (
+        <TrainingTab id={id} />
+      ) : (
+        <GoalsTab id={id} agency={agency} />
+      )}
     </DetailShell>
   )
 }
@@ -241,6 +266,137 @@ function Stat({ label, value }: { label: string; value: string }) {
     <div className="rounded-lg border p-3">
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="mt-1 text-lg font-semibold">{value}</p>
+    </div>
+  )
+}
+
+// ─── P2 tabs ──────────────────────────────────────────────────────────────────
+
+async function PenetrationTab({ id }: { id: string }) {
+  const res = await load<{ agency_name: string; pc_book_policies: number; life_policies_in_force: number; life_penetration_pct: number }[]>(
+    (db) => db.from('v_crosssell_targets').select('agency_name, pc_book_policies, life_policies_in_force, life_penetration_pct').eq('id', id).limit(1),
+    [],
+  )
+  if (!res.ok) return <ErrorState className="mt-4" description="Could not load penetration." />
+  const row = res.data[0]
+  if (!row) return <div className="mt-4"><EmptyState title="No book data yet" description="P&C book and life-in-force counts populate penetration analytics." /></div>
+  return (
+    <div className="mt-4 grid gap-4 sm:grid-cols-3">
+      <Stat label="P&C book policies" value={String(row.pc_book_policies)} />
+      <Stat label="Life policies in force" value={String(row.life_policies_in_force)} />
+      <Stat label="Life penetration" value={`${row.life_penetration_pct}%`} />
+      <div className="sm:col-span-3">
+        <Link href="/app/cross-sell/agency-penetration" className="text-sm text-primary hover:underline">See all agencies by penetration →</Link>
+      </div>
+    </div>
+  )
+}
+
+async function HealthTab({ id }: { id: string }) {
+  const res = await load<{ health_score: number; days_since_contact: number; life_penetration_pct: number; status: string }[]>(
+    (db) => db.from('v_agency_health').select('health_score, days_since_contact, life_penetration_pct, status').eq('id', id).limit(1),
+    [],
+  )
+  if (!res.ok) return <ErrorState className="mt-4" description="Could not load health." />
+  const row = res.data[0]
+  if (!row) return <div className="mt-4"><EmptyState title="No health signal yet" description="Health scores from contact recency and penetration appear here." /></div>
+  const band = row.health_score >= 70 ? 'won' : row.health_score >= 40 ? 'pending' : 'lost'
+  return (
+    <div className="mt-4 space-y-4">
+      <div className="grid gap-4 sm:grid-cols-3">
+        <div className="rounded-lg border p-3">
+          <p className="text-xs text-muted-foreground">Health score</p>
+          <p className="mt-1 flex items-center gap-2 text-lg font-semibold">{row.health_score}<Badge variant={band}>{band === 'won' ? 'healthy' : band === 'pending' ? 'watch' : 'at risk'}</Badge></p>
+        </div>
+        <Stat label="Days since contact" value={String(row.days_since_contact)} />
+        <Stat label="Life penetration" value={`${row.life_penetration_pct}%`} />
+      </div>
+      <p className="text-xs text-muted-foreground">Health thresholds are operational heuristics — config defaults, not Farmers-published figures.</p>
+    </div>
+  )
+}
+
+async function EngagementTab({ id }: { id: string }) {
+  const res = await load<{ id: string; kind: string; note: string; created_at: string }[]>(
+    (db) => db.from('activities').select('id, kind, note, created_at').eq('entity_type', 'agency_partnership').eq('entity_id', id).order('created_at', { ascending: false }).limit(50),
+    [],
+  )
+  if (!res.ok) return <ErrorState className="mt-4" description="Could not load engagement." />
+  if (res.data.length === 0) return <div className="mt-4"><EmptyState title="No engagement logged" description="Check-ins, calls, and touches appear here." action={<LogActivityButton entityType="agency_partnership" entityId={id} kind="checkin" label="Log a touch" />} /></div>
+  return (
+    <div className="mt-4 space-y-2">
+      <div className="mb-2"><LogActivityButton entityType="agency_partnership" entityId={id} kind="checkin" label="Log a touch" /></div>
+      <ol className="space-y-2">
+        {res.data.map((a) => (
+          <li key={a.id} className="flex gap-2 rounded-lg border p-2 text-sm">
+            <span className="text-muted-foreground">{new Date(a.created_at).toLocaleDateString('en-US')}</span>
+            <span className="font-medium capitalize">{a.kind}</span>
+            <span className="text-muted-foreground">— {a.note}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  )
+}
+
+async function TrainingTab({ id }: { id: string }) {
+  const [modules, completions] = await Promise.all([
+    load<{ id: string; title: string; category: string | null; required: boolean }[]>(
+      (db) => db.from('partner_training').select('id, title, category, required').eq('published', true).order('created_at', { ascending: true }),
+      [],
+    ),
+    load<{ training_id: string }[]>(
+      (db) => db.from('partner_training_completions').select('training_id').eq('agency_id', id),
+      [],
+    ),
+  ])
+  if (!modules.ok) return <ErrorState className="mt-4" description="Could not load training." />
+  if (modules.data.length === 0) return <div className="mt-4"><EmptyState title="No training modules" description="Published partner training appears here." /></div>
+  const done = new Set((completions.ok ? completions.data : []).map((c) => c.training_id))
+  return (
+    <div className="mt-4 rounded-lg border">
+      <Table>
+        <TableHeader><TableRow><TableHead>Module</TableHead><TableHead>Category</TableHead><TableHead>Required</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+        <TableBody>
+          {modules.data.map((m) => (
+            <TableRow key={m.id}>
+              <TableCell className="font-medium">{m.title}</TableCell>
+              <TableCell className="capitalize text-muted-foreground">{m.category ?? '—'}</TableCell>
+              <TableCell>{m.required ? <Badge variant="pending">required</Badge> : <span className="text-muted-foreground">optional</span>}</TableCell>
+              <TableCell>{done.has(m.id) ? <Badge variant="won">completed</Badge> : <Badge variant="draft">not started</Badge>}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+function GoalsTab({ id, agency }: { id: string; agency: Agency }) {
+  // Goals are operational targets set by the FSA (config; editable). Baselines are
+  // the agency's current book so a goal is always contextualized.
+  const lifeTarget = Math.max(agency.life_policies_in_force + 5, Math.round(agency.pc_book_policies * 0.15))
+  const referralTarget = Math.max(agency.ytd_referrals + 2, 6)
+  return (
+    <div className="mt-4 space-y-4">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Card>
+          <CardHeader><CardTitle className="text-base">Life penetration goal</CardTitle></CardHeader>
+          <CardContent className="space-y-1 text-sm">
+            <p>Current in-force: <span className="font-semibold">{agency.life_policies_in_force}</span></p>
+            <p>Target: <span className="font-semibold">{lifeTarget}</span> <Badge variant="assumption">config default — verify</Badge></p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="text-base">Referral goal (YTD)</CardTitle></CardHeader>
+          <CardContent className="space-y-1 text-sm">
+            <p>Current: <span className="font-semibold">{agency.ytd_referrals}</span></p>
+            <p>Target: <span className="font-semibold">{referralTarget}</span> <Badge variant="assumption">config default — verify</Badge></p>
+          </CardContent>
+        </Card>
+      </div>
+      <p className="text-xs text-muted-foreground">Goal targets are editable operational defaults — not Farmers-published quotas.</p>
+      <Link href={`/app/agencies/${id}/health`} className="text-sm text-primary hover:underline">View agency health →</Link>
     </div>
   )
 }

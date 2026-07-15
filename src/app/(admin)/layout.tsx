@@ -8,6 +8,8 @@ const NAV: NavItem[] = [
   { href: '/admin/cases', label: 'Cases' },
   { href: '/admin/documents', label: 'Documents' },
   { href: '/admin/data/imports', label: 'Data Imports' },
+  { href: '/admin/data/exports', label: 'Data Exports' },
+  { href: '/admin/data/duplicates', label: 'Duplicates' },
   { href: '/admin/support/requests', label: 'Support' },
   { href: '/admin/users', label: 'Users' },
 ]

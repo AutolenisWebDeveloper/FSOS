@@ -7,6 +7,7 @@ import {
   UserPlus,
   Users,
   FileText,
+  FileSignature,
   ClipboardCheck,
   Target,
   Repeat,
@@ -44,6 +45,7 @@ const NAV: NavItem[] = [
   { href: '/app/policies', label: 'Policies', icon: FileText, group: 'Book' },
 
   { href: '/app/reviews', label: 'Reviews', icon: ClipboardCheck, group: 'Pipeline' },
+  { href: '/app/fna', label: 'FNA Generator', icon: FileSignature, group: 'Pipeline' },
   { href: '/app/opportunities', label: 'Opportunities', icon: Target, group: 'Pipeline' },
   { href: '/app/conversions', label: 'Term Conversion', icon: Repeat, group: 'Pipeline' },
   { href: '/app/cross-sell', label: 'Cross-Sell', icon: Shuffle, group: 'Pipeline' },

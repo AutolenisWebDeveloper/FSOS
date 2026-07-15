@@ -1,6 +1,7 @@
 import { ListShell, EmptyState, ErrorState } from '@/components/archetypes'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Badge } from '@/components/ui/badge'
+import { SecuritiesChip, securitiesRowClass } from '@/components/ui/securities'
+import { Numeric } from '@/components/ui/typography'
 import { load } from '@/lib/data/query'
 
 export const dynamic = 'force-dynamic'
@@ -55,16 +56,16 @@ export default async function FirewallPage() {
             {res.data.map((e) => {
               const isSecurities = /securit/i.test(`${e.reason ?? ''} ${e.blocked_step ?? ''}`)
               return (
-                <TableRow key={e.id}>
+                <TableRow key={e.id} className={isSecurities ? securitiesRowClass : undefined}>
                   <TableCell className="font-medium">{e.kind}</TableCell>
                   <TableCell className="text-muted-foreground">
                     {e.reason ?? '—'}
-                    {isSecurities ? <Badge variant="blocked" className="ml-2">securities</Badge> : null}
+                    {isSecurities ? <SecuritiesChip className="ml-2" /> : null}
                   </TableCell>
                   <TableCell className="text-muted-foreground">{e.blocked_step ?? '—'}</TableCell>
                   <TableCell className="text-muted-foreground">{e.entity_type ?? '—'}</TableCell>
                   <TableCell className="text-muted-foreground">{e.recipient ?? '—'}</TableCell>
-                  <TableCell className="text-muted-foreground">{new Date(e.created_at).toLocaleString('en-US')}</TableCell>
+                  <TableCell className="text-muted-foreground"><Numeric>{new Date(e.created_at).toLocaleString('en-US')}</Numeric></TableCell>
                 </TableRow>
               )
             })}

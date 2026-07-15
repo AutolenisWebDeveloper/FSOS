@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { load } from '@/lib/data/query'
 import { OutreachActions } from '@/components/app/OutreachActions'
+import { Numeric } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -66,7 +67,7 @@ export default async function CrossSellDetailPage({ params }: { params: { id: st
         <CardHeader><CardTitle className="text-base">Outreach log</CardTitle></CardHeader>
         <CardContent className="space-y-1 text-sm">
           {activities.ok && activities.data.length > 0 ? activities.data.map((a) => (
-            <div key={a.id} className="border-b py-1 last:border-0"><span className="text-xs text-muted-foreground">{new Date(a.created_at).toLocaleString('en-US')}</span><p className="capitalize">{(a.kind ?? '').replace('crosssell_', '').replace(/_/g, ' ')} — {a.note}</p></div>
+            <div key={a.id} className="border-b py-1 last:border-0"><Numeric className="text-xs text-muted-foreground">{new Date(a.created_at).toLocaleString('en-US')}</Numeric><p className="capitalize">{(a.kind ?? '').replace('crosssell_', '').replace(/_/g, ' ')} — {a.note}</p></div>
           )) : <p className="text-muted-foreground">No outreach logged yet.</p>}
         </CardContent>
       </Card>

@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Numeric } from '@/components/ui/typography'
 import { EmptyState } from '@/components/archetypes'
 import { REVIEW_TYPE, REVIEW_STAGE } from '@/lib/validation/schemas'
 
@@ -88,7 +89,7 @@ export function ReviewList({ rows }: { rows: ReviewRow[] }) {
                   </TableCell>
                   <TableCell className="capitalize text-muted-foreground">{r.type.replace(/_/g, ' ')}</TableCell>
                   <TableCell><Badge variant={STAGE_BADGE[r.stage] ?? 'draft'}>{r.stage.replace(/_/g, ' ')}</Badge></TableCell>
-                  <TableCell className="text-muted-foreground">{r.scheduled_at ? new Date(r.scheduled_at).toLocaleDateString('en-US') : '—'}</TableCell>
+                  <TableCell className="text-muted-foreground"><Numeric>{r.scheduled_at ? new Date(r.scheduled_at).toLocaleDateString('en-US') : '—'}</Numeric></TableCell>
                   <TableCell className="text-right tabular-nums">{r.generated_count || '—'}</TableCell>
                 </TableRow>
               ))}

@@ -2,6 +2,7 @@ import { DatabaseBackup } from 'lucide-react'
 import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Numeric } from '@/components/ui/typography'
 import { load } from '@/lib/data/query'
 
 export const dynamic = 'force-dynamic'
@@ -69,8 +70,8 @@ export default async function SuperBackupsPage() {
                 <TableRow key={r.id}>
                   <TableCell className="font-medium">{r.job}</TableCell>
                   <TableCell><Badge variant={statusVariant(r.status)}>{r.status}</Badge></TableCell>
-                  <TableCell className="whitespace-nowrap text-muted-foreground">{r.started_at ? new Date(r.started_at).toLocaleString('en-US') : '—'}</TableCell>
-                  <TableCell className="whitespace-nowrap text-muted-foreground">{r.finished_at ? new Date(r.finished_at).toLocaleString('en-US') : '—'}</TableCell>
+                  <TableCell className="whitespace-nowrap text-muted-foreground"><Numeric>{r.started_at ? new Date(r.started_at).toLocaleString('en-US') : '—'}</Numeric></TableCell>
+                  <TableCell className="whitespace-nowrap text-muted-foreground"><Numeric>{r.finished_at ? new Date(r.finished_at).toLocaleString('en-US') : '—'}</Numeric></TableCell>
                   <TableCell className="text-muted-foreground">{r.error ?? '—'}</TableCell>
                 </TableRow>
               ))}

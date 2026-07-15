@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { DetailShell, ErrorState, StatusBadge } from '@/components/archetypes'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { load } from '@/lib/data/query'
+import { Numeric } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,10 +33,10 @@ export default async function RunDetailPage({ params }: { params: { id: string }
       <div className="grid gap-4 sm:grid-cols-2">
         <Card><CardHeader><CardTitle className="text-base">Metrics</CardTitle></CardHeader>
           <CardContent className="space-y-1 text-sm">
-            <div className="flex justify-between"><span className="text-muted-foreground">Input tokens</span><span>{r.input_tokens}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Output tokens</span><span>{r.output_tokens}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Cost</span><span>${Number(r.cost_usd).toFixed(4)}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Confidence</span><span>{r.confidence != null ? r.confidence.toFixed(2) : '—'}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Input tokens</span><span><Numeric>{r.input_tokens}</Numeric></span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Output tokens</span><span><Numeric>{r.output_tokens}</Numeric></span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Cost</span><span><Numeric>{`$${Number(r.cost_usd).toFixed(4)}`}</Numeric></span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Confidence</span><span>{r.confidence != null ? <Numeric>{r.confidence.toFixed(2)}</Numeric> : '—'}</span></div>
           </CardContent>
         </Card>
         <Card><CardHeader><CardTitle className="text-base">Input</CardTitle></CardHeader>

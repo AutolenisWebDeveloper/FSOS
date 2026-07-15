@@ -1,5 +1,6 @@
 import { ReportShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { StatTile } from '@/components/archetypes'
+import { Money } from '@/components/ui/typography'
 import { getServerSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/supabase/client'
 import { agencyIdsFor } from '@/lib/portal/scope'
@@ -25,7 +26,7 @@ export default async function PartnerProductionPage() {
       {err ? <ErrorState description={err} /> : agencyIds.length === 0 ? <EmptyState title="No agency scope" description="This account is not linked to an agency." /> : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <StatTile label="YTD referrals" value={referrals} href="/partner/referrals" />
-          <StatTile label="Placed premium" value={`$${Math.round(placedPremium).toLocaleString('en-US')}`} href="/partner/referrals" />
+          <StatTile label="Placed premium" value={<Money value={placedPremium} />} href="/partner/referrals" />
         </div>
       )}
     </ReportShell>

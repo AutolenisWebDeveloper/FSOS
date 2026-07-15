@@ -4,6 +4,7 @@ import * as React from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { CheckSquare, Check } from 'lucide-react'
+import { MonoLabel, Numeric } from '@/components/ui/typography'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -174,10 +175,10 @@ function FilterChip({ active, onClick, children }: { active: boolean; onClick: (
 function TaskSection({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
   return (
     <section className="space-y-2" aria-label={title}>
-      <h2 className="flex items-center gap-2 text-sm font-semibold">
+      <MonoLabel as="h2" muted={false} className="flex items-center gap-2 text-foreground">
         {title}
-        <span className="text-muted-foreground">{count}</span>
-      </h2>
+        <Numeric className="text-muted-foreground">{count}</Numeric>
+      </MonoLabel>
       <ul className="divide-y rounded-lg border">{children}</ul>
     </section>
   )
@@ -216,7 +217,7 @@ function TaskItem({ task, busy, onComplete }: { task: TaskRow; busy: boolean; on
           ) : null}
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          {due ? <span>Due {due.toLocaleDateString('en-US')}</span> : <span>No due date</span>}
+          {due ? <span>Due <Numeric>{due.toLocaleDateString('en-US')}</Numeric></span> : <span>No due date</span>}
           {href ? (
             <Link href={href} className="text-primary hover:underline">
               View source record

@@ -3,6 +3,7 @@ import { ListShell, ErrorState, EmptyState, StatusBadge } from '@/components/arc
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Numeric } from '@/components/ui/typography'
 import { load } from '@/lib/data/query'
 
 export const dynamic = 'force-dynamic'
@@ -71,7 +72,7 @@ export default async function SuperWorkflowsPage() {
                     <StatusBadge status={r.enabled ? 'won' : 'draft'} label={r.enabled ? 'enabled' : 'disabled'} />
                     {r.archived_at ? <Badge variant="outline">archived</Badge> : null}
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{new Date(r.created_at).toLocaleDateString('en-US')}</TableCell>
+                  <TableCell className="text-muted-foreground"><Numeric>{new Date(r.created_at).toLocaleDateString('en-US')}</Numeric></TableCell>
                 </TableRow>
               ))}
             </TableBody>

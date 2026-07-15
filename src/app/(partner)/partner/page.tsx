@@ -1,4 +1,5 @@
 import { DashboardShell, StatTile } from '@/components/archetypes'
+import { Money } from '@/components/ui/typography'
 import { getServerSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/supabase/client'
 import { agencyIdsFor, compDisclosureEnabled } from '@/lib/portal/scope'
@@ -26,7 +27,7 @@ export default async function PartnerDashboardPage() {
   return (
     <DashboardShell title="Agency-Owner Portal" description="Your referrals and production. You only ever see your own agency's data.">
       <StatTile label="My referrals" value={referralCount} href="/partner/referrals" />
-      <StatTile label="Production (premium)" value={`$${Math.round(production).toLocaleString('en-US')}`} href="/partner/production" />
+      <StatTile label="Production (premium)" value={<Money value={production} />} href="/partner/production" />
       <StatTile label="Submit a referral" value="→" href="/partner/refer" />
       {showComp ? <StatTile label="Attributed commissions" value="View" href="/partner/commissions" hint="Comp disclosure enabled" /> : <StatTile label="Materials" value="View" href="/partner/materials" />}
     </DashboardShell>

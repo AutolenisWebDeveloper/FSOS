@@ -1,7 +1,9 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import type { ReactNode } from 'react'
 import { DetailShell, ErrorState, StatusBadge } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
+import { Numeric } from '@/components/ui/typography'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { load } from '@/lib/data/query'
 import { ReferralActions } from '@/components/app/ReferralActions'
@@ -87,8 +89,8 @@ export default async function ReferralDetailPage({ params }: { params: { id: str
           <CardContent className="space-y-2 text-sm">
             <Row label="Referring agency" value={agencyName ?? 'Direct / none'} />
             <Row label="Engagement" value={r.engagement} />
-            <Row label="First touch" value={r.first_touch_at ? new Date(r.first_touch_at).toLocaleString('en-US') : 'Not yet — SLA running'} />
-            <Row label="SLA due" value={r.sla_due_at ? new Date(r.sla_due_at).toLocaleString('en-US') : '—'} />
+            <Row label="First touch" value={r.first_touch_at ? <Numeric>{new Date(r.first_touch_at).toLocaleString('en-US')}</Numeric> : 'Not yet — SLA running'} />
+            <Row label="SLA due" value={r.sla_due_at ? <Numeric>{new Date(r.sla_due_at).toLocaleString('en-US')}</Numeric> : '—'} />
             {r.loss_reason ? <Row label="Loss reason" value={r.loss_reason.replace(/_/g, ' ')} /> : null}
           </CardContent>
         </Card>
@@ -113,7 +115,7 @@ export default async function ReferralDetailPage({ params }: { params: { id: str
             <ol className="space-y-2">
               {activities.data.map((a) => (
                 <li key={a.id} className="flex gap-2 text-sm">
-                  <span className="text-muted-foreground">{new Date(a.created_at).toLocaleDateString('en-US')}</span>
+                  <Numeric className="text-muted-foreground">{new Date(a.created_at).toLocaleDateString('en-US')}</Numeric>
                   <span className="font-medium capitalize">{a.kind.replace(/_/g, ' ')}</span>
                   <span className="text-muted-foreground">— {a.note}</span>
                 </li>
@@ -126,7 +128,7 @@ export default async function ReferralDetailPage({ params }: { params: { id: str
   )
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex justify-between gap-3">
       <span className="text-muted-foreground">{label}</span>

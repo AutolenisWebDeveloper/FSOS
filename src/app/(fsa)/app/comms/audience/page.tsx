@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
 import { AudienceBuilderForm } from '@/components/app/SequenceControls'
+import { Numeric } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -60,8 +61,8 @@ export default async function AudiencePage() {
                       <TableRow key={a.id}>
                         <TableCell className="font-medium">{a.name}</TableCell>
                         <TableCell><Badge variant="outline">{a.definition?.base ?? 'households'}</Badge></TableCell>
-                        <TableCell>{Number(a.estimated_size ?? 0).toLocaleString('en-US')}</TableCell>
-                        <TableCell className="text-muted-foreground">{new Date(a.created_at).toLocaleDateString('en-US')}</TableCell>
+                        <TableCell><Numeric>{Number(a.estimated_size ?? 0).toLocaleString('en-US')}</Numeric></TableCell>
+                        <TableCell className="text-muted-foreground"><Numeric>{new Date(a.created_at).toLocaleDateString('en-US')}</Numeric></TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

@@ -3,9 +3,11 @@
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
+import { Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import { Numeric } from '@/components/ui/typography'
 import { Field } from '@/components/forms/Field'
 import { PRODUCT_FAMILY, CommissionSplitSchema } from '@/lib/validation/schemas'
 import { postJson, firstFieldError } from '@/lib/client/api'
@@ -56,7 +58,10 @@ export function SplitConfigForm({ agencies }: { agencies: { id: string; agency_n
           <Input name="agency_split_pct" type="number" min={0} max={100} step="0.01" value={agency} onChange={(e) => setAgency(e.target.value)} />
         </Field>
       </div>
-      <p className={`text-sm ${Math.abs(sum - 100) < 0.001 ? 'text-status-won' : 'text-destructive'}`}>Sum: {sum}% {Math.abs(sum - 100) < 0.001 ? '✓' : '(must equal 100)'}</p>
+      <p className={`flex items-center gap-1 text-sm ${Math.abs(sum - 100) < 0.001 ? 'text-status-won' : 'text-destructive'}`}>
+        Sum: <Numeric>{sum}%</Numeric>{' '}
+        {Math.abs(sum - 100) < 0.001 ? <Check className="h-4 w-4" strokeWidth={1.75} aria-label="valid" /> : <span>(must equal 100)</span>}
+      </p>
       <div className="flex justify-end"><Button type="submit" disabled={saving || Math.abs(sum - 100) >= 0.001}>{saving ? 'Saving…' : 'Save split'}</Button></div>
     </form>
   )

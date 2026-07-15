@@ -1,8 +1,10 @@
 import Link from 'next/link'
-import { ShieldAlert, CheckCircle2 } from 'lucide-react'
+import { CheckCircle2 } from 'lucide-react'
 import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Numeric, Money } from '@/components/ui/typography'
+import { SecuritiesChip, securitiesRowClass } from '@/components/ui/securities'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
 
@@ -22,8 +24,6 @@ interface LapseRow {
   days_to_renewal: number | null
   risk_band: string | null
 }
-
-const money = (n: number | null | undefined) => `$${Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
 
 // Risk-band → Badge variant mapping per spec.
 const RISK_VARIANT: Record<string, 'lost' | 'blocked' | 'pending' | 'draft'> = {
@@ -98,7 +98,7 @@ export default async function PolicyLapseRiskPage() {
           </TableHeader>
           <TableBody>
             {rows.map((r) => (
-              <TableRow key={r.policy_id}>
+              <TableRow key={r.policy_id} className={r.is_security ? securitiesRowClass : undefined}>
                 <TableCell>
                   {r.household_id ? (
                     <Link href={`/app/households/${r.household_id}`} className="font-medium text-primary hover:underline">
@@ -109,9 +109,7 @@ export default async function PolicyLapseRiskPage() {
                   )}
                   {r.is_security ? (
                     <div className="mt-1">
-                      <Badge variant="escalated" className="gap-1">
-                        <ShieldAlert className="h-3 w-3" aria-hidden /> securities — human handling
-                      </Badge>
+                      <SecuritiesChip />
                     </div>
                   ) : null}
                 </TableCell>
@@ -124,11 +122,13 @@ export default async function PolicyLapseRiskPage() {
                 <TableCell>
                   <Badge variant={RISK_VARIANT[r.risk_band ?? ''] ?? 'draft'}>{(r.risk_band ?? 'unknown').replace(/_/g, ' ')}</Badge>
                 </TableCell>
-                <TableCell className="text-right tabular-nums">{money(r.premium)}</TableCell>
-                <TableCell className="text-muted-foreground">
-                  {r.renewal_date ? new Date(r.renewal_date).toLocaleDateString('en-US') : '—'}
+                <TableCell className="text-right"><Money value={r.premium} /></TableCell>
+                <TableCell>
+                  <Numeric className="text-muted-foreground">
+                    {r.renewal_date ? new Date(r.renewal_date).toLocaleDateString('en-US') : '—'}
+                  </Numeric>
                 </TableCell>
-                <TableCell className="text-right tabular-nums">{r.days_to_renewal ?? '—'}</TableCell>
+                <TableCell className="text-right"><Numeric>{r.days_to_renewal ?? '—'}</Numeric></TableCell>
               </TableRow>
             ))}
           </TableBody>

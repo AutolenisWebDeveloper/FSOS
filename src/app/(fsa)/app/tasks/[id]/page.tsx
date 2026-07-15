@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { DetailShell, ErrorState, StatusBadge } from '@/components/archetypes'
@@ -5,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { load } from '@/lib/data/query'
 import { TaskActions } from '@/components/app/TaskActions'
+import { Numeric } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -109,18 +111,18 @@ export default async function TaskDetailPage({ params }: { params: { id: string 
         <CardContent className="space-y-2 text-sm">
           <Row label="Status" value={t.completed ? 'Completed' : 'Open'} />
           <Row label="Source" value={t.source} />
-          <Row label="Due" value={t.due_at ? new Date(t.due_at).toLocaleDateString('en-US') : 'No due date'} />
+          <Row label="Due" value={t.due_at ? <Numeric>{new Date(t.due_at).toLocaleDateString('en-US')}</Numeric> : 'No due date'} />
           <Row label="Assignee" value={t.assignee ?? '—'} />
           <Row label="Linked record" value={t.entity_type ? SOURCE_LABEL[t.entity_type] ?? t.entity_type : '—'} />
-          <Row label="Created" value={fmt(t.created_at)} />
-          <Row label="Updated" value={fmt(t.updated_at)} />
+          <Row label="Created" value={<Numeric>{fmt(t.created_at)}</Numeric>} />
+          <Row label="Updated" value={<Numeric>{fmt(t.updated_at)}</Numeric>} />
         </CardContent>
       </Card>
     </DetailShell>
   )
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex justify-between gap-3">
       <span className="text-muted-foreground">{label}</span>

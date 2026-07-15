@@ -4,6 +4,7 @@ import { ListShell, ErrorState, EmptyState, StatusBadge } from '@/components/arc
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
+import { Numeric } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -72,7 +73,7 @@ export default async function WorkflowsPage() {
               <TableCell>
                 {w.enabled ? <StatusBadge status="won" label="enabled" /> : <StatusBadge status="draft" label="inactive" />}
               </TableCell>
-              <TableCell className="text-muted-foreground">{new Date(w.created_at).toLocaleDateString('en-US')}</TableCell>
+              <TableCell className="text-muted-foreground"><Numeric>{new Date(w.created_at).toLocaleDateString('en-US')}</Numeric></TableCell>
             </TableRow>
           ))}
         </TableBody>

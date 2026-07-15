@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { LayoutGrid, ClipboardList } from 'lucide-react'
 import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
+import { SecuritiesChip, securitiesRowClass } from '@/components/ui/securities'
+import { Numeric } from '@/components/ui/typography'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
@@ -42,10 +44,10 @@ export default async function CasesPage() {
             <TableHeader><TableRow><TableHead>Household</TableHead><TableHead>Status</TableHead><TableHead>Submitted</TableHead></TableRow></TableHeader>
             <TableBody>
               {cases.data.map((c) => (
-                <TableRow key={c.id}>
-                  <TableCell><Link href={`/app/cases/${c.id}`} className="font-medium text-primary hover:underline">{c.household_id ? hhMap.get(c.household_id) ?? 'Case' : 'Case'}</Link>{c.is_security ? <Badge variant="blocked" className="ml-2">securities · FFS pointer</Badge> : null}</TableCell>
+                <TableRow key={c.id} className={c.is_security ? securitiesRowClass : undefined}>
+                  <TableCell><Link href={`/app/cases/${c.id}`} className="font-medium text-primary hover:underline">{c.household_id ? hhMap.get(c.household_id) ?? 'Case' : 'Case'}</Link>{c.is_security ? <SecuritiesChip className="ml-2" /> : null}</TableCell>
                   <TableCell><Badge variant={c.status === 'issued' || c.status === 'in_service' ? 'won' : c.status === 'declined' || c.status === 'withdrawn' ? 'lost' : 'active'}>{c.status.replace(/_/g, ' ')}</Badge></TableCell>
-                  <TableCell className="text-muted-foreground">{c.submitted_at ? new Date(c.submitted_at).toLocaleDateString('en-US') : '—'}</TableCell>
+                  <TableCell className="text-muted-foreground"><Numeric>{c.submitted_at ? new Date(c.submitted_at).toLocaleDateString('en-US') : '—'}</Numeric></TableCell>
                 </TableRow>
               ))}
             </TableBody>

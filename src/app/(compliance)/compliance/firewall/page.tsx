@@ -2,6 +2,7 @@ import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
+import { Numeric } from '@/components/ui/typography'
 export const dynamic = 'force-dynamic'
 // P-3 Securities Firewall. Demonstrates the firewall works — no securities substance shown.
 export default async function ComplianceFirewallPage() {
@@ -14,7 +15,7 @@ export default async function ComplianceFirewallPage() {
       {!events.ok ? <ErrorState description={events.kind === 'not_configured' ? 'Database not configured.' : events.message} /> : events.data.length === 0 ? <EmptyState title="No firewall events" description="No securities records have been excluded yet — the firewall is armed." /> : (
         <div className="rounded-lg border"><Table>
           <TableHeader><TableRow><TableHead>When</TableHead><TableHead>Entity</TableHead><TableHead>Blocked step</TableHead><TableHead>Reason</TableHead></TableRow></TableHeader>
-          <TableBody>{events.data.map((e) => (<TableRow key={e.id}><TableCell className="text-muted-foreground">{new Date(e.created_at).toLocaleString('en-US')}</TableCell><TableCell>{e.entity_type ?? '—'}</TableCell><TableCell><Badge variant="blocked">{e.blocked_step ?? 'securities'}</Badge></TableCell><TableCell className="text-muted-foreground">{e.reason ?? '—'}</TableCell></TableRow>))}</TableBody>
+          <TableBody>{events.data.map((e) => (<TableRow key={e.id}><TableCell className="text-muted-foreground"><Numeric>{new Date(e.created_at).toLocaleString('en-US')}</Numeric></TableCell><TableCell>{e.entity_type ?? '—'}</TableCell><TableCell><Badge variant="blocked">{e.blocked_step ?? 'securities'}</Badge></TableCell><TableCell className="text-muted-foreground">{e.reason ?? '—'}</TableCell></TableRow>))}</TableBody>
         </Table></div>
       )}
     </ListShell>

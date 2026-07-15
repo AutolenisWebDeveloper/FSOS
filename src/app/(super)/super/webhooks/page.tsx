@@ -2,6 +2,7 @@ import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Numeric } from '@/components/ui/typography'
 import { load } from '@/lib/data/query'
 import { WebhookForm, WebhookControls } from '@/components/super/WebhookControls'
 
@@ -116,7 +117,7 @@ export default async function SuperWebhooksPage() {
                 <TableBody>
                   {deliveries.data.map((d) => (
                     <TableRow key={d.id}>
-                      <TableCell className="text-muted-foreground">{new Date(d.created_at).toLocaleString('en-US')}</TableCell>
+                      <TableCell className="text-muted-foreground"><Numeric>{new Date(d.created_at).toLocaleString('en-US')}</Numeric></TableCell>
                       <TableCell className="font-medium">{d.event}</TableCell>
                       <TableCell>
                         <Badge variant={d.status === 'delivered' ? 'won' : d.status === 'failed' ? 'lost' : 'pending'}>{d.status}</Badge>

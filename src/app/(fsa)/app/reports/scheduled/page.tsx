@@ -2,6 +2,7 @@ import { ListShell, EmptyState, ErrorState } from '@/components/archetypes'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
+import { Numeric } from '@/components/ui/typography'
 import { load } from '@/lib/data/query'
 import { ScheduledReportForm } from '@/components/app/ReportBuilder'
 
@@ -65,9 +66,9 @@ export default async function ScheduledReportsPage() {
                   <TableCell>{r.report_key}</TableCell>
                   <TableCell><Badge variant="secondary">{r.cadence}</Badge></TableCell>
                   <TableCell className="uppercase">{r.format}</TableCell>
-                  <TableCell className="text-right tabular-nums">{(r.recipients ?? []).length}</TableCell>
+                  <TableCell className="text-right"><Numeric>{(r.recipients ?? []).length}</Numeric></TableCell>
                   <TableCell><Badge variant={r.enabled ? 'active' : 'draft'}>{r.enabled ? 'enabled' : 'disabled'}</Badge></TableCell>
-                  <TableCell>{fmtDate(r.next_run_at)}</TableCell>
+                  <TableCell><Numeric>{fmtDate(r.next_run_at)}</Numeric></TableCell>
                 </TableRow>
               ))}
             </TableBody>

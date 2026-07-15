@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { load } from '@/lib/data/query'
 import { AGENT_ROSTER } from '@/lib/ai/roster'
 import { AgentToggle } from '@/components/app/AgentToggle'
+import { Numeric } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -56,8 +57,8 @@ export default async function AgentDetailPage({ params }: { params: { id: string
           <CardContent className="space-y-1 text-sm">
             {runs.ok && runs.data.length > 0 ? runs.data.map((r) => (
               <Link key={r.id} href={`/app/ai/runs/${r.id}`} className="flex justify-between border-b py-1 last:border-0 hover:text-primary">
-                <span>{new Date(r.started_at).toLocaleString('en-US')}</span>
-                <span><Badge variant={r.status === 'completed' ? 'won' : r.status === 'errored' ? 'lost' : 'pending'}>{r.status}</Badge> ${Number(r.cost_usd).toFixed(3)}</span>
+                <span><Numeric>{new Date(r.started_at).toLocaleString('en-US')}</Numeric></span>
+                <span><Badge variant={r.status === 'completed' ? 'won' : r.status === 'errored' ? 'lost' : 'pending'}>{r.status}</Badge> <Numeric>{`$${Number(r.cost_usd).toFixed(3)}`}</Numeric></span>
               </Link>
             )) : <p className="text-muted-foreground">No runs yet.</p>}
           </CardContent>

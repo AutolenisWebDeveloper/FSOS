@@ -3,6 +3,7 @@ import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Numeric } from '@/components/ui/typography'
 import { getServerSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/supabase/client'
 import { agencyIdsFor } from '@/lib/portal/scope'
@@ -40,7 +41,7 @@ export default async function PartnerReferralsPage() {
                   <TableCell><Link href={`/partner/referrals/${r.id}`} className="font-medium text-primary hover:underline">{r.referred_name ?? 'Referral'}</Link></TableCell>
                   <TableCell className="text-muted-foreground">{r.engagement?.replace(/_/g, ' ')}</TableCell>
                   <TableCell><Badge variant={r.status === 'converted' ? 'won' : r.status === 'declined' ? 'lost' : 'active'}>{r.status}</Badge></TableCell>
-                  <TableCell className="text-muted-foreground">{r.received_at ? new Date(r.received_at).toLocaleDateString('en-US') : '—'}</TableCell>
+                  <TableCell className="text-muted-foreground"><Numeric>{r.received_at ? new Date(r.received_at).toLocaleDateString('en-US') : '—'}</Numeric></TableCell>
                 </TableRow>
               ))}
             </TableBody>

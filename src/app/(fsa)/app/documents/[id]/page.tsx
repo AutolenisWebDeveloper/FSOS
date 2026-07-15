@@ -3,6 +3,7 @@ import { DetailShell, ErrorState } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { load } from '@/lib/data/query'
+import { Numeric } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,8 +29,8 @@ export default async function DocumentDetailPage({ params }: { params: { id: str
         <CardContent className="space-y-1 text-sm">
           <div className="flex justify-between"><span className="text-muted-foreground">Type</span><span>{d.mime_type ?? '—'}</span></div>
           <div className="flex justify-between"><span className="text-muted-foreground">Classification</span><span>{d.classification ?? '—'}</span></div>
-          <div className="flex justify-between"><span className="text-muted-foreground">Retention until</span><span>{d.retention_until ?? '—'}</span></div>
-          <div className="flex justify-between"><span className="text-muted-foreground">Uploaded</span><span>{new Date(d.created_at).toLocaleString('en-US')}</span></div>
+          <div className="flex justify-between"><span className="text-muted-foreground">Retention until</span><Numeric>{d.retention_until ?? '—'}</Numeric></div>
+          <div className="flex justify-between"><span className="text-muted-foreground">Uploaded</span><Numeric>{new Date(d.created_at).toLocaleString('en-US')}</Numeric></div>
           <p className="pt-2 text-xs text-muted-foreground">Access is via a short-lived signed URL. Only clean-scanned documents are downloadable.</p>
         </CardContent>
       </Card>

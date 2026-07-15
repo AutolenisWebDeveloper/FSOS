@@ -2,6 +2,7 @@ import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
+import { Numeric } from '@/components/ui/typography'
 export const dynamic = 'force-dynamic'
 // P-3 Licenses. State life/health + securities registrations with status + expiry.
 export default async function ComplianceLicensesPage() {
@@ -15,7 +16,7 @@ export default async function ComplianceLicensesPage() {
       {!rows.ok ? <ErrorState description={rows.kind === 'not_configured' ? 'Database not configured.' : rows.message} /> : rows.data.length === 0 ? <EmptyState title="No licenses on file" description="Add license/registration records to gate product eligibility." /> : (
         <div className="rounded-lg border"><Table>
           <TableHeader><TableRow><TableHead>Kind</TableHead><TableHead>State</TableHead><TableHead>Status</TableHead><TableHead>Expires</TableHead></TableRow></TableHeader>
-          <TableBody>{rows.data.map((l) => (<TableRow key={l.id}><TableCell className="font-medium">{l.kind ?? '—'}</TableCell><TableCell className="text-muted-foreground">{l.state ?? '—'}</TableCell><TableCell><Badge variant={l.status === 'active' ? 'won' : l.status === 'expired' ? 'lost' : 'pending'}>{l.status}</Badge></TableCell><TableCell>{l.expires_on ?? '—'}{soon(l.expires_on) ? <Badge variant="pending" className="ml-2">expiring</Badge> : null}</TableCell></TableRow>))}</TableBody>
+          <TableBody>{rows.data.map((l) => (<TableRow key={l.id}><TableCell className="font-medium">{l.kind ?? '—'}</TableCell><TableCell className="text-muted-foreground">{l.state ?? '—'}</TableCell><TableCell><Badge variant={l.status === 'active' ? 'won' : l.status === 'expired' ? 'lost' : 'pending'}>{l.status}</Badge></TableCell><TableCell>{l.expires_on ? <Numeric>{l.expires_on}</Numeric> : '—'}{soon(l.expires_on) ? <Badge variant="pending" className="ml-2">expiring</Badge> : null}</TableCell></TableRow>))}</TableBody>
         </Table></div>
       )}
     </ListShell>

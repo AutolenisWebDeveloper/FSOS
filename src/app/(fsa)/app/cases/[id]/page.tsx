@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { DetailShell, ErrorState, StatusBadge } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
+import { SecuritiesChip, SecuritiesBanner } from '@/components/ui/securities'
+import { Numeric } from '@/components/ui/typography'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { load } from '@/lib/data/query'
@@ -44,7 +46,7 @@ export default async function CaseDetailPage({ params }: { params: { id: string 
       title={householdName ? `Case — ${householdName}` : 'Case'}
       description={c.submitted_at ? `Submitted ${new Date(c.submitted_at).toLocaleDateString('en-US')}` : 'Draft'}
       breadcrumb={[{ label: 'FSA', href: '/app' }, { label: 'Cases', href: '/app/cases' }, { label: householdName ?? 'Case' }]}
-      status={<span className="flex items-center gap-2"><StatusBadge status={c.status === 'issued' || c.status === 'in_service' ? 'won' : c.status === 'declined' || c.status === 'withdrawn' ? 'lost' : 'active'} label={c.status.replace(/_/g, ' ')} />{c.is_security ? <Badge variant="blocked">securities · FFS pointer</Badge> : null}{c.replacement_flag ? <Badge variant="blocked">replacement</Badge> : null}</span>}
+      status={<span className="flex items-center gap-2"><StatusBadge status={c.status === 'issued' || c.status === 'in_service' ? 'won' : c.status === 'declined' || c.status === 'withdrawn' ? 'lost' : 'active'} label={c.status.replace(/_/g, ' ')} />{c.is_security ? <SecuritiesChip /> : null}{c.replacement_flag ? <Badge variant="blocked">replacement</Badge> : null}</span>}
       actions={<Button asChild variant="outline"><Link href={`/app/cases/${c.id}/checklist`}>Checklist</Link></Button>}
       rail={
         <div className="space-y-3 text-sm">
@@ -59,8 +61,12 @@ export default async function CaseDetailPage({ params }: { params: { id: string 
       }
     >
       {c.is_security ? (
-        <div className="rounded-md border border-status-blocked/40 bg-status-blocked/10 p-3 text-sm text-status-blocked">
-          Securities case — suitability &amp; underwriting are supervised in FFS. FSOS records progress against a status pointer only ({c.ffs_case_ref ?? 'no FFS ref'}); no suitability determination is stored.
+        <div className="space-y-1.5">
+          <SecuritiesBanner />
+          <p className="pl-1 text-xs text-status-security">
+            FFS case ref: <Numeric>{c.ffs_case_ref ?? 'no FFS ref'}</Numeric> — suitability &amp; underwriting are
+            supervised in FFS; no suitability determination is stored.
+          </p>
         </div>
       ) : null}
 

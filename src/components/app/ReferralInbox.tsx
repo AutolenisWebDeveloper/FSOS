@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Numeric } from '@/components/ui/typography'
 import { EmptyState } from '@/components/archetypes'
 import { REFERRAL_ENGAGEMENT } from '@/lib/validation/schemas'
 import { patchJson } from '@/lib/client/api'
@@ -125,7 +126,7 @@ export function ReferralInbox({ rows }: { rows: ReferralRow[] }) {
                   <TableCell>
                     <Badge variant={r.status === 'converted' ? 'won' : r.status === 'declined' ? 'lost' : 'active'}>{r.status}</Badge>
                   </TableCell>
-                  <TableCell className={r.sla_breached ? 'font-medium text-destructive' : 'text-muted-foreground'}>{fmt(r.sla_due_at)}</TableCell>
+                  <TableCell className={r.sla_breached ? 'font-medium text-destructive' : 'text-muted-foreground'}><Numeric>{fmt(r.sla_due_at)}</Numeric></TableCell>
                   <TableCell className="text-right">
                     {r.untouched && r.status !== 'converted' && r.status !== 'declined' ? (
                       <Button size="sm" variant="outline" disabled={busy === r.id} onClick={() => logFirstTouch(r.id)}>

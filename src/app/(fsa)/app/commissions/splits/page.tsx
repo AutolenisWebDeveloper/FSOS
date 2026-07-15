@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
 import { SplitConfigForm } from '@/components/app/CommissionControls'
+import { Numeric } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,8 +33,8 @@ export default async function SplitsPage() {
                   <TableRow key={s.id}>
                     <TableCell className="capitalize font-medium">{s.product_family}</TableCell>
                     <TableCell className="text-muted-foreground">{s.agency_id ? agencyMap.get(s.agency_id) ?? 'agency override' : 'default'}</TableCell>
-                    <TableCell className="text-right tabular-nums">{s.fsa_split_pct}%</TableCell>
-                    <TableCell className="text-right tabular-nums">{s.agency_split_pct}%</TableCell>
+                    <TableCell className="text-right"><Numeric>{s.fsa_split_pct}%</Numeric></TableCell>
+                    <TableCell className="text-right"><Numeric>{s.agency_split_pct}%</Numeric></TableCell>
                     <TableCell>{s.is_assumption ? <AssumptionBadge /> : <Badge variant="active">confirmed</Badge>}</TableCell>
                   </TableRow>
                 ))}

@@ -2,6 +2,7 @@ import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
+import { Numeric } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,7 +26,7 @@ export default async function Page() {
             <TableBody>
               {msgs.data.map((m) => (
                 <TableRow key={m.id}>
-                  <TableCell className="text-muted-foreground">{new Date(m.created_at).toLocaleString('en-US')}</TableCell>
+                  <TableCell className="text-muted-foreground"><Numeric>{new Date(m.created_at).toLocaleString('en-US')}</Numeric></TableCell>
                   <TableCell><Badge variant="outline">{m.direction}</Badge></TableCell>
                   <TableCell className="text-muted-foreground">{m.recipient ?? '—'}</TableCell>
                   <TableCell className="max-w-md truncate">{m.body ?? '—'}</TableCell>

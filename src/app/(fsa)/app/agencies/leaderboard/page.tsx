@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { Trophy } from 'lucide-react'
 import { ReportShell, StatTile, ErrorState, EmptyState } from '@/components/archetypes'
+import { Money, Numeric } from '@/components/ui/typography'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
 
@@ -81,16 +82,16 @@ export default async function AgencyLeaderboardPage() {
           <TableBody>
             {rows.map((r) => (
               <TableRow key={r.id}>
-                <TableCell className="font-semibold tabular-nums">{r.premium_rank ?? '—'}</TableCell>
+                <TableCell className="font-semibold"><Numeric>{r.premium_rank ?? '—'}</Numeric></TableCell>
                 <TableCell>
                   <Link href={`/app/agencies/${r.id}`} className="font-medium text-primary hover:underline">
                     {r.agency_name ?? 'Agency'}
                   </Link>
                   {r.owner_name ? <div className="text-xs text-muted-foreground">{r.owner_name}</div> : null}
                 </TableCell>
-                <TableCell className="text-right tabular-nums">{money(r.ytd_placed_premium)}</TableCell>
-                <TableCell className="text-right tabular-nums">{r.ytd_referrals ?? 0}</TableCell>
-                <TableCell className="text-right tabular-nums">{Number(r.life_penetration_pct ?? 0).toFixed(1)}%</TableCell>
+                <TableCell className="text-right"><Money value={r.ytd_placed_premium} /></TableCell>
+                <TableCell className="text-right"><Numeric>{r.ytd_referrals ?? 0}</Numeric></TableCell>
+                <TableCell className="text-right"><Numeric>{Number(r.life_penetration_pct ?? 0).toFixed(1)}%</Numeric></TableCell>
               </TableRow>
             ))}
           </TableBody>

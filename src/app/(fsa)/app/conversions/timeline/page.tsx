@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { ReportShell, ErrorState, EmptyState, AssumptionBadge } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
 import { load } from '@/lib/data/query'
+import { Numeric } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,7 +39,7 @@ export default async function ConversionTimelinePage() {
                 <div className="flex flex-wrap gap-2">
                   {items.length === 0 ? <span className="text-xs text-muted-foreground">None</span> : items.map((r) => (
                     <Link key={r.policy_id} href={`/app/conversions/${r.policy_id}`}>
-                      <Badge variant={r.is_security ? 'blocked' : 'outline'} className="cursor-pointer">{r.primary_name} · {r.days_remaining}d</Badge>
+                      <Badge variant={r.is_security ? 'security' : 'outline'} className="cursor-pointer">{r.primary_name} · <Numeric>{r.days_remaining}d</Numeric></Badge>
                     </Link>
                   ))}
                 </div>

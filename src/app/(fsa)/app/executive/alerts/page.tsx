@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
+import { Numeric } from '@/components/ui/typography'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
 
@@ -25,7 +26,7 @@ export default async function AlertsPage() {
             <TableBody>
               {events.data.map((e) => (
                 <TableRow key={e.id}>
-                  <TableCell className="text-muted-foreground">{new Date(e.created_at).toLocaleString('en-US')}</TableCell>
+                  <TableCell><Numeric className="text-muted-foreground">{new Date(e.created_at).toLocaleString('en-US')}</Numeric></TableCell>
                   <TableCell><Badge variant={e.kind === 'firewall' ? 'blocked' : e.kind === 'comms_blocked' ? 'lost' : 'pending'}>{e.kind.replace(/_/g, ' ')}</Badge></TableCell>
                   <TableCell className="text-muted-foreground">{e.entity_type ?? '—'}</TableCell>
                   <TableCell className="text-muted-foreground">{e.reason ?? e.blocked_step ?? '—'}</TableCell>

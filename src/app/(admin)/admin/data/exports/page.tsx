@@ -1,6 +1,7 @@
 import { ListShell, ErrorState, EmptyState, StatusBadge, type StatusKey } from '@/components/archetypes'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Numeric } from '@/components/ui/typography'
 import { load } from '@/lib/data/query'
 import { ExportRequestForm } from '@/components/app/ExportControls'
 
@@ -87,8 +88,8 @@ export default async function DataExportsPage() {
                       <TableCell className="uppercase text-muted-foreground">{e.format}</TableCell>
                       <TableCell><StatusBadge status={statusKey(e.status)} label={e.status} /></TableCell>
                       <TableCell>{e.row_count ?? '—'}</TableCell>
-                      <TableCell className="text-muted-foreground">{fmtDate(e.requested_at)}</TableCell>
-                      <TableCell className="text-muted-foreground">{fmtDate(e.expires_at)}</TableCell>
+                      <TableCell className="text-muted-foreground"><Numeric>{fmtDate(e.requested_at)}</Numeric></TableCell>
+                      <TableCell className="text-muted-foreground"><Numeric>{fmtDate(e.expires_at)}</Numeric></TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

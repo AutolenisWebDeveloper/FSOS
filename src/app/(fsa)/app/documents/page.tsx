@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
+import { Numeric } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,7 +30,7 @@ export default async function DocumentsPage() {
                   <TableCell><Link href={`/app/documents/${d.id}`} className="font-medium text-primary hover:underline">{d.file_name ?? 'Document'}</Link>{d.legal_hold ? <Badge variant="blocked" className="ml-2">legal hold</Badge> : null}</TableCell>
                   <TableCell className="text-muted-foreground">{d.classification ?? d.entity_type ?? '—'}</TableCell>
                   <TableCell><Badge variant={d.scan_status === 'clean' ? 'won' : d.scan_status === 'infected' ? 'lost' : 'pending'}>{d.scan_status}</Badge></TableCell>
-                  <TableCell className="text-muted-foreground">{d.retention_until ?? '—'}</TableCell>
+                  <TableCell className="text-muted-foreground"><Numeric>{d.retention_until ?? '—'}</Numeric></TableCell>
                 </TableRow>
               ))}
             </TableBody>

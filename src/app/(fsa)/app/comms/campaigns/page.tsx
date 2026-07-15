@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
+import { Numeric } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,7 +31,7 @@ export default async function CampaignsPage() {
                   <TableCell><Link href={`/app/comms/campaigns/${c.id}`} className="font-medium text-primary hover:underline">{c.name}</Link></TableCell>
                   <TableCell><Badge variant="outline">{c.channel ?? '—'}</Badge></TableCell>
                   <TableCell><Badge variant={c.status === 'active' ? 'active' : c.status === 'completed' ? 'won' : c.status === 'paused' ? 'pending' : 'draft'}>{c.status}</Badge></TableCell>
-                  <TableCell className="text-muted-foreground">{c.activated_at ? new Date(c.activated_at).toLocaleDateString('en-US') : '—'}</TableCell>
+                  <TableCell className="text-muted-foreground">{c.activated_at ? <Numeric>{new Date(c.activated_at).toLocaleDateString('en-US')}</Numeric> : '—'}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

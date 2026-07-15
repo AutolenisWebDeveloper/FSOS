@@ -1,6 +1,7 @@
 import { ScrollText } from 'lucide-react'
 import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Numeric } from '@/components/ui/typography'
 import { load } from '@/lib/data/query'
 
 export const dynamic = 'force-dynamic'
@@ -47,11 +48,11 @@ export default async function SuperAuditPage() {
           <TableBody>
             {events.data.map((e) => (
               <TableRow key={e.id}>
-                <TableCell className="whitespace-nowrap text-muted-foreground">{new Date(e.at).toLocaleString('en-US')}</TableCell>
-                <TableCell className="font-mono text-xs">{e.actor}</TableCell>
+                <TableCell className="whitespace-nowrap text-muted-foreground"><Numeric>{new Date(e.at).toLocaleString('en-US')}</Numeric></TableCell>
+                <TableCell><Numeric className="text-xs">{e.actor}</Numeric></TableCell>
                 <TableCell className="font-medium">{e.action}</TableCell>
                 <TableCell className="text-muted-foreground">{e.entity}</TableCell>
-                <TableCell className="font-mono text-xs text-muted-foreground">{e.entity_id ?? '—'}</TableCell>
+                <TableCell className="text-muted-foreground"><Numeric className="text-xs">{e.entity_id ?? '—'}</Numeric></TableCell>
               </TableRow>
             ))}
           </TableBody>

@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { requireRole } from '@/lib/auth/session'
 import { DetailShell, ErrorState, StatusBadge, type StatusKey } from '@/components/archetypes'
-import { MonoLabel } from '@/components/ui/typography'
+import { MonoLabel, Numeric } from '@/components/ui/typography'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { load } from '@/lib/data/query'
@@ -152,7 +152,7 @@ function Field({ label, value, mono }: { label: string; value: string | null; mo
   return (
     <div>
       <MonoLabel>{label}</MonoLabel>
-      <dd className={mono ? 'numeric text-sm' : 'text-sm'}>{value || '—'}</dd>
+      <dd className="text-sm">{mono ? <Numeric>{value || '—'}</Numeric> : value || '—'}</dd>
     </div>
   )
 }

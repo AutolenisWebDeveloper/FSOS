@@ -1,9 +1,11 @@
+import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PageHeader, StatTile, ErrorState, EmptyState } from '@/components/archetypes'
 import { load } from '@/lib/data/query'
 import { computeWidgets } from '@/lib/analytics/metrics'
 import { DashboardControls } from '@/components/app/DashboardControls'
+import { Money, Numeric } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,10 +19,10 @@ interface DashboardDetail {
   updated_at: string
 }
 
-function formatValue(kind: 'count' | 'currency', value: number | null): string {
+function formatValue(kind: 'count' | 'currency', value: number | null): ReactNode {
   if (value === null) return '—'
-  if (kind === 'currency') return `$${value.toLocaleString('en-US')}`
-  return value.toLocaleString('en-US')
+  if (kind === 'currency') return <Money value={value} />
+  return <Numeric>{value.toLocaleString('en-US')}</Numeric>
 }
 
 // OS-01 Custom dashboard render (A1). Widgets compute from live, DB-derived

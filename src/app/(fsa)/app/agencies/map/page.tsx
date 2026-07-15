@@ -3,6 +3,7 @@ import { MapPin } from 'lucide-react'
 import { DashboardShell, StatTile, ErrorState, EmptyState, Breadcrumb } from '@/components/archetypes'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Money } from '@/components/ui/typography'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
 
@@ -17,8 +18,6 @@ interface AgencyRow {
   status: string | null
   ytd_placed_premium: number | null
 }
-
-const money = (n: number | null | undefined) => `$${Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
 
 const STATUS_VARIANT: Record<string, 'active' | 'draft' | 'lost' | 'pending'> = {
   producing: 'active',
@@ -119,7 +118,7 @@ export default async function AgencyMapPage() {
                           </Link>
                         </TableCell>
                         <TableCell className="text-muted-foreground">{r.owner_name ?? '—'}</TableCell>
-                        <TableCell className="text-right tabular-nums">{money(r.ytd_placed_premium)}</TableCell>
+                        <TableCell className="text-right"><Money value={r.ytd_placed_premium} /></TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

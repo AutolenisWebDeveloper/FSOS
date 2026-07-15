@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Money, Numeric } from '@/components/ui/typography'
 import { EmptyState } from '@/components/archetypes'
 import { AGENCY_STATUS } from '@/lib/validation/schemas'
 
@@ -25,9 +26,6 @@ export interface AgencyRow {
 
 const PAGE = 25
 
-function fmtMoney(n: number) {
-  return `$${Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
-}
 function fmtDate(s: string | null) {
   return s ? new Date(s).toLocaleDateString('en-US') : '—'
 }
@@ -158,9 +156,9 @@ export function AgencyList({ rows }: { rows: AgencyRow[] }) {
                         {a.status}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">{fmtMoney(a.ytd_placed_premium)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{a.ytd_referrals}</TableCell>
-                    <TableCell className="text-muted-foreground">{fmtDate(a.last_contact_at)}</TableCell>
+                    <TableCell className="text-right"><Money value={a.ytd_placed_premium} /></TableCell>
+                    <TableCell className="text-right"><Numeric>{a.ytd_referrals}</Numeric></TableCell>
+                    <TableCell className="text-muted-foreground"><Numeric>{fmtDate(a.last_contact_at)}</Numeric></TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -181,7 +179,7 @@ export function AgencyList({ rows }: { rows: AgencyRow[] }) {
                 </div>
                 <p className="text-sm text-muted-foreground">{a.owner_name}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {fmtMoney(a.ytd_placed_premium)} · {a.ytd_referrals} referrals
+                  <Money value={a.ytd_placed_premium} /> · <Numeric>{a.ytd_referrals}</Numeric> referrals
                   {a.overdue_checkin ? ' · overdue check-in' : ''}
                 </p>
               </Link>

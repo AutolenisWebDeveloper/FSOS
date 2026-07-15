@@ -5,6 +5,7 @@ import { ListShell, ErrorState, EmptyState, StatusBadge, type StatusKey } from '
 import { Button } from '@/components/ui/button'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
+import { Numeric } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -98,7 +99,7 @@ export default async function WorkshopsPage() {
                 <span className="text-xs capitalize text-muted-foreground">{w.topic}</span>
               </TableCell>
               <TableCell className="numeric text-muted-foreground">
-                {w.scheduled_at ? new Date(w.scheduled_at).toLocaleString() : 'TBA'}
+                <Numeric>{w.scheduled_at ? new Date(w.scheduled_at).toLocaleString() : 'TBA'}</Numeric>
               </TableCell>
               <TableCell>
                 <StatusBadge status={STATUS_MAP[w.status] ?? 'draft'} label={w.status} />

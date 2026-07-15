@@ -9,7 +9,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { MonoLabel } from '@/components/ui/typography'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { MonoLabel, Numeric } from '@/components/ui/typography'
 import { postJson, firstFieldError } from '@/lib/client/api'
 
 interface Counts {
@@ -177,20 +178,20 @@ export function GhlImportWizard() {
 
             {preview.sample.length > 0 ? (
               <div className="rounded-lg border">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted/50">
-                    <tr>
-                      <th className="px-3 py-2 text-left font-medium">Name</th>
-                      <th className="px-3 py-2 text-left font-medium">Email</th>
-                      <th className="px-3 py-2 text-left font-medium">Consent</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Consent</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {preview.sample.map((s, i) => (
-                      <tr key={i} className="border-t">
-                        <td className="px-3 py-1.5">{s.full_name}</td>
-                        <td className="numeric px-3 py-1.5 text-muted-foreground">{s.email ?? '—'}</td>
-                        <td className="px-3 py-1.5">
+                      <TableRow key={i}>
+                        <TableCell>{s.full_name}</TableCell>
+                        <TableCell className="text-muted-foreground"><Numeric>{s.email ?? '—'}</Numeric></TableCell>
+                        <TableCell>
                           {s.consent.length > 0 ? (
                             s.consent.map((c) => (
                               <Badge key={c} variant="active" className="mr-1">
@@ -200,11 +201,11 @@ export function GhlImportWizard() {
                           ) : (
                             <Badge variant="assumption">no consent</Badge>
                           )}
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             ) : null}
 

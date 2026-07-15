@@ -4,6 +4,7 @@ import { ListShell, ErrorState, EmptyState, StatusBadge } from '@/components/arc
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
+import { Numeric } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -69,7 +70,7 @@ export default async function DashboardsPage() {
                     ? <StatusBadge status="active" label="shared" />
                     : <StatusBadge status="draft" label="private" />}
                 </TableCell>
-                <TableCell className="text-muted-foreground">{new Date(d.created_at).toLocaleDateString('en-US')}</TableCell>
+                <TableCell className="text-muted-foreground"><Numeric>{new Date(d.created_at).toLocaleDateString('en-US')}</Numeric></TableCell>
               </TableRow>
             ))}
           </TableBody>

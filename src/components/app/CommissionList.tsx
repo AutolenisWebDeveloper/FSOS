@@ -6,6 +6,8 @@ import { DollarSign } from 'lucide-react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
+import { SecuritiesChip, securitiesRowClass } from '@/components/ui/securities'
+import { Money } from '@/components/ui/typography'
 import { EmptyState, AssumptionBadge } from '@/components/archetypes'
 import { PRODUCT_FAMILY } from '@/lib/validation/schemas'
 
@@ -51,12 +53,12 @@ export function CommissionList({ rows, emptyLabel }: { rows: CommissionRow[]; em
           <TableHeader><TableRow><TableHead>Agency</TableHead><TableHead>Family</TableHead><TableHead className="text-right">Total</TableHead><TableHead className="text-right">FSA</TableHead><TableHead className="text-right">Agency</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
           <TableBody>
             {filtered.map((c) => (
-              <TableRow key={c.id}>
-                <TableCell><Link href={`/app/commissions/${c.id}`} className="font-medium text-primary hover:underline">{c.agency_name ?? 'Direct'}</Link>{c.is_security ? <Badge variant="blocked" className="ml-2">securities</Badge> : null}{c.is_trail ? <Badge variant="outline" className="ml-2">trail</Badge> : null}</TableCell>
+              <TableRow key={c.id} className={c.is_security ? securitiesRowClass : undefined}>
+                <TableCell><Link href={`/app/commissions/${c.id}`} className="font-medium text-primary hover:underline">{c.agency_name ?? 'Direct'}</Link>{c.is_security ? <SecuritiesChip className="ml-2" /> : null}{c.is_trail ? <Badge variant="outline" className="ml-2">trail</Badge> : null}</TableCell>
                 <TableCell className="capitalize text-muted-foreground">{c.product_family ?? '—'}</TableCell>
-                <TableCell className="text-right tabular-nums">${Number(c.total_commission).toLocaleString('en-US')}</TableCell>
-                <TableCell className="text-right tabular-nums">${Number(c.fsa_amount).toLocaleString('en-US')}</TableCell>
-                <TableCell className="text-right tabular-nums">${Number(c.agency_amount).toLocaleString('en-US')}</TableCell>
+                <TableCell className="text-right"><Money value={Number(c.total_commission)} /></TableCell>
+                <TableCell className="text-right"><Money value={Number(c.fsa_amount)} /></TableCell>
+                <TableCell className="text-right"><Money value={Number(c.agency_amount)} /></TableCell>
                 <TableCell><Badge variant={c.reconciliation_status === 'matched' ? 'won' : c.reconciliation_status === 'discrepancy' ? 'lost' : 'pending'}>{c.reconciliation_status}</Badge></TableCell>
               </TableRow>
             ))}

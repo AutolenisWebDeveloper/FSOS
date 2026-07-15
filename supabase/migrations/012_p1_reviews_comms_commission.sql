@@ -202,7 +202,9 @@ create table if not exists import_jobs (
 -- ─────────────────────────────────────────────────────────
 
 -- Pipeline by engagement model (executive + reports).
-create or replace view v_pipeline_by_engagement as
+-- security_invoker=on so the caller's RLS applies to view reads (see 015).
+create or replace view v_pipeline_by_engagement
+  with (security_invoker = on) as
 select
   o.engagement,
   o.stage,
@@ -214,7 +216,9 @@ where o.deleted_at is null
 group by o.engagement, o.stage;
 
 -- Commission attributed by agency (dashboard + partner production).
-create or replace view v_commission_by_agency as
+-- security_invoker=on so the caller's RLS applies to view reads (see 015).
+create or replace view v_commission_by_agency
+  with (security_invoker = on) as
 select
   c.referring_agency_id,
   ap.agency_name,
@@ -231,7 +235,9 @@ group by c.referring_agency_id, ap.agency_name, c.product_family, c.is_security;
 
 -- Agencies with a large P&C book and low life penetration (the FSA growth thesis).
 -- next_best target ranking for cross-sell. Excludes deleted/terminated partnerships.
-create or replace view v_crosssell_targets as
+-- security_invoker=on so the caller's RLS applies to view reads (see 015).
+create or replace view v_crosssell_targets
+  with (security_invoker = on) as
 select
   ap.id,
   ap.agency_name,
@@ -251,7 +257,9 @@ where ap.deleted_at is null
 
 -- Household coverage gaps vs the recommended basket (config-editable).
 -- next_best_line is a coverage GAP (highest-priority missing line), NOT a product recommendation.
-create or replace view v_cross_sell_gaps as
+-- security_invoker=on so the caller's RLS applies to view reads (see 015).
+create or replace view v_cross_sell_gaps
+  with (security_invoker = on) as
 with basket as (
   select line, priority from cross_sell_basket
 ),
@@ -301,7 +309,9 @@ where gap_count > 0;
 
 -- Term policies whose configured conversion window is approaching, tiered by urgency.
 -- Window source is a config default (assumption-flagged) — surfaced in the UI badge.
-create or replace view v_conversions_due as
+-- security_invoker=on so the caller's RLS applies to view reads (see 015).
+create or replace view v_conversions_due
+  with (security_invoker = on) as
 select
   hp.id                            as policy_id,
   hp.household_id,

@@ -1,8 +1,13 @@
 // Case 7 PROOF — the securities firewall + column/row allowlist as an RLS rule
-// (data-guardrails §2–3). Applies migrations 009+010 to an ephemeral Postgres and
-// asserts, as the CLIENT role, that:
+// (data-guardrails §2–3). Applies migrations 009+010 (+011/012/013/015 for the
+// view checks) to an ephemeral Postgres and asserts, as the CLIENT role, that:
 //   • an is_security policy row is NOT returned (firewall by construction), and
-//   • another household's row is NOT returned (scope allowlist).
+//   • another household's row is NOT returned (scope allowlist), and
+//   • the SAME two invariants hold when reading through the reporting VIEWS
+//     (v_conversions_due / v_policy_lapse_risk / v_pipeline_by_engagement) — the
+//     views are security_invoker so the caller's RLS applies. A security_definer
+//     view would have leaked exactly the rows RLS hides; that gap is why the
+//     Supabase linter caught what our table-only tests didn't.
 // Requires a local Postgres + the `postgres` OS user (present in this environment).
 // Run: node tests/rls-firewall.test.mjs
 import assert from 'node:assert/strict'
@@ -73,19 +78,33 @@ try {
 
   psqlFile('supabase/migrations/009_aggregate_root_core.sql')
   psqlFile('supabase/migrations/010_rls_guardrails.sql')
+  // 011/012/013 add the reporting views; 015 flips them to security_invoker.
+  psqlFile('supabase/migrations/011_p0_softdelete_views_dob.sql')
+  psqlFile('supabase/migrations/012_p1_reviews_comms_commission.sql')
+  psqlFile('supabase/migrations/013_p2_operational_enhancement.sql')
+  psqlFile('supabase/migrations/015_security_invoker_views.sql')
 
   // Seed: this client's household + a second household; a life + a securities policy.
+  // conversion_deadline/is_with_us are set so every policy also surfaces in the
+  // reporting views (v_conversions_due / v_policy_lapse_risk) — otherwise the view
+  // checks below would pass vacuously (0 rows for everyone).
   writeFileSync(
     `${L}/seed.sql`,
     `insert into households(id, primary_name) values ` +
       `('22222222-2222-2222-2222-222222222222','My Household'),('33333333-3333-3333-3333-333333333333','Someone Else');\n` +
       `insert into user_roles(user_id, role) values ('${UID}','client');\n` +
       `insert into user_households(user_id, household_id) values ('${UID}','22222222-2222-2222-2222-222222222222');\n` +
-      `insert into household_policies(household_id, is_security, policy_number) values ` +
-      `('22222222-2222-2222-2222-222222222222', false, 'LIFE-001'),` +
-      `('22222222-2222-2222-2222-222222222222', true,  'SEC-999'),` +
-      `('33333333-3333-3333-3333-333333333333', false, 'OTHER-1');\n` +
-      `grant select on household_policies, households to authenticated;\n`,
+      `insert into household_policies(household_id, is_security, policy_number, is_with_us, status, conversion_deadline, renewal_date) values ` +
+      `('22222222-2222-2222-2222-222222222222', false, 'LIFE-001', true, 'active', current_date + 20, current_date + 10),` +
+      `('22222222-2222-2222-2222-222222222222', true,  'SEC-999',  true, 'active', current_date + 20, current_date + 10),` +
+      `('33333333-3333-3333-3333-333333333333', false, 'OTHER-1',  true, 'active', current_date + 20, current_date + 10);\n` +
+      // Opportunities are FSA/staff-only (no client RLS policy at all), so a client
+      // reading v_pipeline_by_engagement must see ZERO rows — including the is_security one.
+      `insert into opportunities(household_id, engagement, stage, is_security) values ` +
+      `('22222222-2222-2222-2222-222222222222','warm_handoff','prospect', false),` +
+      `('22222222-2222-2222-2222-222222222222','direct','fact_find', true);\n` +
+      `grant select on household_policies, households, opportunities to authenticated;\n` +
+      `grant select on v_conversions_due, v_policy_lapse_risk, v_pipeline_by_engagement to authenticated;\n`,
   )
   psqlFile(`${L}/seed.sql`)
 
@@ -94,6 +113,18 @@ try {
   )
   const visibleHouseholds = psqlQuery(
     "set role authenticated; select coalesce(string_agg(primary_name, ',' order by primary_name),'<none>') from households;",
+  )
+
+  // Same firewall/scope invariants, but read through the reporting VIEWS. Because
+  // the views are security_invoker, the caller's RLS applies to view reads too.
+  const viewConversions = psqlQuery(
+    "set role authenticated; select coalesce(string_agg(policy_number, ',' order by policy_number),'<none>') from v_conversions_due;",
+  )
+  const viewLapseRisk = psqlQuery(
+    "set role authenticated; select coalesce(string_agg(policy_number, ',' order by policy_number),'<none>') from v_policy_lapse_risk;",
+  )
+  const viewPipelineRows = psqlQuery(
+    'set role authenticated; select count(*) from v_pipeline_by_engagement;',
   )
 
   let passed = 0
@@ -108,6 +139,25 @@ try {
   })
   t('client sees only their own household', () => {
     assert.equal(visibleHouseholds, 'My Household', `expected only My Household, got: ${visibleHouseholds}`)
+  })
+
+  // ── VIEW checks — the security_definer_view finding the linter caught. ──
+  t('v_conversions_due (view) hides the is_security row (firewall holds on views)', () => {
+    assert.ok(!viewConversions.includes('SEC-999'), `SEC-999 must not be visible via view, got: ${viewConversions}`)
+    assert.equal(viewConversions, 'LIFE-001', `expected only LIFE-001 via view, got: ${viewConversions}`)
+  })
+  t("v_conversions_due (view) hides another household's row (scope holds on views)", () => {
+    assert.ok(!viewConversions.includes('OTHER-1'), `OTHER-1 must not be visible via view, got: ${viewConversions}`)
+  })
+  t('v_policy_lapse_risk (view) hides the is_security and other-household rows', () => {
+    assert.equal(viewLapseRisk, 'LIFE-001', `expected only LIFE-001 via view, got: ${viewLapseRisk}`)
+    assert.ok(!viewLapseRisk.includes('SEC-999'), 'SEC-999 must not be visible via view')
+    assert.ok(!viewLapseRisk.includes('OTHER-1'), 'OTHER-1 must not be visible via view')
+  })
+  t('v_pipeline_by_engagement (view) returns NO opportunity rows to a client', () => {
+    // Client has no RLS read path to opportunities at all; the view must not
+    // become a back door (including for the is_security opportunity).
+    assert.equal(viewPipelineRows, '0', `expected 0 pipeline rows via view, got: ${viewPipelineRows}`)
   })
 
   console.log(`\nCase 7: all ${passed} RLS firewall assertions passed.`)

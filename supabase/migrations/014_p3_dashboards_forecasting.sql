@@ -67,8 +67,10 @@ where not exists (select 1 from forecast_settings);
 -- 3. v_commission_monthly — historical FSA commission by month (the run-rate the
 --    forecast projects forward). Only reconciled money counts (received|matched);
 --    is_security is carried so securities production can be split out.
+--    security_invoker=on so the caller's RLS applies to view reads (see 015).
 -- ─────────────────────────────────────────────────────────
-create or replace view v_commission_monthly as
+create or replace view v_commission_monthly
+  with (security_invoker = on) as
 select
   to_char(date_trunc('month', coalesce(c.paid_on, c.created_at::date)), 'YYYY-MM') as month,
   c.is_security,

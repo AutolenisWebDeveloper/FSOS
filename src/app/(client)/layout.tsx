@@ -6,7 +6,11 @@ export const dynamic = 'force-dynamic'
 const NAV: NavItem[] = [
   { href: '/client', label: 'Home' },
   { href: '/client/schedule', label: 'Schedule' },
+  { href: '/client/intake', label: 'Intake' },
+  { href: '/client/appointments', label: 'Appointments' },
   { href: '/client/documents', label: 'Documents' },
+  { href: '/client/reviews', label: 'Reviews' },
+  { href: '/client/case-status', label: 'Case Status' },
   { href: '/client/education', label: 'Education' },
   { href: '/client/preferences', label: 'Preferences' },
   { href: '/client/consent', label: 'Consent' },

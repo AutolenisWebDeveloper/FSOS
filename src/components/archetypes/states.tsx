@@ -1,9 +1,6 @@
-'use client'
-
 import * as React from 'react'
-import { AlertTriangle, Inbox, ShieldAlert } from 'lucide-react'
+import { Inbox, ShieldAlert } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 
@@ -11,6 +8,13 @@ import { Skeleton } from '@/components/ui/skeleton'
  * Shared archetype state building blocks (archetypes.md Definition of Done):
  * every page must ship empty + loading + error + success states. These are the
  * canonical, reusable implementations the A1–A13 shells compose.
+ *
+ * These are Server-Component-safe (no hooks, no event handlers): that is what
+ * lets a Server Component page pass a lucide `icon` (a function/forwardRef) to
+ * EmptyState. The one interactive state, ErrorState (onRetry → onClick), lives
+ * in its own 'use client' module (./error-state) and is re-exported from the
+ * archetypes barrel, so `import { ErrorState } from '@/components/archetypes'`
+ * keeps working unchanged.
  */
 
 export function EmptyState({
@@ -36,41 +40,6 @@ export function EmptyState({
         {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
       </div>
       {action}
-    </div>
-  )
-}
-
-export function ErrorState({
-  title = 'Something went wrong',
-  description,
-  onRetry,
-  className,
-}: {
-  title?: string
-  description?: string
-  onRetry?: () => void
-  className?: string
-}) {
-  // Inline card w/ status-lost left border (design-system.md §6): a single failing
-  // widget shows this in place without blanking the surrounding page.
-  return (
-    <div
-      role="alert"
-      className={cn(
-        'flex items-start gap-3 rounded-lg border border-l-2 border-status-lost/30 border-l-status-lost bg-status-lost/5 p-4',
-        className,
-      )}
-    >
-      <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-status-lost" strokeWidth={1.75} />
-      <div className="min-w-0 flex-1 space-y-1">
-        <p className="font-medium">{title}</p>
-        {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
-        {onRetry ? (
-          <Button variant="outline" size="sm" onClick={onRetry} className="mt-1">
-            Retry
-          </Button>
-        ) : null}
-      </div>
     </div>
   )
 }

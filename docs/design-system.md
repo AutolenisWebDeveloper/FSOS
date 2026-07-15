@@ -15,7 +15,6 @@
 The legacy Command Center already established this language. We are **carrying it forward**, not reinventing it.
 
 **Three signature elements that define the look — do not lose these:**
-
 1. **Dark navy shell** (`#0f1e36`) with a light content canvas.
 2. **Uppercase mono section labels** (DM Mono, letter-spaced) — "NAVIGATION", "LIVE STATUS", "QUICK ACCESS", "FFS KEY CONTACTS". This is the strongest character marker.
 3. **Branded identity block** — the "M / Markist / FSA COMMAND CENTER" lockup at the top of the sidebar.
@@ -32,7 +31,6 @@ Carried from legacy. Load via `next/font/google`.
 | **Mono / labels** | **DM Mono** | Section labels, IDs, policy numbers, currency, timestamps, code, status chips |
 
 **The mono label treatment (signature):**
-
 ```css
 font-family: var(--font-dm-mono);
 font-size: 0.6875rem;      /* 11px */
@@ -40,11 +38,9 @@ letter-spacing: 0.12em;
 text-transform: uppercase;
 color: hsl(var(--muted-foreground));
 ```
-
 Use for: sidebar section headers, card eyebrow labels, dashboard tile captions, panel titles.
 
 **Scale (DM Sans unless noted):**
-
 | Token | Size / Line | Weight | Use |
 |---|---|---|---|
 | `display` | 30/36 | 600 | Page title on dashboards |
@@ -58,13 +54,11 @@ Use for: sidebar section headers, card eyebrow labels, dashboard tile captions, 
 
 **Rule:** every monetary value, policy number, date, ID, and percentage renders in **DM Mono** with tabular figures (`font-variant-numeric: tabular-nums`). This is what makes a financial tool feel like a financial tool.
 
-Implementation: `MonoLabel`, `Numeric`, and `Money` in `@/components/ui/typography`; the `.mono-label` and `.numeric` utilities in `globals.css`.
-
 ---
 
 ## 3. Color tokens
 
-Carried from the legacy palette. Lives in the `:root` block of `globals.css`; consumed via `tailwind.config.ts`.
+Carried from the legacy palette. Replace the current `globals.css` `:root` block.
 
 ```css
 :root {
@@ -74,6 +68,7 @@ Carried from the legacy palette. Lives in the `:root` block of `globals.css`; co
   --shell-foreground: 210 20% 96%;
   --shell-muted:      215 16% 62%;
   --shell-border:     215 30% 22%;
+
   /* ---- Content canvas (light) ---- */
   --background:       210 20% 98%;
   --foreground:       215 40% 12%;
@@ -83,16 +78,19 @@ Carried from the legacy palette. Lives in the `:root` block of `globals.css`; co
   --muted-foreground: 215 16% 42%;
   --border:           214 20% 88%;
   --input:            214 20% 86%;
+
   /* ---- Brand ---- */
   --primary:            212 61% 43%;   /* #2b6cb0 — legacy primary */
   --primary-foreground: 0 0% 100%;
   --primary-soft:       205 74% 86%;   /* #bee3f8 */
   --accent:             207 73% 57%;   /* #4299e1 */
   --accent-foreground:  0 0% 100%;
+
   /* ---- Signature gold (GDC tier, assumptions, attention) ---- */
   --gold:            43 89% 51%;       /* #f0b429 */
   --gold-deep:       38 72% 42%;       /* #b7791f */
   --gold-foreground: 215 40% 12%;
+
   /* ---- Status ---- */
   --status-draft:      215 16% 55%;
   --status-active:     212 61% 45%;
@@ -103,12 +101,12 @@ Carried from the legacy palette. Lives in the `:root` block of `globals.css`; co
   --status-escalated:  262 47% 42%;    /* #553c9a */
   --status-assumption: 38 72% 42%;     /* gold — "config default — verify" */
   --status-security:   262 47% 42%;    /* purple — is_security / FFS-managed */
+
   --radius: 0.5rem;
 }
 ```
 
 **Semantic rules:**
-
 - **Gold** = attention + assumption. Every `is_assumption` badge is gold. The GDC tier card is gold. Never use gold for success.
 - **Purple** = securities / FFS-managed / escalated. If a row is `is_security`, it carries a purple marker and an "FFS-managed" chip. This makes the firewall *visible*.
 - **Green** = won/placed/active only.
@@ -134,44 +132,91 @@ Carried from the legacy palette. Lives in the `:root` block of `globals.css`; co
 ## 5. The branded shell (carry from legacy)
 
 ### 5.1 Identity lockup — top of sidebar
-
-`M` = 40px rounded square, `--primary` bg, white "M", DM Sans 600. "Markist" = DM Sans 600, 17px, white. "FSA COMMAND CENTER" = mono label token. Below it, a `--shell-border` divider, then the mono label `NAVIGATION`, then nav items. Implemented in `IdentityLockup` (`CharacterPanels.tsx`).
+```
+┌────────────────────────────┐
+│  [M]  Markist              │   M = 40px rounded square, --primary bg,
+│       FSA COMMAND CENTER   │       white "M", DM Sans 600
+└────────────────────────────┘   "Markist" = DM Sans 600, 17px, white
+                                 "FSA COMMAND CENTER" = mono label token
+```
+Below it, a `--shell-border` divider, then the mono label `NAVIGATION`, then nav items.
 
 ### 5.2 Nav items
-
 - 36px tall, 12px radius, DM Sans 400 14px, `--shell-foreground` at 82% opacity.
 - Hover: `--shell-raised`. Active: `--shell-raised` + 2px `--accent` left bar + full-opacity text + 600 weight.
 - Icons: **lucide-react**, 18px, stroke 1.75 — consistent set, no emoji.
 - Count badges right-aligned: pill, `--accent` bg, white, DM Mono 11px.
-- Group nav under mono labels by OS cluster (OVERVIEW · BOOK · PIPELINE · ENGAGE · OPERATE) rather than one flat list of 20.
+- Group nav under mono labels by OS cluster (BOOK · PIPELINE · ENGAGE · OPERATE · ADMIN) rather than one flat list of 20.
 
 ### 5.3 Character panels — bottom of sidebar (carry from legacy)
+These are what made the old app feel like *yours*. Rebuild them in FSOS:
 
-**A. AI AGENTS — LIVE STATUS** — dot: green=running, blue=idle, gold=escalated; the Compliance Guardrail is always-on (✓) and cannot be disabled. Wired to `ai_agents` / `agent_runs` / `agent_actions`; the escalation count links to `/app/ai/escalations`.
+**A. AI AGENTS — LIVE STATUS**
+```
+AI AGENTS                        ← mono label
+┌────────────────────────────┐
+│ LIVE STATUS                │   ← mono label, --shell-raised card
+│ ● Referral Triage      12  │   ← dot: green=running, blue=idle, gold=escalated
+│ ● Term Conversion       3  │
+│ ● Cross-Sell            —  │
+│ ● Compliance Guardrail  ✓  │   ← always-on, cannot be disabled
+│ Open AI Operations →       │   ← --accent link, mono
+└────────────────────────────┘
+```
+Wired to `fsos_agent_runs` / `fsos_ai_agents`. Escalation count links to `/app/ai/escalations`.
 
-**B. CURRENT GDC TIER** (gold — the signature card) — Tiers are **configurable, assumption-flagged** (Tier 1 <$15k → 40% · Tier 2 $15k–54,999 → 60% · Tier 3 $55k+ → 80%). Links to `/app/commissions`.
+**B. CURRENT GDC TIER** (gold — the signature card)
+```
+┌────────────────────────────┐
+│ CURRENT GDC TIER           │   ← mono label
+│ Tier 1 — 40%               │   ← --gold, DM Sans 600, 22px
+│ Under $15,000 GDC          │   ← --shell-muted, 12px
+│ [config default — verify]  │   ← gold assumption chip
+└────────────────────────────┘
+```
+Tiers are **configurable, assumption-flagged** (Tier 1 <$15k → 40% · Tier 2 $15k–54,999 → 60% · Tier 3 $55k+ → 80%). Links to `/app/commissions`.
 
-**C. FFS KEY CONTACTS — QUICK ACCESS** — Contacts are **config-driven** (`FFS_CONTACTS` in `lib/compliance.ts`), not hard-coded, with `tel:` links.
-
-Data for all three is loaded server-side by `loadShellData()` (`lib/data/shell.ts`) and rendered by `ShellCharacterPanels`.
+**C. FFS KEY CONTACTS — QUICK ACCESS**
+```
+FFS KEY CONTACTS                 ← mono label
+┌────────────────────────────┐
+│ QUICK ACCESS               │
+│ FSD — Central (TX)         │   ← --shell-muted 11px
+│ Matt Anderson              │   ← white 13px
+│ (818) 584-0264             │   ← --accent, DM Mono, tel: link
+│ … (repeat per contact)     │
+└────────────────────────────┘
+```
+Contacts are **config-driven** (`/super/config/ffs-contacts`), not hard-coded.
 
 ---
 
 ## 6. Component treatment
 
-**Cards:** white, 1px `--border`, radius 8, shadow-none by default. Header = mono eyebrow label (`CardEyebrow`) + h3 title. Optional right-aligned action link (`--accent`, mono, 11px).
+**Cards:** white, 1px `--border`, radius 8, shadow-none by default. Header = mono eyebrow label + h3 title. Optional right-aligned action link (`--accent`, mono, 11px).
 
-**Tables:** header row = mono labels, `--muted` bg, 32px. Body rows 40px, 1px bottom border, hover `--muted`. Numeric columns right-aligned, DM Mono, tabular-nums. Row → detail on click.
+**Tables:** header row = mono labels, `--muted` bg, 32px. Body rows 40px, 1px bottom border, hover `--muted`. Numeric columns right-aligned, DM Mono, tabular-nums. Row → detail on click (whole row, not just a link).
 
-**Buttons:** Primary `--primary`/white/36px/radius 6/DM Sans 500. Secondary white/border/foreground. Ghost transparent → `--muted` hover. Destructive `--status-lost`. Never a full-width primary button on desktop.
+**Buttons:**
+- Primary: `--primary` bg, white, 36px, radius 6, DM Sans 500.
+- Secondary: white bg, `--border`, `--foreground`.
+- Ghost: transparent, `--muted` on hover.
+- Destructive: `--status-lost`.
+- Never a full-width primary button on desktop.
 
-**Status chips:** 22px, radius 4, DM Mono 10px uppercase tracked, `--status-*` at 12% bg + full-strength text (`Badge`).
+**Status chips:** 22px, radius 4, DM Mono 10px uppercase tracked, `--status-*` at 12% bg + full-strength text.
 
-**Assumption badge (mandatory, guardrail 3):** gold chip, mono, `CONFIG DEFAULT — VERIFY`, tooltip *"Not a Farmers-published figure. Verify against contract."* (`AssumptionBadge`).
+**Assumption badge (mandatory, guardrail 3):** gold chip, mono, reading `CONFIG DEFAULT — VERIFY`, with a tooltip: *"Not a Farmers-published figure. Verify against contract."* Appears on every split %, conversion window, GDC tier, and product-availability value.
 
-**Securities marker (mandatory, guardrail 1):** purple `FFS-MANAGED` chip on any `is_security` row + a purple 2px left border; detail pages show a purple banner. `SecuritiesChip`, `SecuritiesBanner`, `securitiesRowClass`.
+**Securities marker (mandatory, guardrail 1):** purple chip reading `FFS-MANAGED` on any `is_security` row, plus a purple 2px left border on the row. Detail pages show a purple banner: *"Securities record — managed in the FFS-supervised system. FSOS holds a reference only."* **This makes the firewall visible rather than invisible.**
 
-**Empty states:** centered, muted lucide icon (32px), h3 title, one line explanation, one primary CTA. **Loading:** skeletons matching final layout. **Errors:** inline card, `--status-lost` left border, plain-English message + Retry — one failing widget never blanks the page. **Toasts:** bottom-right, status-colored left border.
+**Empty states:** centered, muted lucide icon (32px), h3 title, one line of `--muted-foreground` explanation, one primary CTA. Never a blank page.
+
+**Loading:** skeletons matching final layout (rows for tables, cards for dashboards). Never a bare spinner on a full page.
+
+**Errors:** inline card, `--status-lost` left border, plain-English message + Retry. One failing dashboard widget must never blank the page.
+
+**Toasts:** bottom-right, 4s, status-colored left border.
 
 ---
 
@@ -190,17 +235,16 @@ Data for all three is loaded server-side by `loadShellData()` (`lib/data/shell.t
 ---
 
 ## 8. Acceptance criteria
-
-- [x] DM Sans + DM Mono loaded via `next/font`; no system-font fallback in production.
-- [x] Dark navy shell (`--shell`) on sidebar + topbar in every portal.
-- [x] Mono uppercase labels used for every section header.
-- [x] Identity lockup (M / Markist / FSA COMMAND CENTER) present.
-- [x] All three character panels (AI Live Status, GDC Tier, FFS Contacts) live and wired to real data/config.
-- [x] Every monetary value, policy number, date, and ID renders DM Mono, tabular-nums (`Numeric`/`Money`).
-- [x] Every `is_assumption` value carries the gold badge.
-- [x] Every `is_security` row carries the purple FFS-managed marker.
-- [x] Table rows 40px; no default shadcn spacing left in place.
-- [x] Icons are lucide, consistent stroke; no emoji in the new UI.
-- [x] Empty/loading/error states styled per §6 on every page.
-- [x] Contrast passes WCAG 2.1 AA on both shell and canvas.
-- [x] Side-by-side with the legacy Command Center, FSOS reads as the same product family.
+- [ ] DM Sans + DM Mono loaded via `next/font`; no system-font fallback in production.
+- [ ] Dark navy shell (`--shell`) on sidebar + topbar in every portal.
+- [ ] Mono uppercase labels used for every section header.
+- [ ] Identity lockup (M / Markist / FSA COMMAND CENTER) present.
+- [ ] All three character panels (AI Live Status, GDC Tier, FFS Contacts) live and wired to real data/config.
+- [ ] Every monetary value, policy number, date, and ID renders DM Mono, tabular-nums.
+- [ ] Every `is_assumption` value carries the gold badge.
+- [ ] Every `is_security` row carries the purple FFS-managed marker.
+- [ ] Table rows 40px; no default shadcn spacing left in place.
+- [ ] Icons are lucide, consistent stroke; no emoji in the new UI.
+- [ ] Empty/loading/error states styled per §6 on every page.
+- [ ] Contrast passes WCAG 2.1 AA on both shell and canvas.
+- [ ] Side-by-side with the legacy Command Center, FSOS reads as the same product family.

@@ -21,7 +21,7 @@ create table if not exists gdc_tiers (
   tier_no       integer not null unique,          -- 1..n, ascending by threshold
   label         text not null,                    -- "Tier 1"
   min_gdc       numeric(14,2) not null default 0, -- inclusive floor (rolling 12mo GDC)
-  max_gdc       numeric(14,2),                    -- inclusive ceiling; null = open-ended top tier
+  max_gdc       numeric(14,2),                    -- exclusive ceiling [min,max); equals next tier's floor; null = open-ended top tier
   payout_pct    numeric(5,2) not null,            -- FSA payout % at this tier
   is_assumption boolean not null default true,    -- guardrail 3 — gold badge in UI
   active        boolean not null default true,
@@ -81,10 +81,13 @@ create policy ffs_contacts_read on ffs_contacts for select using (
 -- 4. Seeds — assumption-flagged config defaults (docs/legacy-port.md §2.2, §2.4).
 --    GDC tier values are NOT Farmers-published; verify against contract.
 -- ─────────────────────────────────────────────────────────
+-- Half-open bands [min, max): each tier's max_gdc equals the next tier's min_gdc,
+-- so boundary values (exactly $15,000 / $55,000) belong to the upper tier and no
+-- dollar range is unowned.
 insert into gdc_tiers (tier_no, label, min_gdc, max_gdc, payout_pct, is_assumption, sort, note) values
-  (1, 'Tier 1',      0, 14999.99, 40, true, 1, 'config default — verify; not a Farmers-published figure'),
-  (2, 'Tier 2',  15000, 54999.99, 60, true, 2, 'config default — verify; not a Farmers-published figure'),
-  (3, 'Tier 3',  55000,     null, 80, true, 3, 'config default — verify; not a Farmers-published figure')
+  (1, 'Tier 1',      0, 15000, 40, true, 1, 'config default — verify; not a Farmers-published figure'),
+  (2, 'Tier 2',  15000, 55000, 60, true, 2, 'config default — verify; not a Farmers-published figure'),
+  (3, 'Tier 3',  55000,  null, 80, true, 3, 'config default — verify; not a Farmers-published figure')
   on conflict (tier_no) do nothing;
 
 insert into ffs_contacts (slug, role, name, phone, hours, note, sort) values

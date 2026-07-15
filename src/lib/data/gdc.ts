@@ -105,9 +105,12 @@ export async function loadGdcTierState(): Promise<LoadOutcome<GdcTierState>> {
     })),
   )
 
+  // GDC proxy = non-security gross commission over the trailing window. Securities
+  // production routes to FFS and is excluded here so the GDC tab and the sidebar
+  // tier card (lib/data/shell.ts) show the same figure.
   const windowStart = windowStartIso()
   const rolling12 = (commsRes.ok ? commsRes.data : [])
-    .filter((c) => effectiveDate(c) >= windowStart)
+    .filter((c) => !c.is_security && effectiveDate(c) >= windowStart)
     .reduce((s, c) => s + Number(c.total_commission ?? 0), 0)
 
   const math = computeGdcTier(round2(rolling12), tiers)
@@ -128,6 +131,7 @@ export async function loadGdcSummary(): Promise<LoadOutcome<GdcSummary>> {
   const byStage = new Map<string, { count: number; expected: number }>()
   for (const o of oppsRes.ok ? oppsRes.data : []) {
     if (CLOSED_STAGES.has(o.stage)) continue
+    if (o.is_security) continue // securities production is managed in FFS, not GDC
     const cur = byStage.get(o.stage) ?? { count: 0, expected: 0 }
     cur.count += 1
     cur.expected += Number(o.expected_commission ?? 0)

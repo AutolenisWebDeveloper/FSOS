@@ -28,9 +28,10 @@ const require = createRequire(import.meta.url)
 const { pickGdcTier, nextGdcTier, computeGdcTier } = require(join(out, 'gdc-tiers.js'))
 
 // Seeded config (migration 016) — assumption-flagged; NOT Farmers-published figures.
+// Half-open bands [min, max): each max_gdc equals the next tier's min_gdc.
 const TIERS = [
-  { tier_no: 1, label: 'Tier 1', min_gdc: 0, max_gdc: 14999.99, payout_pct: 40, is_assumption: true },
-  { tier_no: 2, label: 'Tier 2', min_gdc: 15000, max_gdc: 54999.99, payout_pct: 60, is_assumption: true },
+  { tier_no: 1, label: 'Tier 1', min_gdc: 0, max_gdc: 15000, payout_pct: 40, is_assumption: true },
+  { tier_no: 2, label: 'Tier 2', min_gdc: 15000, max_gdc: 55000, payout_pct: 60, is_assumption: true },
   { tier_no: 3, label: 'Tier 3', min_gdc: 55000, max_gdc: null, payout_pct: 80, is_assumption: true },
 ]
 
@@ -46,10 +47,10 @@ function check(name, fn) {
 
 // ── Band boundaries ──────────────────────────────────────────────────────────
 check('floor of tier 1 → Tier 1', () => assert.equal(pickGdcTier(0, TIERS).tier_no, 1))
-check('ceiling of tier 1 → Tier 1', () => assert.equal(pickGdcTier(14999.99, TIERS).tier_no, 1))
-check('floor of tier 2 → Tier 2', () => assert.equal(pickGdcTier(15000, TIERS).tier_no, 2))
-check('ceiling of tier 2 → Tier 2', () => assert.equal(pickGdcTier(54999.99, TIERS).tier_no, 2))
-check('floor of tier 3 → Tier 3', () => assert.equal(pickGdcTier(55000, TIERS).tier_no, 3))
+check('just below tier-2 floor → Tier 1', () => assert.equal(pickGdcTier(14999.99, TIERS).tier_no, 1))
+check('exactly $15,000 → Tier 2 (upper band owns boundary)', () => assert.equal(pickGdcTier(15000, TIERS).tier_no, 2))
+check('just below tier-3 floor → Tier 2', () => assert.equal(pickGdcTier(54999.99, TIERS).tier_no, 2))
+check('exactly $55,000 → Tier 3', () => assert.equal(pickGdcTier(55000, TIERS).tier_no, 3))
 check('open-ended top → Tier 3', () => assert.equal(pickGdcTier(1_000_000, TIERS).tier_no, 3))
 check('below lowest floor → Tier 1', () => assert.equal(pickGdcTier(-100, TIERS).tier_no, 1))
 

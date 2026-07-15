@@ -8,6 +8,8 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 const fmt = (n: number) => `$${Math.round(Number(n || 0)).toLocaleString('en-US')}`
+// Half-open band [min, max): display the top as max − $1 (e.g. $0 – $14,999).
+const band = (min: number, max: number | null) => (max === null ? `${fmt(min)}+` : `${fmt(min)} – ${fmt(max - 1)}`)
 
 const STAGE_LABEL: Record<string, string> = {
   prospect: 'Prospect',
@@ -63,9 +65,7 @@ export default async function GdcPage() {
                 <div className="text-2xl font-semibold text-status-assumption">
                   {current.label} — {current.payout_pct}%
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  {fmt(current.min_gdc)} {current.max_gdc === null ? '+ GDC' : `– ${fmt(current.max_gdc)} GDC`}
-                </p>
+                <p className="text-sm text-muted-foreground">{band(current.min_gdc, current.max_gdc)} GDC</p>
                 <AssumptionBadge />
               </>
             ) : (
@@ -113,9 +113,7 @@ export default async function GdcPage() {
                   {tiers.map((t) => (
                     <TableRow key={t.tier_no} className={current && t.tier_no === current.tier_no ? 'bg-status-assumption/5' : undefined}>
                       <TableCell className="font-medium">{t.label}</TableCell>
-                      <TableCell className="tabular-nums text-muted-foreground">
-                        {fmt(t.min_gdc)} {t.max_gdc === null ? '+' : `– ${fmt(t.max_gdc)}`}
-                      </TableCell>
+                      <TableCell className="tabular-nums text-muted-foreground">{band(t.min_gdc, t.max_gdc)}</TableCell>
                       <TableCell className="text-right tabular-nums">{t.payout_pct}%</TableCell>
                       <TableCell>{current && t.tier_no === current.tier_no ? <span className="text-xs font-medium text-status-assumption">current</span> : null}</TableCell>
                       <TableCell>{t.is_assumption ? <AssumptionBadge /> : null}</TableCell>

@@ -78,4 +78,10 @@ Login, MFA, reset, invite, 403, 404, 500, maintenance, offline. Minimal chrome �
 ---
 
 ## Design system (apply across all archetypes)
+
+> **Superseded by [`docs/design-system.md`](./design-system.md).** The FSOS Design
+> System (dark navy shell + light canvas, DM Sans / DM Mono, signature gold, visible
+> securities firewall) is now the authoritative visual spec. Read it before building
+> any UI. The paragraph below is retained for historical context only.
+
 Professional financial-services aesthetic (not a generic template). Tailwind + shadcn/ui. Define once and reuse: typography scale · spacing scale · 12-col grid · color system with **status colors** (draft/active/pending/won/lost/blocked/escalated) · icon set · buttons · inputs · tables · cards · charts · modals · drawers · toasts · empty-state illustrations · loading skeletons · error messages · confirmation patterns · print layouts (for reports/statements). Accessibility target: WCAG 2.1 AA. Responsive breakpoints: mobile <640 · tablet 640–1024 · desktop >1024. Dark mode: optional (P2); ship light-first with tokens ready.

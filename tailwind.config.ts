@@ -1,7 +1,7 @@
 import type { Config } from 'tailwindcss'
 
-// FSOS design system (CLAUDE.md §1.6, archetypes.md "Design system").
-// Professional financial-services aesthetic, light-first with dark tokens ready.
+// FSOS Design System (docs/design-system.md). Dark navy shell + light content
+// canvas, DM Sans / DM Mono, signature gold, visible securities firewall.
 // Tailwind scans ONLY the new App-Router UI (src/app, src/components). Legacy
 // command-center screens keep their inline styles and are intentionally not
 // re-themed here (CLAUDE.md §1.6 — do not convert legacy inline UI).
@@ -18,15 +18,28 @@ const config: Config = {
       screens: { '2xl': '1400px' },
     },
     extend: {
+      fontFamily: {
+        sans: ['var(--font-dm-sans)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        mono: ['var(--font-dm-mono)', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+      },
       colors: {
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
+        // Dark navy shell — sidebar / topbar / dense panels.
+        shell: {
+          DEFAULT: 'hsl(var(--shell))',
+          raised: 'hsl(var(--shell-raised))',
+          foreground: 'hsl(var(--shell-foreground))',
+          muted: 'hsl(var(--shell-muted))',
+          border: 'hsl(var(--shell-border))',
+        },
         primary: {
           DEFAULT: 'hsl(var(--primary))',
           foreground: 'hsl(var(--primary-foreground))',
+          soft: 'hsl(var(--primary-soft))',
         },
         secondary: {
           DEFAULT: 'hsl(var(--secondary))',
@@ -35,6 +48,12 @@ const config: Config = {
         destructive: {
           DEFAULT: 'hsl(var(--destructive))',
           foreground: 'hsl(var(--destructive-foreground))',
+        },
+        // Signature gold — GDC tier, assumptions, attention. Never for success.
+        gold: {
+          DEFAULT: 'hsl(var(--gold))',
+          deep: 'hsl(var(--gold-deep))',
+          foreground: 'hsl(var(--gold-foreground))',
         },
         muted: {
           DEFAULT: 'hsl(var(--muted))',
@@ -52,8 +71,8 @@ const config: Config = {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
-        // FSOS status colors (archetypes.md design system). Each maps to a
-        // token so it themes consistently across every archetype/badge.
+        // FSOS status colors (design-system.md §3). Each maps to a token so a
+        // stage/lifecycle value themes consistently across every archetype/badge.
         status: {
           draft: 'hsl(var(--status-draft))',
           active: 'hsl(var(--status-active))',
@@ -62,8 +81,10 @@ const config: Config = {
           lost: 'hsl(var(--status-lost))',
           blocked: 'hsl(var(--status-blocked))',
           escalated: 'hsl(var(--status-escalated))',
-          // Guardrail-specific: the "config default — verify" assumption badge.
+          // Guardrail 3: the "config default — verify" assumption badge (gold).
           assumption: 'hsl(var(--status-assumption))',
+          // Guardrail 1: the is_security / FFS-managed marker (purple).
+          security: 'hsl(var(--status-security))',
         },
       },
       borderRadius: {

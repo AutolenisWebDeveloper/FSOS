@@ -12,7 +12,7 @@ export interface GdcTier {
   tier_no: number
   label: string
   min_gdc: number
-  /** Inclusive ceiling; null = open-ended top tier. */
+  /** Exclusive ceiling (half-open [min, max)); null = open-ended top tier. */
   max_gdc: number | null
   payout_pct: number
   is_assumption: boolean
@@ -25,16 +25,19 @@ export function sortTiers(tiers: GdcTier[]): GdcTier[] {
 }
 
 /**
- * The tier a given rolling-12mo GDC falls into. A tier matches when
- * gdc >= min_gdc AND (max_gdc is null OR gdc <= max_gdc). If nothing matches
- * (e.g. a gap in config), fall back to the highest floor at or below gdc, then
- * to the lowest tier — never return null when any tier exists.
+ * The tier a given rolling-12mo GDC falls into. Bands are half-open [min, max):
+ * a tier matches when gdc >= min_gdc AND (max_gdc is null OR gdc < max_gdc), so a
+ * value exactly on a boundary belongs to the upper tier and there is no unowned
+ * gap between adjacent bands (matches the config convention in lib/compliance —
+ * each tier's max_gdc equals the next tier's min_gdc). If nothing matches (a gap
+ * in hand-edited config), fall back to the highest floor at or below gdc, then to
+ * the lowest tier — never return null when any tier exists.
  */
 export function pickGdcTier(gdc: number, tiers: GdcTier[]): GdcTier | null {
   if (tiers.length === 0) return null
   const sorted = sortTiers(tiers)
   const exact = sorted.find(
-    (t) => gdc >= t.min_gdc && (t.max_gdc === null || gdc <= t.max_gdc),
+    (t) => gdc >= t.min_gdc && (t.max_gdc === null || gdc < t.max_gdc),
   )
   if (exact) return exact
   // Below the lowest floor → lowest tier; above/into a gap → highest floor ≤ gdc.

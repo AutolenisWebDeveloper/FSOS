@@ -13,6 +13,8 @@ const NAV: NavItem[] = [
   { href: '/super/integrations', label: 'Integrations' },
   { href: '/super/ai/policies', label: 'AI Policies' },
   { href: '/super/ai/sandbox', label: 'AI Sandbox' },
+  { href: '/super/config/gdc-tiers', label: 'GDC Tiers' },
+  { href: '/super/config/ffs-contacts', label: 'FFS Contacts' },
   { href: '/super/workflows', label: 'Workflows' },
   { href: '/super/webhooks', label: 'Webhooks' },
   { href: '/super/jobs', label: 'Jobs' },

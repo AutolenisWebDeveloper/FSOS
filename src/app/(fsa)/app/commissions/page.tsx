@@ -34,6 +34,7 @@ export default async function CommissionsDashboardPage() {
         <div className="flex flex-wrap items-center gap-3 rounded-lg border p-4 text-sm">
           <AssumptionBadge />
           <span className="text-muted-foreground">Split values are labeled config defaults — verify against contract. None is a Farmers-published figure.</span>
+          <Link href="/app/commissions/gdc" className="text-primary hover:underline">GDC &amp; tier</Link>
           <Link href="/app/commissions/splits" className="text-primary hover:underline">Configure splits</Link>
           <Link href="/app/commissions/reconciliation" className="text-primary hover:underline">Reconciliation</Link>
           <Link href="/app/commissions/statements" className="text-primary hover:underline">Statements</Link>

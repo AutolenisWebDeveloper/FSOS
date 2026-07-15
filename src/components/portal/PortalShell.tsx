@@ -1,49 +1,164 @@
 import * as React from 'react'
+import Link from 'next/link'
+import { Bell, Search, Sparkles, UserCircle2 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { NavLink } from './NavLink'
+import { MobileTabBar } from './MobileTabBar'
+import { IdentityLockup } from './CharacterPanels'
+import { MonoLabel } from '@/components/ui/typography'
 
 export interface NavItem {
   href: string
   label: string
+  /** lucide-react icon (18px, stroke 1.75). */
+  icon?: LucideIcon
+  /** OS cluster the item groups under (rendered as a mono label). */
+  group?: string
+  /** Right-aligned count pill (e.g. referrals awaiting action). */
+  count?: number
+}
+
+interface NavGroup {
+  label: string
+  items: NavItem[]
+}
+
+// Group nav items by their `group` (design-system.md §5.2) preserving first-seen
+// order; ungrouped items fall under a single "NAVIGATION" cluster.
+function groupNav(nav: NavItem[]): NavGroup[] {
+  const order: string[] = []
+  const map = new Map<string, NavItem[]>()
+  for (const item of nav) {
+    const key = item.group ?? 'Navigation'
+    if (!map.has(key)) {
+      map.set(key, [])
+      order.push(key)
+    }
+    map.get(key)!.push(item)
+  }
+  return order.map((label) => ({ label, items: map.get(label)! }))
 }
 
 /**
- * Shared portal chrome (middleware-auth.md §6.4): top bar + left nav + content.
- * The nav passed in is already permission-filtered by the portal layout. A
- * standing banner slot carries the compliance-portal supervisory disclaimer.
+ * Shared branded shell (docs/design-system.md §4–5): dark navy sidebar + topbar
+ * wrapping a light content canvas. The nav passed in is already permission-filtered
+ * by the portal layout. `panels` renders the character panels (FSA sidebar); a
+ * `banner` slot carries the compliance supervisory disclaimer.
  */
 export function PortalShell({
   portalLabel,
   nav,
   banner,
+  panels,
   children,
 }: {
   portalLabel: string
   nav: NavItem[]
   banner?: React.ReactNode
+  panels?: React.ReactNode
   children: React.ReactNode
 }) {
+  const groups = groupNav(nav)
+  const homeHref = nav[0]?.href ?? '/'
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b bg-card px-4">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold">FSOS</span>
-          <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{portalLabel}</span>
+      {/* ── Topbar (56px, dark shell) ────────────────────────────────────── */}
+      <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-shell-border bg-shell px-4 text-shell-foreground">
+        <div className="flex items-center gap-2 md:hidden">
+          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-sm font-semibold text-primary-foreground">
+            M
+          </div>
+          <MonoLabel muted={false} className="text-shell-muted">
+            {portalLabel}
+          </MonoLabel>
         </div>
-        <div className="flex items-center gap-3 text-sm text-muted-foreground">
-          {/* Global search, notifications, AI-priorities bell, profile, portal
-              switcher are wired in P0/P1; the shell reserves their slot here. */}
-          <span aria-hidden>⌘K</span>
+        <label className="relative hidden max-w-md flex-1 items-center md:flex">
+          <Search className="pointer-events-none absolute left-3 h-4 w-4 text-shell-muted" strokeWidth={1.75} aria-hidden />
+          <input
+            type="search"
+            placeholder="Search…"
+            aria-label="Global search"
+            className="h-9 w-full rounded-lg border border-shell-border bg-shell-raised pl-9 pr-3 text-sm text-shell-foreground placeholder:text-shell-muted focus:outline-none focus:ring-2 focus:ring-accent"
+          />
+        </label>
+        <div className="ml-auto flex items-center gap-1">
+          <button
+            type="button"
+            aria-label="AI priorities"
+            className="relative flex h-9 w-9 items-center justify-center rounded-lg text-shell-muted hover:bg-shell-raised hover:text-shell-foreground"
+          >
+            <Sparkles className="h-[18px] w-[18px]" strokeWidth={1.75} aria-hidden />
+          </button>
+          <button
+            type="button"
+            aria-label="Notifications"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-shell-muted hover:bg-shell-raised hover:text-shell-foreground"
+          >
+            <Bell className="h-[18px] w-[18px]" strokeWidth={1.75} aria-hidden />
+          </button>
+          <button
+            type="button"
+            aria-label="Profile"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-shell-muted hover:bg-shell-raised hover:text-shell-foreground"
+          >
+            <UserCircle2 className="h-[20px] w-[20px]" strokeWidth={1.75} aria-hidden />
+          </button>
         </div>
       </header>
-      {banner}
-      <div className="mx-auto flex w-full max-w-screen-2xl gap-6 px-4 py-6">
-        <nav aria-label={`${portalLabel} navigation`} className="hidden w-52 shrink-0 space-y-0.5 md:block">
-          {nav.map((item) => (
-            <NavLink key={item.href} href={item.href} label={item.label} />
-          ))}
-        </nav>
-        <main className="min-w-0 flex-1">{children}</main>
+
+      <div className="flex">
+        {/* ── Sidebar (260px, dark shell) ────────────────────────────────── */}
+        <aside className="sticky top-14 hidden h-[calc(100vh-3.5rem)] w-[260px] shrink-0 flex-col overflow-y-auto border-r border-shell-border bg-shell px-3 py-4 md:flex">
+          <Link href={homeHref} className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+            <IdentityLockup portalLabel={`${portalLabel} Command Center`} />
+          </Link>
+          <div className="my-4 border-t border-shell-border" />
+          <nav aria-label={`${portalLabel} navigation`} className="flex-1 space-y-5">
+            {groups.map((g) => (
+              <div key={g.label} className="space-y-1">
+                <MonoLabel muted={false} className="px-2 text-shell-muted">
+                  {g.label}
+                </MonoLabel>
+                <div className="space-y-0.5">
+                  {g.items.map((item) => {
+                    // Render the lucide icon here (server) so no component function
+                    // crosses into the client NavLink.
+                    const Icon = item.icon
+                    return (
+                      <NavLink
+                        key={item.href}
+                        href={item.href}
+                        label={item.label}
+                        icon={Icon ? <Icon className="h-[18px] w-[18px] shrink-0" strokeWidth={1.75} aria-hidden /> : undefined}
+                        count={item.count}
+                      />
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
+          </nav>
+          {panels ? <div className="mt-6 border-t border-shell-border pt-5">{panels}</div> : null}
+        </aside>
+
+        {/* ── Content canvas (light) ─────────────────────────────────────── */}
+        <div className="min-w-0 flex-1">
+          {banner}
+          <main className="mx-auto w-full max-w-[1400px] px-4 pb-20 pt-6 md:px-6 md:pb-8">{children}</main>
+        </div>
       </div>
+
+      <MobileTabBar
+        items={nav.map((item) => {
+          const Icon = item.icon
+          return {
+            href: item.href,
+            label: item.label,
+            icon: Icon ? <Icon className="h-5 w-5" strokeWidth={1.75} aria-hidden /> : undefined,
+          }
+        })}
+        overflowHref={homeHref}
+      />
     </div>
   )
 }

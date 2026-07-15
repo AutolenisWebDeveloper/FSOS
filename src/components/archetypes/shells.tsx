@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { MonoLabel, Numeric } from '@/components/ui/typography'
 
 /*
  * Presentational archetype shells (archetypes.md). Server-component-safe (no
@@ -48,7 +49,7 @@ export function PageHeader({
       {breadcrumb ? <Breadcrumb items={breadcrumb} /> : null}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
-          <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
           {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
         </div>
         {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
@@ -91,14 +92,16 @@ export function StatTile({
   hint?: string
 }) {
   return (
-    <Link href={href} className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-lg">
+    <Link href={href} className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
       <Card className="transition-colors hover:border-primary/40">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground">{label}</CardTitle>
+          <MonoLabel>{label}</MonoLabel>
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-semibold">{value}</div>
-          {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
+          <Numeric as="div" className="text-[28px] font-semibold leading-none">
+            {value}
+          </Numeric>
+          {hint ? <p className="mt-1.5 text-xs text-muted-foreground">{hint}</p> : null}
         </CardContent>
       </Card>
     </Link>
@@ -153,16 +156,34 @@ export function DetailShell({
 }) {
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-2">
-          {breadcrumb ? <Breadcrumb items={breadcrumb} /> : null}
-          <div className="flex items-center gap-3">
-            <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
-            {status}
+      {/* Dark-tinted header band (design-system.md A3): status chips + primary actions. */}
+      <div className="-mx-4 -mt-6 mb-2 border-b border-shell-border bg-shell px-4 py-4 text-shell-foreground md:-mx-6 md:px-6">
+        <div className="mx-auto flex max-w-[1400px] flex-wrap items-start justify-between gap-3">
+          <div className="space-y-2">
+            {breadcrumb ? (
+              <nav aria-label="Breadcrumb" className="flex items-center gap-1 text-sm text-shell-muted">
+                {breadcrumb.map((item, i) => (
+                  <React.Fragment key={i}>
+                    {i > 0 ? <ChevronRight className="h-3.5 w-3.5" aria-hidden /> : null}
+                    {item.href ? (
+                      <Link href={item.href} className="hover:text-shell-foreground">
+                        {item.label}
+                      </Link>
+                    ) : (
+                      <span className="text-shell-foreground">{item.label}</span>
+                    )}
+                  </React.Fragment>
+                ))}
+              </nav>
+            ) : null}
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+              {status}
+            </div>
+            {description ? <p className="text-sm text-shell-muted">{description}</p> : null}
           </div>
-          {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
+          {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
         </div>
-        {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
       </div>
       <div className="grid gap-6 lg:grid-cols-[1fr_18rem]">
         <div className="min-w-0 space-y-6">{children}</div>
@@ -196,18 +217,22 @@ export function BoardShell({
 export function BoardColumn({
   title,
   count,
+  total,
   children,
 }: {
   title: string
   count?: number
+  /** Aggregate value shown in DM Mono under the column header (design-system.md A4). */
+  total?: React.ReactNode
   children: React.ReactNode
 }) {
   return (
     <section className="flex w-72 shrink-0 flex-col gap-2 rounded-lg bg-muted/40 p-2" aria-label={title}>
-      <div className="flex items-center justify-between px-1 text-sm font-medium">
-        <span>{title}</span>
-        {typeof count === 'number' ? <span className="text-muted-foreground">{count}</span> : null}
+      <div className="flex items-center justify-between gap-2 px-1">
+        <MonoLabel className="text-foreground">{title}</MonoLabel>
+        {typeof count === 'number' ? <Numeric className="text-xs text-muted-foreground">{count}</Numeric> : null}
       </div>
+      {total != null ? <Numeric className="px-1 text-xs text-muted-foreground">{total}</Numeric> : null}
       <div className="space-y-2">{children}</div>
     </section>
   )

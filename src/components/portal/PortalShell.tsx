@@ -15,11 +15,14 @@ export function PortalShell({
   portalLabel,
   nav,
   banner,
+  panels,
   children,
 }: {
   portalLabel: string
   nav: NavItem[]
   banner?: React.ReactNode
+  /** Sidebar character panels (design-system.md §5.3) rendered below the nav. */
+  panels?: React.ReactNode
   children: React.ReactNode
 }) {
   return (
@@ -37,11 +40,14 @@ export function PortalShell({
       </header>
       {banner}
       <div className="mx-auto flex w-full max-w-screen-2xl gap-6 px-4 py-6">
-        <nav aria-label={`${portalLabel} navigation`} className="hidden w-52 shrink-0 space-y-0.5 md:block">
-          {nav.map((item) => (
-            <NavLink key={item.href} href={item.href} label={item.label} />
-          ))}
-        </nav>
+        <div className="hidden w-52 shrink-0 md:block">
+          <nav aria-label={`${portalLabel} navigation`} className="space-y-0.5">
+            {nav.map((item) => (
+              <NavLink key={item.href} href={item.href} label={item.label} />
+            ))}
+          </nav>
+          {panels ? <div className="mt-6 space-y-4">{panels}</div> : null}
+        </div>
         <main className="min-w-0 flex-1">{children}</main>
       </div>
     </div>

@@ -357,6 +357,43 @@ export const CommissionAdjustmentSchema = z.object({
   reason: z.string().trim().min(1, 'A reason is required for every adjustment').max(500),
 })
 
+// ─── Legacy-port config (GDC tiers + FFS contacts) ──────────────────────────────
+// GDC tier thresholds/payouts are assumption-flagged config DEFAULTS, never a
+// Farmers-published figure (guardrail §2.3). Upsert keyed by tier_no.
+export const GdcTierSchema = z
+  .object({
+    tier_no: z.coerce.number().int().min(1).max(20),
+    label: z.string().trim().min(1, 'Label is required').max(60),
+    min_gdc: z.coerce.number().min(0),
+    // Blank ceiling = open-ended top tier.
+    max_gdc: z.coerce.number().min(0).optional().or(z.literal('').transform(() => undefined)),
+    payout_pct: z.coerce.number().min(0).max(100),
+    note: z.string().trim().max(300).optional(),
+  })
+  .refine((v) => v.max_gdc === undefined || v.max_gdc >= v.min_gdc, {
+    message: 'Ceiling must be ≥ floor',
+    path: ['max_gdc'],
+  })
+export type GdcTierInput = z.infer<typeof GdcTierSchema>
+
+// FFS key contacts — config-driven quick-access directory. `id` present = update.
+export const FfsContactSchema = z.object({
+  id: uuid.optional().or(z.literal('').transform(() => undefined)),
+  role: z.string().trim().min(1, 'Role is required').max(120),
+  name: z.string().trim().max(120).optional().or(z.literal('').transform(() => undefined)),
+  phone: z
+    .string()
+    .trim()
+    .min(7, 'Enter a valid phone')
+    .max(40)
+    .regex(/^[0-9+().\-\s]+$/, 'Digits and + ( ) - only'),
+  hours: z.string().trim().max(80).optional().or(z.literal('').transform(() => undefined)),
+  note: z.string().trim().max(120).optional().or(z.literal('').transform(() => undefined)),
+  sort: z.coerce.number().int().min(0).max(999).default(0),
+  active: z.boolean().optional(),
+})
+export type FfsContactInput = z.infer<typeof FfsContactSchema>
+
 // ─── Marketing & Comms (OS-12 / WF-5) ───────────────────────────────────────────
 export const TEMPLATE_CATEGORY = [
   'appointment',

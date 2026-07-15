@@ -32,7 +32,7 @@
 | AI Control Center | `api/ai` | **RETIRE** | `/app/ai` exists |
 | Audit Log | `api/audit` | **RETIRE** | `/compliance/audit` exists |
 | Dashboard | `api/dashboard` | **RETIRE** | `/app` exists |
-| Contact Upload legacy UI | — | **RETIRE** | replaced by `/admin/data/imports/ghl` |
+| Contact Upload legacy UI | — | **PORT** | replaced by `/admin/data/imports/ghl` |
 | Assistant | `api/assistant` | **EVALUATE** | fold into `/app/ai` if used; else retire |
 
 **Rule for every ported page:** it is a *new FSOS page* built to the Definition of Done (`archetypes.md`) and `design-system.md` — real auth, RLS, audit on mutation, empty/loading/error states, responsive, accessible. It is **not** a copy-paste of legacy JSX.

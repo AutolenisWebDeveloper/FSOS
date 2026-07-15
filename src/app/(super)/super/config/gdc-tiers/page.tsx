@@ -1,5 +1,6 @@
 import { SettingsShell, SettingsSection, ErrorState, EmptyState, AssumptionBadge } from '@/components/archetypes'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Numeric, Money } from '@/components/ui/typography'
 import { load } from '@/lib/data/query'
 import { GdcTierForm, type ExistingTier } from '@/components/super/GdcTierForm'
 
@@ -11,8 +12,6 @@ interface TierRow extends ExistingTier {
   is_assumption: boolean
   active: boolean
 }
-
-const fmt = (n: number) => `$${Math.round(Number(n || 0)).toLocaleString('en-US')}`
 
 // Legacy-port GDC tier config (A10). Every tier is an assumption-flagged default —
 // gold "config default — verify" badge; never presented as a Farmers-published figure.
@@ -48,9 +47,9 @@ export default async function GdcTiersConfigPage() {
                   <TableRow key={t.id}>
                     <TableCell className="font-medium">{t.label}</TableCell>
                     <TableCell className="tabular-nums text-muted-foreground">
-                      {fmt(t.min_gdc)} {t.max_gdc === null ? '+' : `– ${fmt(t.max_gdc)}`}
+                      <Money value={t.min_gdc} /> {t.max_gdc === null ? '+' : <>– <Money value={t.max_gdc} /></>}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">{t.payout_pct}%</TableCell>
+                    <TableCell className="text-right tabular-nums"><Numeric>{t.payout_pct}%</Numeric></TableCell>
                     <TableCell>{t.is_assumption ? <AssumptionBadge /> : null}</TableCell>
                   </TableRow>
                 ))}

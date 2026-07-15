@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
+import { Numeric } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -39,11 +40,11 @@ export default async function CommsTimelinePage() {
             <TableBody>
               {msgs.data.map((m) => (
                 <TableRow key={m.id}>
-                  <TableCell className="text-muted-foreground">{new Date(m.created_at).toLocaleString('en-US')}</TableCell>
+                  <TableCell className="text-muted-foreground"><Numeric>{new Date(m.created_at).toLocaleString('en-US')}</Numeric></TableCell>
                   <TableCell><Badge variant="outline">{m.channel}</Badge></TableCell>
                   <TableCell className="text-muted-foreground">{m.recipient ?? '—'}</TableCell>
                   <TableCell><Badge variant={m.delivery_status === 'blocked' ? 'blocked' : m.delivery_status === 'failed' ? 'lost' : m.delivery_status === 'delivered' || m.delivery_status === 'sent' ? 'won' : 'pending'}>{m.delivery_status}</Badge></TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{m.blocked_step ? `blocked: ${m.blocked_step}` : m.consent_at_send ? 'consent ✓' : 'sent'}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{m.blocked_step ? `blocked: ${m.blocked_step}` : m.consent_at_send ? 'consent on file' : 'sent'}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

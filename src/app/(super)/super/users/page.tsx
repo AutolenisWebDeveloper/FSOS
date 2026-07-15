@@ -2,6 +2,7 @@ import { Users } from 'lucide-react'
 import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Numeric } from '@/components/ui/typography'
 import { load } from '@/lib/data/query'
 
 export const dynamic = 'force-dynamic'
@@ -51,7 +52,7 @@ export default async function SuperUsersPage() {
           <TableBody>
             {users.map(([userId, userRoles]) => (
               <TableRow key={userId}>
-                <TableCell className="font-mono text-xs">{userId}</TableCell>
+                <TableCell><Numeric className="text-xs">{userId}</Numeric></TableCell>
                 <TableCell>
                   <div className="flex flex-wrap gap-1">
                     {userRoles.map((role) => (

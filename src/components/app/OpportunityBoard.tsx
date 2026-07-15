@@ -4,7 +4,8 @@ import * as React from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
+import { SecuritiesChip, securitiesRowClass } from '@/components/ui/securities'
+import { Money } from '@/components/ui/typography'
 import { Select } from '@/components/ui/select'
 import { BoardColumn } from '@/components/archetypes'
 import { OPPORTUNITY_STAGE } from '@/lib/validation/schemas'
@@ -66,14 +67,14 @@ export function OpportunityBoard({ cards }: { cards: OppCard[] }) {
               <p className="px-1 py-4 text-xs text-muted-foreground">No opportunities.</p>
             ) : (
               byStage[stage].map((c) => (
-                <div key={c.id} className="rounded-md border bg-card p-2 text-sm shadow-sm">
+                <div key={c.id} className={`rounded-md border bg-card p-2 text-sm shadow-sm ${c.is_security ? securitiesRowClass : ''}`}>
                   <div className="flex items-start justify-between gap-2">
                     <Link href={`/app/opportunities/${c.id}`} className="font-medium text-primary hover:underline">
                       {c.household_name ?? 'Opportunity'}
                     </Link>
-                    {c.is_security ? <Badge variant="blocked">sec</Badge> : null}
+                    {c.is_security ? <SecuritiesChip /> : null}
                   </div>
-                  <p className="text-xs text-muted-foreground">{c.engagement}{c.premium ? ` · $${Number(c.premium).toLocaleString('en-US')}` : ''}</p>
+                  <p className="text-xs text-muted-foreground">{c.engagement}{c.premium != null ? <> · <Money value={c.premium} /></> : null}</p>
                   <label className="sr-only" htmlFor={`move-${c.id}`}>Move opportunity to stage</label>
                   <Select
                     id={`move-${c.id}`}

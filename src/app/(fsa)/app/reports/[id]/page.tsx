@@ -1,10 +1,13 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ReportShell, ErrorState, EmptyState } from '@/components/archetypes'
+import { Numeric, Money } from '@/components/ui/typography'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
 
 export const dynamic = 'force-dynamic'
+
+const MONEY_KEYS = new Set(['total_premium', 'expected_commission', 'total_commission', 'fsa_amount', 'agency_amount'])
 
 const REPORTS: Record<string, { name: string; view: string; columns: { key: string; label: string; num?: boolean }[] }> = {
   pipeline: { name: 'Pipeline by engagement', view: 'v_pipeline_by_engagement', columns: [{ key: 'engagement', label: 'Engagement' }, { key: 'stage', label: 'Stage' }, { key: 'opp_count', label: 'Opps', num: true }, { key: 'total_premium', label: 'Premium', num: true }, { key: 'expected_commission', label: 'Expected commission', num: true }] },
@@ -45,8 +48,16 @@ export default async function ReportViewPage({ params }: { params: { id: string 
               {rows.data.map((row, i) => (
                 <TableRow key={i}>
                   {def.columns.map((c) => (
-                    <TableCell key={c.key} className={c.num ? 'text-right tabular-nums' : ''}>
-                      {c.num ? Number(row[c.key] ?? 0).toLocaleString('en-US') : String(row[c.key] ?? '—')}
+                    <TableCell key={c.key} className={c.num ? 'text-right' : ''}>
+                      {c.num ? (
+                        MONEY_KEYS.has(c.key) ? (
+                          <Money value={Number(row[c.key] ?? 0)} />
+                        ) : (
+                          <Numeric>{Number(row[c.key] ?? 0).toLocaleString('en-US')}</Numeric>
+                        )
+                      ) : (
+                        String(row[c.key] ?? '—')
+                      )}
                     </TableCell>
                   ))}
                 </TableRow>

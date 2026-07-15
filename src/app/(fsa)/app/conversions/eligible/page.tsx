@@ -4,6 +4,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
+import { Numeric } from '@/components/ui/typography'
+import { SecuritiesChip, securitiesRowClass } from '@/components/ui/securities'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,13 +38,13 @@ export default async function ConversionsEligiblePage({ searchParams }: { search
             </TableHeader>
             <TableBody>
               {filtered.map((r) => (
-                <TableRow key={r.policy_id}>
+                <TableRow key={r.policy_id} className={r.is_security ? securitiesRowClass : undefined}>
                   <TableCell>
                     <Link href={`/app/conversions/${r.policy_id}`} className="font-medium text-primary hover:underline">{r.primary_name}</Link>
-                    {r.is_security ? <Badge variant="blocked" className="ml-2">securities · excluded</Badge> : null}
+                    {r.is_security ? <SecuritiesChip className="ml-2" /> : null}
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{r.policy_number ?? '—'}</TableCell>
-                  <TableCell className="text-muted-foreground">{r.conversion_deadline} · {r.days_remaining}d</TableCell>
+                  <TableCell className="text-muted-foreground"><Numeric>{r.policy_number ?? '—'}</Numeric></TableCell>
+                  <TableCell className="text-muted-foreground"><Numeric>{r.conversion_deadline}</Numeric> · <Numeric>{r.days_remaining}d</Numeric></TableCell>
                   <TableCell><Badge variant={r.urgency_tier === '30' ? 'lost' : r.urgency_tier === '90' ? 'pending' : 'outline'}>≤{r.urgency_tier}d</Badge></TableCell>
                   <TableCell className="text-right"><Button asChild size="sm" variant="outline"><Link href={`/app/conversions/${r.policy_id}`}>Open</Link></Button></TableCell>
                 </TableRow>

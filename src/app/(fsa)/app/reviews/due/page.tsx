@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
+import { Numeric } from '@/components/ui/typography'
+import { SecuritiesChip, securitiesRowClass } from '@/components/ui/securities'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,12 +35,12 @@ export default async function ReviewsDuePage() {
             </TableHeader>
             <TableBody>
               {conversions.data.map((c) => (
-                <TableRow key={c.policy_id}>
+                <TableRow key={c.policy_id} className={c.is_security ? securitiesRowClass : undefined}>
                   <TableCell>
                     <Link href={`/app/households/${c.household_id}`} className="font-medium text-primary hover:underline">{c.primary_name}</Link>
-                    {c.is_security ? <Badge variant="blocked" className="ml-2">securities · excluded</Badge> : null}
+                    {c.is_security ? <SecuritiesChip className="ml-2" /> : null}
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{c.conversion_deadline} · {c.days_remaining}d</TableCell>
+                  <TableCell className="text-muted-foreground"><Numeric>{c.conversion_deadline}</Numeric> · <Numeric>{c.days_remaining}d</Numeric></TableCell>
                   <TableCell><Badge variant={c.urgency_tier === '30' ? 'lost' : c.urgency_tier === '90' ? 'pending' : 'outline'}>≤{c.urgency_tier}d</Badge></TableCell>
                   <TableCell className="text-right">
                     <Button asChild size="sm" variant="outline"><Link href={`/app/reviews/new?household=${c.household_id}&type=term_conversion`}>Schedule</Link></Button>

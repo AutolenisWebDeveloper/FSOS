@@ -4,6 +4,7 @@ import { ListShell, ErrorState, EmptyState, WizardShell } from '@/components/arc
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Numeric } from '@/components/ui/typography'
 import { load } from '@/lib/data/query'
 
 export const dynamic = 'force-dynamic'
@@ -40,7 +41,7 @@ export default async function DataImportsPage() {
                 <TableBody>
                   {jobs.data.map((j) => (
                     <TableRow key={j.id}>
-                      <TableCell className="text-muted-foreground">{new Date(j.created_at).toLocaleDateString('en-US')}</TableCell>
+                      <TableCell className="text-muted-foreground"><Numeric>{new Date(j.created_at).toLocaleDateString('en-US')}</Numeric></TableCell>
                       <TableCell className="capitalize">{j.entity}</TableCell>
                       <TableCell>{j.row_count}</TableCell>
                       <TableCell>{j.error_count}</TableCell>

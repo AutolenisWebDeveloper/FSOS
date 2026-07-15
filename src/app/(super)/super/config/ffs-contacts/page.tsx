@@ -1,6 +1,7 @@
 import { SettingsShell, SettingsSection, ErrorState, EmptyState } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Numeric } from '@/components/ui/typography'
 import { load } from '@/lib/data/query'
 import { FfsContactForm, type ExistingContact } from '@/components/super/FfsContactForm'
 
@@ -46,7 +47,7 @@ export default async function FfsContactsConfigPage() {
                   <TableRow key={c.id}>
                     <TableCell className="font-medium">{c.role}</TableCell>
                     <TableCell className="text-muted-foreground">{c.name ?? '—'}</TableCell>
-                    <TableCell className="tabular-nums">{c.phone}</TableCell>
+                    <TableCell className="tabular-nums"><Numeric>{c.phone}</Numeric></TableCell>
                     <TableCell className="text-muted-foreground">{c.hours ?? '—'}</TableCell>
                     <TableCell>
                       {c.active ? <Badge variant="active">active</Badge> : <Badge variant="draft">hidden</Badge>}

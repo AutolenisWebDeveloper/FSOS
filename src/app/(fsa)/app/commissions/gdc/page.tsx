@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { PageHeader, ErrorState, EmptyState, AssumptionBadge } from '@/components/archetypes'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Money, Numeric } from '@/components/ui/typography'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { loadGdcSummary } from '@/lib/data/gdc'
 
@@ -113,8 +114,8 @@ export default async function GdcPage() {
                   {tiers.map((t) => (
                     <TableRow key={t.tier_no} className={current && t.tier_no === current.tier_no ? 'bg-status-assumption/5' : undefined}>
                       <TableCell className="font-medium">{t.label}</TableCell>
-                      <TableCell className="tabular-nums text-muted-foreground">{band(t.min_gdc, t.max_gdc)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{t.payout_pct}%</TableCell>
+                      <TableCell className="text-muted-foreground"><Numeric>{band(t.min_gdc, t.max_gdc)}</Numeric></TableCell>
+                      <TableCell className="text-right"><Numeric>{t.payout_pct}%</Numeric></TableCell>
                       <TableCell>{current && t.tier_no === current.tier_no ? <span className="text-xs font-medium text-status-assumption">current</span> : null}</TableCell>
                       <TableCell>{t.is_assumption ? <AssumptionBadge /> : null}</TableCell>
                     </TableRow>
@@ -152,16 +153,16 @@ export default async function GdcPage() {
                   {pipeline.map((p) => (
                     <TableRow key={p.stage}>
                       <TableCell className="font-medium">{STAGE_LABEL[p.stage] ?? p.stage}</TableCell>
-                      <TableCell className="text-right tabular-nums">{p.count}</TableCell>
-                      <TableCell className="text-right tabular-nums">{fmt(p.expected)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{fmt(p.estPayout)}</TableCell>
+                      <TableCell className="text-right"><Numeric>{p.count}</Numeric></TableCell>
+                      <TableCell className="text-right"><Money value={p.expected} /></TableCell>
+                      <TableCell className="text-right"><Money value={p.estPayout} /></TableCell>
                     </TableRow>
                   ))}
                   <TableRow className="border-t-2 font-medium">
                     <TableCell>Total</TableCell>
-                    <TableCell className="text-right tabular-nums">{pipeline.reduce((s, p) => s + p.count, 0)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{fmt(pipelineExpectedTotal)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{fmt(pipelineEstPayoutTotal)}</TableCell>
+                    <TableCell className="text-right"><Numeric>{pipeline.reduce((s, p) => s + p.count, 0)}</Numeric></TableCell>
+                    <TableCell className="text-right"><Money value={pipelineExpectedTotal} /></TableCell>
+                    <TableCell className="text-right"><Money value={pipelineEstPayoutTotal} /></TableCell>
                   </TableRow>
                 </TableBody>
               </Table>
@@ -183,7 +184,7 @@ function Metric({ label, value, hint }: { label: string; value: React.ReactNode;
         <CardTitle className="text-sm font-medium text-muted-foreground">{label}</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-semibold tabular-nums">{value}</div>
+        <Numeric as="div" className="text-2xl font-semibold">{value}</Numeric>
         {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
       </CardContent>
     </Card>

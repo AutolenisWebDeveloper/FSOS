@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
 import { LegalHoldForm, LegalHoldControls } from '@/components/compliance/ComplianceControls'
+import { Numeric, MonoLabel } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -53,10 +54,10 @@ export default async function LegalHoldsPage() {
                   {rows.data.map((h) => (
                     <TableRow key={h.id}>
                       <TableCell className="font-medium">{h.name}</TableCell>
-                      <TableCell className="text-muted-foreground">{h.matter_ref ?? '—'}</TableCell>
+                      <TableCell className="text-muted-foreground">{h.matter_ref ? <Numeric>{h.matter_ref}</Numeric> : '—'}</TableCell>
                       <TableCell><Badge variant={h.status === 'active' ? 'pending' : 'draft'}>{h.status}</Badge></TableCell>
                       <TableCell className="max-w-xs truncate text-muted-foreground" title={h.reason ?? undefined}>{h.reason ?? '—'}</TableCell>
-                      <TableCell className="text-muted-foreground">{new Date(h.placed_at).toLocaleDateString('en-US')}</TableCell>
+                      <TableCell className="text-muted-foreground"><Numeric>{new Date(h.placed_at).toLocaleDateString('en-US')}</Numeric></TableCell>
                       <TableCell className="text-right">{h.status === 'active' ? <LegalHoldControls id={h.id} /> : '—'}</TableCell>
                     </TableRow>
                   ))}
@@ -65,7 +66,7 @@ export default async function LegalHoldsPage() {
             </div>
           )}
           <div className="rounded-lg border p-4">
-            <p className="mb-3 text-sm font-medium">Place a legal hold</p>
+            <MonoLabel as="p" className="mb-3">Place a legal hold</MonoLabel>
             <LegalHoldForm />
           </div>
         </div>

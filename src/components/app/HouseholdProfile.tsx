@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { DetailShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
+import { SecuritiesChip, securitiesRowClass } from '@/components/ui/securities'
+import { Numeric } from '@/components/ui/typography'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -157,10 +159,10 @@ async function Policies({ id }: { id: string }) {
           </TableHeader>
           <TableBody>
             {res.data.map((p) => (
-              <TableRow key={p.id}>
+              <TableRow key={p.id} className={p.is_security ? securitiesRowClass : undefined}>
                 <TableCell>
-                  <Link href={`/app/policies/${p.id}`} className="text-primary hover:underline">{p.policy_number ?? 'Unnumbered'}</Link>
-                  {p.is_security ? <Badge variant="blocked" className="ml-2">securities</Badge> : null}
+                  <Link href={`/app/policies/${p.id}`} className="text-primary hover:underline"><Numeric>{p.policy_number ?? 'Unnumbered'}</Numeric></Link>
+                  {p.is_security ? <SecuritiesChip className="ml-2" /> : null}
                 </TableCell>
                 <TableCell><Badge variant={p.status === 'active' ? 'won' : p.status === 'lapsed' || p.status === 'cancelled' ? 'lost' : 'active'}>{p.status}</Badge></TableCell>
                 <TableCell className="text-muted-foreground">{p.is_with_us ? 'Own book' : 'Competitor'}</TableCell>

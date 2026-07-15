@@ -2,6 +2,7 @@ import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
+import { Numeric } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,7 +27,7 @@ export default async function IncidentsPage() {
             <TableBody>
               {rows.data.map((i) => (
                 <TableRow key={i.id}>
-                  <TableCell className="text-muted-foreground">{new Date(i.discovered_at).toLocaleDateString('en-US')}</TableCell>
+                  <TableCell className="text-muted-foreground"><Numeric>{new Date(i.discovered_at).toLocaleDateString('en-US')}</Numeric></TableCell>
                   <TableCell className="font-medium">{i.scope ?? '—'}</TableCell>
                   <TableCell>{i.affected_count ?? '—'}</TableCell>
                   <TableCell><Badge variant={i.status === 'closed' ? 'won' : i.status === 'notifying' ? 'pending' : 'active'}>{i.status}</Badge></TableCell>

@@ -1,6 +1,7 @@
 import { ListShell, EmptyState, ErrorState, StatusBadge, type StatusKey } from '@/components/archetypes'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
+import { Numeric } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -57,10 +58,10 @@ export default async function ConsentPage() {
               <TableRow key={c.id}>
                 <TableCell className="font-medium capitalize">{c.channel}</TableCell>
                 <TableCell><StatusBadge status={STATUS_MAP[c.status] ?? 'pending'} label={c.status} /></TableCell>
-                <TableCell className="text-muted-foreground">{c.household_id ?? '—'}</TableCell>
-                <TableCell className="text-muted-foreground">{c.member_id ?? '—'}</TableCell>
+                <TableCell className="text-muted-foreground">{c.household_id ? <Numeric className="font-mono text-xs">{c.household_id}</Numeric> : '—'}</TableCell>
+                <TableCell className="text-muted-foreground">{c.member_id ? <Numeric className="font-mono text-xs">{c.member_id}</Numeric> : '—'}</TableCell>
                 <TableCell className="text-muted-foreground">{c.source ?? '—'}</TableCell>
-                <TableCell className="text-muted-foreground">{c.captured_at ? new Date(c.captured_at).toLocaleDateString('en-US') : '—'}</TableCell>
+                <TableCell className="text-muted-foreground">{c.captured_at ? <Numeric>{new Date(c.captured_at).toLocaleDateString('en-US')}</Numeric> : '—'}</TableCell>
               </TableRow>
             ))}
           </TableBody>

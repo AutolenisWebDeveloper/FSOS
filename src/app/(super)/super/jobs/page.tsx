@@ -1,6 +1,7 @@
 import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Numeric } from '@/components/ui/typography'
 import { load } from '@/lib/data/query'
 export const dynamic = 'force-dynamic'
 // P-6 Jobs. Background/cron with retries + idempotency + failure. A failed job is
@@ -17,7 +18,7 @@ export default async function SuperJobsPage() {
       {!rows.ok ? <ErrorState description={rows.kind === 'not_configured' ? 'Database not configured.' : rows.message} /> : rows.data.length === 0 ? <EmptyState title="No job runs yet" description="Cron job runs appear here once they fire." /> : (
         <div className="rounded-lg border"><Table>
           <TableHeader><TableRow><TableHead>When</TableHead><TableHead>Job</TableHead><TableHead>Status</TableHead><TableHead>Error</TableHead></TableRow></TableHeader>
-          <TableBody>{rows.data.map((r) => (<TableRow key={r.id}><TableCell className="text-muted-foreground">{new Date(r.started_at).toLocaleString('en-US')}</TableCell><TableCell className="font-medium">{r.job}</TableCell><TableCell><Badge variant={r.status === 'completed' ? 'won' : r.status === 'errored' ? 'lost' : 'pending'}>{r.status}</Badge></TableCell><TableCell className="max-w-md truncate text-destructive">{r.error ?? '—'}</TableCell></TableRow>))}</TableBody>
+          <TableBody>{rows.data.map((r) => (<TableRow key={r.id}><TableCell className="text-muted-foreground"><Numeric>{new Date(r.started_at).toLocaleString('en-US')}</Numeric></TableCell><TableCell className="font-medium">{r.job}</TableCell><TableCell><Badge variant={r.status === 'completed' ? 'won' : r.status === 'errored' ? 'lost' : 'pending'}>{r.status}</Badge></TableCell><TableCell className="max-w-md truncate text-destructive">{r.error ?? '—'}</TableCell></TableRow>))}</TableBody>
         </Table></div>
       )}
     </ListShell>

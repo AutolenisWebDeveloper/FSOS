@@ -3,6 +3,7 @@ import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
+import { Numeric } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,11 +26,11 @@ export default async function RunsPage() {
             <TableBody>
               {runs.data.map((r) => (
                 <TableRow key={r.id}>
-                  <TableCell className="text-muted-foreground">{new Date(r.started_at).toLocaleString('en-US')}</TableCell>
+                  <TableCell className="text-muted-foreground"><Numeric>{new Date(r.started_at).toLocaleString('en-US')}</Numeric></TableCell>
                   <TableCell><Link href={`/app/ai/runs/${r.id}`} className="font-medium text-primary hover:underline">{r.agent_key}</Link></TableCell>
                   <TableCell className="text-muted-foreground">{r.model ?? '—'}</TableCell>
-                  <TableCell>{r.confidence != null ? r.confidence.toFixed(2) : '—'}</TableCell>
-                  <TableCell className="text-right tabular-nums">${Number(r.cost_usd).toFixed(4)}</TableCell>
+                  <TableCell>{r.confidence != null ? <Numeric>{r.confidence.toFixed(2)}</Numeric> : '—'}</TableCell>
+                  <TableCell className="text-right"><Numeric>{`$${Number(r.cost_usd).toFixed(4)}`}</Numeric></TableCell>
                   <TableCell><Badge variant={r.status === 'completed' ? 'won' : r.status === 'errored' ? 'lost' : 'pending'}>{r.status}</Badge></TableCell>
                 </TableRow>
               ))}

@@ -3,6 +3,7 @@ import { SettingsShell, SettingsSection, ErrorState, AssumptionBadge } from '@/c
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { load } from '@/lib/data/query'
+import { Numeric } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,7 +26,7 @@ export default async function ReviewTypesPage() {
                 <div className="flex items-center justify-between">
                   <p className="font-medium">{t.label}</p>
                   <span className="flex items-center gap-2">
-                    {t.cadence_days ? <Badge variant="outline">{t.cadence_days}d cadence</Badge> : null}
+                    {t.cadence_days ? <Badge variant="outline"><Numeric>{t.cadence_days}d</Numeric> cadence</Badge> : null}
                     {t.is_assumption ? <AssumptionBadge /> : null}
                     {!t.active ? <Badge variant="outline">inactive</Badge> : null}
                   </span>

@@ -2,6 +2,7 @@ import { DetailShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Numeric } from '@/components/ui/typography'
 import { load } from '@/lib/data/query'
 import { SandboxRunner } from '@/components/super/SandboxRunner'
 
@@ -66,7 +67,7 @@ export default async function SuperAiSandboxPage() {
                 <TableBody>
                   {rows.data.map((r) => (
                     <TableRow key={r.id}>
-                      <TableCell className="text-muted-foreground">{new Date(r.created_at).toLocaleString('en-US')}</TableCell>
+                      <TableCell className="text-muted-foreground"><Numeric>{new Date(r.created_at).toLocaleString('en-US')}</Numeric></TableCell>
                       <TableCell className="font-medium">{r.agent_key ?? '—'}</TableCell>
                       <TableCell>
                         <Badge variant={r.blocked ? 'blocked' : 'won'}>{r.blocked ? 'blocked' : 'passed'}</Badge>

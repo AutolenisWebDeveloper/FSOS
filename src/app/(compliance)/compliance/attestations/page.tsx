@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
 import { AttestationForm, AttestationAck } from '@/components/compliance/ComplianceControls'
+import { Numeric, MonoLabel } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -53,7 +54,7 @@ export default async function AttestationsPage() {
                       <TableCell className="font-medium">{a.title}</TableCell>
                       <TableCell className="text-muted-foreground">{a.period ?? '—'}</TableCell>
                       <TableCell><Badge variant={a.status === 'closed' ? 'won' : a.status === 'open' ? 'pending' : 'draft'}>{a.status}</Badge></TableCell>
-                      <TableCell className="text-muted-foreground">{a.due_at ? new Date(a.due_at).toLocaleDateString('en-US') : '—'}</TableCell>
+                      <TableCell className="text-muted-foreground">{a.due_at ? <Numeric>{new Date(a.due_at).toLocaleDateString('en-US')}</Numeric> : '—'}</TableCell>
                       <TableCell className="text-right">{a.status === 'open' ? <div className="flex justify-end"><AttestationAck id={a.id} /></div> : '—'}</TableCell>
                     </TableRow>
                   ))}
@@ -62,7 +63,7 @@ export default async function AttestationsPage() {
             </div>
           )}
           <div className="rounded-lg border p-4">
-            <p className="mb-3 text-sm font-medium">Open an attestation</p>
+            <MonoLabel as="p" className="mb-3">Open an attestation</MonoLabel>
             <AttestationForm />
           </div>
         </div>

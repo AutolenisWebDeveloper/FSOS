@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { load } from '@/lib/data/query'
 import { REVIEW_STAGE } from '@/lib/validation/schemas'
+import { Numeric } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,7 +39,7 @@ export default async function ReviewBoardPage() {
                     <p className="text-sm font-medium">{hhMap.get(r.household_id) ?? 'Review'}</p>
                     <div className="flex items-center gap-2">
                       <Badge variant="outline" className="capitalize">{r.type.replace(/_/g, ' ')}</Badge>
-                      {r.scheduled_at ? <span className="text-xs text-muted-foreground">{new Date(r.scheduled_at).toLocaleDateString('en-US')}</span> : null}
+                      {r.scheduled_at ? <Numeric className="text-xs text-muted-foreground">{new Date(r.scheduled_at).toLocaleDateString('en-US')}</Numeric> : null}
                     </div>
                   </CardContent>
                 </Card>

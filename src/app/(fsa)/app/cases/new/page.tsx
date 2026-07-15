@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { FormShell, EmptyState } from '@/components/archetypes'
-import { Badge } from '@/components/ui/badge'
+import { SecuritiesChip, securitiesRowClass } from '@/components/ui/securities'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { load } from '@/lib/data/query'
@@ -27,14 +27,14 @@ export default async function NewCasePage() {
       ) : (
         <div className="space-y-2">
           {list.map((o) => (
-            <Card key={o.id}>
+            <Card key={o.id} className={o.is_security ? securitiesRowClass : undefined}>
               <CardContent className="flex items-center justify-between p-3">
                 <div>
                   <p className="font-medium">{o.household_id ? hhMap.get(o.household_id) ?? 'Opportunity' : 'Opportunity'}</p>
-                  <p className="text-xs text-muted-foreground capitalize">{o.stage.replace(/_/g, ' ')}{o.is_security ? '' : ''}</p>
+                  <p className="text-xs text-muted-foreground capitalize">{o.stage.replace(/_/g, ' ')}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  {o.is_security ? <Badge variant="blocked">securities</Badge> : null}
+                  {o.is_security ? <SecuritiesChip /> : null}
                   <CaseCreateButton opportunityId={o.id} />
                 </div>
               </CardContent>

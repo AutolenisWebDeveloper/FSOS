@@ -1,5 +1,6 @@
 import { CalendarDays } from 'lucide-react'
 import { EmptyState, StatusBadge, type StatusKey } from '@/components/archetypes'
+import { MonoLabel, Numeric } from '@/components/ui/typography'
 
 export interface AppointmentRow {
   id: string
@@ -52,7 +53,7 @@ export function CalendarView({ rows }: { rows: AppointmentRow[] }) {
     <div className="space-y-5">
       {Array.from(groups.entries()).map(([day, appts]) => (
         <section key={day} className="space-y-2" aria-label={day}>
-          <h2 className="text-sm font-semibold">{day}</h2>
+          <MonoLabel as="h2" muted={false} className="text-foreground">{day}</MonoLabel>
           <ul className="divide-y rounded-lg border">
             {appts
               .slice()
@@ -62,10 +63,10 @@ export function CalendarView({ rows }: { rows: AppointmentRow[] }) {
                 return (
                   <li key={a.id} className="flex items-center justify-between gap-3 p-3">
                     <div className="min-w-0">
-                      <p className="font-medium">{timeOf(a.scheduled_at as string)}</p>
+                      <Numeric as="p" className="font-medium">{timeOf(a.scheduled_at as string)}</Numeric>
                       <p className="truncate text-xs text-muted-foreground">
                         {a.household_id ? 'Household appointment' : 'Appointment'}
-                        {a.external_ref ? ` · ${a.external_ref}` : ''}
+                        {a.external_ref ? <> · <Numeric>{a.external_ref}</Numeric></> : null}
                       </p>
                     </div>
                     <StatusBadge status={s.key} label={s.label} />

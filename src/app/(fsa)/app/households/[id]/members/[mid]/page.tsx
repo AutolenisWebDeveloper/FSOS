@@ -1,6 +1,8 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import type { ReactNode } from 'react'
 import { DetailShell, ErrorState } from '@/components/archetypes'
+import { Numeric } from '@/components/ui/typography'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { load } from '@/lib/data/query'
 import { MemberDobReveal } from '@/components/app/MemberDobReveal'
@@ -48,7 +50,7 @@ export default async function MemberDetailPage({ params }: { params: { id: strin
         <CardContent className="space-y-3 text-sm">
           <Row label="Relationship" value={m.relationship ?? '—'} />
           <Row label="Email" value={m.email ?? '—'} />
-          <Row label="Phone" value={m.phone ?? '—'} />
+          <Row label="Phone" value={<Numeric>{m.phone ?? '—'}</Numeric>} />
           <div className="flex items-center justify-between gap-3">
             <span className="text-muted-foreground">Date of birth</span>
             <MemberDobReveal householdId={params.id} memberId={params.mid} />
@@ -59,7 +61,7 @@ export default async function MemberDetailPage({ params }: { params: { id: strin
   )
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex justify-between gap-3">
       <span className="text-muted-foreground">{label}</span>

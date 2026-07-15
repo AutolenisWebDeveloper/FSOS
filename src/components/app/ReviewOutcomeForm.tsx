@@ -114,7 +114,7 @@ export function ReviewOutcomeForm({
                 </Select>
                 <Input type="number" min={0} step="0.01" placeholder="Premium" value={n.expected_premium} onChange={(e) => updateNeed(i, { expected_premium: e.target.value })} aria-label="Expected premium" />
                 <Button type="button" variant="ghost" size="sm" onClick={() => removeNeed(i)} aria-label="Remove"><Trash2 className="h-4 w-4" /></Button>
-                {p?.is_security ? <p className="sm:col-span-4 text-xs text-status-blocked">Securities need — routes to FFS-supervised follow-up as a pointer; not auto-sequenced by FSOS.</p> : null}
+                {p?.is_security ? <p className="sm:col-span-4 text-xs text-status-security">FFS-managed securities need — routes to FFS-supervised follow-up as a pointer; not auto-sequenced by FSOS.</p> : null}
               </div>
             )
           })

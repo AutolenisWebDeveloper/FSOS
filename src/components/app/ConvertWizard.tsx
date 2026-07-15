@@ -201,8 +201,8 @@ export function ConvertWizard(props: Props) {
             </Field>
           </div>
           {selectedProduct?.is_security ? (
-            <p className="rounded-md border border-status-blocked/40 bg-status-blocked/10 p-2 text-xs text-status-blocked">
-              Securities product: FSOS tracks existence + an FFS reference only. A securities opportunity requires FSA securities scope or it is blocked and escalated to FFS handling.
+            <p className="rounded-md border border-status-security/40 bg-status-security/10 p-2 text-xs text-status-security">
+              FFS-managed securities product: FSOS tracks existence + an FFS reference only. A securities opportunity requires FSA securities scope or it is blocked and escalated to FFS handling.
             </p>
           ) : null}
         </div>

@@ -8,6 +8,8 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { SecuritiesChip, securitiesRowClass } from '@/components/ui/securities'
+import { Numeric } from '@/components/ui/typography'
 import { EmptyState } from '@/components/archetypes'
 import { POLICY_STATUS } from '@/lib/validation/schemas'
 
@@ -78,10 +80,10 @@ export function PolicyList({ rows }: { rows: PolicyRow[] }) {
             </TableHeader>
             <TableBody>
               {filtered.map((p) => (
-                <TableRow key={p.id}>
+                <TableRow key={p.id} className={p.is_security ? securitiesRowClass : undefined}>
                   <TableCell>
-                    <Link href={`/app/policies/${p.id}`} className="font-medium text-primary hover:underline">{p.policy_number ?? 'Unnumbered'}</Link>
-                    {p.is_security ? <Badge variant="blocked" className="ml-2">securities</Badge> : null}
+                    <Link href={`/app/policies/${p.id}`} className="font-medium text-primary hover:underline"><Numeric>{p.policy_number ?? 'Unnumbered'}</Numeric></Link>
+                    {p.is_security ? <SecuritiesChip className="ml-2" /> : null}
                   </TableCell>
                   <TableCell className="text-muted-foreground">{p.household_name ?? '—'}</TableCell>
                   <TableCell><Badge variant={p.status === 'active' ? 'won' : p.status === 'lapsed' || p.status === 'cancelled' ? 'lost' : 'active'}>{p.status}</Badge></TableCell>
@@ -89,12 +91,12 @@ export function PolicyList({ rows }: { rows: PolicyRow[] }) {
                   <TableCell className="text-muted-foreground">
                     {p.is_with_us
                       ? p.conversion_deadline
-                        ? `Convert by ${new Date(p.conversion_deadline).toLocaleDateString('en-US')}`
+                        ? <>Convert by <Numeric>{new Date(p.conversion_deadline).toLocaleDateString('en-US')}</Numeric></>
                         : p.renewal_date
-                          ? `Renews ${new Date(p.renewal_date).toLocaleDateString('en-US')}`
+                          ? <>Renews <Numeric>{new Date(p.renewal_date).toLocaleDateString('en-US')}</Numeric></>
                           : '—'
                       : p.x_date
-                        ? `X-date ${new Date(p.x_date).toLocaleDateString('en-US')}`
+                        ? <>X-date <Numeric>{new Date(p.x_date).toLocaleDateString('en-US')}</Numeric></>
                         : '—'}
                   </TableCell>
                 </TableRow>

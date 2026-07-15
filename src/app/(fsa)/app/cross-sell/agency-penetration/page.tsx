@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { ReportShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
+import { Numeric } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,10 +28,10 @@ export default async function AgencyPenetrationPage() {
               {rows.data.map((r) => (
                 <TableRow key={r.id}>
                   <TableCell><Link href={`/app/agencies/${r.id}`} className="font-medium text-primary hover:underline">{r.agency_name}</Link><span className="ml-2 text-xs text-muted-foreground">{r.owner_name}</span></TableCell>
-                  <TableCell className="text-right tabular-nums">{r.pc_book_policies.toLocaleString('en-US')}</TableCell>
-                  <TableCell className="text-right tabular-nums">{r.life_policies_in_force.toLocaleString('en-US')}</TableCell>
-                  <TableCell className="text-right tabular-nums">{r.life_penetration_pct}%</TableCell>
-                  <TableCell className="text-right tabular-nums font-medium">{Math.round(r.target_score).toLocaleString('en-US')}</TableCell>
+                  <TableCell className="text-right tabular-nums"><Numeric>{r.pc_book_policies.toLocaleString('en-US')}</Numeric></TableCell>
+                  <TableCell className="text-right tabular-nums"><Numeric>{r.life_policies_in_force.toLocaleString('en-US')}</Numeric></TableCell>
+                  <TableCell className="text-right tabular-nums"><Numeric>{r.life_penetration_pct}%</Numeric></TableCell>
+                  <TableCell className="text-right tabular-nums font-medium"><Numeric>{Math.round(r.target_score).toLocaleString('en-US')}</Numeric></TableCell>
                 </TableRow>
               ))}
             </TableBody>

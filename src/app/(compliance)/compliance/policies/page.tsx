@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
 import { PolicyForm, PolicyControls } from '@/components/compliance/ComplianceControls'
+import { Numeric, MonoLabel } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -51,7 +52,7 @@ export default async function PoliciesPage() {
                     <TableRow key={p.id}>
                       <TableCell className="font-medium">{p.title}</TableCell>
                       <TableCell className="text-muted-foreground">{p.category ?? '—'}</TableCell>
-                      <TableCell>v{p.version}</TableCell>
+                      <TableCell><Numeric>v{p.version}</Numeric></TableCell>
                       <TableCell><Badge variant={p.status === 'published' ? 'won' : p.status === 'retired' ? 'lost' : 'draft'}>{p.status}</Badge></TableCell>
                       <TableCell className="text-right"><div className="flex justify-end"><PolicyControls id={p.id} status={p.status} /></div></TableCell>
                     </TableRow>
@@ -61,7 +62,7 @@ export default async function PoliciesPage() {
             </div>
           )}
           <div className="rounded-lg border p-4">
-            <p className="mb-3 text-sm font-medium">New policy</p>
+            <MonoLabel as="p" className="mb-3">New policy</MonoLabel>
             <PolicyForm />
           </div>
         </div>

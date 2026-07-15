@@ -8,6 +8,8 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { SecuritiesChip, securitiesRowClass } from '@/components/ui/securities'
+import { Money } from '@/components/ui/typography'
 import { EmptyState } from '@/components/archetypes'
 import { OPPORTUNITY_STAGE, REFERRAL_ENGAGEMENT } from '@/lib/validation/schemas'
 import type { OppCard } from '@/components/app/OpportunityBoard'
@@ -70,14 +72,14 @@ export function OpportunityList({ rows }: { rows: OppCard[] }) {
             </TableHeader>
             <TableBody>
               {filtered.map((o) => (
-                <TableRow key={o.id}>
+                <TableRow key={o.id} className={o.is_security ? securitiesRowClass : undefined}>
                   <TableCell>
                     <Link href={`/app/opportunities/${o.id}`} className="font-medium text-primary hover:underline">{o.household_name ?? 'Opportunity'}</Link>
-                    {o.is_security ? <Badge variant="blocked" className="ml-2">securities</Badge> : null}
+                    {o.is_security ? <SecuritiesChip className="ml-2" /> : null}
                   </TableCell>
                   <TableCell className="text-muted-foreground">{o.engagement}</TableCell>
                   <TableCell><Badge variant={o.stage === 'placed_issued' ? 'won' : o.stage === 'lost' ? 'lost' : 'active'}>{o.stage.replace(/_/g, ' ')}</Badge></TableCell>
-                  <TableCell className="text-right tabular-nums">{o.premium ? `$${Number(o.premium).toLocaleString('en-US')}` : '—'}</TableCell>
+                  <TableCell className="text-right"><Money value={o.premium} /></TableCell>
                 </TableRow>
               ))}
             </TableBody>

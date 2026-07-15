@@ -7,6 +7,8 @@ import { ShieldAlert } from 'lucide-react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
+import { SecuritiesChip, securitiesRowClass } from '@/components/ui/securities'
+import { Numeric } from '@/components/ui/typography'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState } from '@/components/archetypes'
 
@@ -116,7 +118,7 @@ export function EscalationList({
                 return (
                   <TableRow
                     key={r.id}
-                    className="cursor-pointer"
+                    className={`cursor-pointer${securities ? ` ${securitiesRowClass}` : ''}`}
                     onClick={() => router.push(`/app/ai/escalations/${r.id}`)}
                   >
                     <TableCell>
@@ -127,14 +129,12 @@ export function EscalationList({
                       >
                         {r.reason ?? 'Escalation'}
                       </Link>
-                      {securities ? (
-                        <Badge variant="blocked" className="ml-2">securities → FFS</Badge>
-                      ) : null}
+                      {securities ? <SecuritiesChip className="ml-2" /> : null}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {href ? (
                         <Link href={href} className="text-primary hover:underline" onClick={(e) => e.stopPropagation()}>
-                          {r.target_type} · {r.target_id?.slice(0, 8)}
+                          {r.target_type} · <Numeric>{r.target_id?.slice(0, 8)}</Numeric>
                         </Link>
                       ) : r.target_type ? (
                         <span>{r.target_type}</span>
@@ -145,7 +145,7 @@ export function EscalationList({
                     <TableCell>
                       {r.blocked_step ? <Badge variant="pending">{r.blocked_step}</Badge> : <span className="text-muted-foreground">—</span>}
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{fmt(r.created_at)}</TableCell>
+                    <TableCell className="text-muted-foreground"><Numeric>{fmt(r.created_at)}</Numeric></TableCell>
                     <TableCell>
                       <Badge variant={isOpen(r.outcome) ? 'escalated' : r.outcome === 'dismissed' ? 'lost' : 'won'}>
                         {r.outcome && RESOLVED.has(r.outcome) ? r.outcome : 'escalated'}
@@ -190,7 +190,7 @@ export function EscalationList({
                       <TableCell className="text-muted-foreground">{c.channel ?? '—'}</TableCell>
                       <TableCell className="text-muted-foreground">{c.blocked_step ?? '—'}</TableCell>
                       <TableCell className="text-muted-foreground">{c.reason ?? '—'}</TableCell>
-                      <TableCell className="text-muted-foreground">{fmt(c.created_at)}</TableCell>
+                      <TableCell className="text-muted-foreground"><Numeric>{fmt(c.created_at)}</Numeric></TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

@@ -3,6 +3,7 @@ import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
+import { Numeric, Money } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,8 +26,8 @@ export default async function ChargebacksPage() {
             <TableBody>
               {rows.data.map((r) => (
                 <TableRow key={r.id}>
-                  <TableCell className="text-muted-foreground">{new Date(r.created_at).toLocaleDateString('en-US')}</TableCell>
-                  <TableCell className="text-right tabular-nums"><Badge variant="lost">${Number(r.amount).toLocaleString('en-US')}</Badge></TableCell>
+                  <TableCell className="text-muted-foreground"><Numeric>{new Date(r.created_at).toLocaleDateString('en-US')}</Numeric></TableCell>
+                  <TableCell className="text-right"><Badge variant="lost"><Money value={r.amount} /></Badge></TableCell>
                   <TableCell>{r.reason}</TableCell>
                   <TableCell className="text-right"><Link href={`/app/commissions/${r.commission_id}`} className="text-primary hover:underline">Open</Link></TableCell>
                 </TableRow>

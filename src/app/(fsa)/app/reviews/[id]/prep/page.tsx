@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { load } from '@/lib/data/query'
+import { Numeric } from '@/components/ui/typography'
+import { SecuritiesChip } from '@/components/ui/securities'
 
 export const dynamic = 'force-dynamic'
 
@@ -55,7 +57,7 @@ export default async function ReviewPrepPage({ params }: { params: { id: string 
               <span>{p.policy_number ?? 'Policy'} · <span className="capitalize text-muted-foreground">{p.status}</span></span>
               <span className="flex items-center gap-2">
                 {p.is_with_us ? <Badge variant="active">with us</Badge> : <Badge variant="outline">competitor</Badge>}
-                {p.is_security ? <Badge variant="blocked">securities</Badge> : null}
+                {p.is_security ? <SecuritiesChip /> : null}
               </span>
             </div>
           ))}
@@ -86,7 +88,7 @@ export default async function ReviewPrepPage({ params }: { params: { id: string 
             {conversionPolicies.length === 0 ? <p className="text-muted-foreground">No policies with a configured conversion window.</p> : conversionPolicies.map((p) => (
               <div key={p.id} className="flex justify-between">
                 <span>{p.policy_number ?? 'Policy'}</span>
-                <span className="text-muted-foreground">deadline {p.conversion_deadline}</span>
+                <span className="text-muted-foreground">deadline <Numeric>{p.conversion_deadline}</Numeric></span>
               </div>
             ))}
             <p className="pt-1 text-xs text-muted-foreground">Window is a config default — verify against the FNWL contract.</p>
@@ -100,7 +102,7 @@ export default async function ReviewPrepPage({ params }: { params: { id: string 
           {priorReviews.ok && priorReviews.data.length > 0 ? priorReviews.data.map((p) => (
             <Link key={p.id} href={`/app/reviews/${p.id}`} className="flex justify-between border-b py-1 last:border-0 hover:text-primary">
               <span className="capitalize">{p.type.replace(/_/g, ' ')} · {p.stage.replace(/_/g, ' ')}</span>
-              <span className="text-muted-foreground">{p.scheduled_at ? new Date(p.scheduled_at).toLocaleDateString('en-US') : '—'}</span>
+              <span className="text-muted-foreground"><Numeric>{p.scheduled_at ? new Date(p.scheduled_at).toLocaleDateString('en-US') : '—'}</Numeric></span>
             </Link>
           )) : <p className="text-muted-foreground">No prior reviews.</p>}
         </CardContent>

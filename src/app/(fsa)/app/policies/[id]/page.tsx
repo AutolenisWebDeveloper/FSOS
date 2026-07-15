@@ -1,7 +1,10 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import type { ReactNode } from 'react'
 import { DetailShell, ErrorState, StatusBadge } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
+import { Numeric, Money } from '@/components/ui/typography'
+import { SecuritiesChip, SecuritiesBanner } from '@/components/ui/securities'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { load } from '@/lib/data/query'
 
@@ -50,7 +53,7 @@ export default async function PolicyDetailPage({ params }: { params: { id: strin
       status={
         <span className="flex items-center gap-2">
           <StatusBadge status={p.status === 'active' ? 'won' : p.status === 'lapsed' || p.status === 'cancelled' ? 'lost' : 'active'} label={p.status} />
-          {p.is_security ? <Badge variant="blocked">securities</Badge> : null}
+          {p.is_security ? <SecuritiesChip /> : null}
           {p.archived_at ? <Badge variant="draft">archived</Badge> : null}
         </span>
       }
@@ -66,8 +69,11 @@ export default async function PolicyDetailPage({ params }: { params: { id: strin
       }
     >
       {p.is_security ? (
-        <div className="rounded-md border border-status-blocked/40 bg-status-blocked/10 p-3 text-sm text-status-blocked">
-          Securities record — managed in the FFS-supervised system; FSOS holds a reference only ({p.ffs_case_ref ?? 'no ref set'}). No automated send is available on this record.
+        <div className="space-y-1.5">
+          <SecuritiesBanner />
+          {p.ffs_case_ref ? (
+            <p className="text-xs text-status-security">Reference: <Numeric>{p.ffs_case_ref}</Numeric></p>
+          ) : null}
         </div>
       ) : null}
 
@@ -77,8 +83,8 @@ export default async function PolicyDetailPage({ params }: { params: { id: strin
           <CardContent className="space-y-2 text-sm">
             <Row label="Carrier" value={carrier.ok ? carrier.data?.name ?? '—' : '—'} />
             <Row label="Product" value={product.ok && product.data ? `${product.data.family}${product.data.subtype ? ` · ${product.data.subtype}` : ''}` : '—'} />
-            <Row label="Premium" value={p.premium != null ? `$${Number(p.premium).toLocaleString('en-US')}` : '—'} />
-            <Row label="Effective" value={fmt(p.effective_date)} />
+            <Row label="Premium" value={<Money value={p.premium} />} />
+            <Row label="Effective" value={<Numeric>{fmt(p.effective_date)}</Numeric>} />
           </CardContent>
         </Card>
         <Card>
@@ -86,11 +92,11 @@ export default async function PolicyDetailPage({ params }: { params: { id: strin
           <CardContent className="space-y-2 text-sm">
             {p.is_with_us ? (
               <>
-                <Row label="Renewal date" value={fmt(p.renewal_date)} />
-                <Row label="Conversion deadline" value={fmt(p.conversion_deadline)} />
+                <Row label="Renewal date" value={<Numeric>{fmt(p.renewal_date)}</Numeric>} />
+                <Row label="Conversion deadline" value={<Numeric>{fmt(p.conversion_deadline)}</Numeric>} />
               </>
             ) : (
-              <Row label="Competitor X-date" value={fmt(p.x_date)} />
+              <Row label="Competitor X-date" value={<Numeric>{fmt(p.x_date)}</Numeric>} />
             )}
             <Row label="In force" value={p.status === 'active' ? 'Yes' : 'No'} />
           </CardContent>
@@ -103,7 +109,7 @@ export default async function PolicyDetailPage({ params }: { params: { id: strin
 function fmt(s: string | null) {
   return s ? new Date(s).toLocaleDateString('en-US') : '—'
 }
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex justify-between gap-3">
       <span className="text-muted-foreground">{label}</span>

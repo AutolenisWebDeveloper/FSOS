@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { load } from '@/lib/data/query'
 import { ReviewStageControl } from '@/components/app/ReviewStageControl'
+import { SecuritiesChip } from '@/components/ui/securities'
 
 export const dynamic = 'force-dynamic'
 
@@ -52,7 +53,7 @@ export default async function ReviewDetailPage({ params }: { params: { id: strin
         <span className="flex items-center gap-2">
           <StatusBadge status={STAGE_STATUS[r.stage] ?? 'draft'} label={r.stage.replace(/_/g, ' ')} />
           {r.replacement_flag ? <Badge variant="blocked">replacement flagged</Badge> : null}
-          {r.securities_routed ? <Badge variant="blocked">securities → FFS</Badge> : null}
+          {r.securities_routed ? <SecuritiesChip /> : null}
         </span>
       }
       actions={

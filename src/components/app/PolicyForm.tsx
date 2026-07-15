@@ -107,8 +107,8 @@ export function PolicyForm({
         <input type="checkbox" name="is_with_us" defaultChecked onChange={(e) => setIsWithUs(e.target.checked)} /> Own book (uncheck for a competitor X-date policy)
       </label>
       {selectedProduct?.is_security ? (
-        <p className="rounded-md border border-status-blocked/40 bg-status-blocked/10 p-2 text-xs text-status-blocked">
-          Securities product: FSOS stores a reference pointer only and never automates outreach on this record.
+        <p className="rounded-md border border-status-security/40 bg-status-security/10 p-2 text-xs text-status-security">
+          FFS-managed securities product: FSOS stores a reference pointer only and never automates outreach on this record.
         </p>
       ) : null}
       <div className="flex items-center justify-end gap-2 border-t pt-4">

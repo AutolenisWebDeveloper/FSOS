@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { load } from '@/lib/data/query'
 import { EscalationActions } from '@/components/app/EscalationActions'
+import { Numeric } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -75,7 +76,7 @@ export default async function EscalationDetailPage({ params }: { params: { id: s
         ) : (
           <li className="text-muted-foreground">No linked record.</li>
         )}
-        {e.run_id ? <li className="text-muted-foreground">Agent run {e.run_id.slice(0, 8)}</li> : null}
+        {e.run_id ? <li className="text-muted-foreground">Agent run <Numeric className="font-mono text-xs">{e.run_id.slice(0, 8)}</Numeric></li> : null}
       </ul>
     </div>
   )
@@ -96,11 +97,11 @@ export default async function EscalationDetailPage({ params }: { params: { id: s
       {securities ? (
         <div
           role="alert"
-          className="flex items-start gap-3 rounded-lg border border-status-blocked/40 bg-status-blocked/10 p-4"
+          className="flex items-start gap-3 rounded-lg border border-status-security/40 bg-status-security/10 p-4"
         >
-          <ShieldAlert className="mt-0.5 h-5 w-5 text-status-blocked" />
+          <ShieldAlert className="mt-0.5 h-5 w-5 text-status-security" />
           <div className="space-y-1">
-            <p className="font-medium text-status-blocked">Securities item — route to FFS. Cannot be sent from FSOS.</p>
+            <p className="font-medium text-status-security">FFS-managed securities item — route to FFS. Cannot be sent from FSOS.</p>
             <p className="text-sm text-muted-foreground">
               This escalation touches securities activity. FSOS is not the system of record and has no send path here —
               handle it through the FFS-supervised channel.
@@ -122,7 +123,7 @@ export default async function EscalationDetailPage({ params }: { params: { id: s
               <span className="text-right font-medium">
                 {targetHref ? (
                   <Link href={targetHref} className="text-primary hover:underline">
-                    {e.target_type} · {e.target_id?.slice(0, 8)}
+                    {e.target_type} · <Numeric className="font-mono text-xs">{e.target_id?.slice(0, 8)}</Numeric>
                   </Link>
                 ) : (
                   e.target_type ?? '—'

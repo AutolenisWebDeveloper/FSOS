@@ -1,4 +1,5 @@
 import { ReportShell, ErrorState, EmptyState } from '@/components/archetypes'
+import { Money } from '@/components/ui/typography'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import Link from 'next/link'
 import { load } from '@/lib/data/query'
@@ -24,9 +25,9 @@ export default async function PerformancePage() {
                 <TableRow key={i}>
                   <TableCell>{r.referring_agency_id ? <Link href={`/app/agencies/${r.referring_agency_id}`} className="text-primary hover:underline">{r.agency_name ?? 'Agency'}</Link> : 'Direct'}</TableCell>
                   <TableCell className="capitalize text-muted-foreground">{r.product_family ?? '—'}</TableCell>
-                  <TableCell className="text-right tabular-nums">${Number(r.total_commission).toLocaleString('en-US')}</TableCell>
-                  <TableCell className="text-right tabular-nums">${Number(r.fsa_amount).toLocaleString('en-US')}</TableCell>
-                  <TableCell className="text-right tabular-nums">${Number(r.received_amount).toLocaleString('en-US')}</TableCell>
+                  <TableCell className="text-right"><Money value={Number(r.total_commission)} /></TableCell>
+                  <TableCell className="text-right"><Money value={Number(r.fsa_amount)} /></TableCell>
+                  <TableCell className="text-right"><Money value={Number(r.received_amount)} /></TableCell>
                 </TableRow>
               ))}
             </TableBody>

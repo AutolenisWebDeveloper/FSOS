@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { ReportShell, ErrorState, EmptyState, AssumptionBadge } from '@/components/archetypes'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Money } from '@/components/ui/typography'
 import { getServerSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/supabase/client'
 import { agencyIdsFor, compDisclosureEnabled } from '@/lib/portal/scope'
@@ -32,7 +33,7 @@ export default async function PartnerCommissionsPage() {
             <TableHeader><TableRow><TableHead>Family</TableHead><TableHead className="text-right">Your attributed share</TableHead></TableRow></TableHeader>
             <TableBody>
               {rows.map((r, i) => (
-                <TableRow key={i}><TableCell className="capitalize">{r.product_family ?? '—'}</TableCell><TableCell className="text-right tabular-nums">${Number(r.agency_amount).toLocaleString('en-US')}</TableCell></TableRow>
+                <TableRow key={i}><TableCell className="capitalize">{r.product_family ?? '—'}</TableCell><TableCell className="text-right tabular-nums"><Money value={Number(r.agency_amount)} /></TableCell></TableRow>
               ))}
             </TableBody>
           </Table>

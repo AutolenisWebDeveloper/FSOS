@@ -1,7 +1,8 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { DetailShell, ErrorState, AssumptionBadge, StatusBadge } from '@/components/archetypes'
-import { Badge } from '@/components/ui/badge'
+import { SecuritiesChip, SecuritiesBanner } from '@/components/ui/securities'
+import { Money, Numeric } from '@/components/ui/typography'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { load } from '@/lib/data/query'
 import { CommissionReconcileControls } from '@/components/app/CommissionControls'
@@ -40,14 +41,13 @@ export default async function CommissionDetailPage({ params }: { params: { id: s
     load<{ id: string; amount: number; kind: string; reason: string }[]>((db) => db.from('commission_adjustments').select('id, amount, kind, reason').eq('commission_id', params.id).order('created_at', { ascending: false }), []),
   ])
   const agencyName = agency.ok ? agency.data?.agency_name ?? null : null
-  const fmt = (n: number | null) => (n == null ? '—' : `$${Number(n).toLocaleString('en-US')}`)
 
   return (
     <DetailShell
       title={`Commission — ${agencyName ?? 'Direct'}`}
       description={`${c.product_family ?? 'unclassified'}${c.is_trail ? ' · trail' : ''}`}
       breadcrumb={[{ label: 'FSA', href: '/app' }, { label: 'Commissions', href: '/app/commissions' }, { label: agencyName ?? 'Record' }]}
-      status={<span className="flex items-center gap-2"><StatusBadge status={c.reconciliation_status === 'matched' ? 'won' : c.reconciliation_status === 'discrepancy' ? 'lost' : 'pending'} label={c.reconciliation_status} />{c.is_security ? <Badge variant="blocked">securities</Badge> : null}<AssumptionBadge /></span>}
+      status={<span className="flex items-center gap-2"><StatusBadge status={c.reconciliation_status === 'matched' ? 'won' : c.reconciliation_status === 'discrepancy' ? 'lost' : 'pending'} label={c.reconciliation_status} />{c.is_security ? <SecuritiesChip /> : null}<AssumptionBadge /></span>}
       rail={
         <div className="space-y-3 text-sm">
           <p className="font-medium">Related</p>
@@ -60,8 +60,12 @@ export default async function CommissionDetailPage({ params }: { params: { id: s
       }
     >
       {c.is_security ? (
-        <div className="rounded-md border border-status-blocked/40 bg-status-blocked/10 p-3 text-sm text-status-blocked">
-          Securities commission — tracked for FSA production/attribution. The transaction record lives in FFS. FSOS stores only a reference ({c.ffs_case_ref ?? 'no ref'}); no order data.
+        <div className="space-y-1.5">
+          <SecuritiesBanner />
+          <p className="pl-1 text-xs text-status-security">
+            Tracked for FSA production/attribution only. FFS case ref:{' '}
+            <Numeric>{c.ffs_case_ref ?? 'no ref'}</Numeric> — the transaction record lives in FFS; no order data.
+          </p>
         </div>
       ) : null}
 
@@ -69,10 +73,10 @@ export default async function CommissionDetailPage({ params }: { params: { id: s
         <Card>
           <CardHeader><CardTitle className="text-base">Amounts</CardTitle></CardHeader>
           <CardContent className="space-y-1 text-sm">
-            <div className="flex justify-between"><span className="text-muted-foreground">Total</span><span className="tabular-nums">{fmt(c.total_commission)}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">FSA ({c.fsa_split_pct ?? '—'}%)</span><span className="tabular-nums">{fmt(c.fsa_amount)}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Agency ({c.agency_split_pct ?? '—'}%)</span><span className="tabular-nums">{fmt(c.agency_amount)}</span></div>
-            <div className="flex justify-between border-t pt-1"><span className="text-muted-foreground">Received</span><span className="tabular-nums">{fmt(c.received_amount)}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Total</span><Money value={c.total_commission} /></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">FSA (<Numeric>{c.fsa_split_pct ?? '—'}</Numeric>%)</span><Money value={c.fsa_amount} /></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Agency (<Numeric>{c.agency_split_pct ?? '—'}</Numeric>%)</span><Money value={c.agency_amount} /></div>
+            <div className="flex justify-between border-t pt-1"><span className="text-muted-foreground">Received</span><Money value={c.received_amount} /></div>
             <p className="pt-1 text-xs text-muted-foreground">License basis: {c.license_basis ?? '—'}. Splits are config defaults — verify.</p>
           </CardContent>
         </Card>
@@ -86,13 +90,13 @@ export default async function CommissionDetailPage({ params }: { params: { id: s
         <Card>
           <CardHeader><CardTitle className="text-base">Receipts</CardTitle></CardHeader>
           <CardContent className="space-y-1 text-sm">
-            {receipts.ok && receipts.data.length > 0 ? receipts.data.map((r) => (<div key={r.id} className="flex justify-between border-b py-1 last:border-0"><span>{r.period ?? r.paid_on ?? '—'}</span><span className="tabular-nums">${Number(r.amount).toLocaleString('en-US')}</span></div>)) : <p className="text-muted-foreground">No receipts recorded.</p>}
+            {receipts.ok && receipts.data.length > 0 ? receipts.data.map((r) => (<div key={r.id} className="flex justify-between border-b py-1 last:border-0"><Numeric>{r.period ?? r.paid_on ?? '—'}</Numeric><Money value={Number(r.amount)} /></div>)) : <p className="text-muted-foreground">No receipts recorded.</p>}
           </CardContent>
         </Card>
         <Card>
           <CardHeader><CardTitle className="text-base">Adjustments</CardTitle></CardHeader>
           <CardContent className="space-y-1 text-sm">
-            {adjustments.ok && adjustments.data.length > 0 ? adjustments.data.map((a) => (<div key={a.id} className="border-b py-1 last:border-0"><div className="flex justify-between"><span className="capitalize">{a.kind}</span><span className="tabular-nums">${Number(a.amount).toLocaleString('en-US')}</span></div><p className="text-xs text-muted-foreground">{a.reason}</p></div>)) : <p className="text-muted-foreground">No adjustments.</p>}
+            {adjustments.ok && adjustments.data.length > 0 ? adjustments.data.map((a) => (<div key={a.id} className="border-b py-1 last:border-0"><div className="flex justify-between"><span className="capitalize">{a.kind}</span><Money value={Number(a.amount)} /></div><p className="text-xs text-muted-foreground">{a.reason}</p></div>)) : <p className="text-muted-foreground">No adjustments.</p>}
           </CardContent>
         </Card>
       </div>

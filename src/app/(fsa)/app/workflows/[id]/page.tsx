@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
 import { WorkflowControls } from '@/components/app/WorkflowBuilder'
+import { Numeric } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -172,8 +173,8 @@ export default async function WorkflowDetailPage({ params }: { params: { id: str
                   <TableRow key={r.id}>
                     <TableCell><StatusBadge status={runStatus(r.status)} label={r.status.replace(/_/g, ' ')} /></TableCell>
                     <TableCell>{r.attempts ?? 0}</TableCell>
-                    <TableCell className="text-muted-foreground">{r.started_at ? new Date(r.started_at).toLocaleString('en-US') : '—'}</TableCell>
-                    <TableCell className="text-muted-foreground">{r.finished_at ? new Date(r.finished_at).toLocaleString('en-US') : '—'}</TableCell>
+                    <TableCell className="text-muted-foreground"><Numeric>{r.started_at ? new Date(r.started_at).toLocaleString('en-US') : '—'}</Numeric></TableCell>
+                    <TableCell className="text-muted-foreground"><Numeric>{r.finished_at ? new Date(r.finished_at).toLocaleString('en-US') : '—'}</Numeric></TableCell>
                     <TableCell className="max-w-[16rem] truncate text-muted-foreground" title={r.last_error ?? undefined}>{r.last_error ?? '—'}</TableCell>
                   </TableRow>
                 ))}

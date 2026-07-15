@@ -1,6 +1,7 @@
 import { ReportShell, ErrorState, EmptyState, AssumptionBadge } from '@/components/archetypes'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
+import { Money } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,9 +33,9 @@ export default async function StatementsPage() {
               {Array.from(byPeriod.entries()).map(([p, v]) => (
                 <TableRow key={p}>
                   <TableCell className="font-medium">{p}</TableCell>
-                  <TableCell className="text-right tabular-nums">${Math.round(v.total).toLocaleString('en-US')}</TableCell>
-                  <TableCell className="text-right tabular-nums">${Math.round(v.fsa).toLocaleString('en-US')}</TableCell>
-                  <TableCell className="text-right tabular-nums">${Math.round(v.received).toLocaleString('en-US')}</TableCell>
+                  <TableCell className="text-right"><Money value={v.total} /></TableCell>
+                  <TableCell className="text-right"><Money value={v.fsa} /></TableCell>
+                  <TableCell className="text-right"><Money value={v.received} /></TableCell>
                 </TableRow>
               ))}
             </TableBody>

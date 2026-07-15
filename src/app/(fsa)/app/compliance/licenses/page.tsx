@@ -2,6 +2,7 @@ import { ListShell, EmptyState, ErrorState, StatusBadge, type StatusKey } from '
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { load } from '@/lib/data/query'
+import { Numeric } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -57,7 +58,7 @@ export default async function LicensesPage() {
                   <TableCell className="text-muted-foreground">{l.state ?? '—'}</TableCell>
                   <TableCell><StatusBadge status={STATUS_MAP[l.status] ?? 'active'} label={l.status} /></TableCell>
                   <TableCell className="text-muted-foreground">
-                    {l.expires_on ? new Date(l.expires_on).toLocaleDateString('en-US') : '—'}
+                    {l.expires_on ? <Numeric>{new Date(l.expires_on).toLocaleDateString('en-US')}</Numeric> : '—'}
                     {expiringSoon ? <Badge variant="pending" className="ml-2">expires in {days}d</Badge> : null}
                   </TableCell>
                 </TableRow>

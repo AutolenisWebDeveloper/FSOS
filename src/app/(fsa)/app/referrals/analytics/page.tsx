@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { BarChart3 } from 'lucide-react'
 import { ReportShell, StatTile, ErrorState, EmptyState } from '@/components/archetypes'
+import { Numeric } from '@/components/ui/typography'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
@@ -91,9 +92,9 @@ export default async function ReferralAnalyticsPage() {
               return (
                 <TableRow key={key}>
                   <TableCell className="font-medium capitalize">{key.replace(/_/g, ' ')}</TableCell>
-                  <TableCell className="text-right tabular-nums">{agg.referrals}</TableCell>
-                  <TableCell className="text-right tabular-nums">{agg.converted}</TableCell>
-                  <TableCell className="text-right tabular-nums">{pct(agg.converted, agg.referrals)}</TableCell>
+                  <TableCell className="text-right"><Numeric>{agg.referrals}</Numeric></TableCell>
+                  <TableCell className="text-right"><Numeric>{agg.converted}</Numeric></TableCell>
+                  <TableCell className="text-right"><Numeric>{pct(agg.converted, agg.referrals)}</Numeric></TableCell>
                 </TableRow>
               )
             })}

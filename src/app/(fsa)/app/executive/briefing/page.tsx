@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { DashboardShell, StatTile } from '@/components/archetypes'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Numeric } from '@/components/ui/typography'
 import { load } from '@/lib/data/query'
 import { EmailBriefingButton } from '@/components/app/EmailBriefingButton'
 
@@ -36,7 +37,7 @@ export default async function BriefingPage() {
             {priorities.filter((p) => p.count > 0).length === 0 ? (
               <p className="text-muted-foreground">Nothing urgent. Review <Link href="/app/executive/kpis" className="text-primary hover:underline">KPIs</Link> and <Link href="/app/cross-sell/agency-penetration" className="text-primary hover:underline">agency penetration</Link>.</p>
             ) : priorities.filter((p) => p.count > 0).map((p) => (
-              <p key={p.label}>• <Link href={p.href} className="text-primary hover:underline">{p.count} {p.label.toLowerCase()}</Link> — {p.note}</p>
+              <p key={p.label}>• <Link href={p.href} className="text-primary hover:underline"><Numeric>{p.count}</Numeric> {p.label.toLowerCase()}</Link> — {p.note}</p>
             ))}
           </CardContent>
         </Card>

@@ -1,4 +1,5 @@
 import { ReportShell, ErrorState, EmptyState } from '@/components/archetypes'
+import { Numeric, Money } from '@/components/ui/typography'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
 
@@ -23,9 +24,9 @@ export default async function ProductionPage() {
                 <TableRow key={i}>
                   <TableCell className="capitalize">{String(r.engagement).replace(/_/g, ' ')}</TableCell>
                   <TableCell className="capitalize text-muted-foreground">{String(r.stage).replace(/_/g, ' ')}</TableCell>
-                  <TableCell className="text-right tabular-nums">{Number(r.opp_count).toLocaleString('en-US')}</TableCell>
-                  <TableCell className="text-right tabular-nums">${Number(r.total_premium).toLocaleString('en-US')}</TableCell>
-                  <TableCell className="text-right tabular-nums">${Number(r.expected_commission).toLocaleString('en-US')}</TableCell>
+                  <TableCell className="text-right"><Numeric>{Number(r.opp_count).toLocaleString('en-US')}</Numeric></TableCell>
+                  <TableCell className="text-right"><Money value={Number(r.total_premium)} /></TableCell>
+                  <TableCell className="text-right"><Money value={Number(r.expected_commission)} /></TableCell>
                 </TableRow>
               ))}
             </TableBody>

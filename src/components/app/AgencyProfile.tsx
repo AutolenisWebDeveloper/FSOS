@@ -1,7 +1,9 @@
+import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { DetailShell, ErrorState, EmptyState, StatusBadge } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
+import { Money, Numeric } from '@/components/ui/typography'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -144,10 +146,6 @@ export async function AgencyProfile({ id, tab }: { id: string; tab: AgencyTab })
   )
 }
 
-function money(n: number) {
-  return `$${Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
-}
-
 async function OverviewTab({ id, agency }: { id: string; agency: Agency }) {
   const activation = await load<{ stage: string }[]>(
     (db) => db.from('agency_activation').select('stage').eq('agency_id', id).order('created_at', { ascending: false }).limit(1),
@@ -169,13 +167,13 @@ async function OverviewTab({ id, agency }: { id: string; agency: Agency }) {
   return (
     <div className="mt-4 space-y-4">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="YTD placed premium" value={money(agency.ytd_placed_premium)} />
-        <Stat label="YTD referrals" value={String(agency.ytd_referrals)} />
-        <Stat label="P&C book policies" value={String(agency.pc_book_policies)} />
-        <Stat label="Life policies in force" value={String(agency.life_policies_in_force)} />
+        <Stat label="YTD placed premium" value={<Money value={agency.ytd_placed_premium} />} />
+        <Stat label="YTD referrals" value={<Numeric>{agency.ytd_referrals}</Numeric>} />
+        <Stat label="P&C book policies" value={<Numeric>{agency.pc_book_policies}</Numeric>} />
+        <Stat label="Life policies in force" value={<Numeric>{agency.life_policies_in_force}</Numeric>} />
         <Stat label="Activation stage" value={stage} />
-        <Stat label="Check-in interval" value={`${agency.checkin_interval_days} days`} />
-        <Stat label="Last contact" value={agency.last_contact_at ? new Date(agency.last_contact_at).toLocaleDateString('en-US') : 'Never'} />
+        <Stat label="Check-in interval" value={<><Numeric>{agency.checkin_interval_days}</Numeric> days</>} />
+        <Stat label="Last contact" value={agency.last_contact_at ? <Numeric>{new Date(agency.last_contact_at).toLocaleDateString('en-US')}</Numeric> : 'Never'} />
       </div>
       <Card>
         <CardHeader>
@@ -190,7 +188,7 @@ async function OverviewTab({ id, agency }: { id: string; agency: Agency }) {
             <ol className="space-y-2">
               {activities.data.map((a) => (
                 <li key={a.id} className="flex gap-2 text-sm">
-                  <span className="text-muted-foreground">{new Date(a.created_at).toLocaleDateString('en-US')}</span>
+                  <Numeric className="text-muted-foreground">{new Date(a.created_at).toLocaleDateString('en-US')}</Numeric>
                   <span className="font-medium capitalize">{a.kind}</span>
                   <span className="text-muted-foreground">— {a.note}</span>
                 </li>
@@ -252,7 +250,7 @@ async function ReferralsTab({ id }: { id: string }) {
               <TableCell>
                 <Badge variant={r.status === 'converted' ? 'won' : r.status === 'declined' ? 'lost' : 'active'}>{r.status}</Badge>
               </TableCell>
-              <TableCell className="text-muted-foreground">{new Date(r.received_at).toLocaleDateString('en-US')}</TableCell>
+              <TableCell className="text-muted-foreground"><Numeric>{new Date(r.received_at).toLocaleDateString('en-US')}</Numeric></TableCell>
             </TableRow>
           ))}
         </TableBody>
@@ -261,7 +259,7 @@ async function ReferralsTab({ id }: { id: string }) {
   )
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="rounded-lg border p-3">
       <p className="text-xs text-muted-foreground">{label}</p>
@@ -282,9 +280,9 @@ async function PenetrationTab({ id }: { id: string }) {
   if (!row) return <div className="mt-4"><EmptyState title="No book data yet" description="P&C book and life-in-force counts populate penetration analytics." /></div>
   return (
     <div className="mt-4 grid gap-4 sm:grid-cols-3">
-      <Stat label="P&C book policies" value={String(row.pc_book_policies)} />
-      <Stat label="Life policies in force" value={String(row.life_policies_in_force)} />
-      <Stat label="Life penetration" value={`${row.life_penetration_pct}%`} />
+      <Stat label="P&C book policies" value={<Numeric>{row.pc_book_policies}</Numeric>} />
+      <Stat label="Life policies in force" value={<Numeric>{row.life_policies_in_force}</Numeric>} />
+      <Stat label="Life penetration" value={<Numeric>{row.life_penetration_pct}%</Numeric>} />
       <div className="sm:col-span-3">
         <Link href="/app/cross-sell/agency-penetration" className="text-sm text-primary hover:underline">See all agencies by penetration →</Link>
       </div>
@@ -306,10 +304,10 @@ async function HealthTab({ id }: { id: string }) {
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="rounded-lg border p-3">
           <p className="text-xs text-muted-foreground">Health score</p>
-          <p className="mt-1 flex items-center gap-2 text-lg font-semibold">{row.health_score}<Badge variant={band}>{band === 'won' ? 'healthy' : band === 'pending' ? 'watch' : 'at risk'}</Badge></p>
+          <p className="mt-1 flex items-center gap-2 text-lg font-semibold"><Numeric>{row.health_score}</Numeric><Badge variant={band}>{band === 'won' ? 'healthy' : band === 'pending' ? 'watch' : 'at risk'}</Badge></p>
         </div>
-        <Stat label="Days since contact" value={String(row.days_since_contact)} />
-        <Stat label="Life penetration" value={`${row.life_penetration_pct}%`} />
+        <Stat label="Days since contact" value={<Numeric>{row.days_since_contact}</Numeric>} />
+        <Stat label="Life penetration" value={<Numeric>{row.life_penetration_pct}%</Numeric>} />
       </div>
       <p className="text-xs text-muted-foreground">Health thresholds are operational heuristics — config defaults, not Farmers-published figures.</p>
     </div>
@@ -329,7 +327,7 @@ async function EngagementTab({ id }: { id: string }) {
       <ol className="space-y-2">
         {res.data.map((a) => (
           <li key={a.id} className="flex gap-2 rounded-lg border p-2 text-sm">
-            <span className="text-muted-foreground">{new Date(a.created_at).toLocaleDateString('en-US')}</span>
+            <Numeric className="text-muted-foreground">{new Date(a.created_at).toLocaleDateString('en-US')}</Numeric>
             <span className="font-medium capitalize">{a.kind}</span>
             <span className="text-muted-foreground">— {a.note}</span>
           </li>

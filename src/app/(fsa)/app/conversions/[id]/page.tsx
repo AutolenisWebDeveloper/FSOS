@@ -5,6 +5,8 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { load } from '@/lib/data/query'
 import { OutreachActions } from '@/components/app/OutreachActions'
+import { Numeric } from '@/components/ui/typography'
+import { SecuritiesChip } from '@/components/ui/securities'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,7 +39,7 @@ export default async function ConversionDetailPage({ params }: { params: { id: s
       title={`Conversion — ${householdName ?? 'household'}`}
       description="Educational conversion review invitation. No product steering."
       breadcrumb={[{ label: 'FSA', href: '/app' }, { label: 'Term Conversion', href: '/app/conversions' }, { label: householdName ?? 'Policy' }]}
-      status={<span className="flex items-center gap-2">{p.is_security ? <Badge variant="blocked">securities · excluded</Badge> : <Badge variant="active">eligible</Badge>}<AssumptionBadge /></span>}
+      status={<span className="flex items-center gap-2">{p.is_security ? <SecuritiesChip /> : <Badge variant="active">eligible</Badge>}<AssumptionBadge /></span>}
       rail={
         <div className="space-y-3 text-sm">
           <p className="font-medium">Related</p>
@@ -60,9 +62,9 @@ export default async function ConversionDetailPage({ params }: { params: { id: s
         <Card>
           <CardHeader><CardTitle className="text-base">Policy</CardTitle></CardHeader>
           <CardContent className="space-y-1 text-sm">
-            <div className="flex justify-between"><span className="text-muted-foreground">Number</span><span>{p.policy_number ?? '—'}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Number</span><Numeric>{p.policy_number ?? '—'}</Numeric></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Status</span><span className="capitalize">{p.status}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Conversion deadline</span><span>{p.conversion_deadline ?? '—'}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Conversion deadline</span><Numeric>{p.conversion_deadline ?? '—'}</Numeric></div>
             <p className="pt-2 text-xs text-muted-foreground">Window is a config default — verify against the FNWL contract.</p>
           </CardContent>
         </Card>
@@ -71,7 +73,7 @@ export default async function ConversionDetailPage({ params }: { params: { id: s
           <CardContent className="space-y-1 text-sm">
             {activities.ok && activities.data.length > 0 ? activities.data.map((a) => (
               <div key={a.id} className="border-b py-1 last:border-0">
-                <span className="text-xs text-muted-foreground">{new Date(a.created_at).toLocaleString('en-US')}</span>
+                <Numeric className="text-xs text-muted-foreground">{new Date(a.created_at).toLocaleString('en-US')}</Numeric>
                 <p className="capitalize">{(a.kind ?? '').replace(/_/g, ' ')} — {a.note}</p>
               </div>
             )) : <p className="text-muted-foreground">No outreach logged yet.</p>}

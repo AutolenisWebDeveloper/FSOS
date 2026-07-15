@@ -1,5 +1,6 @@
 import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
+import { Numeric } from '@/components/ui/typography'
 import { getServerSession } from '@/lib/auth/session'
 import { getDb } from '@/lib/supabase/client'
 import { householdIdFor } from '@/lib/portal/scope'
@@ -20,7 +21,7 @@ export default async function ClientReviewsPage() {
   return (
     <ListShell title="Reviews" description="Your review schedule. The outcome record and any securities detail are never shown here." breadcrumb={[{ label: 'Home', href: '/client' }, { label: 'Reviews' }]}>
       {err ? <ErrorState description={err} /> : rows.length === 0 ? <EmptyState title="No reviews" description="Your review schedule appears here." /> : (
-        <ul className="space-y-2">{rows.map((r) => (<li key={r.id} className="flex items-center justify-between rounded-md border p-3 text-sm"><span className="capitalize">{r.type.replace(/_/g, ' ')}{r.scheduled_at ? ` · ${new Date(r.scheduled_at).toLocaleDateString('en-US')}` : ''}</span><Badge variant="outline">{r.stage.replace(/_/g, ' ')}</Badge></li>))}</ul>
+        <ul className="space-y-2">{rows.map((r) => (<li key={r.id} className="flex items-center justify-between rounded-md border p-3 text-sm"><span className="capitalize">{r.type.replace(/_/g, ' ')}{r.scheduled_at ? <> · <Numeric>{new Date(r.scheduled_at).toLocaleDateString('en-US')}</Numeric></> : ''}</span><Badge variant="outline">{r.stage.replace(/_/g, ' ')}</Badge></li>))}</ul>
       )}
     </ListShell>
   )

@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Numeric } from '@/components/ui/typography'
 import { load } from '@/lib/data/query'
 
 export const dynamic = 'force-dynamic'
@@ -57,7 +58,7 @@ export default async function DuplicateHouseholdsPage() {
                       <div className="flex flex-wrap gap-2">
                         {d.household_ids.map((id) => (
                           <Link key={id} href={`/app/households/${id}`} className="text-sm text-primary underline underline-offset-2">
-                            {id.slice(0, 8)}
+                            <Numeric>{id.slice(0, 8)}</Numeric>
                           </Link>
                         ))}
                       </div>

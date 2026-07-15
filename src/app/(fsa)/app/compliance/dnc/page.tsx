@@ -2,6 +2,7 @@ import { ListShell, EmptyState, ErrorState } from '@/components/archetypes'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { load } from '@/lib/data/query'
+import { Numeric } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -54,7 +55,7 @@ export default async function DncPage() {
                   {d.scope === 'external' ? <Badge variant="blocked">external</Badge> : <Badge variant="secondary" className="capitalize">{d.scope}</Badge>}
                 </TableCell>
                 <TableCell className="text-muted-foreground">{d.reason ?? '—'}</TableCell>
-                <TableCell className="text-muted-foreground">{new Date(d.created_at).toLocaleDateString('en-US')}</TableCell>
+                <TableCell className="text-muted-foreground"><Numeric>{new Date(d.created_at).toLocaleDateString('en-US')}</Numeric></TableCell>
               </TableRow>
             ))}
           </TableBody>

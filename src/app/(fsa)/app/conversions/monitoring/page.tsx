@@ -3,6 +3,7 @@ import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
+import { Numeric } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,7 +31,7 @@ export default async function ConversionMonitoringPage() {
             <TableBody>
               {activities.data.map((a) => (
                 <TableRow key={a.id}>
-                  <TableCell className="text-muted-foreground">{new Date(a.created_at).toLocaleString('en-US')}</TableCell>
+                  <TableCell className="text-muted-foreground"><Numeric>{new Date(a.created_at).toLocaleString('en-US')}</Numeric></TableCell>
                   <TableCell><Badge variant="outline" className="capitalize">{(a.kind ?? '').replace('conversion_', '').replace(/_/g, ' ')}</Badge></TableCell>
                   <TableCell className="max-w-md truncate text-muted-foreground">{a.note}</TableCell>
                   <TableCell className="text-right"><Link href={`/app/conversions/${a.entity_id}`} className="text-primary hover:underline">Open</Link></TableCell>

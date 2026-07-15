@@ -1,7 +1,9 @@
+import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { DetailShell, ErrorState, StatusBadge } from '@/components/archetypes'
-import { Badge } from '@/components/ui/badge'
+import { SecuritiesChip, SecuritiesBanner } from '@/components/ui/securities'
+import { Numeric, Money } from '@/components/ui/typography'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { load } from '@/lib/data/query'
 import { LogActivityButton } from '@/components/app/LogActivityButton'
@@ -54,7 +56,7 @@ export default async function OpportunityDetailPage({ params }: { params: { id: 
       status={
         <span className="flex items-center gap-2">
           <StatusBadge status={o.stage === 'placed_issued' ? 'won' : o.stage === 'lost' ? 'lost' : 'active'} label={o.stage.replace(/_/g, ' ')} />
-          {o.is_security ? <Badge variant="blocked">securities</Badge> : null}
+          {o.is_security ? <SecuritiesChip /> : null}
         </span>
       }
       actions={<LogActivityButton entityType="opportunity" entityId={params.id} />}
@@ -72,8 +74,13 @@ export default async function OpportunityDetailPage({ params }: { params: { id: 
       }
     >
       {o.is_security ? (
-        <div className="rounded-md border border-status-blocked/40 bg-status-blocked/10 p-3 text-sm text-status-blocked">
-          Securities opportunity — suitability &amp; Reg BI happen in FFS. FSOS stores a status pointer only ({o.ffs_case_ref ?? 'no FFS ref set'}); no suitability determination and no automated client contact.
+        <div className="space-y-1.5">
+          <SecuritiesBanner />
+          <p className="pl-1 text-xs text-status-security">
+            FFS case ref:{' '}
+            <Numeric>{o.ffs_case_ref ?? 'no FFS ref set'}</Numeric> — suitability &amp; Reg BI happen in
+            FFS; no automated client contact.
+          </p>
         </div>
       ) : null}
 
@@ -86,7 +93,7 @@ export default async function OpportunityDetailPage({ params }: { params: { id: 
           <ol className="space-y-1 text-sm">
             {history.length === 0 ? <li className="text-muted-foreground">No stage history.</li> : history.map((h, i) => (
               <li key={i} className="flex gap-2">
-                <span className="text-muted-foreground">{new Date(h.at).toLocaleString('en-US')}</span>
+                <Numeric className="text-muted-foreground">{new Date(h.at).toLocaleString('en-US')}</Numeric>
                 <span className="font-medium capitalize">{h.stage.replace(/_/g, ' ')}</span>
                 {h.note ? <span className="text-muted-foreground">— {h.note}</span> : null}
               </li>
@@ -108,9 +115,9 @@ export default async function OpportunityDetailPage({ params }: { params: { id: 
         <Card>
           <CardHeader><CardTitle className="text-base">Value</CardTitle></CardHeader>
           <CardContent className="space-y-2 text-sm">
-            <Row label="Expected premium" value={o.premium != null ? `$${Number(o.premium).toLocaleString('en-US')}` : '—'} />
-            <Row label="Expected AUM" value={o.aum != null ? `$${Number(o.aum).toLocaleString('en-US')}` : '—'} />
-            <Row label="Expected commission" value={o.expected_commission != null ? `$${Number(o.expected_commission).toLocaleString('en-US')}` : '—'} />
+            <Row label="Expected premium" value={<Money value={o.premium} />} />
+            <Row label="Expected AUM" value={<Money value={o.aum} />} />
+            <Row label="Expected commission" value={<Money value={o.expected_commission} />} />
             {o.lost_reason ? <Row label="Lost reason" value={o.lost_reason} /> : null}
           </CardContent>
         </Card>
@@ -119,7 +126,7 @@ export default async function OpportunityDetailPage({ params }: { params: { id: 
   )
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex justify-between gap-3">
       <span className="text-muted-foreground">{label}</span>

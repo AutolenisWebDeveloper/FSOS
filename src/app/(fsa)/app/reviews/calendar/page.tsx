@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { load } from '@/lib/data/query'
+import { Numeric } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -39,7 +40,7 @@ export default async function ReviewCalendarPage() {
         <div className="space-y-4">
           {Array.from(byDate.entries()).map(([date, items]) => (
             <div key={date} className="space-y-2">
-              <p className="text-sm font-medium text-muted-foreground">{date}</p>
+              <Numeric as="p" className="text-sm font-medium text-muted-foreground">{date}</Numeric>
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {items.map((r) => (
                   <Link key={r.id} href={`/app/reviews/${r.id}`}>
@@ -47,7 +48,7 @@ export default async function ReviewCalendarPage() {
                       <CardContent className="flex items-center justify-between p-3 text-sm">
                         <div>
                           <p className="font-medium">{hhMap.get(r.household_id) ?? 'Review'}</p>
-                          <p className="text-xs text-muted-foreground">{r.scheduled_at ? new Date(r.scheduled_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : ''}</p>
+                          <Numeric as="p" className="text-xs text-muted-foreground">{r.scheduled_at ? new Date(r.scheduled_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : ''}</Numeric>
                         </div>
                         <Badge variant="outline" className="capitalize">{r.type.replace(/_/g, ' ')}</Badge>
                       </CardContent>

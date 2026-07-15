@@ -3,6 +3,7 @@ import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
+import { Numeric, Money } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,9 +26,9 @@ export default async function AdjustmentsPage() {
             <TableBody>
               {rows.data.map((r) => (
                 <TableRow key={r.id}>
-                  <TableCell className="text-muted-foreground">{new Date(r.created_at).toLocaleDateString('en-US')}</TableCell>
+                  <TableCell className="text-muted-foreground"><Numeric>{new Date(r.created_at).toLocaleDateString('en-US')}</Numeric></TableCell>
                   <TableCell><Badge variant="outline" className="capitalize">{r.kind}</Badge></TableCell>
-                  <TableCell className="text-right tabular-nums">${Number(r.amount).toLocaleString('en-US')}</TableCell>
+                  <TableCell className="text-right"><Money value={r.amount} /></TableCell>
                   <TableCell>{r.reason}</TableCell>
                   <TableCell className="text-right"><Link href={`/app/commissions/${r.commission_id}`} className="text-primary hover:underline">Open</Link></TableCell>
                 </TableRow>

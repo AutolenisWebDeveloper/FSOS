@@ -88,8 +88,8 @@ export function OpportunityForm({
         </Field>
       </div>
       {selectedProduct?.is_security ? (
-        <p className="rounded-md border border-status-blocked/40 bg-status-blocked/10 p-2 text-xs text-status-blocked">
-          Securities product: creating this requires FSA securities scope, or it is blocked and escalated to FFS. FSOS never stores securities order/suitability substance.
+        <p className="rounded-md border border-status-security/40 bg-status-security/10 p-2 text-xs text-status-security">
+          FFS-managed securities product: creating this requires FSA securities scope, or it is blocked and escalated to FFS. FSOS never stores securities order/suitability substance.
         </p>
       ) : null}
       <div className="flex items-center justify-end gap-2 border-t pt-4">

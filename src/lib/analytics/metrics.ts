@@ -77,7 +77,12 @@ async function computeOne(key: string): Promise<number | null> {
     case 'conversions_due':
       return countOf((db) => db.from('v_conversions_due').select('policy_id').gte('days_remaining', 0).lte('days_remaining', 90))
     case 'cross_sell_targets':
-      return countOf((db) => db.from('v_crosssell_targets').select('household_id'))
+      // The "Cross-sell targets" widget links to /app/cross-sell, which lists
+      // household-level gaps from v_cross_sell_gaps. Count that same view so the
+      // tile matches the page it drills into. (v_crosssell_targets is the
+      // agency-level penetration view and has no household_id — selecting it here
+      // was the bug: "column household_id does not exist".)
+      return countOf((db) => db.from('v_cross_sell_gaps').select('household_id'))
     case 'expected_commission_open': {
       const opps = await openOpps()
       if (opps === null) return null

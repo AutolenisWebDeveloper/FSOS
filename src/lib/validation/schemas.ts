@@ -223,3 +223,202 @@ export const ConsentCaptureSchema = z.object({
   source: z.string().trim().max(120).optional(),
 })
 export type ConsentCapture = z.infer<typeof ConsentCaptureSchema>
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// P1 (professional launch) schemas — mirror migration 012 CHECK constraints.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── Financial Review (OS-06 / WF-2) ────────────────────────────────────────────
+export const REVIEW_TYPE = ['policy', 'coverage', 'term_conversion', 'retirement', 'annual'] as const
+export const REVIEW_STAGE = ['requested', 'scheduled', 'prepared', 'completed', 'outcome_logged'] as const
+
+export const ReviewCreateSchema = z.object({
+  household_id: uuid,
+  type: z.enum(REVIEW_TYPE),
+  scheduled_at: z.string().datetime().optional().or(isoDate.optional()).or(z.literal('').transform(() => undefined)),
+  assigned_user: uuid.optional().or(z.literal('').transform(() => undefined)),
+})
+export type ReviewCreate = z.infer<typeof ReviewCreateSchema>
+
+export const ReviewStageSchema = z.object({
+  stage: z.enum(REVIEW_STAGE),
+  note: z.string().trim().max(1000).optional(),
+})
+
+// The outcome records NEEDS + originates opportunities. It can NEVER be saved as a
+// "recommendation" — there is no recommendation field. A discussed need may spawn
+// one opportunity per product family (the FSA selects; the system records).
+export const ReviewOutcomeSchema = z.object({
+  goals: z.string().trim().max(4000).optional(),
+  coverage_held: z.string().trim().max(4000).optional(),
+  gaps_observed: z.string().trim().max(4000).optional(),
+  life_events: z.string().trim().max(4000).optional(),
+  meeting_notes: z.string().trim().max(8000).optional(),
+  // Needs to originate as opportunities. Each is a coverage/product family + note.
+  originate: z
+    .array(
+      z.object({
+        product_id: uuid.optional().or(z.literal('').transform(() => undefined)),
+        engagement: z.enum(REFERRAL_ENGAGEMENT).default('direct'),
+        note: z.string().trim().max(500).optional(),
+        expected_premium: z.coerce.number().min(0).optional(),
+      }),
+    )
+    .max(20)
+    .default([]),
+  // Follow-up tasks to schedule.
+  follow_ups: z.array(z.object({ title: z.string().trim().min(1).max(300), due_at: z.string().optional() })).max(20).default([]),
+  // Compliance flags captured in the meeting.
+  securities_discussed: z.boolean().default(false),
+  replacement_discussed: z.boolean().default(false),
+})
+export type ReviewOutcome = z.infer<typeof ReviewOutcomeSchema>
+
+// ─── Term Conversion + Cross-Sell (OS-07/08 / WF-3/4) ───────────────────────────
+// The ONLY actions these expose. NO "recommend product" verb exists in this union.
+export const GREEN_ZONE_VERBS = [
+  'identify',
+  'educate',
+  'invite',
+  'schedule',
+  'remind',
+  'follow_up',
+  'escalate',
+] as const
+export type GreenZoneVerb = (typeof GREEN_ZONE_VERBS)[number]
+
+export const OutreachActionSchema = z.object({
+  action: z.enum(GREEN_ZONE_VERBS),
+  policy_id: uuid.optional(),
+  household_id: uuid.optional(),
+  note: z.string().trim().max(1000).optional(),
+})
+export type OutreachAction = z.infer<typeof OutreachActionSchema>
+
+// ─── Case Management (OS-10 / WF-1) ─────────────────────────────────────────────
+export const CASE_STATUS = [
+  'submitted',
+  'underwriting',
+  'requirements_outstanding',
+  'approved',
+  'issued',
+  'in_service',
+  'declined',
+  'withdrawn',
+] as const
+
+export const CaseCreateSchema = z.object({
+  opportunity_id: uuid,
+  carrier_id: uuid.optional().or(z.literal('').transform(() => undefined)),
+})
+export type CaseCreate = z.infer<typeof CaseCreateSchema>
+
+export const CaseStatusSchema = z.object({
+  status: z.enum(CASE_STATUS),
+  note: z.string().trim().max(1000).optional(),
+})
+
+export const CaseRequirementSchema = z.object({
+  requirement: z.string().trim().min(1, 'Requirement is required').max(300),
+  source: z.enum(['checklist', 'carrier', 'manual']).default('manual'),
+})
+
+export const RequirementPatchSchema = z.object({
+  status: z.enum(['outstanding', 'received', 'waived', 'complete']),
+})
+
+// ─── Commission (OS-11 / WF-7) ──────────────────────────────────────────────────
+export const CommissionSplitSchema = z
+  .object({
+    product_family: z.enum(PRODUCT_FAMILY),
+    agency_id: uuid.optional().or(z.literal('').transform(() => undefined)),
+    fsa_split_pct: z.coerce.number().min(0).max(100),
+    agency_split_pct: z.coerce.number().min(0).max(100),
+    note: z.string().trim().max(300).optional(),
+  })
+  .refine((v) => Math.abs(v.fsa_split_pct + v.agency_split_pct - 100) < 0.001, {
+    message: 'Splits must sum to 100%',
+    path: ['agency_split_pct'],
+  })
+export type CommissionSplit = z.infer<typeof CommissionSplitSchema>
+
+export const CommissionReceiptSchema = z.object({
+  commission_id: uuid,
+  amount: z.coerce.number().min(0),
+  period: z.string().trim().max(40).optional(),
+  paid_on: isoDate.optional().or(z.literal('').transform(() => undefined)),
+  is_trail: z.boolean().default(false),
+})
+
+export const CommissionAdjustmentSchema = z.object({
+  commission_id: uuid,
+  amount: z.coerce.number(), // negative allowed (chargeback)
+  kind: z.enum(['adjustment', 'chargeback']).default('adjustment'),
+  reason: z.string().trim().min(1, 'A reason is required for every adjustment').max(500),
+})
+
+// ─── Marketing & Comms (OS-12 / WF-5) ───────────────────────────────────────────
+export const TEMPLATE_CATEGORY = [
+  'appointment',
+  'referral',
+  'agency',
+  'term_conversion',
+  'policy_review',
+  'event',
+  'educational',
+] as const
+
+export const TemplateCreateSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(160),
+  channel: z.enum(['sms', 'email']),
+  category: z.enum(TEMPLATE_CATEGORY),
+  body: z.string().trim().min(1, 'Body is required').max(4000),
+})
+export type TemplateCreate = z.infer<typeof TemplateCreateSchema>
+
+export const TemplatePatchSchema = z
+  .object({
+    name: z.string().trim().min(1).max(160).optional(),
+    body: z.string().trim().min(1).max(4000).optional(),
+    category: z.enum(TEMPLATE_CATEGORY).optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, 'No fields to update')
+
+export const TemplateApprovalSchema = z.object({
+  action: z.enum(['submit', 'approve', 'reject']),
+})
+
+export const CampaignCreateSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(160),
+  channel: z.enum(['sms', 'email']),
+  category: z.enum(TEMPLATE_CATEGORY),
+  template_id: uuid,
+  // audience selection — a segment definition; the dispatch job re-checks the gate per recipient.
+  audience: z
+    .object({
+      kind: z.enum(['all_consented', 'household_ids', 'cross_sell', 'conversion']).default('all_consented'),
+      household_ids: z.array(uuid).max(5000).optional(),
+    })
+    .default({ kind: 'all_consented' }),
+  schedule_at: z.string().datetime().optional().or(z.literal('').transform(() => undefined)),
+  quiet_hours_ack: z.boolean(),
+})
+export type CampaignCreate = z.infer<typeof CampaignCreateSchema>
+
+// ─── Documents (OS-13) ──────────────────────────────────────────────────────────
+export const DocumentRequestSchema = z.object({
+  household_id: uuid,
+  case_id: uuid.optional().or(z.literal('').transform(() => undefined)),
+  requirement: z.string().trim().min(1, 'Requirement is required').max(300),
+})
+
+// ─── Incidents (OS / WF-10) ─────────────────────────────────────────────────────
+export const IncidentCreateSchema = z.object({
+  scope: z.string().trim().min(1, 'Scope is required').max(300),
+  data_types: z.string().trim().max(300).optional(),
+  affected_count: z.coerce.number().int().min(0).optional(),
+})
+export const IncidentStepSchema = z.object({
+  status: z.enum(['open', 'assessing', 'notifying', 'closed']),
+  note: z.string().trim().max(1000).optional(),
+})

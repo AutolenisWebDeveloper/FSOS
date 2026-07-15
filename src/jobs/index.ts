@@ -17,20 +17,27 @@ function placeholder(name: string): JobHandler {
   return async () => ({ ok: true, note: `${name}: registered placeholder — logic implemented in P1/P2`, handled: 0 })
 }
 
+// The concrete P1 job logic. Imported lazily so this registry stays importable
+// (and the cron route resolvable) without eagerly loading Supabase. All client-
+// facing output routes through lib/comms/dispatcher.ts (the gate).
+async function h() {
+  return import('./handlers')
+}
+
 // The canonical job list from routes.md + data-api-map §2. All client-facing
-// output MUST route through lib/comms/dispatcher.ts when these are implemented.
+// output routes through the dispatcher/gate; detection jobs create tasks/escalations.
 export const JOBS: Record<string, JobHandler> = {
-  'renewal-watch': placeholder('renewal-watch'),
-  'conversion-watch': placeholder('conversion-watch'),
-  'xdate-watch': placeholder('xdate-watch'),
-  'referral-sla': placeholder('referral-sla'),
-  'agency-dormancy': placeholder('agency-dormancy'),
-  'cross-sell-scan': placeholder('cross-sell-scan'),
-  'commission-reconcile': placeholder('commission-reconcile'),
-  'campaign-dispatch': placeholder('campaign-dispatch'),
+  'renewal-watch': async () => (await h()).renewalWatch(),
+  'conversion-watch': async () => (await h()).conversionWatch(),
+  'xdate-watch': async () => (await h()).xdateWatch(),
+  'referral-sla': async () => (await h()).referralSla(),
+  'agency-dormancy': async () => (await h()).agencyDormancy(),
+  'cross-sell-scan': async () => (await h()).crossSellScan(),
+  'commission-reconcile': async () => (await h()).commissionReconcile(),
+  'campaign-dispatch': async () => (await h()).campaignDispatch(),
   'agent-runner': placeholder('agent-runner'),
-  'data-quality': placeholder('data-quality'),
-  'backup-verify': placeholder('backup-verify'),
+  'data-quality': async () => (await h()).dataQuality(),
+  'backup-verify': async () => (await h()).backupVerify(),
 }
 
 export function isJob(name: string): name is keyof typeof JOBS {

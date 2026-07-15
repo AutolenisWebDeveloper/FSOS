@@ -1,31 +1,20 @@
+import { Suspense } from 'react'
 import { AuthShell } from '@/components/archetypes'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { MfaForm } from '@/components/auth/MfaForm'
 
 export const metadata = { title: 'Verify — FSOS' }
+// The client form reads ?next= via useSearchParams and talks to Supabase → dynamic.
+export const dynamic = 'force-dynamic'
 
-// TOTP challenge (middleware-auth.md §7). Super-admin uses this for step-up too.
+// TOTP two-factor (middleware-auth.md §7). <MfaForm/> handles first-time
+// enrollment (QR) and the returning-user challenge, both ending at aal2.
+// Super-admin step-up reuses the same flow.
 export default function MfaPage() {
   return (
-    <AuthShell title="Two-factor verification" description="Enter the 6-digit code from your authenticator app.">
-      <form className="space-y-4">
-        <div className="space-y-1.5">
-          <Label htmlFor="code">Authentication code</Label>
-          <Input
-            id="code"
-            name="code"
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            pattern="[0-9]{6}"
-            maxLength={6}
-            required
-          />
-        </div>
-        <Button type="submit" className="w-full">
-          Verify
-        </Button>
-      </form>
+    <AuthShell title="Two-factor verification" description="Confirm it's you with your authenticator app.">
+      <Suspense fallback={null}>
+        <MfaForm />
+      </Suspense>
     </AuthShell>
   )
 }

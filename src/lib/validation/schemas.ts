@@ -659,6 +659,25 @@ export const DashboardPatchSchema = z
   .refine((v) => Object.keys(v).length > 0, { message: 'No changes provided' })
 export type DashboardPatch = z.infer<typeof DashboardPatchSchema>
 
+// Per-user PERSONAL dashboard layout (migration 020). One placed widget = a catalog
+// key plus its grid position (x,y), size (w,h), and visibility. The layout only pins
+// which widgets are shown and where/how big — never any figure — so it can't drift.
+export const DashboardWidgetPlacementSchema = z.object({
+  key: z.enum(DASHBOARD_WIDGET_KEYS),
+  x: z.number().int().min(0).max(11),
+  y: z.number().int().min(0).max(200),
+  w: z.number().int().min(1).max(12),
+  h: z.number().int().min(1).max(8),
+  visible: z.boolean().default(true),
+})
+export type DashboardWidgetPlacement = z.infer<typeof DashboardWidgetPlacementSchema>
+
+export const DashboardPreferencesSchema = z.object({
+  // At most one placement per widget; empty array is allowed (user hid everything).
+  layout: z.array(DashboardWidgetPlacementSchema).max(48),
+})
+export type DashboardPreferences = z.infer<typeof DashboardPreferencesSchema>
+
 // Advanced-forecasting assumptions. Stage → close-probability is an editable config
 // DEFAULT (is_assumption), never a Farmers-published figure (guardrail §2.3).
 export const FORECAST_STAGE_KEYS = [

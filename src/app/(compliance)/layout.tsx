@@ -11,6 +11,9 @@ const NAV: NavItem[] = [
   { href: '/compliance/licenses', label: 'Licenses' },
   { href: '/compliance/firewall', label: 'Firewall' },
   { href: '/compliance/incidents', label: 'Incidents' },
+  { href: '/compliance/legal-holds', label: 'Legal Holds' },
+  { href: '/compliance/attestations', label: 'Attestations' },
+  { href: '/compliance/policies', label: 'Policies' },
 ]
 
 // middleware-auth.md §6: the compliance portal renders a standing disclaimer that

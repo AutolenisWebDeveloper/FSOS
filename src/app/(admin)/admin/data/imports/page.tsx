@@ -1,5 +1,8 @@
+import Link from 'next/link'
+import { Contact } from 'lucide-react'
 import { ListShell, ErrorState, EmptyState, WizardShell } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
 
@@ -15,7 +18,7 @@ export default async function DataImportsPage() {
   )
 
   return (
-    <ListShell title="Data Imports" description="CSV import with mapping, validation, preview, commit, and rollback." breadcrumb={[{ label: 'Admin', href: '/admin' }, { label: 'Data Imports' }]}>
+    <ListShell title="Data Imports" description="CSV import with mapping, validation, preview, commit, and rollback." breadcrumb={[{ label: 'Admin', href: '/admin' }, { label: 'Data Imports' }]} actions={<Button asChild variant="outline"><Link href="/admin/data/imports/ghl"><Contact className="h-4 w-4" /> Import GHL contacts</Link></Button>}>
       <div className="space-y-6">
         <WizardShell title="New import" steps={['Upload', 'Mapping', 'Validate', 'Preview', 'Commit']} current={0}>
           <div className="space-y-2 text-sm text-muted-foreground">

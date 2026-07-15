@@ -58,6 +58,7 @@ export default async function ReviewDetailPage({ params }: { params: { id: strin
       actions={
         <div className="flex items-center gap-2">
           <Button asChild variant="outline"><Link href={`/app/reviews/${r.id}/prep`}>Prep</Link></Button>
+          <Button asChild variant="outline"><Link href={`/app/reviews/${r.id}/needs-map`}>Needs Map</Link></Button>
           <Button asChild><Link href={`/app/reviews/${r.id}/outcome`}>Outcome</Link></Button>
         </div>
       }
@@ -67,6 +68,7 @@ export default async function ReviewDetailPage({ params }: { params: { id: strin
           <ul className="space-y-1.5">
             <li><Link href={`/app/households/${r.household_id}`} className="text-primary hover:underline">Household</Link></li>
             <li><Link href={`/app/reviews/${r.id}/prep`} className="text-primary hover:underline">Prep snapshot</Link></li>
+            <li><Link href={`/app/reviews/${r.id}/needs-map`} className="text-primary hover:underline">Needs Map</Link></li>
             <li><Link href={`/app/reviews/${r.id}/outcome`} className="text-primary hover:underline">Outcome</Link></li>
             {oppIds.map((id) => (<li key={id}><Link href={`/app/opportunities/${id}`} className="text-primary hover:underline">Originated opportunity</Link></li>))}
           </ul>

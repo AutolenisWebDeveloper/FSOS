@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
     const slaDue = new Date(Date.now() + 24 * 3600 * 1000).toISOString() // 24h SLA floor
     const { data, error } = await db
       .from('referrals')
-      .insert({ referring_agency_id: agencyId, referred_name: v.data.referred_name, engagement: v.data.engagement, status: 'received', received_at: new Date().toISOString(), sla_due_at: slaDue })
+      .insert({ referring_agency_id: agencyId, referred_name: v.data.referred_name, referred_email: v.data.referred_email ?? null, referred_phone: v.data.referred_phone ?? null, engagement: v.data.engagement, status: 'received', received_at: new Date().toISOString(), sla_due_at: slaDue })
       .select('id')
       .single()
     if (error || !data) return NextResponse.json({ error: error?.message ?? 'Insert failed' }, { status: 500 })

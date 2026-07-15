@@ -1,7 +1,8 @@
 import Link from 'next/link'
-import { DashboardShell, StatTile, ErrorState } from '@/components/archetypes'
+import { DashboardShell, StatTile } from '@/components/archetypes'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { load } from '@/lib/data/query'
+import { EmailBriefingButton } from '@/components/app/EmailBriefingButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,7 +23,11 @@ export default async function BriefingPage() {
   ]
 
   return (
-    <DashboardShell title="Executive Briefing" description="Today's priorities, surfaced from live signals. Never a product recommendation.">
+    <DashboardShell
+      title="Executive Briefing"
+      description="Today's priorities, surfaced from live signals. Never a product recommendation."
+      actions={<EmailBriefingButton />}
+    >
       {priorities.map((p) => (<StatTile key={p.label} label={p.label} value={p.count} href={p.href} hint={p.note} />))}
       <div className="sm:col-span-2 lg:col-span-4">
         <Card>

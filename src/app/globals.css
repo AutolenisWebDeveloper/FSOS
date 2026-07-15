@@ -3,95 +3,93 @@
 @tailwind utilities;
 
 /*
- * FSOS design tokens (archetypes.md design system).
- * Light-first with a dark palette ready (P2 dark mode). shadcn/ui components and
+ * FSOS design tokens — FSOS Design System (docs/design-system.md).
+ * Dark-first, dense, branded, financial-services. A dark navy SHELL (sidebar +
+ * topbar) wraps a light content CANVAS — that high contrast is the core visual
+ * move, carried forward from the legacy Command Center. shadcn/ui components and
  * every archetype shell read these HSL variables via tailwind.config.ts.
  * Legacy command-center screens keep their own inline styling (CLAUDE.md §1.6);
  * the base rules below intentionally stay minimal so preflight does not fight them.
  */
 @layer base {
   :root {
-    --background: 210 20% 98%;
-    --foreground: 222 32% 14%;
+    /* ---- Shell (dark navy) — sidebar / topbar / dense panels ---- */
+    --shell:            215 56% 13%;   /* #0f1e36 */
+    --shell-raised:     217 32% 15%;   /* #1a2332 — panels inside the shell */
+    --shell-foreground: 210 20% 96%;
+    --shell-muted:      215 16% 62%;
+    --shell-border:     215 30% 22%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 222 32% 14%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222 32% 14%;
+    /* ---- Content canvas (light) ---- */
+    --background:       210 20% 98%;
+    --foreground:       215 40% 12%;
 
-    /* Deep, trustworthy navy for a financial-services feel. */
-    --primary: 217 71% 27%;
-    --primary-foreground: 0 0% 100%;
+    --card:             0 0% 100%;
+    --card-foreground:  215 40% 12%;
+    --popover:          0 0% 100%;
+    --popover-foreground: 215 40% 12%;
 
-    --secondary: 214 32% 94%;
-    --secondary-foreground: 222 32% 20%;
-
-    --muted: 214 32% 95%;
+    --muted:            214 32% 95%;
     --muted-foreground: 215 16% 42%;
 
-    --accent: 199 89% 48%;
-    --accent-foreground: 0 0% 100%;
+    /* ---- Brand ---- */
+    --primary:            212 61% 43%;   /* #2b6cb0 — legacy primary */
+    --primary-foreground: 0 0% 100%;
+    --primary-soft:       205 74% 86%;   /* #bee3f8 */
 
-    --destructive: 0 72% 45%;
+    --secondary:          214 32% 94%;
+    --secondary-foreground: 215 40% 20%;
+
+    --accent:             207 73% 57%;   /* #4299e1 */
+    --accent-foreground:  0 0% 100%;
+
+    /* ---- Signature gold (GDC tier, assumptions, attention) ---- */
+    --gold:            43 89% 51%;       /* #f0b429 */
+    --gold-deep:       38 72% 42%;       /* #b7791f */
+    --gold-foreground: 215 40% 12%;
+
+    --destructive:        0 72% 51%;     /* #e53e3e */
     --destructive-foreground: 0 0% 100%;
 
-    --border: 214 20% 88%;
-    --input: 214 20% 86%;
-    --ring: 217 71% 40%;
+    --border:           214 20% 88%;
+    --input:            214 20% 86%;
+    --ring:             212 61% 43%;
 
     --radius: 0.5rem;
 
-    /* Status colors — draft/active/pending/won/lost/blocked/escalated + assumption. */
-    --status-draft: 215 16% 55%;
-    --status-active: 217 71% 45%;
-    --status-pending: 38 92% 45%;
-    --status-won: 142 62% 36%;
-    --status-lost: 0 62% 48%;
-    --status-blocked: 0 72% 42%;
-    --status-escalated: 275 62% 50%;
-    --status-assumption: 33 90% 44%;
-  }
-
-  .dark {
-    --background: 222 40% 9%;
-    --foreground: 210 20% 96%;
-
-    --card: 222 38% 12%;
-    --card-foreground: 210 20% 96%;
-    --popover: 222 38% 12%;
-    --popover-foreground: 210 20% 96%;
-
-    --primary: 213 80% 62%;
-    --primary-foreground: 222 40% 10%;
-
-    --secondary: 217 24% 20%;
-    --secondary-foreground: 210 20% 92%;
-
-    --muted: 217 24% 18%;
-    --muted-foreground: 215 18% 62%;
-
-    --accent: 199 89% 55%;
-    --accent-foreground: 222 40% 10%;
-
-    --destructive: 0 63% 50%;
-    --destructive-foreground: 0 0% 100%;
-
-    --border: 217 24% 24%;
-    --input: 217 24% 26%;
-    --ring: 213 80% 62%;
-
-    --status-draft: 215 16% 60%;
-    --status-active: 213 80% 62%;
-    --status-pending: 38 92% 55%;
-    --status-won: 142 55% 48%;
-    --status-lost: 0 63% 58%;
-    --status-blocked: 0 63% 55%;
-    --status-escalated: 275 62% 66%;
-    --status-assumption: 33 90% 56%;
+    /* ---- Status ---- */
+    --status-draft:      215 16% 55%;
+    --status-active:     212 61% 45%;
+    --status-pending:    38 92% 45%;
+    --status-won:        142 50% 40%;    /* #38a169 — won/placed/active only */
+    --status-lost:       0 72% 51%;      /* #e53e3e — lost/blocked/error only */
+    --status-blocked:    0 72% 42%;
+    --status-escalated:  262 47% 42%;    /* #553c9a — purple */
+    --status-assumption: 38 72% 42%;     /* gold — "config default — verify" */
+    --status-security:   262 47% 42%;    /* purple — is_security / FFS-managed */
   }
 
   * {
     border-color: hsl(var(--border));
+  }
+}
+
+/* ---- Signature mono label (docs/design-system.md §2) — the strongest character
+ * marker: DM Mono, 11px, tracked, uppercase. Used for every section header. */
+@layer components {
+  .mono-label {
+    font-family: var(--font-dm-mono), ui-monospace, monospace;
+    font-size: 0.6875rem;     /* 11px */
+    line-height: 1rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+  /* Every monetary value, policy #, date, ID renders in DM Mono w/ tabular figures. */
+  .numeric {
+    font-family: var(--font-dm-mono), ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
   }
 }
 

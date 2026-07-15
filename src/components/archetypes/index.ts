@@ -3,3 +3,6 @@
 export * from './states'
 export * from './shells'
 export * from './overlays'
+// Design-system primitives (docs/design-system.md) surfaced alongside the shells.
+export { MonoLabel, Numeric, Money } from '@/components/ui/typography'
+export { SecuritiesChip, SecuritiesBanner, securitiesRowClass } from '@/components/ui/securities'

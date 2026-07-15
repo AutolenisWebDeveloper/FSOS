@@ -51,21 +51,26 @@ export function ErrorState({
   onRetry?: () => void
   className?: string
 }) {
+  // Inline card w/ status-lost left border (design-system.md §6): a single failing
+  // widget shows this in place without blanking the surrounding page.
   return (
     <div
       role="alert"
-      className={cn('flex flex-col items-center justify-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-10 text-center', className)}
+      className={cn(
+        'flex items-start gap-3 rounded-lg border border-l-2 border-status-lost/30 border-l-status-lost bg-status-lost/5 p-4',
+        className,
+      )}
     >
-      <AlertTriangle className="h-8 w-8 text-destructive" />
-      <div className="space-y-1">
+      <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-status-lost" strokeWidth={1.75} />
+      <div className="min-w-0 flex-1 space-y-1">
         <p className="font-medium">{title}</p>
         {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
+        {onRetry ? (
+          <Button variant="outline" size="sm" onClick={onRetry} className="mt-1">
+            Retry
+          </Button>
+        ) : null}
       </div>
-      {onRetry ? (
-        <Button variant="outline" size="sm" onClick={onRetry}>
-          Retry
-        </Button>
-      ) : null}
     </div>
   )
 }

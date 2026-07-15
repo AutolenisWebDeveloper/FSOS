@@ -1,9 +1,6 @@
-'use client'
-
 import * as React from 'react'
-import { AlertTriangle, Inbox, ShieldAlert } from 'lucide-react'
+import { Inbox, ShieldAlert } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 
@@ -11,6 +8,13 @@ import { Skeleton } from '@/components/ui/skeleton'
  * Shared archetype state building blocks (archetypes.md Definition of Done):
  * every page must ship empty + loading + error + success states. These are the
  * canonical, reusable implementations the A1–A13 shells compose.
+ *
+ * These are Server-Component-safe (no hooks, no event handlers): that is what
+ * lets a Server Component page pass a lucide `icon` (a function/forwardRef) to
+ * EmptyState. The one interactive state, ErrorState (onRetry → onClick), lives
+ * in its own 'use client' module (./error-state) and is re-exported from the
+ * archetypes barrel, so `import { ErrorState } from '@/components/archetypes'`
+ * keeps working unchanged.
  */
 
 export function EmptyState({
@@ -36,36 +40,6 @@ export function EmptyState({
         {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
       </div>
       {action}
-    </div>
-  )
-}
-
-export function ErrorState({
-  title = 'Something went wrong',
-  description,
-  onRetry,
-  className,
-}: {
-  title?: string
-  description?: string
-  onRetry?: () => void
-  className?: string
-}) {
-  return (
-    <div
-      role="alert"
-      className={cn('flex flex-col items-center justify-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-10 text-center', className)}
-    >
-      <AlertTriangle className="h-8 w-8 text-destructive" />
-      <div className="space-y-1">
-        <p className="font-medium">{title}</p>
-        {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
-      </div>
-      {onRetry ? (
-        <Button variant="outline" size="sm" onClick={onRetry}>
-          Retry
-        </Button>
-      ) : null}
     </div>
   )
 }

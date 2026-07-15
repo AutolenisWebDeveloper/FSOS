@@ -594,3 +594,41 @@ export type WebhookCreate = z.infer<typeof WebhookCreateSchema>
 export const WebhookPatchSchema = z.object({
   enabled: z.boolean(),
 })
+
+// ─── P3 (Phase 4) — custom dashboards + advanced forecasting ─────────────────────
+// A dashboard's layout is an ordered list of widget keys from the analytics catalog
+// (lib/analytics/catalog.ts). Every widget renders from a DB-derived metric — the
+// layout only pins WHICH widgets, in WHAT order, so a dashboard can't drift.
+export const DASHBOARD_WIDGET_KEYS = [
+  'agency_partnerships', 'open_opportunities', 'households', 'policies',
+  'referrals_awaiting', 'ai_escalations', 'overdue_tasks', 'conversions_due',
+  'cross_sell_targets', 'expected_commission_open', 'weighted_pipeline', 'commission_ytd',
+] as const
+export const DashboardCreateSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(160),
+  description: z.string().trim().max(1000).optional(),
+  visibility: z.enum(['private', 'shared']).default('private'),
+  layout: z.array(z.enum(DASHBOARD_WIDGET_KEYS)).min(1, 'Add at least one widget').max(24),
+})
+export type DashboardCreate = z.infer<typeof DashboardCreateSchema>
+export const DashboardPatchSchema = z
+  .object({
+    name: z.string().trim().min(1).max(160).optional(),
+    description: z.string().trim().max(1000).optional(),
+    visibility: z.enum(['private', 'shared']).optional(),
+    layout: z.array(z.enum(DASHBOARD_WIDGET_KEYS)).min(1).max(24).optional(),
+    archived: z.boolean().optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, { message: 'No changes provided' })
+export type DashboardPatch = z.infer<typeof DashboardPatchSchema>
+
+// Advanced-forecasting assumptions. Stage → close-probability is an editable config
+// DEFAULT (is_assumption), never a Farmers-published figure (guardrail §2.3).
+export const FORECAST_STAGE_KEYS = [
+  'prospect', 'fact_find', 'quoted_proposed', 'application', 'underwriting_suitability',
+] as const
+export const ForecastSettingsSchema = z.object({
+  probabilities: z.record(z.enum(FORECAST_STAGE_KEYS), z.number().min(0).max(1)),
+  horizon_months: z.number().int().min(1).max(24).default(3),
+})
+export type ForecastSettings = z.infer<typeof ForecastSettingsSchema>

@@ -8,6 +8,8 @@ export const dynamic = 'force-dynamic'
 // Cases, Commissions, Comms, etc. join the nav as their pages land in P1).
 const NAV: NavItem[] = [
   { href: '/app', label: 'Dashboard' },
+  { href: '/app/dashboards', label: 'Dashboards' },
+  { href: '/app/forecasts', label: 'Forecasts' },
   { href: '/app/executive/briefing', label: 'Briefing' },
   { href: '/app/agencies', label: 'Agencies' },
   { href: '/app/referrals', label: 'Referrals' },

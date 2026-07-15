@@ -669,3 +669,71 @@ export const ForecastSettingsSchema = z.object({
   horizon_months: z.number().int().min(1).max(24).default(3),
 })
 export type ForecastSettings = z.infer<typeof ForecastSettingsSchema>
+
+// ─── Client Forms (legacy-port §2.3) ───────────────────────────────────────────
+// Public intake envelope. `answers` is the free-form template field payload; the
+// envelope (name/email/consent) is what the firewall + comms gate care about.
+// No securities field is accepted on any public form (guardrail §2.1).
+const answerValue = z.union([z.string().max(5000), z.number(), z.boolean()])
+export const FormPublicSubmitSchema = z.object({
+  template_slug: z.string().trim().min(1, 'Missing form').max(120),
+  token: z.string().trim().max(200).optional(),
+  full_name: z.string().trim().min(1, 'Your name is required').max(200),
+  email: z.string().trim().email('Enter a valid email').max(200),
+  phone: optionalPhone,
+  answers: z.record(z.string().max(120), answerValue).default({}),
+  consent_sms: z.boolean().optional().default(false),
+  consent_email: z.boolean().optional().default(false),
+})
+export type FormPublicSubmit = z.infer<typeof FormPublicSubmitSchema>
+
+// Attach a submitted response to a household (internal, licensed staff).
+export const FormAttachSchema = z.object({ household_id: uuid })
+export type FormAttach = z.infer<typeof FormAttachSchema>
+
+// ─── Workshops (legacy-port §2.5) ──────────────────────────────────────────────
+export const WORKSHOP_TOPICS = ['retirement', 'life', 'business', 'general', 'education'] as const
+export const WORKSHOP_STATUS = ['draft', 'published', 'completed', 'cancelled'] as const
+
+export const WorkshopCreateSchema = z.object({
+  title: z.string().trim().min(1, 'Title is required').max(200),
+  topic: z.enum(WORKSHOP_TOPICS),
+  description: z.string().trim().max(2000).optional(),
+  scheduled_at: z.string().datetime({ message: 'Pick a date & time' }).or(
+    z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, 'Pick a date & time'),
+  ),
+  location: z.string().trim().max(300).optional(),
+  max_attendees: z.coerce.number().int().min(1).max(100000).optional(),
+})
+export type WorkshopCreate = z.infer<typeof WorkshopCreateSchema>
+
+export const WorkshopPatchSchema = z
+  .object({
+    status: z.enum(WORKSHOP_STATUS).optional(),
+    title: z.string().trim().min(1).max(200).optional(),
+    description: z.string().trim().max(2000).optional(),
+    location: z.string().trim().max(300).optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, { message: 'No changes provided' })
+export type WorkshopPatch = z.infer<typeof WorkshopPatchSchema>
+
+// Public workshop registration. Consent captured at registration (§2.5). No
+// securities data. Honeypot handled before Zod in the route.
+export const WorkshopRegisterSchema = z.object({
+  workshop_id: uuid,
+  name: z.string().trim().min(1, 'Your name is required').max(160),
+  email: z.string().trim().email('Enter a valid email').max(200),
+  phone: optionalPhone,
+  consent_email: z.boolean().optional().default(false),
+  consent_sms: z.boolean().optional().default(false),
+})
+export type WorkshopRegister = z.infer<typeof WorkshopRegisterSchema>
+
+// Internal registration update: mark attendance and/or convert to a referral.
+export const RegistrationPatchSchema = z
+  .object({
+    attended: z.boolean().optional(),
+    convert_to_referral: z.boolean().optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, { message: 'No changes provided' })
+export type RegistrationPatch = z.infer<typeof RegistrationPatchSchema>

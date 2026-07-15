@@ -51,6 +51,8 @@ export async function POST(req: NextRequest) {
       .from('referrals')
       .insert({
         referred_name: v.data.referred_name,
+        referred_email: v.data.referred_email ?? null,
+        referred_phone: v.data.referred_phone ?? null,
         referring_agency_id: v.data.referring_agency_id ?? null,
         engagement: v.data.engagement,
         status: 'received',

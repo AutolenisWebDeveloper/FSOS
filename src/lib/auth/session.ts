@@ -56,6 +56,19 @@ export async function getServerSession(): Promise<SessionClaims | null> {
   return { userId: user.id, roles, mfaSatisfied, stepUpFresh }
 }
 
+/**
+ * The authenticated user's email (for self-directed sends like the emailed daily
+ * briefing). Returns null when anonymous or Supabase is unconfigured.
+ */
+export async function getCurrentUserEmail(): Promise<string | null> {
+  const supabase = createServerSupabase(cookieAdapter())
+  if (!supabase) return null
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  return user?.email ?? null
+}
+
 /** Redirect to /login if there is no session; otherwise return it. */
 export async function requireSession(nextPath = '/app'): Promise<SessionClaims> {
   const session = await getServerSession()

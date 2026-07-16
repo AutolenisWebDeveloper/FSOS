@@ -26,6 +26,10 @@ import {
   AlertTriangle,
   ShieldCheck,
   BarChart3,
+  Sparkles,
+  Bell,
+  Contact,
+  LifeBuoy,
 } from 'lucide-react'
 import { requireRole } from '@/lib/auth/session'
 import { PortalShell, type NavItem } from '@/components/portal/PortalShell'
@@ -41,6 +45,7 @@ const NAV: NavItem[] = [
   { href: '/app/dashboards', label: 'Dashboards', icon: LayoutGrid, group: 'Overview' },
   { href: '/app/forecasts', label: 'Forecasts', icon: TrendingUp, group: 'Overview' },
   { href: '/app/executive/briefing', label: 'Briefing', icon: Newspaper, group: 'Overview' },
+  { href: '/app/notifications', label: 'Notifications', icon: Bell, group: 'Overview' },
 
   { href: '/app/agencies', label: 'Agencies', icon: Building2, group: 'Book' },
   { href: '/app/referrals', label: 'Referrals', icon: UserPlus, group: 'Book' },
@@ -66,15 +71,25 @@ const NAV: NavItem[] = [
 
   { href: '/app/ai', label: 'AI Operations', icon: Bot, group: 'Operate' },
   { href: '/app/ai/escalations', label: 'AI Escalations', icon: AlertTriangle, group: 'Operate' },
+  { href: '/app/assistant', label: 'AI Assistant', icon: Sparkles, group: 'Operate' },
   { href: '/app/compliance', label: 'Compliance', icon: ShieldCheck, group: 'Operate' },
   { href: '/app/reports', label: 'Reports', icon: BarChart3, group: 'Operate' },
+  { href: '/app/contacts', label: 'FFS Contacts', icon: Contact, group: 'Operate' },
+  { href: '/app/help', label: 'Help & Support', icon: LifeBuoy, group: 'Operate' },
 ]
 
 export default async function FsaLayout({ children }: { children: React.ReactNode }) {
   await requireRole('fsa', '/app')
   const shellData = await loadShellData()
   return (
-    <PortalShell portalLabel="FSA" nav={NAV} panels={<ShellCharacterPanels data={shellData} />}>
+    <PortalShell
+      portalLabel="FSA"
+      nav={NAV}
+      panels={<ShellCharacterPanels data={shellData} />}
+      searchHref="/app/search"
+      assistantHref="/app/assistant"
+      notificationsHref="/app/notifications"
+    >
       {children}
     </PortalShell>
   )

@@ -50,12 +50,20 @@ export function PortalShell({
   nav,
   banner,
   panels,
+  searchHref,
+  assistantHref,
+  notificationsHref,
   children,
 }: {
   portalLabel: string
   nav: NavItem[]
   banner?: React.ReactNode
   panels?: React.ReactNode
+  /** Topbar wiring. When a portal provides these, the search box / AI / bell
+   * become live; portals that omit them keep the inert placeholders (no change). */
+  searchHref?: string
+  assistantHref?: string
+  notificationsHref?: string
   children: React.ReactNode
 }) {
   const groups = groupNav(nav)
@@ -72,30 +80,63 @@ export function PortalShell({
             {portalLabel}
           </MonoLabel>
         </div>
-        <label className="relative hidden max-w-md flex-1 items-center md:flex">
-          <Search className="pointer-events-none absolute left-3 h-4 w-4 text-shell-muted" strokeWidth={1.75} aria-hidden />
-          <input
-            type="search"
-            placeholder="Search…"
-            aria-label="Global search"
-            className="h-9 w-full rounded-lg border border-shell-border bg-shell-raised pl-9 pr-3 text-sm text-shell-foreground placeholder:text-shell-muted focus:outline-none focus:ring-2 focus:ring-accent"
-          />
-        </label>
+        {searchHref ? (
+          <form action={searchHref} role="search" className="relative hidden max-w-md flex-1 items-center md:flex">
+            <Search className="pointer-events-none absolute left-3 h-4 w-4 text-shell-muted" strokeWidth={1.75} aria-hidden />
+            <input
+              type="search"
+              name="q"
+              placeholder="Search…"
+              aria-label="Global search"
+              className="h-9 w-full rounded-lg border border-shell-border bg-shell-raised pl-9 pr-3 text-sm text-shell-foreground placeholder:text-shell-muted focus:outline-none focus:ring-2 focus:ring-accent"
+            />
+          </form>
+        ) : (
+          <label className="relative hidden max-w-md flex-1 items-center md:flex">
+            <Search className="pointer-events-none absolute left-3 h-4 w-4 text-shell-muted" strokeWidth={1.75} aria-hidden />
+            <input
+              type="search"
+              placeholder="Search…"
+              aria-label="Global search"
+              className="h-9 w-full rounded-lg border border-shell-border bg-shell-raised pl-9 pr-3 text-sm text-shell-foreground placeholder:text-shell-muted focus:outline-none focus:ring-2 focus:ring-accent"
+            />
+          </label>
+        )}
         <div className="ml-auto flex items-center gap-1">
-          <button
-            type="button"
-            aria-label="AI priorities"
-            className="relative flex h-9 w-9 items-center justify-center rounded-lg text-shell-muted hover:bg-shell-raised hover:text-shell-foreground"
-          >
-            <Sparkles className="h-[18px] w-[18px]" strokeWidth={1.75} aria-hidden />
-          </button>
-          <button
-            type="button"
-            aria-label="Notifications"
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-shell-muted hover:bg-shell-raised hover:text-shell-foreground"
-          >
-            <Bell className="h-[18px] w-[18px]" strokeWidth={1.75} aria-hidden />
-          </button>
+          {assistantHref ? (
+            <Link
+              href={assistantHref}
+              aria-label="AI assistant"
+              className="relative flex h-9 w-9 items-center justify-center rounded-lg text-shell-muted hover:bg-shell-raised hover:text-shell-foreground"
+            >
+              <Sparkles className="h-[18px] w-[18px]" strokeWidth={1.75} aria-hidden />
+            </Link>
+          ) : (
+            <button
+              type="button"
+              aria-label="AI priorities"
+              className="relative flex h-9 w-9 items-center justify-center rounded-lg text-shell-muted hover:bg-shell-raised hover:text-shell-foreground"
+            >
+              <Sparkles className="h-[18px] w-[18px]" strokeWidth={1.75} aria-hidden />
+            </button>
+          )}
+          {notificationsHref ? (
+            <Link
+              href={notificationsHref}
+              aria-label="Notifications"
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-shell-muted hover:bg-shell-raised hover:text-shell-foreground"
+            >
+              <Bell className="h-[18px] w-[18px]" strokeWidth={1.75} aria-hidden />
+            </Link>
+          ) : (
+            <button
+              type="button"
+              aria-label="Notifications"
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-shell-muted hover:bg-shell-raised hover:text-shell-foreground"
+            >
+              <Bell className="h-[18px] w-[18px]" strokeWidth={1.75} aria-hidden />
+            </button>
+          )}
           <button
             type="button"
             aria-label="Profile"

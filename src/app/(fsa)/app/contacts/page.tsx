@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { Plus, Upload, Contact as ContactIcon, RefreshCw } from 'lucide-react'
 import { ListShell, StatTile, ErrorState, EmptyState } from '@/components/archetypes'
 import { Button } from '@/components/ui/button'
-import { load } from '@/lib/data/query'
+import { load, loadAll } from '@/lib/data/query'
 import { ContactList, type ContactRow } from '@/components/app/ContactList'
 
 export const dynamic = 'force-dynamic'
@@ -15,15 +15,13 @@ interface Row extends ContactRow {}
 
 export default async function ContactCenterPage() {
   const [res, dupes] = await Promise.all([
-    load<Row[]>(
+    loadAll<Row>(
       (db) =>
         db
           .from('contacts')
           .select('id, full_name, email, phone, company, contact_type, tags, status, created_at')
           .is('deleted_at', null)
-          .order('created_at', { ascending: false })
-          .limit(1000),
-      [],
+          .order('created_at', { ascending: false }),
     ),
     load<{ match_key: string }[]>((db) => db.from('v_contact_duplicates').select('match_key'), []),
   ])

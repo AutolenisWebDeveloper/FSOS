@@ -21,12 +21,20 @@ export interface InforcePolicy {
   conversion_date: string | null
   insured_name: string | null
   owner_name: string
+  owner_email: string | null
+  owner_dob: string | null
   owner_address: string | null
   owner_city: string | null
   owner_state: string | null
   owner_zip: string | null
   owner_phone: string | null
   joint_owner_name: string | null
+  joint_owner_address: string | null
+  joint_owner_city: string | null
+  joint_owner_state: string | null
+  joint_owner_zip: string | null
+  joint_owner_phone: string | null
+  joint_owner_key: string | null
   serving_agent_name: string | null
   serving_agent_no: string | null
   series_code: string | null
@@ -129,12 +137,19 @@ export async function parseInforceBook(buffer: Buffer): Promise<ParsedBook> {
     issue: col('Policy Issue Date'),
     insured: col('Insured Name'),
     ownerName: col('Owner Name'),
+    ownerEmail: col('Owner Email') >= 0 ? col('Owner Email') : col('Email'),
+    ownerDob: col('Owner DOB') >= 0 ? col('Owner DOB') : col('Date of Birth') >= 0 ? col('Date of Birth') : col('DOB'),
     ownerAddr: col('Owner Address'),
     ownerCity: col('Owner City'),
     ownerState: col('Owner State'),
     ownerZip: col('Owner Zip'),
     ownerPhone: col('Owner Phone Number'),
     jointName: col('Joint Owner Name'),
+    jointAddr: col('Joint Owner Address'),
+    jointCity: col('Joint Owner City'),
+    jointState: col('Joint Owner State'),
+    jointZip: col('Joint Owner ZIP'),
+    jointPhone: col('Joint Owner Phone'),
     agentName: col('Serving Agent Name'),
     agentNo: col('Serving Agent Number'),
     series: col('Series Code'),
@@ -155,6 +170,7 @@ export async function parseInforceBook(buffer: Buffer): Promise<ParsedBook> {
     const productName = at(row, c.product)
     const statusRaw = at(row, c.status)
     const ownerZip = at(row, c.ownerZip)
+    const jointName = at(row, c.jointName)
     const sourceData: Record<string, string> = {}
     headers.forEach((h, i) => {
       if (h) sourceData[h] = (row[i] ?? '').trim()
@@ -172,12 +188,20 @@ export async function parseInforceBook(buffer: Buffer): Promise<ParsedBook> {
       conversion_date: toIsoDate(at(row, c.convDate)),
       insured_name: at(row, c.insured) || null,
       owner_name: ownerName,
+      owner_email: at(row, c.ownerEmail) || null,
+      owner_dob: toIsoDate(at(row, c.ownerDob)) || null,
       owner_address: at(row, c.ownerAddr) || null,
       owner_city: at(row, c.ownerCity) || null,
       owner_state: at(row, c.ownerState) || null,
       owner_zip: ownerZip || null,
       owner_phone: at(row, c.ownerPhone) || null,
-      joint_owner_name: at(row, c.jointName) || null,
+      joint_owner_name: jointName || null,
+      joint_owner_address: at(row, c.jointAddr) || null,
+      joint_owner_city: at(row, c.jointCity) || null,
+      joint_owner_state: at(row, c.jointState) || null,
+      joint_owner_zip: at(row, c.jointZip) || null,
+      joint_owner_phone: at(row, c.jointPhone) || null,
+      joint_owner_key: jointName ? ownerKey(jointName, at(row, c.jointZip)) : null,
       serving_agent_name: at(row, c.agentName) || null,
       serving_agent_no: at(row, c.agentNo) || null,
       series_code: at(row, c.series) || null,

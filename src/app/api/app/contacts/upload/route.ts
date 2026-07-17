@@ -13,8 +13,10 @@ import {
   createOpportunity,
   withGhlRetry,
   PIPELINES,
+  GHL_CUSTOM_FIELDS,
   type GhlPipeline,
 } from '@/lib/ghl'
+import { classifyContacts, routeForType, type ContactType } from '@/lib/ai/contactRouter'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -44,6 +46,9 @@ interface RowResult {
   is_new: boolean | null
   attempts: number
   error_message: string | null
+  contact_type: ContactType | null
+  routed_agent: string | null
+  confidence: number | null
 }
 
 export async function POST(req: NextRequest) {
@@ -80,6 +85,10 @@ export async function POST(req: NextRequest) {
   const source = String(formData.get('source') || '').trim() || 'csv_upload'
   const agencyOwner = String(formData.get('agency_owner') || '').trim()
   const useAi = String(formData.get('ai') || 'true').trim().toLowerCase() !== 'false'
+  // AI classification + routing: identify each contact's type, auto-tag it, and
+  // route it to the right agent (and, when no manual pipeline is chosen, the
+  // right GHL pipeline). On by default; degrades gracefully if the gateway is off.
+  const useRouting = String(formData.get('ai_route') || 'true').trim().toLowerCase() !== 'false'
   const pipelineKey = String(formData.get('pipeline') || '').trim() as GhlPipeline['key'] | ''
   const stageRaw = String(formData.get('stage') || '').trim()
   const stagePosition = stageRaw ? Number.parseInt(stageRaw, 10) : null
@@ -164,40 +173,95 @@ export async function POST(req: NextRequest) {
     const rowNumber = i + 1
     const { contact, errors } = mapAndValidateRow(record, colMap, { tags, source, agencyOwner })
     if (!contact) {
-      results[i] = { row_number: rowNumber, first_name: null, last_name: null, email: null, phone: null, status: 'invalid', ghl_contact_id: null, ghl_opportunity_id: null, is_new: null, attempts: 0, error_message: errors.join('; ') }
+      results[i] = { row_number: rowNumber, first_name: null, last_name: null, email: null, phone: null, status: 'invalid', ghl_contact_id: null, ghl_opportunity_id: null, is_new: null, attempts: 0, error_message: errors.join('; '), contact_type: null, routed_agent: null, confidence: null }
       return
     }
     if (seen.has(contact.dedupeKey)) {
-      results[i] = { row_number: rowNumber, first_name: contact.firstName, last_name: contact.lastName, email: contact.email, phone: contact.phone, status: 'duplicate', ghl_contact_id: null, ghl_opportunity_id: null, is_new: null, attempts: 0, error_message: `Duplicate of an earlier row (${contact.dedupeKey})` }
+      results[i] = { row_number: rowNumber, first_name: contact.firstName, last_name: contact.lastName, email: contact.email, phone: contact.phone, status: 'duplicate', ghl_contact_id: null, ghl_opportunity_id: null, is_new: null, attempts: 0, error_message: `Duplicate of an earlier row (${contact.dedupeKey})`, contact_type: null, routed_agent: null, confidence: null }
       return
     }
     seen.add(contact.dedupeKey)
     toImport.push({ index: i, contact })
   })
 
+  // AI classification + routing: identify each contact's type, auto-tag it, pick
+  // the target agent, and (when no manual pipeline was chosen) the GHL pipeline.
+  // Green-zone identify only — never a product recommendation. Records one
+  // agent_run + a per-contact routing agent_action so the durable agents pick up
+  // their queues. Degrades to type 'unknown' when the gateway is off.
+  const contactsToClassify = toImport.map((t) => t.contact!)
+  const classify = useRouting
+    ? await classifyContacts(contactsToClassify)
+    : { classifications: [], aiUsed: false, aiCapped: 0, model: '', inputTokens: 0, outputTokens: 0, costUsd: 0 }
+
+  // Per-toImport plan (aligned to toImport order).
+  const plan = toImport.map((t, k) => {
+    const cls = useRouting ? classify.classifications[k] : null
+    const route = cls ? routeForType(cls.type) : null
+    if (route && t.contact) {
+      // Auto-tag + stamp the resolved type on the contact's GHL custom fields.
+      t.contact.tags = Array.from(new Set([...t.contact.tags, ...route.tags]))
+      t.contact.customFields[GHL_CUSTOM_FIELDS.contact_type] = cls!.type
+    }
+    // Manual pipeline (if chosen) wins; otherwise use the routed pipeline.
+    const targetPipeline: GhlPipeline | null = pipeline
+      ? pipeline
+      : route?.pipeline
+        ? PIPELINES.find((p) => p.key === route.pipeline) || null
+        : null
+    const targetStage = pipeline ? stagePosition : targetPipeline ? 1 : null
+    return { cls, route, targetPipeline, targetStage }
+  })
+
+  // Open the classification run (attributes tokens/cost; children hang off it).
+  const routeCounts: Record<string, number> = {}
+  let routeRunId: string | null = null
+  if (useRouting && toImport.length > 0) {
+    const avgConf = classify.classifications.length ? classify.classifications.reduce((s, c) => s + (c?.confidence ?? 0), 0) / classify.classifications.length : null
+    const { data: run } = await supabase
+      .from('agent_runs')
+      .insert({ agent_key: 'contact_router', actor, input: { batch_id: batchId, contacts: toImport.length, ai_used: classify.aiUsed }, status: 'completed', model: classify.model || null, input_tokens: classify.inputTokens, output_tokens: classify.outputTokens, cost_usd: classify.costUsd, confidence: avgConf, finished_at: new Date().toISOString() })
+      .select('id')
+      .maybeSingle()
+    routeRunId = run?.id ?? null
+  }
+
+  const routingActions: Array<Record<string, unknown>> = []
+
   let cursor = 0
   async function worker() {
     while (cursor < toImport.length) {
-      const { index, contact } = toImport[cursor++]
+      const k = cursor++
+      const { index, contact } = toImport[k]
       const c = contact!
       const rowNumber = index + 1
+      const p = plan[k]
       const up = await upsertContactWithRetry({ firstName: c.firstName, lastName: c.lastName, email: c.email, phone: c.phone, tags: c.tags, source: c.source, customFields: c.customFields })
       if (!up.ok || !up.data?.contact?.id) {
-        results[index] = { row_number: rowNumber, first_name: c.firstName, last_name: c.lastName, email: c.email, phone: c.phone, status: 'failed', ghl_contact_id: null, ghl_opportunity_id: null, is_new: null, attempts: up.attempts, error_message: up.error || 'GHL upsert returned no contact id' }
+        results[index] = { row_number: rowNumber, first_name: c.firstName, last_name: c.lastName, email: c.email, phone: c.phone, status: 'failed', ghl_contact_id: null, ghl_opportunity_id: null, is_new: null, attempts: up.attempts, error_message: up.error || 'GHL upsert returned no contact id', contact_type: p.cls?.type ?? null, routed_agent: p.route?.agent ?? null, confidence: p.cls?.confidence ?? null }
         continue
       }
       const contactId = up.data.contact.id
       let opportunityId: string | null = null
       let oppError: string | null = null
-      if (pipeline && stagePosition) {
-        const opp = await withGhlRetry(() => createOpportunity({ contactId, pipelineKey: pipeline!.key, stagePosition, name: c.label }))
+      if (p.targetPipeline && p.targetStage) {
+        const opp = await withGhlRetry(() => createOpportunity({ contactId, pipelineKey: p.targetPipeline!.key, stagePosition: p.targetStage!, name: c.label }))
         if (opp.ok) opportunityId = opp.data?.opportunity?.id || null
         else oppError = `contact ok, opportunity failed: ${opp.error}`
       }
-      results[index] = { row_number: rowNumber, first_name: c.firstName, last_name: c.lastName, email: c.email, phone: c.phone, status: 'success', ghl_contact_id: contactId, ghl_opportunity_id: opportunityId, is_new: up.data.new ?? null, attempts: up.attempts, error_message: oppError }
+      // Route to the target agent: a queued agent_action the durable agent picks up.
+      if (useRouting && p.route) {
+        routeCounts[p.cls!.type] = (routeCounts[p.cls!.type] || 0) + 1
+        routingActions.push({ run_id: routeRunId, kind: 'route', actor: 'agent:contact_router', outcome: 'queued', target_type: 'ghl_contact', reason: p.route.agent, note: `${p.cls!.type} (${(p.cls!.confidence * 100).toFixed(0)}%, ${p.cls!.method}) → ${p.route.agent}; ghl=${contactId}; ${c.label}` })
+      }
+      results[index] = { row_number: rowNumber, first_name: c.firstName, last_name: c.lastName, email: c.email, phone: c.phone, status: 'success', ghl_contact_id: contactId, ghl_opportunity_id: opportunityId, is_new: up.data.new ?? null, attempts: up.attempts, error_message: oppError, contact_type: p.cls?.type ?? null, routed_agent: p.route?.agent ?? null, confidence: p.cls?.confidence ?? null }
     }
   }
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, toImport.length) }, worker))
+
+  if (routingActions.length > 0) {
+    await supabase.from('agent_actions').insert(routingActions)
+  }
 
   const counts = { success: 0, duplicate: 0, invalid: 0, failed: 0 }
   for (const r of results) counts[r.status]++
@@ -208,7 +272,7 @@ export async function POST(req: NextRequest) {
 
   await supabase.from('ghl_upload_batches').update({ success_count: counts.success, duplicate_count: counts.duplicate, invalid_count: counts.invalid, failed_count: counts.failed, status: 'complete', completed_at: new Date().toISOString() }).eq('batch_id', batchId)
 
-  await writeAudit({ actor, action: 'import.committed', entity: 'ghl_upload_batch', entityId: batchId, diff: { filename: file.name, total: rows.length, counts, pipeline: pipeline?.key ?? null } })
+  await writeAudit({ actor, action: 'import.committed', entity: 'ghl_upload_batch', entityId: batchId, diff: { filename: file.name, total: rows.length, counts, pipeline: pipeline?.key ?? null, routing: useRouting ? routeCounts : null } })
 
   return NextResponse.json({
     success: true,
@@ -223,7 +287,14 @@ export async function POST(req: NextRequest) {
     detection_method: resolved.method,
     ai_used: !!aiResult,
     ai_available: columnAiEnabled(),
-    rows: results.filter((r) => r.status !== 'success'),
+    routing: {
+      enabled: useRouting,
+      ai_used: classify.aiUsed,
+      counts: routeCounts,
+      capped: classify.aiCapped,
+    },
+    // All rows, with per-row classification, so the UI can show the routing plan.
+    rows: results,
   })
 }
 

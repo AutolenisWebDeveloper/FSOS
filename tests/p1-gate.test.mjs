@@ -98,13 +98,13 @@ check('Client + partner portals are column-allowlisted — securities fields can
 
 check('Every agent is green-zone only — no agent holds a "recommend" tool', () => {
   const keys = Object.keys(AGENT_ROSTER)
-  assert.equal(keys.length, 14, 'full roster present')
+  assert.equal(keys.length, 15, 'full roster present')
   assert.ok(!GREEN_ZONE_TOOLS.includes('recommend') && !GREEN_ZONE_TOOLS.includes('advise'))
   for (const k of keys) {
     assertGreenZoneOnly(AGENT_ROSTER[k]) // throws if any non-green-zone tool
     assert.ok(!AGENT_ROSTER[k].tools.some((t) => /recommend|advise|suitab|allocate/i.test(t)), `${k} has no recommend tool`)
   }
-}, () => '14 agents; every tool is green-zone; none can recommend/advise/allocate')
+}, () => '15 agents; every tool is green-zone; none can recommend/advise/allocate')
 
 // ─── PER-WORKFLOW PATH PROOF §3 (WF-2/3/4/5/7) ─────────────────────────────────
 

@@ -25,6 +25,9 @@ interface RowResult {
   phone: string | null
   status: string
   error_message: string | null
+  contact_type: string | null
+  routed_agent: string | null
+  confidence: number | null
 }
 
 interface UploadResult {
@@ -33,7 +36,27 @@ interface UploadResult {
   counts: { success: number; duplicate: number; invalid: number; failed: number }
   ai_used?: boolean
   detection_method?: string
+  routing?: { enabled: boolean; ai_used: boolean; counts: Record<string, number>; capped: number }
   rows: RowResult[]
+}
+
+const TYPE_LABEL: Record<string, string> = {
+  agency_owner: 'Agency Owner',
+  client: 'Client',
+  prospect: 'Prospect',
+  term_conversion: 'Term Conversion',
+  cross_sell: 'Cross-Sell',
+  business: 'Business Owner',
+  unknown: 'Needs Review',
+}
+const AGENT_FOR_TYPE: Record<string, string> = {
+  agency_owner: 'agency_activation',
+  client: 'pipeline',
+  prospect: 'referral_triage',
+  term_conversion: 'term_conversion',
+  cross_sell: 'cross_sell',
+  business: 'pipeline',
+  unknown: 'data_quality',
 }
 
 interface Batch {
@@ -53,6 +76,7 @@ export function ContactUploadForm({ pipelines, aiAvailable }: { pipelines: Pipel
   const [file, setFile] = React.useState<File | null>(null)
   const [pipelineKey, setPipelineKey] = React.useState('')
   const [stage, setStage] = React.useState('')
+  const [route, setRoute] = React.useState(true)
   const [busy, setBusy] = React.useState(false)
   const [result, setResult] = React.useState<UploadResult | null>(null)
   const [error, setError] = React.useState<string | null>(null)
@@ -177,7 +201,19 @@ export function ContactUploadForm({ pipelines, aiAvailable }: { pipelines: Pipel
                 </div>
               </div>
 
+              <label className="flex items-start gap-2 rounded-md border p-3 text-sm">
+                <input type="checkbox" className="mt-0.5" checked={route} onChange={(e) => setRoute(e.target.checked)} />
+                <span>
+                  <span className="font-medium">AI classify &amp; route</span>
+                  <span className="block text-xs text-muted-foreground">
+                    Identify each contact’s type (agency owner, client, prospect, term-conversion, cross-sell, business), auto-tag it, and route it to the right AI agent{' '}
+                    {pipelineKey ? '(your chosen pipeline is kept).' : '(and the matching GHL pipeline).'}
+                  </span>
+                </span>
+              </label>
+
               <input type="hidden" name="ai" value={aiAvailable ? 'true' : 'false'} />
+              <input type="hidden" name="ai_route" value={route ? 'true' : 'false'} />
 
               <Button type="submit" className="w-full" disabled={busy || !file}>
                 {busy ? 'Importing…' : 'Import & sync to GoHighLevel'}
@@ -205,32 +241,57 @@ export function ContactUploadForm({ pipelines, aiAvailable }: { pipelines: Pipel
                 <span className="text-muted-foreground">of {result.total} rows</span>
                 {result.ai_used ? <span className="text-muted-foreground">· columns via {result.detection_method}</span> : null}
               </div>
-              {result.rows.length > 0 ? (
-                <div className="overflow-x-auto rounded-lg border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Row</TableHead>
-                        <TableHead>Contact</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Detail</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {result.rows.map((r) => (
-                        <TableRow key={r.row_number}>
-                          <TableCell><MonoLabel>{r.row_number}</MonoLabel></TableCell>
-                          <TableCell>{[r.first_name, r.last_name].filter(Boolean).join(' ') || r.email || r.phone || '—'}</TableCell>
-                          <TableCell className="capitalize">{r.status}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{r.error_message ?? '—'}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+
+              {result.routing?.enabled ? (
+                <div className="rounded-lg border p-3">
+                  <p className="mb-2 text-sm font-medium">
+                    Routing plan {result.routing.ai_used ? <span className="text-xs font-normal text-muted-foreground">· AI-classified</span> : <span className="text-xs font-normal text-muted-foreground">· rules only (AI unavailable)</span>}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(result.routing.counts).length === 0 ? (
+                      <span className="text-sm text-muted-foreground">No contacts routed.</span>
+                    ) : (
+                      Object.entries(result.routing.counts).map(([type, n]) => (
+                        <span key={type} className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs">
+                          <strong>{n}</strong> {TYPE_LABEL[type] ?? type}
+                          <span className="text-muted-foreground">→ {AGENT_FOR_TYPE[type] ?? 'data_quality'}</span>
+                        </span>
+                      ))
+                    )}
+                  </div>
+                  {result.routing.capped > 0 ? (
+                    <p className="mt-2 text-xs text-muted-foreground">{result.routing.capped} contact(s) exceeded the per-upload AI cap and were marked Needs Review.</p>
+                  ) : null}
                 </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">Every row imported cleanly.</p>
-              )}
+              ) : null}
+
+              <div className="overflow-x-auto rounded-lg border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Row</TableHead>
+                      <TableHead>Contact</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Routed to</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Detail</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {result.rows.slice(0, 200).map((r) => (
+                      <TableRow key={r.row_number}>
+                        <TableCell><MonoLabel>{r.row_number}</MonoLabel></TableCell>
+                        <TableCell>{[r.first_name, r.last_name].filter(Boolean).join(' ') || r.email || r.phone || '—'}</TableCell>
+                        <TableCell className="text-xs">{r.contact_type ? (TYPE_LABEL[r.contact_type] ?? r.contact_type) : '—'}{r.confidence != null ? <span className="text-muted-foreground"> ({Math.round(r.confidence * 100)}%)</span> : null}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{r.routed_agent ?? '—'}</TableCell>
+                        <TableCell className="capitalize">{r.status}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{r.error_message ?? '—'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              {result.rows.length > 200 ? <p className="text-xs text-muted-foreground">Showing the first 200 of {result.rows.length} rows.</p> : null}
             </CardContent>
           </Card>
         ) : null}

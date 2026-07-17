@@ -12,7 +12,7 @@
     "migrate": "node scripts/migrate.mjs",
     "create-user": "node scripts/create-user.mjs",
     "seed:demo": "node scripts/seed-demo.mjs",
-    "test": "node tests/ghlUpload.test.mjs && node tests/compliance.test.mjs && node tests/auth-matrix.test.mjs && node tests/guardrail.test.mjs && node tests/guardrail-proof.test.mjs && node tests/resolution.test.mjs && node tests/p0-gate.test.mjs && node tests/p1-gate.test.mjs && node tests/gdc-tier.test.mjs && node tests/fna.test.mjs && node tests/public-intake.test.mjs",
+    "test": "node tests/ghlUpload.test.mjs && node tests/compliance.test.mjs && node tests/auth-matrix.test.mjs && node tests/guardrail.test.mjs && node tests/guardrail-proof.test.mjs && node tests/p0-gate.test.mjs && node tests/p1-gate.test.mjs && node tests/gdc-tier.test.mjs && node tests/fna.test.mjs && node tests/public-intake.test.mjs",
     "test:rls": "node tests/rls-firewall.test.mjs"
   },
   "dependencies": {

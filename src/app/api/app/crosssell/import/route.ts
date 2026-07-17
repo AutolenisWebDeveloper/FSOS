@@ -4,7 +4,6 @@ import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { parseContactsFile } from '@/lib/contacts/parseFile'
 import { parseCrossSellTable, summarizeCrossSell, type CrossSellRecord } from '@/lib/import/crossSellList'
-import { createBatch } from '@/lib/import/auditWriter'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -180,13 +179,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const batchId = await createBatch(db, { source: 'crosssell', filename: file.name, actor, stats: { plan, summary } })
-
     await writeAudit({
       actor,
       action: 'import.committed',
       entity: 'crosssell_list',
-      entityId: batchId,
+      entityId: null,
       diff: { filename: file.name, plan, dnc: summary.dnc, email_unsub: summary.email_unsub },
     })
 

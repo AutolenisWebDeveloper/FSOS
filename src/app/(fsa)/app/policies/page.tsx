@@ -2,19 +2,19 @@ import Link from 'next/link'
 import { Plus } from 'lucide-react'
 import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Button } from '@/components/ui/button'
-import { load } from '@/lib/data/query'
+import { loadAll } from '@/lib/data/query'
 import { PolicyList, type PolicyRow } from '@/components/app/PolicyList'
 
 export const dynamic = 'force-dynamic'
 
-// OS-05 Policy Directory (A2).
+// OS-05 Policy Directory (A2). Full book — loadAll pages past PostgREST's row cap
+// so every policy (thousands, from the district book) is loaded, not truncated.
 export default async function PoliciesPage() {
   const [policies, households] = await Promise.all([
-    load<{ id: string; policy_number: string | null; household_id: string; status: string; is_with_us: boolean; is_security: boolean; renewal_date: string | null; x_date: string | null; conversion_deadline: string | null }[]>(
+    loadAll<{ id: string; policy_number: string | null; household_id: string; status: string; is_with_us: boolean; is_security: boolean; renewal_date: string | null; x_date: string | null; conversion_deadline: string | null }>(
       (db) => db.from('household_policies').select('id, policy_number, household_id, status, is_with_us, is_security, renewal_date, x_date, conversion_deadline').is('deleted_at', null).order('created_at', { ascending: false }),
-      [],
     ),
-    load<{ id: string; primary_name: string }[]>((db) => db.from('households').select('id, primary_name').is('deleted_at', null), []),
+    loadAll<{ id: string; primary_name: string }>((db) => db.from('households').select('id, primary_name').is('deleted_at', null)),
   ])
 
   const actions = (

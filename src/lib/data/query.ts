@@ -31,6 +31,41 @@ export async function load<T>(fn: QueryFn, fallback: T): Promise<LoadResult<T>> 
   }
 }
 
+// A range-capable query builder (supabase-js returns one from .from().select()...).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type RangeBuilder = { range: (from: number, to: number) => PromiseLike<{ data: any; error: { message: string } | null }> }
+
+/**
+ * Load ALL rows of a query by paging past PostgREST's per-request row cap.
+ * Fetches in `pageSize` windows via .range() until a short page is returned, so a
+ * large book (thousands of policies/contacts/households) is fully loaded rather
+ * than silently truncated to the default ~1000. Use for list pages that render
+ * or client-filter the full set.
+ */
+export async function loadAll<T>(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  build: (db: SupabaseClient<any>) => RangeBuilder,
+  opts: { pageSize?: number; max?: number } = {},
+): Promise<LoadResult<T[]>> {
+  const pageSize = opts.pageSize ?? 1000
+  const max = opts.max ?? 100000
+  try {
+    const db = getDb()
+    const all: T[] = []
+    for (let offset = 0; offset < max; offset += pageSize) {
+      const { data, error } = await build(db).range(offset, offset + pageSize - 1)
+      if (error) return { ok: false, kind: 'error', message: error.message }
+      const rows = (data ?? []) as T[]
+      all.push(...rows)
+      if (rows.length < pageSize) break
+    }
+    return { ok: true, data: all }
+  } catch (e) {
+    if (e instanceof ConfigError) return { ok: false, kind: 'not_configured', message: e.message }
+    return { ok: false, kind: 'error', message: e instanceof Error ? e.message : String(e) }
+  }
+}
+
 /** The DOB encryption key the app passes to the pgcrypto RPCs (never stored in DB). */
 export function dobKey(): string {
   return process.env.DOB_ENCRYPTION_KEY || process.env.FSOS_DOB_KEY || 'fsos-dev-dob-key-change-me'

@@ -2,22 +2,22 @@ import Link from 'next/link'
 import { Plus } from 'lucide-react'
 import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Button } from '@/components/ui/button'
-import { load } from '@/lib/data/query'
+import { loadAll } from '@/lib/data/query'
 import { HouseholdList, type HouseholdRow } from '@/components/app/HouseholdList'
 
 export const dynamic = 'force-dynamic'
 
-// OS-04 Household Directory (A2).
+// OS-04 Household Directory (A2). Full book — loadAll pages past PostgREST's row
+// cap so every household (and correct per-household counts) is loaded.
 export default async function HouseholdsPage() {
   const [households, members, policies, opps, agencies] = await Promise.all([
-    load<{ id: string; primary_name: string; referring_agency_id: string | null; do_not_contact: boolean; archived_at: string | null }[]>(
+    loadAll<{ id: string; primary_name: string; referring_agency_id: string | null; do_not_contact: boolean; archived_at: string | null }>(
       (db) => db.from('households').select('id, primary_name, referring_agency_id, do_not_contact, archived_at').is('deleted_at', null).order('created_at', { ascending: false }),
-      [],
     ),
-    load<{ household_id: string }[]>((db) => db.from('household_members').select('household_id').is('deleted_at', null), []),
-    load<{ household_id: string }[]>((db) => db.from('household_policies').select('household_id').is('deleted_at', null), []),
-    load<{ household_id: string | null; stage: string }[]>((db) => db.from('opportunities').select('household_id, stage').is('deleted_at', null), []),
-    load<{ id: string; agency_name: string }[]>((db) => db.from('agency_partnerships').select('id, agency_name').is('deleted_at', null), []),
+    loadAll<{ household_id: string }>((db) => db.from('household_members').select('household_id').is('deleted_at', null)),
+    loadAll<{ household_id: string }>((db) => db.from('household_policies').select('household_id').is('deleted_at', null)),
+    loadAll<{ household_id: string | null; stage: string }>((db) => db.from('opportunities').select('household_id, stage').is('deleted_at', null)),
+    loadAll<{ id: string; agency_name: string }>((db) => db.from('agency_partnerships').select('id, agency_name').is('deleted_at', null)),
   ])
 
   const actions = (

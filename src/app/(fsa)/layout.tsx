@@ -30,6 +30,7 @@ import {
   Sparkles,
   Bell,
   Contact,
+  Upload,
   LifeBuoy,
 } from 'lucide-react'
 import { requireRole } from '@/lib/auth/session'
@@ -63,6 +64,7 @@ const NAV: NavItem[] = [
   { href: '/app/commissions', label: 'Commissions', icon: DollarSign, group: 'Pipeline' },
 
   { href: '/app/comms', label: 'Comms', icon: MessageSquare, group: 'Engage' },
+  { href: '/app/contacts/upload', label: 'Contact Upload', icon: Upload, group: 'Engage' },
   { href: '/app/forms', label: 'Client Forms', icon: ClipboardList, group: 'Engage' },
   { href: '/app/workshops', label: 'Workshops', icon: GraduationCap, group: 'Engage' },
   { href: '/app/documents', label: 'Documents', icon: FolderOpen, group: 'Engage' },

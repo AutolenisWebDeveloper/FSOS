@@ -27,6 +27,7 @@ const HEADER_ALIASES: Record<string, string[]> = {
   product_interest: ['productinterest', 'product', 'interest'],
   life_stage: ['lifestage', 'stage', 'segment'],
   agency_owner: ['agencyowner', 'agencyownername', 'referringowner', 'referringagencyowner', 'owner', 'agent', 'agentname'],
+  contact_type: ['contacttype', 'type', 'category', 'kind', 'recordtype', 'persona'],
   notes: ['notes', 'note', 'comment', 'comments'],
 }
 
@@ -115,6 +116,12 @@ export interface MappedContact {
   dedupeKey: string
   /** Human label for logs/results. */
   label: string
+  /** A "type/category" column value, when the file declared one (routing signal). */
+  declaredType?: string | null
+  /** Product-interest column value, when present (routing signal). */
+  productInterest?: string | null
+  /** Life-stage/segment column value, when present (routing signal). */
+  lifeStage?: string | null
 }
 
 export interface MapResult {
@@ -165,6 +172,7 @@ export function mapAndValidateRow(
   const lifeStage = pick(record, colMap, 'life_stage')
   const agencyOwner = pick(record, colMap, 'agency_owner') || defaults.agencyOwner || ''
   const leadSource = pick(record, colMap, 'source') || defaults.source || ''
+  const declaredType = pick(record, colMap, 'contact_type') || null
   if (productInterest) customFields[GHL_CUSTOM_FIELDS.product_interest] = productInterest
   if (lifeStage) customFields[GHL_CUSTOM_FIELDS.life_stage] = lifeStage
   if (agencyOwner) customFields[GHL_CUSTOM_FIELDS.referring_owner] = agencyOwner
@@ -174,7 +182,7 @@ export function mapAndValidateRow(
   const label = `${first} ${last}`.trim() || email || phone || 'contact'
 
   return {
-    contact: { firstName: first, lastName: last, email, phone, tags, source, customFields, dedupeKey, label },
+    contact: { firstName: first, lastName: last, email, phone, tags, source, customFields, dedupeKey, label, declaredType, productInterest: productInterest || null, lifeStage: lifeStage || null },
     errors: [],
   }
 }

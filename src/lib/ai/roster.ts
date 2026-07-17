@@ -47,6 +47,7 @@ export const AGENT_ROSTER: Record<string, AgentDef> = {
   marketing_automation: { key: 'marketing_automation', mission: 'Run approved campaigns when the gate passes.', tools: ['invite', 'educate', 'remind', 'escalate', 'log'], triggers: 'campaign-dispatch job', confidenceThreshold: 0.8 },
   compliance_guardrail: { key: 'compliance_guardrail', mission: 'Hard-block layer: validate every client-facing message before dispatch.', tools: ['validate_message', 'escalate', 'log'], triggers: 'Every outbound draft', confidenceThreshold: 0.99 },
   data_quality: { key: 'data_quality', mission: 'Flag missing/low-quality data for cleanup.', tools: ['identify', 'assemble_data', 'log'], triggers: 'data-quality job', confidenceThreshold: 0.6 },
+  contact_router: { key: 'contact_router', mission: 'Classify uploaded contacts by type and route each to the right agent (never a product rec).', tools: ['identify', 'assemble_data', 'log'], triggers: 'Contact upload', confidenceThreshold: 0.6 },
 }
 
 /** Assert an agent holds no forbidden tool (unit-testable green-zone proof). */

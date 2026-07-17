@@ -786,3 +786,19 @@ export const OpraStatusSchema = z
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'No changes provided' })
 export type OpraStatus = z.infer<typeof OpraStatusSchema>
+
+// ─── Native GoHighLevel sync (App A → App B parity) ────────────────────────────
+// Push an App B record into GoHighLevel (idempotent; returned GHL ids stored back
+// on the record). Two entity modes map to the two legacy sync modes:
+//   household → prospect_client pipeline · agency → agency_owner pipeline.
+export const GHL_SYNC_ENTITY = ['household', 'agency'] as const
+export const GHL_PIPELINE_KEY = ['prospect_client', 'agency_owner', 'term_conversions'] as const
+
+export const GhlSyncSchema = z.object({
+  entity_type: z.enum(GHL_SYNC_ENTITY),
+  entity_id: uuid,
+  pipeline: z.enum(GHL_PIPELINE_KEY).optional(),
+  stage: z.number().int().min(1).max(20).optional(),
+  tags: z.array(z.string().trim().min(1).max(60)).max(20).optional(),
+})
+export type GhlSync = z.infer<typeof GhlSyncSchema>

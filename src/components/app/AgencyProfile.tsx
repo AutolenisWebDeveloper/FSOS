@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
 import { LogActivityButton } from '@/components/app/LogActivityButton'
+import { GhlSyncButton } from '@/components/app/GhlSyncButton'
 
 // Valid P0 tabs (spec p0-core OS-02): overview + referrals. Any other tab param
 // 404s within the shell (acceptance criterion).
@@ -31,6 +32,7 @@ interface Agency {
   ytd_referrals: number
   pc_book_policies: number
   life_policies_in_force: number
+  ghl_synced_at: string | null
 }
 
 export async function AgencyProfile({ id, tab }: { id: string; tab: AgencyTab }) {
@@ -99,6 +101,7 @@ export async function AgencyProfile({ id, tab }: { id: string; tab: AgencyTab })
       actions={
         <>
           <LogActivityButton entityType="agency_partnership" entityId={id} kind="checkin" label="Start check-in" />
+          <GhlSyncButton entityType="agency" entityId={id} synced={!!agency.ghl_synced_at} />
           <Button asChild variant="outline" size="sm">
             <Link href={`/app/referrals/new?agency=${id}`}>Record referral</Link>
           </Button>

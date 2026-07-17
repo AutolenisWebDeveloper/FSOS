@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
 import { LogActivityButton } from '@/components/app/LogActivityButton'
+import { GhlSyncButton } from '@/components/app/GhlSyncButton'
 
 export const HOUSEHOLD_P0_TABS = ['overview', 'members', 'policies'] as const
 export type HouseholdTab = (typeof HOUSEHOLD_P0_TABS)[number]
@@ -23,6 +24,7 @@ interface Household {
   zip: string | null
   do_not_contact: boolean
   archived_at: string | null
+  ghl_synced_at: string | null
 }
 
 export async function HouseholdProfile({ id, tab }: { id: string; tab: HouseholdTab }) {
@@ -60,7 +62,12 @@ export async function HouseholdProfile({ id, tab }: { id: string; tab: Household
           {hh.archived_at ? <Badge variant="draft">archived</Badge> : null}
         </span>
       }
-      actions={<LogActivityButton entityType="household" entityId={id} />}
+      actions={
+        <>
+          <LogActivityButton entityType="household" entityId={id} />
+          <GhlSyncButton entityType="household" entityId={id} synced={!!hh.ghl_synced_at} />
+        </>
+      }
       rail={rail}
     >
       <nav className="flex gap-1 border-b" aria-label="Household tabs">

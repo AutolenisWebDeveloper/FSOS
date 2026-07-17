@@ -8,10 +8,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { MonoLabel } from '@/components/ui/typography'
 
+interface PlanEntry { in_file: number; existing: number; new: number }
 interface Plan {
-  serving_agents: { in_file: number; existing: number; new: number }
-  households: { in_file: number; existing: number; new: number }
-  policies: { in_file: number; existing: number; new: number }
+  serving_agents: PlanEntry
+  households: PlanEntry
+  policies: PlanEntry
+  contacts: PlanEntry
 }
 interface Summary {
   policies: number
@@ -32,7 +34,7 @@ interface PreviewData {
 }
 interface CommitData {
   mode: 'commit'
-  committed: { agencies_new: number; households_new: number; members_added: number; policies_added: number }
+  committed: { agencies_new: number; households_new: number; members_added: number; policies_added: number; contacts_added: number }
   plan: Plan
 }
 
@@ -121,6 +123,7 @@ export function BookImportWizard() {
                   <PlanRow label="Agency partnerships" p={preview.plan.serving_agents} />
                   <PlanRow label="Households" p={preview.plan.households} />
                   <PlanRow label="Policies" p={preview.plan.policies} />
+                  <PlanRow label="Contacts" p={preview.plan.contacts} />
                 </TableBody>
               </Table>
             </div>
@@ -151,11 +154,12 @@ export function BookImportWizard() {
         <Card>
           <CardHeader><CardTitle className="flex items-center gap-2 text-base"><CheckCircle2 className="h-4 w-4 text-status-won" /> Import committed</CardTitle></CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
               <Stat label="Agencies added" value={committed.committed.agencies_new} />
               <Stat label="Households added" value={committed.committed.households_new} />
               <Stat label="Members added" value={committed.committed.members_added} />
               <Stat label="Policies added" value={committed.committed.policies_added} />
+              <Stat label="Contacts added" value={committed.committed.contacts_added} />
             </div>
             <p className="mt-3 text-xs text-muted-foreground">Re-running the same file adds nothing further (idempotent).</p>
           </CardContent>

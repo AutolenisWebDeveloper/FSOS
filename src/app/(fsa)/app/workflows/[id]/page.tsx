@@ -54,7 +54,8 @@ function runStatus(status: string): 'won' | 'lost' | 'active' | 'pending' {
 }
 
 // OS-14 Workflow Detail (A3 DetailShell).
-export default async function WorkflowDetailPage({ params }: { params: { id: string } }) {
+export default async function WorkflowDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const res = await load<WorkflowDetail | null>(
     (db) => db.from('automation_workflows').select('*').eq('id', params.id).maybeSingle(),
     null,
@@ -113,7 +114,6 @@ export default async function WorkflowDetailPage({ params }: { params: { id: str
           </CardContent>
         </Card>
       </div>
-
       <Card>
         <CardHeader><CardTitle className="text-base">Conditions</CardTitle></CardHeader>
         <CardContent>
@@ -130,7 +130,6 @@ export default async function WorkflowDetailPage({ params }: { params: { id: str
           )}
         </CardContent>
       </Card>
-
       <Card>
         <CardHeader><CardTitle className="text-base">Steps</CardTitle></CardHeader>
         <CardContent>
@@ -151,7 +150,6 @@ export default async function WorkflowDetailPage({ params }: { params: { id: str
           )}
         </CardContent>
       </Card>
-
       <Card>
         <CardHeader><CardTitle className="text-base">Recent runs</CardTitle></CardHeader>
         <CardContent>
@@ -184,5 +182,5 @@ export default async function WorkflowDetailPage({ params }: { params: { id: str
         </CardContent>
       </Card>
     </DetailShell>
-  )
+  );
 }

@@ -8,7 +8,8 @@ import { ReviewList, type ReviewRow } from '@/components/app/ReviewList'
 export const dynamic = 'force-dynamic'
 
 // OS-06 Financial Review Directory (A2). The connective spine (WF-2).
-export default async function ReviewsPage({ searchParams }: { searchParams: { household?: string } }) {
+export default async function ReviewsPage(props: { searchParams: Promise<{ household?: string }> }) {
+  const searchParams = await props.searchParams;
   const [reviews, households] = await Promise.all([
     load<{ id: string; household_id: string; type: string; stage: string; scheduled_at: string | null; generated_opp_ids: string[] | null }[]>(
       (db) => {

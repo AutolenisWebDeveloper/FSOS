@@ -11,7 +11,8 @@ import { Numeric } from '@/components/ui/typography'
 export const dynamic = 'force-dynamic'
 
 // OS-15 Agent Detail (A3). Tools are green-zone only; none holds a "recommend" tool.
-export default async function AgentDetailPage({ params }: { params: { id: string } }) {
+export default async function AgentDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const res = await load<{ id: string; key: string; name: string; enabled: boolean; is_guardrail: boolean; mission: string | null } | null>(
     (db) => db.from('ai_agents').select('*').eq('key', params.id).maybeSingle(),
     null,
@@ -65,5 +66,5 @@ export default async function AgentDetailPage({ params }: { params: { id: string
         </Card>
       </div>
     </DetailShell>
-  )
+  );
 }

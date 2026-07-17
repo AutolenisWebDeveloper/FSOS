@@ -21,7 +21,8 @@ const MERGE_SPEC = [
   { field: 'first_name' }, { field: 'last_name' }, { field: 'tags', kind: 'set' as const },
 ]
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireApiRole('fsa')
   if (!auth.ok) return auth.response
   const denied = requirePermission(auth.session, ['fsa', 'licensed_staff', 'admin', 'super_admin'])

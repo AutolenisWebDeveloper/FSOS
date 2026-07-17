@@ -13,7 +13,8 @@ export const dynamic = 'force-dynamic'
 // OS-06 Review Prep (A3). Read-only assembly of a household snapshot — policies,
 // prior reviews, coverage gaps (from v_cross_sell_gaps), conversion windows.
 // NO recommendation is produced; this is fact assembly only.
-export default async function ReviewPrepPage({ params }: { params: { id: string } }) {
+export default async function ReviewPrepPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const res = await load<{ id: string; household_id: string; type: string } | null>(
     (db) => db.from('reviews').select('id, household_id, type').eq('id', params.id).is('deleted_at', null).maybeSingle(),
     null,
@@ -63,7 +64,6 @@ export default async function ReviewPrepPage({ params }: { params: { id: string 
           ))}
         </CardContent>
       </Card>
-
       <div className="grid gap-4 sm:grid-cols-2">
         <Card>
           <CardHeader><CardTitle className="text-base">Coverage gaps</CardTitle></CardHeader>
@@ -95,7 +95,6 @@ export default async function ReviewPrepPage({ params }: { params: { id: string 
           </CardContent>
         </Card>
       </div>
-
       <Card>
         <CardHeader><CardTitle className="text-base">Prior reviews</CardTitle></CardHeader>
         <CardContent className="space-y-1 text-sm">
@@ -108,5 +107,5 @@ export default async function ReviewPrepPage({ params }: { params: { id: string 
         </CardContent>
       </Card>
     </DetailShell>
-  )
+  );
 }

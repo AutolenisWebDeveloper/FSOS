@@ -4,7 +4,7 @@
 // RSC-safe: degrades to "unauthenticated" when Supabase is unconfigured rather
 // than throwing at build/render.
 
-import { cookies } from 'next/headers'
+import { cookies, type UnsafeUnwrappedCookies } from 'next/headers';
 import { redirect } from 'next/navigation'
 import { createServerSupabase } from '@/lib/supabase/server'
 import { getDb } from '@/lib/supabase/client'
@@ -12,7 +12,7 @@ import { type Role, type SessionClaims, toRoles, allowedRoles, rolesIntersect, t
 
 /** Build a cookie adapter from next/headers for RSC/route-handler contexts. */
 function cookieAdapter() {
-  const store = cookies()
+  const store = (cookies() as unknown as UnsafeUnwrappedCookies)
   return {
     getAll: () => store.getAll().map((c) => ({ name: c.name, value: c.value })),
     setAll: (list: { name: string; value: string; options: Record<string, unknown> }[]) => {

@@ -30,7 +30,8 @@ You MUST NEVER recommend that the client buy, convert, replace, allocate, or pur
 product, policy, or investment, and never imply a securities call to action. Frame gaps as
 "discussion topics for a review", never as a product to sell. Return a short numbered list.`
 
-export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireApiRole('fsa')
   if (!auth.ok) return auth.response
   const denied = requirePermission(auth.session, ['fsa', 'licensed_staff', 'super_admin'])

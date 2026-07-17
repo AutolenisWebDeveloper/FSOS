@@ -12,7 +12,8 @@ export const runtime = 'nodejs'
 // PATCH — edit a template. Editing creates a NEW version (old body retained in a
 // prior version row is out of scope for P1; we bump the version + reset approval to
 // draft so an edited-after-approval template cannot send until re-approved).
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireApiRole('fsa')
   if (!auth.ok) return auth.response
   const denied = requirePermission(auth.session, ['fsa', 'licensed_staff', 'super_admin'])
@@ -51,7 +52,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 // POST — submit for approval (fsa) OR approve/reject (compliance/supervisor/super ONLY).
 // Approval authority is limited to compliance/supervisor/super — an FSA cannot
 // approve their own template. Only approved templates are usable by any campaign/agent.
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireApiRole('fsa') // base auth; role check below per action
   if (!auth.ok) {
     // compliance/supervisor users aren't in the fsa portal — fall back to compliance portal auth.

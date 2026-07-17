@@ -5,7 +5,8 @@ import { Label } from '@/components/ui/label'
 
 export const metadata = { title: 'Set a new password — FSOS' }
 
-export default function ResetPasswordPage({ params }: { params: { token: string } }) {
+export default async function ResetPasswordPage(props: { params: Promise<{ token: string }> }) {
+  const params = await props.params;
   return (
     <AuthShell title="Set a new password" description="Choose a strong password you haven't used before.">
       <form className="space-y-4">

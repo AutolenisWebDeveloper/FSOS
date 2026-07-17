@@ -7,7 +7,8 @@ import { PolicyForm } from '@/components/app/PolicyForm'
 export const dynamic = 'force-dynamic'
 
 // OS-05 Record Policy (A5). `household` query param prefills the household.
-export default async function NewPolicyPage({ searchParams }: { searchParams: { household?: string } }) {
+export default async function NewPolicyPage(props: { searchParams: Promise<{ household?: string }> }) {
+  const searchParams = await props.searchParams;
   const [households, carriers, products] = await Promise.all([
     load<{ id: string; primary_name: string }[]>((db) => db.from('households').select('id, primary_name').is('deleted_at', null).order('primary_name'), []),
     load<{ id: string; name: string }[]>((db) => db.from('carriers').select('id, name').order('name'), []),

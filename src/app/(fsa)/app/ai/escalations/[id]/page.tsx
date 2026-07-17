@@ -43,7 +43,8 @@ function isSecurities(reason: string | null, blockedStep: string | null): boolea
 
 // AI Escalation Detail (A3). Shows the blocked/judgment context and the human
 // resolution controls. Securities items are read-only handoffs to FFS — never sent.
-export default async function EscalationDetailPage({ params }: { params: { id: string } }) {
+export default async function EscalationDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const res = await load<Escalation | null>(
     (db) =>
       db

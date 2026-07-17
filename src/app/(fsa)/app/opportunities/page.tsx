@@ -9,7 +9,8 @@ import type { OppCard } from '@/components/app/OpportunityBoard'
 export const dynamic = 'force-dynamic'
 
 // OS-09 Opportunity Directory (A2).
-export default async function OpportunitiesPage({ searchParams }: { searchParams: { household?: string } }) {
+export default async function OpportunitiesPage(props: { searchParams: Promise<{ household?: string }> }) {
+  const searchParams = await props.searchParams;
   const [opps, households] = await Promise.all([
     load<{ id: string; household_id: string | null; engagement: string; stage: string; is_security: boolean; premium: number | null }[]>(
       (db) => {

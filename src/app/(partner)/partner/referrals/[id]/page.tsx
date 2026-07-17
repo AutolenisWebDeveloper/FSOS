@@ -10,7 +10,8 @@ export const dynamic = 'force-dynamic'
 
 // P-4 Referral Status (A3). Shows status progress only — no securities case content,
 // no FSA private notes. Out-of-scope deep link → 403.
-export default async function PartnerReferralDetailPage({ params }: { params: { id: string } }) {
+export default async function PartnerReferralDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const session = await getServerSession()
   if (!session) redirect('/login')
   const agencyIds = await agencyIdsFor(session)

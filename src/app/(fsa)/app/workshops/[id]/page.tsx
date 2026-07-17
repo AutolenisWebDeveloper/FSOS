@@ -31,7 +31,8 @@ interface Workshop {
 
 // Workshop detail (docs/legacy-port.md §2.5) — A3. Registrations, attendance, and
 // convert-attendee-to-referral. Public registration opens when published.
-export default async function WorkshopDetailPage({ params }: { params: { id: string } }) {
+export default async function WorkshopDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   await requireRole('fsa', `/app/workshops/${params.id}`)
 
   let workshop: Workshop | null = null

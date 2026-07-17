@@ -19,7 +19,8 @@ function authorized(req: NextRequest): boolean {
   return auth === `Bearer ${secret}`
 }
 
-export async function GET(req: NextRequest, { params }: { params: { job: string } }) {
+export async function GET(req: NextRequest, props: { params: Promise<{ job: string }> }) {
+  const params = await props.params;
   if (!authorized(req)) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }

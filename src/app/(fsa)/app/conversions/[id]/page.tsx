@@ -22,7 +22,8 @@ interface Policy {
 
 // OS-07 Conversion Opportunity Detail (A3). The only client-facing content permitted
 // is neutral education + a review invitation — never a specific product.
-export default async function ConversionDetailPage({ params }: { params: { id: string } }) {
+export default async function ConversionDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const res = await load<Policy | null>((db) => db.from('household_policies').select('id, household_id, policy_number, status, conversion_deadline, is_security, premium').eq('id', params.id).is('deleted_at', null).maybeSingle(), null)
   if (!res.ok) return <ErrorState description={res.kind === 'not_configured' ? 'Database not configured.' : res.message} />
   const p = res.data
@@ -57,7 +58,6 @@ export default async function ConversionDetailPage({ params }: { params: { id: s
           <OutreachActions endpoint={`/api/conversions/${p.id}`} isSecurity={p.is_security} />
         </CardContent>
       </Card>
-
       <div className="grid gap-4 sm:grid-cols-2">
         <Card>
           <CardHeader><CardTitle className="text-base">Policy</CardTitle></CardHeader>
@@ -81,5 +81,5 @@ export default async function ConversionDetailPage({ params }: { params: { id: s
         </Card>
       </div>
     </DetailShell>
-  )
+  );
 }

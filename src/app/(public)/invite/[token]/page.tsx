@@ -6,7 +6,8 @@ import { Label } from '@/components/ui/label'
 export const metadata = { title: 'Accept invitation — FSOS' }
 
 // A6-style accept-invite (sitemap P-0). Sets password + enrolls MFA on submit.
-export default function InvitePage({ params }: { params: { token: string } }) {
+export default async function InvitePage(props: { params: Promise<{ token: string }> }) {
+  const params = await props.params;
   return (
     <AuthShell title="Accept your invitation" description="Set a password to activate your FSOS account.">
       <form className="space-y-4">

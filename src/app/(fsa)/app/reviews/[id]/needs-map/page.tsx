@@ -17,7 +17,8 @@ export const runtime = 'nodejs'
 // visual coverage/needs map for the household: what's held, what's a gap, life-stage
 // context. Displays GAPS ONLY — never a product recommendation. Framed as "coverage
 // gap / discussion topic." The recommended basket is assumption-flagged config.
-export default async function NeedsMapPage({ params }: { params: { id: string } }) {
+export default async function NeedsMapPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   await requireRole('fsa', `/app/reviews/${params.id}/needs-map`)
 
   const res = await load<{ id: string; household_id: string } | null>(

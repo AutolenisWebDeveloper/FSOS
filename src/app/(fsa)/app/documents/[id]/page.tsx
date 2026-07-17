@@ -8,7 +8,8 @@ import { Numeric } from '@/components/ui/typography'
 export const dynamic = 'force-dynamic'
 
 // OS-13 Document Detail (A3). Signed-URL access; scan status; retention.
-export default async function DocumentDetailPage({ params }: { params: { id: string } }) {
+export default async function DocumentDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const res = await load<{ id: string; file_name: string | null; classification: string | null; entity_type: string | null; entity_id: string | null; scan_status: string; mime_type: string | null; retention_until: string | null; legal_hold: boolean; created_at: string } | null>(
     (db) => db.from('documents').select('*').eq('id', params.id).maybeSingle(),
     null,

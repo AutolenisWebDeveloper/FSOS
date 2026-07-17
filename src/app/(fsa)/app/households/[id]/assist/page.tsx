@@ -17,7 +17,8 @@ type Household = { id: string; primary_name: string; city: string | null; state:
 // alongside the household profile (does not modify it). The suggestion engine is
 // green-zone + firewall-safe (see the next-action route). Roles: fsa,
 // licensed_staff, super_admin (portal-gated by the (fsa) layout).
-export default async function HouseholdAssistPage({ params }: { params: { id: string } }) {
+export default async function HouseholdAssistPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   await requireRole('fsa', `/app/households/${params.id}/assist`)
 
   const res = await load<Household | null>(

@@ -14,7 +14,8 @@ export const runtime = 'nodejs'
 // need/product family, schedules follow-ups. Securities needs and replacement
 // scenarios are firewalled to FFS-supervised follow-up (a pointer + escalation),
 // NEVER an FSOS automated sequence. Idempotent: outcome_logged reviews are frozen.
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireApiRole('fsa')
   if (!auth.ok) return auth.response
   const denied = requirePermission(auth.session, ['fsa', 'licensed_staff', 'super_admin'])

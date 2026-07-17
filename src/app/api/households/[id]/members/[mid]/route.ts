@@ -11,7 +11,8 @@ export const runtime = 'nodejs'
 
 // GET /api/households/[id]/members/[mid]?dob=1 — member; DOB decrypt is role-gated
 // (fsa/licensed_staff/super) and every decrypt is audited (rbac-matrix DOB rule).
-export async function GET(req: NextRequest, { params }: { params: { id: string; mid: string } }) {
+export async function GET(req: NextRequest, props: { params: Promise<{ id: string; mid: string }> }) {
+  const params = await props.params;
   const auth = await requireApiRole('fsa')
   if (!auth.ok) return auth.response
   try {
@@ -37,7 +38,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string; 
   }
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string; mid: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string; mid: string }> }) {
+  const params = await props.params;
   const auth = await requireApiRole('fsa')
   if (!auth.ok) return auth.response
   const denied = requirePermission(auth.session, ['fsa', 'licensed_staff', 'super_admin'])

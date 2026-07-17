@@ -9,7 +9,8 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 // P-2 Super — enable/disable an outbound webhook.
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireApiRole('super')
   if (!auth.ok) return auth.response
   const denied = requirePermission(auth.session, ['super_admin'])

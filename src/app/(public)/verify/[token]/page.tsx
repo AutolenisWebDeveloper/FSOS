@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button'
 
 export const metadata = { title: 'Verify email — FSOS' }
 
-export default function VerifyPage({ params }: { params: { token: string } }) {
+export default async function VerifyPage(props: { params: Promise<{ token: string }> }) {
+  const params = await props.params;
   // The token is exchanged server-side when the verification flow lands; this
   // page confirms receipt and offers the next action (no dead end).
   void params.token

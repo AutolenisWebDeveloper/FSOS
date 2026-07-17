@@ -13,7 +13,8 @@ export const runtime = 'nodejs'
 const SECURITIES_STAGE_LIMIT_INDEX = OPPORTUNITY_STAGE.indexOf('quoted_proposed')
 
 // POST /api/opportunities/[id]/stage 🛡 — drag/advance. Writes stage_history + audit.
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireApiRole('fsa')
   if (!auth.ok) return auth.response
   const denied = requirePermission(auth.session, ['fsa', 'licensed_staff', 'super_admin'])

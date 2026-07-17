@@ -10,7 +10,8 @@ export const runtime = 'nodejs'
 
 // Add a requirement to a case (checklist / carrier / manual). Each outstanding
 // requirement is actionable and can link to a document request (WF-1 step 7).
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireApiRole('fsa')
   if (!auth.ok) return auth.response
   const denied = requirePermission(auth.session, ['fsa', 'licensed_staff', 'super_admin'])
@@ -36,7 +37,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 }
 
 // Resolve/waive a requirement. Body: { requirement_id, status }.
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireApiRole('fsa')
   if (!auth.ok) return auth.response
   const denied = requirePermission(auth.session, ['fsa', 'licensed_staff', 'super_admin'])

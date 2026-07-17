@@ -10,7 +10,8 @@ import { Numeric } from '@/components/ui/typography'
 export const dynamic = 'force-dynamic'
 
 // OS-08 Cross-Sell Opportunity Detail (A3). [id] = household id. Invite + educate only.
-export default async function CrossSellDetailPage({ params }: { params: { id: string } }) {
+export default async function CrossSellDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const gap = await load<{ household_id: string; primary_name: string; next_best_line: string | null; gap_count: number; has_life: boolean; families_held: string[] | null; score: number } | null>(
     (db) => db.from('v_cross_sell_gaps').select('*').eq('household_id', params.id).maybeSingle(),
     null,
@@ -72,5 +73,5 @@ export default async function CrossSellDetailPage({ params }: { params: { id: st
         </CardContent>
       </Card>
     </DetailShell>
-  )
+  );
 }

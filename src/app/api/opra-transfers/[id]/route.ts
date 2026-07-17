@@ -12,7 +12,8 @@ export const runtime = 'nodejs'
 // review / transferred). Manual FSA actions — no automated client send here — so
 // the securities firewall does not block them; is_security records are surfaced
 // read-only in the UI. Timestamps are stamped when a flag flips.
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireApiRole('fsa')
   if (!auth.ok) return auth.response
   const denied = requirePermission(auth.session, ['fsa', 'licensed_staff', 'admin', 'super_admin'])

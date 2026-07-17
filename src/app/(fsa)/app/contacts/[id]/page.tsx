@@ -39,7 +39,8 @@ interface Contact {
 interface Policy { id: string; policy_number: string | null; product_name: string | null; status: string; is_security: boolean; face_amount: number | string | null }
 interface Member { id: string; full_name: string; relationship: string | null }
 
-export default async function ContactDetailPage({ params }: { params: { id: string } }) {
+export default async function ContactDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const res = await load<Contact | null>(
     (db) => db.from('contacts').select('*').eq('id', params.id).is('deleted_at', null).maybeSingle(),
     null,
@@ -145,12 +146,11 @@ export default async function ContactDetailPage({ params }: { params: { id: stri
           </Card>
         </div>
       ) : null}
-
       <div className="max-w-3xl">
         <ContactForm mode="edit" initial={c} />
       </div>
     </DetailShell>
-  )
+  );
 }
 
 function Row({ label, value, mono }: { label: string; value: string | null; mono?: boolean }) {

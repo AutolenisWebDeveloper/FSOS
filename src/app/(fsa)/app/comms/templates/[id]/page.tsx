@@ -9,7 +9,8 @@ import { TemplateApprovalControls, TemplateBodyEditor } from '@/components/app/T
 export const dynamic = 'force-dynamic'
 
 // OS-12 Template Editor (A5). Approval limited to compliance/supervisor/super.
-export default async function TemplateDetailPage({ params }: { params: { id: string } }) {
+export default async function TemplateDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const [res, session] = await Promise.all([
     load<{ id: string; name: string; channel: string; category: string | null; body: string; approval_status: string; version: number; approved_by: string | null } | null>(
       (db) => db.from('comm_templates').select('*').eq('id', params.id).maybeSingle(),
@@ -40,5 +41,5 @@ export default async function TemplateDetailPage({ params }: { params: { id: str
       </Card>
       <p className="text-xs text-muted-foreground">Every template must be education/invitation only, carry an opt-out/consent footer, and pass the recommendation-language block. Term-conversion/cross-sell templates are education/invitation only.</p>
     </DetailShell>
-  )
+  );
 }

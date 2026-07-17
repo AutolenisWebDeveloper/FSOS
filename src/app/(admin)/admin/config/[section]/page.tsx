@@ -5,7 +5,8 @@ import { load } from '@/lib/data/query'
 export const dynamic = 'force-dynamic'
 const SECTIONS = ['tags', 'statuses', 'loss_reasons', 'appointment_types', 'review_types']
 // P-2 Operational Config (A10). Config drives dropdowns app-wide; Farmers values badged.
-export default async function AdminConfigPage({ params }: { params: { section: string } }) {
+export default async function AdminConfigPage(props: { params: Promise<{ section: string }> }) {
+  const params = await props.params;
   const section = params.section
   if (!SECTIONS.includes(section)) notFound()
   const rows = await load<{ id: string; key: string; label: string; is_assumption: boolean; active: boolean }[]>(
@@ -20,5 +21,5 @@ export default async function AdminConfigPage({ params }: { params: { section: s
         )}
       </SettingsSection>
     </SettingsShell>
-  )
+  );
 }

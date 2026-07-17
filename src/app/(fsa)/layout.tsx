@@ -59,6 +59,7 @@ const NAV: NavItem[] = [
   { href: '/app/policies', label: 'Policies', icon: FileText, group: 'Book' },
   { href: '/app/book/import', label: 'District Book', icon: Database, group: 'Book' },
   { href: '/app/crosssell', label: 'Cross-Sell Import', icon: FileUp, group: 'Book' },
+  { href: '/app/contacts/review', label: 'Import Review', icon: ClipboardCheck, group: 'Book' },
 
   { href: '/app/reviews', label: 'Reviews', icon: ClipboardCheck, group: 'Pipeline' },
   { href: '/app/fna', label: 'FNA Generator', icon: FileSignature, group: 'Pipeline' },

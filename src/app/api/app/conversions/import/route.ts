@@ -3,6 +3,7 @@ import { getDb } from '@/lib/supabase/client'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { parseConversionFile, summarizeConversions, type ConversionRecord } from '@/lib/import/conversionList'
+import { createBatch } from '@/lib/import/auditWriter'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -213,7 +214,9 @@ export async function POST(req: NextRequest) {
       membersAdded = newMembers.length
     }
 
-    await writeAudit({ actor, action: 'import.committed', entity: 'conversion_list', entityId: null, diff: { filename: file.name, plan, total_convertible: summary.total_convertible } })
+    const batchId = await createBatch(db, { source: 'conversion', filename: file.name, actor, stats: { plan, total_convertible: summary.total_convertible } })
+
+    await writeAudit({ actor, action: 'import.committed', entity: 'conversion_list', entityId: batchId, diff: { filename: file.name, plan, total_convertible: summary.total_convertible } })
 
     return NextResponse.json({
       mode: 'commit',

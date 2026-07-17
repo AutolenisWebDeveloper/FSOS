@@ -7,7 +7,8 @@ import { OpportunityForm } from '@/components/app/OpportunityForm'
 export const dynamic = 'force-dynamic'
 
 // OS-09 Create Opportunity (A5). Empty product catalog → guide to /super/products.
-export default async function NewOpportunityPage({ searchParams }: { searchParams: { household?: string } }) {
+export default async function NewOpportunityPage(props: { searchParams: Promise<{ household?: string }> }) {
+  const searchParams = await props.searchParams;
   const [households, products, agencies] = await Promise.all([
     load<{ id: string; primary_name: string }[]>((db) => db.from('households').select('id, primary_name').is('deleted_at', null).order('primary_name'), []),
     load<{ id: string; family: string; subtype: string | null; is_security: boolean }[]>((db) => db.from('products').select('id, family, subtype, is_security').eq('active', true).order('family'), []),

@@ -9,7 +9,8 @@ import { CampaignActivateControls } from '@/components/app/CampaignControls'
 export const dynamic = 'force-dynamic'
 
 // OS-12 Campaign Detail (A3). Shows the suppression report (who/why excluded).
-export default async function CampaignDetailPage({ params }: { params: { id: string } }) {
+export default async function CampaignDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const res = await load<{ id: string; name: string; channel: string | null; status: string; template_id: string | null; audience: unknown } | null>(
     (db) => db.from('comm_campaigns').select('*').eq('id', params.id).maybeSingle(),
     null,
@@ -61,5 +62,5 @@ export default async function CampaignDetailPage({ params }: { params: { id: str
         </CardContent>
       </Card>
     </DetailShell>
-  )
+  );
 }

@@ -6,7 +6,8 @@ import { MemberForm } from '@/components/app/MemberForm'
 export const dynamic = 'force-dynamic'
 
 // OS-04 Add Member (A5). DOB is encrypted at rest.
-export default async function NewMemberPage({ params }: { params: { id: string } }) {
+export default async function NewMemberPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const hh = await load<{ primary_name: string } | null>(
     (db) => db.from('households').select('primary_name').eq('id', params.id).is('deleted_at', null).maybeSingle(),
     null,

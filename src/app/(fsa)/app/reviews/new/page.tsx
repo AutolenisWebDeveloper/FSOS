@@ -7,7 +7,8 @@ import { ReviewForm } from '@/components/app/ReviewForm'
 export const dynamic = 'force-dynamic'
 
 // OS-06 Schedule / Create Review (A5).
-export default async function NewReviewPage({ searchParams }: { searchParams: { household?: string; type?: string } }) {
+export default async function NewReviewPage(props: { searchParams: Promise<{ household?: string; type?: string }> }) {
+  const searchParams = await props.searchParams;
   const households = await load<{ id: string; primary_name: string }[]>(
     (db) => db.from('households').select('id, primary_name').is('deleted_at', null).order('primary_name'),
     [],

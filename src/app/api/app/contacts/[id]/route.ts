@@ -10,7 +10,8 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 // Update a contact (fields / type / tags / archive). RBAC-gated + audited.
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireApiRole('fsa')
   if (!auth.ok) return auth.response
   const denied = requirePermission(auth.session, ['fsa', 'licensed_staff', 'admin', 'super_admin'])
@@ -73,7 +74,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 }
 
 // Soft-delete a contact.
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireApiRole('fsa')
   if (!auth.ok) return auth.response
   const denied = requirePermission(auth.session, ['fsa', 'licensed_staff', 'admin', 'super_admin'])

@@ -29,7 +29,8 @@ interface Policy {
 }
 
 // OS-05 Policy Detail (A3). is_security → firewall banner + no automated send.
-export default async function PolicyDetailPage({ params }: { params: { id: string } }) {
+export default async function PolicyDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const res = await load<Policy | null>(
     (db) => db.from('household_policies').select('*').eq('id', params.id).is('deleted_at', null).maybeSingle(),
     null,

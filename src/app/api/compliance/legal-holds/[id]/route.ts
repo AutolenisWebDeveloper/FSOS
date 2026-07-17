@@ -10,7 +10,8 @@ export const runtime = 'nodejs'
 
 // IMPORTANT: a legal hold SUSPENDS retention-based deletion for its scope.
 // Releasing it lifts that preservation override — it does NOT delete anything.
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireApiRole('compliance')
   if (!auth.ok) return auth.response
   const denied = requirePermission(auth.session, ['compliance', 'supervisor', 'super_admin'])

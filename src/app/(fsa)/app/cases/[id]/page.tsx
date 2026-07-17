@@ -25,7 +25,8 @@ interface Case {
 }
 
 // OS-10 Case Detail (A3). No NIGO artifacts.
-export default async function CaseDetailPage({ params }: { params: { id: string } }) {
+export default async function CaseDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const res = await load<Case | null>((db) => db.from('cases').select('*').eq('id', params.id).maybeSingle(), null)
   if (!res.ok) return <ErrorState description={res.kind === 'not_configured' ? 'Database not configured.' : res.message} />
   const c = res.data
@@ -69,17 +70,14 @@ export default async function CaseDetailPage({ params }: { params: { id: string 
           </p>
         </div>
       ) : null}
-
       <Card>
         <CardHeader className="flex-row items-center justify-between"><CardTitle className="text-base">Status</CardTitle><CaseStatusControl id={c.id} status={c.status} /></CardHeader>
         <CardContent><p className="text-sm text-muted-foreground">Issue prompts the commission record from split defaults. Requirements-outstanding is a readiness state, not a defect score.</p></CardContent>
       </Card>
-
       <Card>
         <CardHeader><CardTitle className="text-base">Carrier requirements</CardTitle></CardHeader>
         <CardContent><CaseRequirements caseId={c.id} requirements={requirements} /></CardContent>
       </Card>
-
       <Card>
         <CardHeader><CardTitle className="text-base">Service requests</CardTitle></CardHeader>
         <CardContent className="text-sm">
@@ -89,5 +87,5 @@ export default async function CaseDetailPage({ params }: { params: { id: string 
         </CardContent>
       </Card>
     </DetailShell>
-  )
+  );
 }

@@ -9,11 +9,13 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 interface FormPageProps {
-  params: { formId: string }
-  searchParams: { token?: string }
+  params: Promise<{ formId: string }>
+  searchParams: Promise<{ token?: string }>
 }
 
-export default async function FormPage({ params, searchParams }: FormPageProps) {
+export default async function FormPage(props: FormPageProps) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   let template: {
     slug: string
     name: string

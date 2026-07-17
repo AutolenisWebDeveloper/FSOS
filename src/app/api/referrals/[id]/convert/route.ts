@@ -15,7 +15,8 @@ export const runtime = 'nodejs'
 // Guards: securities firewall (no substantive securities data may be written; a
 // securities product requires FSA securities scope, else block + escalate) and
 // idempotency (retry must not create a duplicate household/opportunity).
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireApiRole('fsa')
   if (!auth.ok) return auth.response
   const denied = requirePermission(auth.session, ['fsa', 'licensed_staff', 'super_admin'])

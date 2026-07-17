@@ -8,7 +8,8 @@ export const dynamic = 'force-dynamic'
 
 // OS-06 Review Outcome (A5). Records needs + originates opportunities. Already-logged
 // outcomes show a completion screen with next actions (never a dead end).
-export default async function ReviewOutcomePage({ params }: { params: { id: string } }) {
+export default async function ReviewOutcomePage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const res = await load<{ id: string; household_id: string; stage: string; generated_opp_ids: string[] | null } | null>(
     (db) => db.from('reviews').select('id, household_id, stage, generated_opp_ids').eq('id', params.id).is('deleted_at', null).maybeSingle(),
     null,

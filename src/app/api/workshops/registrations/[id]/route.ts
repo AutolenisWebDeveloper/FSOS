@@ -14,7 +14,8 @@ const SLA_HOURS = 24
 // attendee into a referral (docs/legacy-port.md §2.5: "convert attendee to
 // referral/household"). Converting seeds the referral spine and starts the SLA
 // clock. Roles: fsa, licensed_staff, admin.
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireApiRole('fsa')
   if (!auth.ok) return auth.response
   const denied = requirePermission(auth.session, ['fsa', 'licensed_staff', 'admin', 'super_admin'])

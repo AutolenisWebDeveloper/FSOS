@@ -9,7 +9,8 @@ export const dynamic = 'force-dynamic'
 
 // OS-10 Submission Checklist (A3). Completeness is INFORMATIONAL readiness — NOT a
 // NIGO/defect score. Carrier rules are config, assumption-flagged where Farmers-specific.
-export default async function CaseChecklistPage({ params }: { params: { id: string } }) {
+export default async function CaseChecklistPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const res = await load<{ id: string; household_id: string | null; carrier_id: string | null } | null>((db) => db.from('cases').select('id, household_id, carrier_id').eq('id', params.id).maybeSingle(), null)
   if (!res.ok) return <ErrorState description={res.kind === 'not_configured' ? 'Database not configured.' : res.message} />
   const c = res.data

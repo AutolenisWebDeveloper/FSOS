@@ -43,7 +43,8 @@ const FILTERS = [
 // Client Forms directory (docs/legacy-port.md §2.3) — A2. Form templates catalog +
 // the intake responses queue. A submitted response is attached to a household from
 // its detail page; consent captured on the public form is recorded there.
-export default async function FormsPage({ searchParams }: { searchParams: { status?: string } }) {
+export default async function FormsPage(props: { searchParams: Promise<{ status?: string }> }) {
+  const searchParams = await props.searchParams;
   await requireRole('fsa', '/app/forms')
   const filter = FILTERS.find((f) => f.key === searchParams.status)?.key ?? 'open'
 

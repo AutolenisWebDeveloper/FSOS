@@ -12,7 +12,8 @@ export const runtime = 'nodejs'
 // set is green-zone ONLY (schema enum). [id] is a household id. Output is framed
 // as a coverage gap / review opportunity, never a product recommendation. DNC/
 // consent-invalid households are excluded from sends at send time (the gate).
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireApiRole('fsa')
   if (!auth.ok) return auth.response
   const denied = requirePermission(auth.session, ['fsa', 'licensed_staff', 'super_admin'])

@@ -32,7 +32,8 @@ const STAGE_STATUS: Record<string, 'draft' | 'active' | 'pending' | 'won'> = {
 }
 
 // OS-06 Review Workspace (A3).
-export default async function ReviewDetailPage({ params }: { params: { id: string } }) {
+export default async function ReviewDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const res = await load<Review | null>((db) => db.from('reviews').select('*').eq('id', params.id).is('deleted_at', null).maybeSingle(), null)
   if (!res.ok) return <ErrorState description={res.kind === 'not_configured' ? 'Database not configured.' : res.message} />
   const r = res.data
@@ -87,7 +88,6 @@ export default async function ReviewDetailPage({ params }: { params: { id: strin
           </p>
         </CardContent>
       </Card>
-
       <Card>
         <CardHeader><CardTitle className="text-base">Agenda</CardTitle></CardHeader>
         <CardContent>
@@ -96,7 +96,6 @@ export default async function ReviewDetailPage({ params }: { params: { id: strin
           )}
         </CardContent>
       </Card>
-
       {outcome ? (
         <Card>
           <CardHeader><CardTitle className="text-base">Outcome — needs discovered</CardTitle></CardHeader>
@@ -121,5 +120,5 @@ export default async function ReviewDetailPage({ params }: { params: { id: strin
         </Card>
       )}
     </DetailShell>
-  )
+  );
 }

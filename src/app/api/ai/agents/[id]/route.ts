@@ -13,7 +13,8 @@ const Schema = z.object({ enabled: z.boolean(), step_up_confirmed: z.boolean().o
 // PATCH — per-agent kill switch. The Compliance Guardrail agent (is_guardrail=true)
 // cannot be disabled without super_admin + a second-factor confirmation (WF-8).
 // [id] is the ai_agents.key.
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireApiRole('fsa')
   if (!auth.ok) return auth.response
 

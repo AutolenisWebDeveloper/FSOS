@@ -25,7 +25,8 @@ interface Referral {
 }
 
 // OS-03 Referral Detail (A3).
-export default async function ReferralDetailPage({ params }: { params: { id: string } }) {
+export default async function ReferralDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const res = await load<Referral | null>(
     (db) => db.from('referrals').select('*').eq('id', params.id).is('deleted_at', null).maybeSingle(),
     null,
@@ -105,7 +106,6 @@ export default async function ReferralDetailPage({ params }: { params: { id: str
           </CardContent>
         </Card>
       </div>
-
       <Card>
         <CardHeader><CardTitle className="text-base">Activity</CardTitle></CardHeader>
         <CardContent>
@@ -125,7 +125,7 @@ export default async function ReferralDetailPage({ params }: { params: { id: str
         </CardContent>
       </Card>
     </DetailShell>
-  )
+  );
 }
 
 function Row({ label, value }: { label: string; value: ReactNode }) {

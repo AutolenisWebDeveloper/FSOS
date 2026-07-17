@@ -30,7 +30,8 @@ interface Opp {
 }
 
 // OS-09 Opportunity Detail (A3).
-export default async function OpportunityDetailPage({ params }: { params: { id: string } }) {
+export default async function OpportunityDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const res = await load<Opp | null>(
     (db) => db.from('opportunities').select('*').eq('id', params.id).is('deleted_at', null).maybeSingle(),
     null,
@@ -83,7 +84,6 @@ export default async function OpportunityDetailPage({ params }: { params: { id: 
           </p>
         </div>
       ) : null}
-
       <Card>
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle className="text-base">Stage</CardTitle>
@@ -101,7 +101,6 @@ export default async function OpportunityDetailPage({ params }: { params: { id: 
           </ol>
         </CardContent>
       </Card>
-
       <div className="grid gap-4 sm:grid-cols-2">
         <Card>
           <CardHeader><CardTitle className="text-base">Attribution</CardTitle></CardHeader>
@@ -123,7 +122,7 @@ export default async function OpportunityDetailPage({ params }: { params: { id: 
         </Card>
       </div>
     </DetailShell>
-  )
+  );
 }
 
 function Row({ label, value }: { label: string; value: ReactNode }) {

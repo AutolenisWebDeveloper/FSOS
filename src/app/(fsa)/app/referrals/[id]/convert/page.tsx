@@ -6,7 +6,8 @@ import { ConvertWizard } from '@/components/app/ConvertWizard'
 export const dynamic = 'force-dynamic'
 
 // OS-03 Referral Convert (A6) — the WF-1 spine wizard.
-export default async function ConvertPage({ params }: { params: { id: string } }) {
+export default async function ConvertPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const res = await load<{ id: string; referred_name: string | null; engagement: string; status: string } | null>(
     (db) => db.from('referrals').select('id, referred_name, engagement, status').eq('id', params.id).is('deleted_at', null).maybeSingle(),
     null,

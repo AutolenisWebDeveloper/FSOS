@@ -5,7 +5,8 @@ import { ReferralForm } from '@/components/app/ReferralForm'
 export const dynamic = 'force-dynamic'
 
 // OS-03 Create Referral (A5). `agency` query param prefills the referring agency.
-export default async function NewReferralPage({ searchParams }: { searchParams: { agency?: string } }) {
+export default async function NewReferralPage(props: { searchParams: Promise<{ agency?: string }> }) {
+  const searchParams = await props.searchParams;
   const agencies = await load<{ id: string; agency_name: string }[]>(
     (db) => db.from('agency_partnerships').select('id, agency_name').is('deleted_at', null).order('agency_name'),
     [],

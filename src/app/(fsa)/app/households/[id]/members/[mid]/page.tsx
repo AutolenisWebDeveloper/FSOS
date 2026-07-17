@@ -11,7 +11,8 @@ export const dynamic = 'force-dynamic'
 
 // OS-04 Member Detail (A3). DOB is not rendered by default — revealed on demand
 // (role-gated + audited server-side).
-export default async function MemberDetailPage({ params }: { params: { id: string; mid: string } }) {
+export default async function MemberDetailPage(props: { params: Promise<{ id: string; mid: string }> }) {
+  const params = await props.params;
   const [member, hh] = await Promise.all([
     load<{ id: string; full_name: string; relationship: string | null; email: string | null; phone: string | null; household_id: string } | null>(
       (db) => db.from('household_members').select('id, full_name, relationship, email, phone, household_id').eq('id', params.mid).is('deleted_at', null).maybeSingle(),

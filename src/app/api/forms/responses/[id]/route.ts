@@ -12,7 +12,8 @@ export const runtime = 'nodejs'
 // household (docs/legacy-port.md §2.3: "a submitted form lands on the right
 // household; consent recorded"). Materializes the captured consent channels into
 // real `consents` rows keyed to the household. Roles: fsa, licensed_staff, admin, ops.
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireApiRole('fsa')
   if (!auth.ok) return auth.response
   const denied = requirePermission(auth.session, ['fsa', 'licensed_staff', 'admin', 'ops', 'super_admin'])
@@ -97,7 +98,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 }
 
 // DELETE /api/forms/responses/[id] — soft-archive a response (spam / withdrawn).
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireApiRole('fsa')
   if (!auth.ok) return auth.response
   const denied = requirePermission(auth.session, ['fsa', 'licensed_staff', 'admin', 'ops', 'super_admin'])

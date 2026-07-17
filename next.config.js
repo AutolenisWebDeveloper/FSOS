@@ -3,9 +3,7 @@ const nextConfig = {
   reactStrictMode: true,
   // pdf2json is a CommonJS package that reads its own files at runtime; keep it
   // external so Next doesn't bundle it into the serverless function.
-  experimental: {
-    serverComponentsExternalPackages: ['pdf2json'],
-  },
+  serverExternalPackages: ['pdf2json'],
   async headers() {
     return [
       {

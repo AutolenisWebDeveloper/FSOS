@@ -10,7 +10,8 @@ import { SecuritiesChip, securitiesRowClass } from '@/components/ui/securities'
 export const dynamic = 'force-dynamic'
 
 // OS-07 Eligible / Monitoring (A2). Own-book term policies with a configured window.
-export default async function ConversionsEligiblePage({ searchParams }: { searchParams: { tier?: string } }) {
+export default async function ConversionsEligiblePage(props: { searchParams: Promise<{ tier?: string }> }) {
+  const searchParams = await props.searchParams;
   const rows = await load<{ policy_id: string; household_id: string; primary_name: string; policy_number: string | null; conversion_deadline: string; days_remaining: number; urgency_tier: string; is_security: boolean }[]>(
     (db) => db.from('v_conversions_due').select('*').neq('urgency_tier', 'beyond').order('days_remaining', { ascending: true }).limit(500),
     [],

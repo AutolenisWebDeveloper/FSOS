@@ -28,7 +28,8 @@ function isSecurities(reason: string | null, blockedStep: string | null): boolea
 
 // PATCH — record a human resolution on an escalation. Marks agent_actions.outcome
 // and writes an approval.decided audit row. Never sends any client-facing message.
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const auth = await requireApiRole('fsa')
   if (!auth.ok) return auth.response
   const denied = requirePermission(auth.session, ['fsa', 'licensed_staff', 'super_admin'])

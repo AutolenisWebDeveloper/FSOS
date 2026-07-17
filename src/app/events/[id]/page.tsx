@@ -7,7 +7,8 @@ import { WorkshopRegisterForm, type PublicWorkshop } from '@/components/public/W
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-export default async function EventPage({ params }: { params: { id: string } }) {
+export default async function EventPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   let workshop: PublicWorkshop | null = null
   let loadError = false
 

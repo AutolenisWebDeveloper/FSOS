@@ -35,7 +35,8 @@ interface ResponseDetail {
 // Client Form response detail (docs/legacy-port.md §2.3) — A3. Review the submitted
 // answers + captured consent, then attach the response to a household. No securities
 // data is ever collected here (guardrail §2.1).
-export default async function FormResponsePage({ params }: { params: { id: string } }) {
+export default async function FormResponsePage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   await requireRole('fsa', `/app/forms/${params.id}`)
 
   const db = getDb()
@@ -134,7 +135,6 @@ export default async function FormResponsePage({ params }: { params: { id: strin
           )}
         </CardContent>
       </Card>
-
       {resp.household_id ? (
         <p className="text-sm text-muted-foreground">
           Attached to{' '}
@@ -145,7 +145,7 @@ export default async function FormResponsePage({ params }: { params: { id: strin
         </p>
       ) : null}
     </DetailShell>
-  )
+  );
 }
 
 function Field({ label, value, mono }: { label: string; value: string | null; mono?: boolean }) {

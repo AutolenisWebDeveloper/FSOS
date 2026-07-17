@@ -54,7 +54,8 @@ function fmt(s: string | null) {
   return s ? new Date(s).toLocaleString('en-US') : '—'
 }
 
-export default async function TaskDetailPage({ params }: { params: { id: string } }) {
+export default async function TaskDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const res = await load<Task | null>(
     (db) => db.from('work_tasks').select('*').eq('id', params.id).is('deleted_at', null).maybeSingle(),
     null,

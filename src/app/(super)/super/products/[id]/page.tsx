@@ -4,7 +4,8 @@ import { SecuritiesChip, SecuritiesBanner } from '@/components/ui/securities'
 import { load } from '@/lib/data/query'
 export const dynamic = 'force-dynamic'
 // P-6 Product config (A10). family, subtype, is_security, required_license, conversion_window.
-export default async function SuperProductConfigPage({ params }: { params: { id: string } }) {
+export default async function SuperProductConfigPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const res = await load<{ id: string; family: string; subtype: string | null; is_security: boolean; required_license: string | null; conversion_window_days: number | null; conversion_window_is_assumption: boolean; active: boolean } | null>(
     (db) => db.from('products').select('*').eq('id', params.id).maybeSingle(), null)
   if (!res.ok) return <ErrorState description={res.kind === 'not_configured' ? 'Database not configured.' : res.message} />

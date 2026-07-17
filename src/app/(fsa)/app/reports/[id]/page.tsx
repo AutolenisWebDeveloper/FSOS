@@ -17,7 +17,8 @@ const REPORTS: Record<string, { name: string; view: string; columns: { key: stri
 }
 
 // Report view. Renders a DB-derived view; audit logs generation/export in the API.
-export default async function ReportViewPage({ params }: { params: { id: string } }) {
+export default async function ReportViewPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const def = REPORTS[params.id]
   if (!def) {
     // Conversion / cross-sell / production reports point at their analytics pages.

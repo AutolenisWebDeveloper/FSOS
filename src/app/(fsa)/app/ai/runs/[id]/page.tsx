@@ -9,7 +9,8 @@ export const dynamic = 'force-dynamic'
 
 // OS-15 Run Detail (A3). Inputs, model, tool calls, output, confidence, cost, guardrail
 // result, audit link — traceable end-to-end.
-export default async function RunDetailPage({ params }: { params: { id: string } }) {
+export default async function RunDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const res = await load<{ id: string; agent_key: string; status: string; model: string | null; input: unknown; input_tokens: number; output_tokens: number; cost_usd: number; confidence: number | null; error: string | null; started_at: string; finished_at: string | null } | null>(
     (db) => db.from('agent_runs').select('*').eq('id', params.id).maybeSingle(),
     null,
@@ -57,5 +58,5 @@ export default async function RunDetailPage({ params }: { params: { id: string }
         </CardContent>
       </Card>
     </DetailShell>
-  )
+  );
 }

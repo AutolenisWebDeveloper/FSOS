@@ -29,7 +29,8 @@ interface Commission {
 }
 
 // OS-11 Commission Record Detail (A3).
-export default async function CommissionDetailPage({ params }: { params: { id: string } }) {
+export default async function CommissionDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const res = await load<Commission | null>((db) => db.from('commissions').select('*').eq('id', params.id).maybeSingle(), null)
   if (!res.ok) return <ErrorState description={res.kind === 'not_configured' ? 'Database not configured.' : res.message} />
   const c = res.data

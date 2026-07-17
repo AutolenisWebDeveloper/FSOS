@@ -28,7 +28,8 @@ function formatValue(kind: 'count' | 'currency', value: number | null): ReactNod
 // OS-01 Custom dashboard render (A1). Widgets compute from live, DB-derived
 // metrics; each tile is fetched independently so one failing metric never blanks
 // the board, and every tile links to its underlying list (no dead ends).
-export default async function DashboardDetailPage({ params }: { params: { id: string } }) {
+export default async function DashboardDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const res = await load<DashboardDetail | null>(
     (db) => db.from('dashboards').select('id, name, description, layout, visibility, archived_at, updated_at').eq('id', params.id).maybeSingle(),
     null,

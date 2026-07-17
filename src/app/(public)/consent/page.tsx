@@ -7,7 +7,8 @@ export const metadata = { title: 'Contact preferences — FSOS' }
 
 // Public, unauthenticated consent / do-not-contact page. An optional ?token= is
 // displayed for reference only (no lookup — no PII is surfaced from a raw token).
-export default function ConsentPage({ searchParams }: { searchParams: { token?: string } }) {
+export default async function ConsentPage(props: { searchParams: Promise<{ token?: string }> }) {
+  const searchParams = await props.searchParams;
   const token = typeof searchParams.token === 'string' ? searchParams.token : undefined
   return (
     <main className="flex min-h-screen items-start justify-center bg-muted/30 p-4 py-10">

@@ -1,7 +1,8 @@
 'use client'
 
 import * as React from 'react'
-import { FileSpreadsheet, Upload, AlertTriangle, CheckCircle2, CalendarClock, Link2 } from 'lucide-react'
+import Link from 'next/link'
+import { FileSpreadsheet, Upload, AlertTriangle, CheckCircle2, CalendarClock, Link2, ArrowRight, Repeat } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -86,6 +87,10 @@ export function ConversionImportWizard({ today }: { today: string }) {
               <Button variant="outline" onClick={() => run('commit')} disabled={busy !== null || !preview}>{busy === 'commit' ? 'Syncing…' : 'Commit sync'}</Button>
             </div>
             <p className="text-xs text-muted-foreground">Matches each row to a book policy by policy number, sets the conversion deadline (only when blank), tags the owner contact <span className="font-medium">term-conversion</span>, and records the named insured. Term products only — nothing here is a security. Re-running is idempotent.</p>
+            <div className="flex items-center gap-2 rounded-md border bg-muted/30 p-2 text-xs text-muted-foreground">
+              <Repeat className="h-4 w-4 shrink-0 text-primary" />
+              <span>Imported deadlines drive the <Link href="/app/conversions" className="font-medium text-primary underline-offset-2 hover:underline">Term Conversion pipeline</Link> — every matched policy appears there ranked by how soon its window closes.</span>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -165,6 +170,9 @@ export function ConversionImportWizard({ today }: { today: string }) {
               <Stat label="Insureds added" value={committed.committed.members_added} />
             </div>
             <p className="mt-3 text-xs text-muted-foreground">Conversion deadlines are now on the book and drive the Term Conversion pipeline. Re-running the same file changes nothing further (idempotent).</p>
+            <Button asChild className="mt-3">
+              <Link href="/app/conversions">Open the Term Conversion pipeline <ArrowRight className="ml-1.5 h-4 w-4" /></Link>
+            </Button>
           </CardContent>
         </Card>
       ) : null}

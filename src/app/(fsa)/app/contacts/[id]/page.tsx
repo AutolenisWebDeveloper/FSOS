@@ -9,7 +9,7 @@ import { SecuritiesChip } from '@/components/ui/securities'
 import { load } from '@/lib/data/query'
 import { ContactForm } from '@/components/app/ContactForm'
 import { ContactDetailActions } from '@/components/app/ContactDetailActions'
-import { CONTACT_TYPE_LABEL } from '@/components/app/ContactList'
+import { CONTACT_TYPE_LABEL } from '@/components/app/contactMeta'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'

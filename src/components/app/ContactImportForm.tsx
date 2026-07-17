@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { MonoLabel } from '@/components/ui/typography'
-import { CONTACT_TYPE_LABEL } from '@/components/app/ContactList'
+import { CONTACT_TYPE_LABEL } from '@/components/app/contactMeta'
 
 interface RowResult {
   row_number: number

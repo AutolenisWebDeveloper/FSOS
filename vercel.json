@@ -23,6 +23,7 @@
     "src/app/api/briefing/send/route.ts": { "maxDuration": 60 },
     "src/app/api/app/book/import/route.ts": { "maxDuration": 60 },
     "src/app/api/app/crosssell/import/route.ts": { "maxDuration": 60 },
-    "src/app/api/app/contacts/import/route.ts": { "maxDuration": 60 }
+    "src/app/api/app/contacts/import/route.ts": { "maxDuration": 60 },
+    "src/app/api/app/conversions/import/route.ts": { "maxDuration": 60 }
   }
 }

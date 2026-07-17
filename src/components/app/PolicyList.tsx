@@ -17,6 +17,7 @@ export interface PolicyRow {
   id: string
   policy_number: string | null
   household_name: string | null
+  agency_name?: string | null
   status: string
   is_with_us: boolean
   is_security: boolean
@@ -30,10 +31,12 @@ export function PolicyList({ rows }: { rows: PolicyRow[] }) {
   const [status, setStatus] = React.useState('')
   const [book, setBook] = React.useState('')
 
+  const hasAgency = React.useMemo(() => rows.some((p) => p.agency_name), [rows])
+
   const filtered = React.useMemo(() => {
     let r = rows
     const n = q.trim().toLowerCase()
-    if (n) r = r.filter((p) => (p.policy_number ?? '').toLowerCase().includes(n) || (p.household_name ?? '').toLowerCase().includes(n))
+    if (n) r = r.filter((p) => (p.policy_number ?? '').toLowerCase().includes(n) || (p.household_name ?? '').toLowerCase().includes(n) || (p.agency_name ?? '').toLowerCase().includes(n))
     if (status) r = r.filter((p) => p.status === status)
     if (book) r = r.filter((p) => (book === 'own' ? p.is_with_us : !p.is_with_us))
     return r
@@ -73,6 +76,7 @@ export function PolicyList({ rows }: { rows: PolicyRow[] }) {
               <TableRow>
                 <TableHead>Policy #</TableHead>
                 <TableHead>Household</TableHead>
+                {hasAgency ? <TableHead>Agency</TableHead> : null}
                 <TableHead>Status</TableHead>
                 <TableHead>Book</TableHead>
                 <TableHead>Key date</TableHead>
@@ -86,6 +90,7 @@ export function PolicyList({ rows }: { rows: PolicyRow[] }) {
                     {p.is_security ? <SecuritiesChip className="ml-2" /> : null}
                   </TableCell>
                   <TableCell className="text-muted-foreground">{p.household_name ?? '—'}</TableCell>
+                  {hasAgency ? <TableCell className="text-muted-foreground">{p.agency_name ?? '—'}</TableCell> : null}
                   <TableCell><Badge variant={p.status === 'active' ? 'won' : p.status === 'lapsed' || p.status === 'cancelled' ? 'lost' : 'active'}>{p.status}</Badge></TableCell>
                   <TableCell className="text-muted-foreground">{p.is_with_us ? 'Own book' : 'Competitor'}</TableCell>
                   <TableCell className="text-muted-foreground">

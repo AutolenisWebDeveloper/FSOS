@@ -8,14 +8,17 @@ import { resolveColumns, mapAndValidateRow, type CanonicalField } from '@/lib/gh
 import { aiDetectColumns } from '@/lib/columnAI'
 import { classifyContacts, routeForType, type ContactType } from '@/lib/ai/contactRouter'
 import { emailLc, phoneDigits } from '@/lib/contacts/normalize'
+import { buildContactIndex, resolveContact, mergeFields, type Resolution } from '@/lib/import/resolution'
+import { createBatch, writeRecords, loadContactCandidates, type RecordInput } from '@/lib/import/auditWriter'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 const MAX_FILE_BYTES = 8 * 1024 * 1024
 const MAX_ROWS = 2000
+const CHUNK = 500
 
-type RowStatus = 'imported' | 'duplicate' | 'invalid'
+type RowStatus = 'imported' | 'merged' | 'review' | 'invalid' | 'duplicate'
 interface RowResult {
   row_number: number
   full_name: string | null
@@ -111,65 +114,88 @@ export async function POST(req: NextRequest) {
     candidates.push({ index: i, contact })
   })
 
-  // Duplicate detection against existing App B contacts (normalized email/phone).
-  const emails = Array.from(new Set(candidates.map((c) => emailLc(c.contact.email)).filter((x): x is string => !!x)))
-  const phones = Array.from(new Set(candidates.map((c) => phoneDigits(c.contact.phone)).filter((x): x is string => !!x)))
-  const existingEmail = new Set<string>()
-  const existingPhone = new Set<string>()
-  if (emails.length) {
-    const { data } = await db.from('contacts').select('email_lc').in('email_lc', emails).is('deleted_at', null)
-    for (const r of data || []) if (r.email_lc) existingEmail.add(r.email_lc)
-  }
-  if (phones.length) {
-    const { data } = await db.from('contacts').select('phone_digits').in('phone_digits', phones).is('deleted_at', null)
-    for (const r of data || []) if (r.phone_digits) existingPhone.add(r.phone_digits)
+  // Resolve every row against the whole Contact Center with the shared engine:
+  // a reliable identifier (email / phone / provenance / name+qualifier) merges in
+  // place; a name-only or conflicting match is queued for manual review; an
+  // unknown row is created. This is the same logic every importer uses.
+  const index = buildContactIndex(await loadContactCandidates(db))
+  const resolutions = candidates.map((cand) => ({
+    ...cand,
+    res: resolveContact(index, { fullName: cand.contact.label, email: cand.contact.email, phone: cand.contact.phone }),
+  }))
+  const toCreate = resolutions.filter((r) => r.res.action === 'create')
+  const toMerge = resolutions.filter((r) => r.res.action === 'merge' && r.res.targetId)
+  const toReview = resolutions.filter((r) => r.res.action === 'review' || (r.res.action === 'merge' && !r.res.targetId))
+
+  // Full current rows for the merge targets (no-overwrite needs existing values).
+  const mergeIds = Array.from(new Set(toMerge.map((r) => r.res.targetId!)))
+  const existingById = new Map<string, Record<string, unknown>>()
+  for (let i = 0; i < mergeIds.length; i += CHUNK) {
+    const { data } = await db.from('contacts').select('id, full_name, first_name, last_name, email, email_lc, phone, phone_digits, tags, contact_type').in('id', mergeIds.slice(i, i + CHUNK)).is('deleted_at', null)
+    for (const r of data || []) existingById.set(r.id as string, r)
   }
 
-  const toInsertIdx: number[] = []
-  const toClassify: (typeof candidates)[number]['contact'][] = []
-  for (const cand of candidates) {
-    const eLc = emailLc(cand.contact.email)
-    const pDig = phoneDigits(cand.contact.phone)
-    const dup = (eLc && existingEmail.has(eLc)) || (pDig && existingPhone.has(pDig))
-    if (dup) {
-      results[cand.index] = { row_number: cand.index + 1, full_name: cand.contact.label, email: cand.contact.email, phone: cand.contact.phone, status: 'duplicate', contact_type: null, error_message: 'Already exists in Contacts' }
-    } else {
-      toInsertIdx.push(cand.index)
-      toClassify.push(cand.contact)
+  const records: Omit<RecordInput, 'batchId'>[] = []
+  const ownerScope = auth.session.userId ?? null
+
+  // 1. MERGE — no-overwrite; union tags; capture rejected values for the audit.
+  const MERGE_SPEC = [
+    { field: 'email' }, { field: 'email_lc' }, { field: 'phone' }, { field: 'phone_digits' },
+    { field: 'first_name' }, { field: 'last_name' }, { field: 'tags', kind: 'set' as const },
+  ]
+  for (const p of toMerge) {
+    const ex = existingById.get(p.res.targetId!) || {}
+    const incoming: Record<string, unknown> = {
+      email: p.contact.email, email_lc: emailLc(p.contact.email),
+      phone: p.contact.phone, phone_digits: phoneDigits(p.contact.phone),
+      first_name: p.contact.firstName || null, last_name: p.contact.lastName || null,
+      tags: Array.from(new Set([...p.contact.tags, ...batchTags])),
     }
+    const { patch, merged, rejected } = mergeFields(ex, incoming, MERGE_SPEC)
+    if (ex.contact_type === 'unknown' && (p.contact.declaredType && p.contact.declaredType !== 'unknown')) {
+      patch.contact_type = p.contact.declaredType
+      merged.push('contact_type')
+    }
+    if (Object.keys(patch).length) {
+      const { error } = await db.from('contacts').update(patch).eq('id', p.res.targetId!).is('deleted_at', null)
+      if (error) return NextResponse.json({ error: `Merge failed: ${error.message}` }, { status: 500 })
+    }
+    results[p.index] = { row_number: p.index + 1, full_name: p.contact.label, email: p.contact.email, phone: p.contact.phone, status: 'merged', contact_type: (ex.contact_type as ContactType) ?? null, error_message: null }
+    records.push({ entityType: 'contact', raw: rows[p.index], decision: { ...p.res }, targetId: p.res.targetId, mergedFields: merged, rejectedValues: rejected, confidence: p.res.confidence, reviewStatus: 'auto', ownerScope })
   }
 
-  // Categorize (green-zone identify) — falls back to 'unknown' if the gateway is off.
+  // 2. REVIEW — never write; queue with full context (raw + normalized incoming
+  //    + candidates) so a human can merge into a candidate or create a new record.
+  for (const p of toReview) {
+    const incoming = {
+      full_name: p.contact.label, first_name: p.contact.firstName || null, last_name: p.contact.lastName || null,
+      email: p.contact.email, email_lc: emailLc(p.contact.email), phone: p.contact.phone, phone_digits: phoneDigits(p.contact.phone),
+      contact_type: p.contact.declaredType || 'unknown', tags: Array.from(new Set([...p.contact.tags, ...batchTags])), source: p.contact.source,
+    }
+    results[p.index] = { row_number: p.index + 1, full_name: p.contact.label, email: p.contact.email, phone: p.contact.phone, status: 'review', contact_type: null, error_message: p.res.conflict ? 'Ambiguous match — needs review' : 'No reliable match — needs review' }
+    records.push({ entityType: 'contact', raw: rows[p.index], decision: { ...p.res, incoming }, targetId: p.res.targetId, confidence: p.res.confidence, reviewStatus: 'needs_review', ownerScope })
+  }
+
+  // 3. CREATE — categorize (green-zone identify) + insert new contacts.
+  const toClassify = toCreate.map((p) => p.contact)
   const classify = useRouting
     ? await classifyContacts(toClassify)
     : { classifications: [] as { type: ContactType; confidence: number }[], aiUsed: false, aiCapped: 0, model: '', inputTokens: 0, outputTokens: 0, costUsd: 0 }
-
   const routeCounts: Record<string, number> = {}
-  const insertRows = toInsertIdx.map((rowIdx, k) => {
-    const c = toClassify[k]
-    const cls = useRouting ? classify.classifications[k] : null
-    const type: ContactType = cls?.type ?? 'unknown'
+  const insertRows = toCreate.map((p, k) => {
+    const c = p.contact
+    const type: ContactType = (useRouting ? classify.classifications[k]?.type : null) ?? 'unknown'
     const route = routeForType(type)
     const tags = Array.from(new Set([...c.tags, ...(useRouting ? route.tags : [])]))
     if (useRouting) routeCounts[type] = (routeCounts[type] || 0) + 1
-    results[rowIdx] = { row_number: rowIdx + 1, full_name: c.label, email: c.email, phone: c.phone, status: 'imported', contact_type: type, error_message: null }
+    results[p.index] = { row_number: p.index + 1, full_name: c.label, email: c.email, phone: c.phone, status: 'imported', contact_type: type, error_message: null }
+    records.push({ entityType: 'contact', raw: rows[p.index], decision: { ...p.res }, confidence: 'none', reviewStatus: 'auto', ownerScope })
     return {
-      first_name: c.firstName || null,
-      last_name: c.lastName || null,
-      full_name: c.label,
-      email: c.email,
-      email_lc: emailLc(c.email),
-      phone: c.phone,
-      phone_digits: phoneDigits(c.phone),
-      contact_type: type,
-      tags,
-      source: c.source,
-      status: 'active',
-      owner_scope: auth.session.userId ?? null,
-      created_by: actor,
+      first_name: c.firstName || null, last_name: c.lastName || null, full_name: c.label,
+      email: c.email, email_lc: emailLc(c.email), phone: c.phone, phone_digits: phoneDigits(c.phone),
+      contact_type: type, tags, source: c.source, status: 'active', owner_scope: ownerScope, created_by: actor,
     }
   })
-
   if (insertRows.length) {
     const { error } = await db.from('contacts').insert(insertRows)
     if (error) return NextResponse.json({ error: `Import failed on write: ${error.message}` }, { status: 500 })
@@ -177,9 +203,15 @@ export async function POST(req: NextRequest) {
 
   const counts = {
     imported: results.filter((r) => r?.status === 'imported').length,
+    merged: results.filter((r) => r?.status === 'merged').length,
+    review: results.filter((r) => r?.status === 'review').length,
     duplicate: results.filter((r) => r?.status === 'duplicate').length,
     invalid: results.filter((r) => r?.status === 'invalid').length,
   }
+
+  // Audit trail: one batch + one record per imported row (raw + decision + merged + rejected).
+  const batchId = await createBatch(db, { source: 'contacts', filename: file.name, actor, ownerScope, stats: { total: rows.length, counts, format: ext || 'csv' } })
+  if (batchId) await writeRecords(db, records.map((r) => ({ ...r, batchId })))
 
   await writeAudit({ actor, action: 'import.committed', entity: 'contacts_import', entityId: null, diff: { filename: file.name, format: ext || 'csv', total: rows.length, counts, routing: useRouting ? routeCounts : null } })
 
@@ -191,6 +223,7 @@ export async function POST(req: NextRequest) {
     counts,
     detection_method: resolved.method,
     ai_used: !!aiResult,
+    batch_id: batchId,
     routing: { enabled: useRouting, ai_used: classify.aiUsed, counts: routeCounts, capped: classify.aiCapped },
     rows: results,
   })

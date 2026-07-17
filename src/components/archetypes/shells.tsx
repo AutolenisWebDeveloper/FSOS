@@ -88,22 +88,27 @@ export function StatTile({
 }: {
   label: string
   value: React.ReactNode
-  href: string
+  /** Optional — omit for a summary tile that isn't a link. */
+  href?: string
   hint?: string
 }) {
+  const card = (
+    <Card className={href ? 'transition-colors hover:border-primary/40' : undefined}>
+      <CardHeader className="pb-2">
+        <MonoLabel>{label}</MonoLabel>
+      </CardHeader>
+      <CardContent>
+        <Numeric as="div" className="text-[28px] font-semibold leading-none">
+          {value}
+        </Numeric>
+        {hint ? <p className="mt-1.5 text-xs text-muted-foreground">{hint}</p> : null}
+      </CardContent>
+    </Card>
+  )
+  if (!href) return card
   return (
     <Link href={href} className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-      <Card className="transition-colors hover:border-primary/40">
-        <CardHeader className="pb-2">
-          <MonoLabel>{label}</MonoLabel>
-        </CardHeader>
-        <CardContent>
-          <Numeric as="div" className="text-[28px] font-semibold leading-none">
-            {value}
-          </Numeric>
-          {hint ? <p className="mt-1.5 text-xs text-muted-foreground">{hint}</p> : null}
-        </CardContent>
-      </Card>
+      {card}
     </Link>
   )
 }

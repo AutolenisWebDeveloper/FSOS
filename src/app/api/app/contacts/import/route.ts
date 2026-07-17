@@ -12,7 +12,7 @@ import { emailLc, phoneDigits } from '@/lib/contacts/normalize'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-const MAX_FILE_BYTES = 5 * 1024 * 1024
+const MAX_FILE_BYTES = 8 * 1024 * 1024
 const MAX_ROWS = 2000
 
 type RowStatus = 'imported' | 'duplicate' | 'invalid'
@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
   }
   const ext = extensionOf(file.name)
   if (ext && !CONTACT_FILE_EXTENSIONS.includes(ext as (typeof CONTACT_FILE_EXTENSIONS)[number])) {
-    return NextResponse.json({ error: `Unsupported file type .${ext}. Accepted: CSV, TSV, XLSX, JSON.` }, { status: 415 })
+    return NextResponse.json({ error: `Unsupported file type .${ext}. Accepted: CSV, TSV, XLSX, JSON, PDF.` }, { status: 415 })
   }
 
   const batchTags = String(formData.get('tags') || '').split(',').map((t) => t.trim()).filter(Boolean)

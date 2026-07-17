@@ -42,7 +42,7 @@ export function ContactImportForm({ aiAvailable }: { aiAvailable: boolean }) {
     e.preventDefault()
     setError(null)
     setResult(null)
-    if (!file) return setError('Choose a CSV, TSV, Excel (.xlsx), or JSON file first.')
+    if (!file) return setError('Choose a CSV, TSV, Excel (.xlsx), JSON, or PDF file first.')
     const fd = new FormData(e.currentTarget)
     fd.set('file', file)
     setBusy(true)
@@ -70,9 +70,9 @@ export function ContactImportForm({ aiAvailable }: { aiAvailable: boolean }) {
           <form onSubmit={submit} className="space-y-4">
             <label htmlFor="import-file" className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-input p-8 text-center transition-colors hover:border-primary/50">
               {file ? <FileSpreadsheet className="h-8 w-8 text-primary" /> : <Upload className="h-8 w-8 text-muted-foreground" />}
-              <span className="text-sm font-medium">{file ? file.name : 'Drop a CSV, TSV, Excel, or JSON file here or click to browse'}</span>
-              <span className="text-xs text-muted-foreground">CSV · TSV · .xlsx · JSON · max 5MB · up to 2,000 rows</span>
-              <input id="import-file" type="file" accept=".csv,.tsv,.txt,.xlsx,.json" className="sr-only" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+              <span className="text-sm font-medium">{file ? file.name : 'Drop a CSV, TSV, Excel, JSON, or PDF file here or click to browse'}</span>
+              <span className="text-xs text-muted-foreground">CSV · TSV · .xlsx · JSON · PDF · max 8MB · up to 2,000 rows</span>
+              <input id="import-file" type="file" accept=".csv,.tsv,.txt,.xlsx,.json,.pdf" className="sr-only" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
             </label>
 
             <div className="grid gap-4 sm:grid-cols-2">

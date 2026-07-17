@@ -21,6 +21,8 @@
     "src/app/api/campaigns/run/route.ts": { "maxDuration": 60 },
     "src/app/api/customers/meeting-prep/route.ts": { "maxDuration": 60 },
     "src/app/api/briefing/send/route.ts": { "maxDuration": 60 },
-    "src/app/api/app/book/import/route.ts": { "maxDuration": 60 }
+    "src/app/api/app/book/import/route.ts": { "maxDuration": 60 },
+    "src/app/api/app/crosssell/import/route.ts": { "maxDuration": 60 },
+    "src/app/api/app/contacts/import/route.ts": { "maxDuration": 60 }
   }
 }

@@ -87,9 +87,9 @@ export function CrossSellImportWizard() {
           <div className="space-y-4">
             <label htmlFor="xs-file" className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-input p-8 text-center transition-colors hover:border-primary/50">
               {file ? <FileSpreadsheet className="h-8 w-8 text-primary" /> : <Upload className="h-8 w-8 text-muted-foreground" />}
-              <span className="text-sm font-medium">{file ? file.name : 'Drop the cross-sell export (.csv, .xlsx, or .json)'}</span>
-              <span className="text-xs text-muted-foreground">The system matches each row to an existing contact and enriches it — no duplicates, no overwriting valid data.</span>
-              <input id="xs-file" type="file" accept=".csv,.tsv,.txt,.xlsx,.json" className="sr-only" onChange={(e) => { setFile(e.target.files?.[0] ?? null); setPreview(null); setCommitted(null) }} />
+              <span className="text-sm font-medium">{file ? file.name : 'Drop the cross-sell export (.pdf, .csv, .xlsx, or .json)'}</span>
+              <span className="text-xs text-muted-foreground">Salesforce printable-view PDFs are reconstructed automatically. The system matches each row to an existing contact and enriches it — no duplicates, no overwriting valid data.</span>
+              <input id="xs-file" type="file" accept=".pdf,.csv,.tsv,.txt,.xlsx,.json" className="sr-only" onChange={(e) => { setFile(e.target.files?.[0] ?? null); setPreview(null); setCommitted(null) }} />
             </label>
             <div className="flex gap-2">
               <Button onClick={() => run('preview')} disabled={busy !== null || !file}>{busy === 'preview' ? 'Analyzing…' : 'Preview (dry run)'}</Button>

@@ -756,3 +756,49 @@ export const RegistrationPatchSchema = z
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'No changes provided' })
 export type RegistrationPatch = z.infer<typeof RegistrationPatchSchema>
+
+// ─── OPRA Transfer Center (App A → App B parity) ───────────────────────────────
+// One-policy households eligible for an OPRA transfer/review. Status toggles are
+// manual FSA actions (mark contacted / appointment / review / transferred) — not
+// automated client sends — so there is no green-zone verb here; the securities
+// firewall still surfaces is_security records read-only in the UI.
+export const OPRA_STATUS = ['identified', 'contacted', 'scheduled', 'reviewed', 'transferred', 'declined'] as const
+
+// Create a tracked OPRA case from an eligible household (+ its single policy).
+export const OpraTrackSchema = z.object({
+  household_id: uuid,
+  policy_id: uuid.optional(),
+})
+export type OpraTrack = z.infer<typeof OpraTrackSchema>
+
+// Update the status flags on a tracked case. Every field optional; at least one
+// change required. Timestamps are stamped server-side when a flag flips.
+export const OpraStatusSchema = z
+  .object({
+    contacted: z.boolean().optional(),
+    appt_scheduled: z.boolean().optional(),
+    appt_date: isoDate.optional(),
+    review_complete: z.boolean().optional(),
+    review_date: isoDate.optional(),
+    transferred: z.boolean().optional(),
+    status: z.enum(OPRA_STATUS).optional(),
+    notes: z.string().trim().max(2000).optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, { message: 'No changes provided' })
+export type OpraStatus = z.infer<typeof OpraStatusSchema>
+
+// ─── Native GoHighLevel sync (App A → App B parity) ────────────────────────────
+// Push an App B record into GoHighLevel (idempotent; returned GHL ids stored back
+// on the record). Two entity modes map to the two legacy sync modes:
+//   household → prospect_client pipeline · agency → agency_owner pipeline.
+export const GHL_SYNC_ENTITY = ['household', 'agency'] as const
+export const GHL_PIPELINE_KEY = ['prospect_client', 'agency_owner', 'term_conversions'] as const
+
+export const GhlSyncSchema = z.object({
+  entity_type: z.enum(GHL_SYNC_ENTITY),
+  entity_id: uuid,
+  pipeline: z.enum(GHL_PIPELINE_KEY).optional(),
+  stage: z.number().int().min(1).max(20).optional(),
+  tags: z.array(z.string().trim().min(1).max(60)).max(20).optional(),
+})
+export type GhlSync = z.infer<typeof GhlSyncSchema>

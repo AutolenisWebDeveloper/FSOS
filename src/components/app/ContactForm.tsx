@@ -10,7 +10,7 @@ import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent } from '@/components/ui/card'
 import { postJson, patchJson, firstFieldError, type ApiError } from '@/lib/client/api'
-import { CONTACT_TYPE_LABEL } from '@/components/app/ContactList'
+import { CONTACT_TYPE_LABEL } from '@/components/app/contactMeta'
 
 const TYPES = ['agency_owner', 'client', 'prospect', 'term_conversion', 'cross_sell', 'business', 'unknown']
 

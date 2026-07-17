@@ -13,6 +13,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { MonoLabel } from '@/components/ui/typography'
 import { EmptyState } from '@/components/archetypes'
 import { patchJson, deleteJson, firstFieldError } from '@/lib/client/api'
+import { CONTACT_TYPE_LABEL } from '@/components/app/contactMeta'
+
+// Re-exported for callers that already import it from here. The value itself
+// lives in a plain (non-client) module so server components can dot into it.
+export { CONTACT_TYPE_LABEL }
 
 export interface ContactRow {
   id: string
@@ -24,16 +29,6 @@ export interface ContactRow {
   tags: string[]
   status: string
   created_at: string
-}
-
-export const CONTACT_TYPE_LABEL: Record<string, string> = {
-  agency_owner: 'Agency Owner',
-  client: 'Client',
-  prospect: 'Prospect',
-  term_conversion: 'Term Conversion',
-  cross_sell: 'Cross-Sell',
-  business: 'Business Owner',
-  unknown: 'Uncategorized',
 }
 
 export function ContactList({ rows }: { rows: ContactRow[] }) {

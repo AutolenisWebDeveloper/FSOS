@@ -33,6 +33,7 @@ import {
   PhoneCall,
   Upload,
   Database,
+  FileUp,
   LifeBuoy,
 } from 'lucide-react'
 import { requireRole } from '@/lib/auth/session'
@@ -57,6 +58,7 @@ const NAV: NavItem[] = [
   { href: '/app/households', label: 'Households', icon: Users, group: 'Book' },
   { href: '/app/policies', label: 'Policies', icon: FileText, group: 'Book' },
   { href: '/app/book/import', label: 'District Book', icon: Database, group: 'Book' },
+  { href: '/app/crosssell', label: 'Cross-Sell Import', icon: FileUp, group: 'Book' },
 
   { href: '/app/reviews', label: 'Reviews', icon: ClipboardCheck, group: 'Pipeline' },
   { href: '/app/fna', label: 'FNA Generator', icon: FileSignature, group: 'Pipeline' },

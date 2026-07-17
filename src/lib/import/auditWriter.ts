@@ -68,7 +68,7 @@ export async function writeRecords(db: any, records: RecordInput[]): Promise<voi
 // Paged so a large book is fully considered, not truncated.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function loadContactCandidates(db: any): Promise<CandidateContact[]> {
-  const cols = 'id, full_name, email_lc, phone_digits, zip, address, book_key, crosssell_key'
+  const cols = 'id, full_name, email_lc, phone_digits, zip, address, book_key, crosssell_key, winback_key'
   const out: CandidateContact[] = []
   const page = 1000
   for (let offset = 0; offset < 500000; offset += page) {
@@ -79,6 +79,7 @@ export async function loadContactCandidates(db: any): Promise<CandidateContact[]
       const provenanceKeys: string[] = []
       if (r.book_key) provenanceKeys.push(r.book_key)
       if (r.crosssell_key) provenanceKeys.push(r.crosssell_key)
+      if (r.winback_key) provenanceKeys.push(r.winback_key)
       out.push({ id: r.id, full_name: r.full_name, email_lc: r.email_lc, phone_digits: r.phone_digits, zip: r.zip, street: r.address, provenanceKeys })
     }
     if (rows.length < page) break

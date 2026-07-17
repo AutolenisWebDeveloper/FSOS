@@ -30,6 +30,7 @@ import {
   Sparkles,
   Bell,
   Contact,
+  PhoneCall,
   Upload,
   LifeBuoy,
 } from 'lucide-react'
@@ -50,6 +51,7 @@ const NAV: NavItem[] = [
   { href: '/app/notifications', label: 'Notifications', icon: Bell, group: 'Overview' },
 
   { href: '/app/agencies', label: 'Agencies', icon: Building2, group: 'Book' },
+  { href: '/app/contacts', label: 'Contacts', icon: Contact, group: 'Book' },
   { href: '/app/referrals', label: 'Referrals', icon: UserPlus, group: 'Book' },
   { href: '/app/households', label: 'Households', icon: Users, group: 'Book' },
   { href: '/app/policies', label: 'Policies', icon: FileText, group: 'Book' },
@@ -78,7 +80,7 @@ const NAV: NavItem[] = [
   { href: '/app/assistant', label: 'AI Assistant', icon: Sparkles, group: 'Operate' },
   { href: '/app/compliance', label: 'Compliance', icon: ShieldCheck, group: 'Operate' },
   { href: '/app/reports', label: 'Reports', icon: BarChart3, group: 'Operate' },
-  { href: '/app/contacts', label: 'FFS Contacts', icon: Contact, group: 'Operate' },
+  { href: '/app/contacts/ffs', label: 'FFS Contacts', icon: PhoneCall, group: 'Operate' },
   { href: '/app/help', label: 'Help & Support', icon: LifeBuoy, group: 'Operate' },
 ]
 

@@ -1,92 +1,81 @@
-import { Phone, Mail, Clock, Contact } from 'lucide-react'
-import { requireRole } from '@/lib/auth/session'
-import { ListShell, EmptyState, ErrorState } from '@/components/archetypes'
-import { MonoLabel } from '@/components/ui/typography'
-import { Card, CardContent } from '@/components/ui/card'
-import { loadFfsContacts, type FfsContact } from '@/lib/data/ffs'
+import Link from 'next/link'
+import { Plus, Upload, Contact as ContactIcon, RefreshCw } from 'lucide-react'
+import { ListShell, StatTile, ErrorState, EmptyState } from '@/components/archetypes'
+import { Button } from '@/components/ui/button'
+import { load } from '@/lib/data/query'
+import { ContactList, type ContactRow } from '@/components/app/ContactList'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-// FSA-facing FFS Key Contacts directory (ports the legacy Command Center "FFS
-// Contacts" section into App B). Read-only view of the SAME config-driven
-// `ffs_contacts` table that /super/config/ffs-contacts edits (docs/legacy-port.md
-// §2.4) — contacts are configuration, never hard-coded. No mutation here, so no
-// audit event. Roles: fsa, licensed_staff, super_admin (portal-gated by layout).
-function telHref(phone: string): string {
-  return 'tel:' + phone.replace(/[^0-9+]/g, '')
-}
+// Contact Center — the centralized, App-B-stored contact directory. Manual add +
+// multi-format bulk import land here; each contact is categorized, taggable, and
+// fully manageable (edit / archive / delete on its detail page).
+interface Row extends ContactRow {}
 
-function ContactCard({ c }: { c: FfsContact }) {
-  return (
-    <Card>
-      <CardContent className="space-y-2 p-4">
-        <MonoLabel>{c.role}</MonoLabel>
-        {c.name ? <div className="text-sm font-semibold">{c.name}</div> : null}
-        <a
-          href={telHref(c.phone)}
-          className="numeric flex items-center gap-2 text-sm font-medium text-primary hover:underline"
-        >
-          <Phone className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} aria-hidden />
-          {c.phone}
-        </a>
-        {c.hours ? (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Clock className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} aria-hidden />
-            {c.hours}
-          </div>
-        ) : null}
-        {c.note ? (
-          <div className="flex items-start gap-2 text-xs text-muted-foreground">
-            <Mail className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={1.75} aria-hidden />
-            <span className="break-words">{c.note}</span>
-          </div>
-        ) : null}
-      </CardContent>
-    </Card>
+export default async function ContactCenterPage() {
+  const [res, dupes] = await Promise.all([
+    load<Row[]>(
+      (db) =>
+        db
+          .from('contacts')
+          .select('id, full_name, email, phone, company, contact_type, tags, status, created_at')
+          .is('deleted_at', null)
+          .order('created_at', { ascending: false })
+          .limit(1000),
+      [],
+    ),
+    load<{ match_key: string }[]>((db) => db.from('v_contact_duplicates').select('match_key'), []),
+  ])
+
+  const actions = (
+    <div className="flex flex-wrap gap-2">
+      <Button asChild size="sm"><Link href="/app/contacts/new"><Plus className="h-4 w-4" /> Add contact</Link></Button>
+      <Button asChild size="sm" variant="outline"><Link href="/app/contacts/import"><Upload className="h-4 w-4" /> Import file</Link></Button>
+      <Button asChild size="sm" variant="outline"><Link href="/app/contacts/upload"><RefreshCw className="h-4 w-4" /> Sync to GHL</Link></Button>
+      <Button asChild size="sm" variant="ghost"><Link href="/app/contacts/ffs"><ContactIcon className="h-4 w-4" /> FFS Contacts</Link></Button>
+    </div>
   )
-}
 
-export default async function FsaFfsContactsPage() {
-  await requireRole('fsa', '/app/contacts')
-  const res = await loadFfsContacts(true)
-
-  let body: React.ReactNode
   if (!res.ok) {
-    body = res.notConfigured ? (
-      <EmptyState
-        icon={Contact}
-        title="Contacts not configured"
-        description="A super admin can add FFS key contacts under Super → Config → FFS Contacts."
-      />
-    ) : (
-      <ErrorState description={res.message} />
-    )
-  } else if (res.contacts.length === 0) {
-    body = (
-      <EmptyState
-        icon={Contact}
-        title="No FFS contacts yet"
-        description="FFS key contacts are managed as configuration under Super → Config → FFS Contacts."
-      />
-    )
-  } else {
-    body = (
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {res.contacts.map((c) => (
-          <ContactCard key={c.id} c={c} />
-        ))}
-      </div>
+    return (
+      <ListShell title="Contact Center" description="Your centralized contact directory, stored in App B." actions={actions} breadcrumb={[{ label: 'FSA', href: '/app' }, { label: 'Contacts' }]}>
+        {res.kind === 'not_configured' ? (
+          <EmptyState title="Database not configured" description="Set the Supabase environment variables to load contacts." />
+        ) : (
+          <ErrorState description={res.message} />
+        )}
+      </ListShell>
     )
   }
 
+  const rows = res.data
+  const active = rows.filter((r) => r.status === 'active').length
+  const owners = rows.filter((r) => r.contact_type === 'agency_owner').length
+  const dupCount = dupes.ok ? dupes.data.length : 0
+
   return (
     <ListShell
-      title="FFS Key Contacts"
-      description="Quick access to Farmers Financial Solutions desks and specialists. Managed as config — verify before relying on any number."
-      breadcrumb={[{ label: 'FSA', href: '/app' }, { label: 'FFS Contacts' }]}
+      title="Contact Center"
+      description="Your centralized contact directory — stored securely in App B, categorized, tagged, and fully manageable."
+      actions={actions}
+      breadcrumb={[{ label: 'FSA', href: '/app' }, { label: 'Contacts' }]}
     >
-      {body}
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatTile label="Contacts" value={active} />
+        <StatTile label="Agency owners" value={owners} />
+        <StatTile label="Total records" value={rows.length} />
+        <StatTile label="Possible duplicates" value={dupCount} hint={dupCount ? 'Shared email/phone' : undefined} />
+      </div>
+      {rows.length === 0 ? (
+        <EmptyState
+          icon={ContactIcon}
+          title="No contacts yet"
+          description="Add a contact manually, or import a CSV, TSV, Excel, or JSON file — everything is stored here in App B."
+        />
+      ) : (
+        <ContactList rows={rows} />
+      )}
     </ListShell>
   )
 }

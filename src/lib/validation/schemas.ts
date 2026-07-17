@@ -802,3 +802,55 @@ export const GhlSyncSchema = z.object({
   tags: z.array(z.string().trim().min(1).max(60)).max(20).optional(),
 })
 export type GhlSync = z.infer<typeof GhlSyncSchema>
+
+// ─── Contact Center (native App B contact store) ───────────────────────────────
+export const CONTACT_TYPE = ['agency_owner', 'client', 'prospect', 'term_conversion', 'cross_sell', 'business', 'unknown'] as const
+export const CONTACT_STATUS = ['active', 'archived'] as const
+
+const contactTags = z.array(z.string().trim().min(1).max(60)).max(30)
+
+export const ContactCreateSchema = z
+  .object({
+    first_name: z.string().trim().max(120).optional().or(z.literal('').transform(() => undefined)),
+    last_name: z.string().trim().max(120).optional().or(z.literal('').transform(() => undefined)),
+    full_name: z.string().trim().max(200).optional().or(z.literal('').transform(() => undefined)),
+    email: optionalEmail,
+    phone: optionalPhone,
+    company: z.string().trim().max(200).optional().or(z.literal('').transform(() => undefined)),
+    title: z.string().trim().max(160).optional().or(z.literal('').transform(() => undefined)),
+    contact_type: z.enum(CONTACT_TYPE).default('unknown'),
+    tags: contactTags.optional().default([]),
+    source: z.string().trim().max(80).optional().or(z.literal('').transform(() => undefined)),
+    household_id: uuid.optional(),
+    agency_partnership_id: uuid.optional(),
+    city: z.string().trim().max(120).optional().or(z.literal('').transform(() => undefined)),
+    state: z.string().trim().max(40).optional().or(z.literal('').transform(() => undefined)),
+    zip: z.string().trim().max(20).optional().or(z.literal('').transform(() => undefined)),
+    notes: z.string().trim().max(4000).optional().or(z.literal('').transform(() => undefined)),
+  })
+  .refine((v) => v.full_name || v.first_name || v.last_name || v.email || v.phone, {
+    message: 'Provide at least a name, email, or phone',
+  })
+export type ContactCreate = z.infer<typeof ContactCreateSchema>
+
+export const ContactPatchSchema = z
+  .object({
+    first_name: z.string().trim().max(120).optional(),
+    last_name: z.string().trim().max(120).optional(),
+    full_name: z.string().trim().min(1).max(200).optional(),
+    email: optionalEmail,
+    phone: optionalPhone,
+    company: z.string().trim().max(200).optional(),
+    title: z.string().trim().max(160).optional(),
+    contact_type: z.enum(CONTACT_TYPE).optional(),
+    tags: contactTags.optional(),
+    status: z.enum(CONTACT_STATUS).optional(),
+    household_id: uuid.nullable().optional(),
+    agency_partnership_id: uuid.nullable().optional(),
+    city: z.string().trim().max(120).optional(),
+    state: z.string().trim().max(40).optional(),
+    zip: z.string().trim().max(20).optional(),
+    notes: z.string().trim().max(4000).optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, { message: 'No changes provided' })
+export type ContactPatch = z.infer<typeof ContactPatchSchema>

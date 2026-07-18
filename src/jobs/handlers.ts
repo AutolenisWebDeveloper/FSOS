@@ -5,7 +5,8 @@
 // the securities firewall. Read-only detection jobs create tasks/escalations only.
 import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
-import { dispatchCampaign } from '@/lib/comms/campaign'
+import { dispatchCampaign, refreshCampaignMetrics } from '@/lib/comms/campaign'
+import { sendThroughGate, isTemplateApproved } from '@/lib/comms/send'
 import type { JobResult } from './index'
 
 const SYSTEM = 'system'
@@ -125,7 +126,9 @@ export async function commissionReconcile(): Promise<JobResult> {
   return { ok: true, handled, note: `commission-reconcile: ${handled} reconciled` }
 }
 
-// campaign-dispatch — active campaigns → dispatch through the 7-step gate per recipient.
+// campaign-dispatch — active campaigns → dispatch through the 7-step gate per recipient,
+// then advance any due drip-sequence enrollments (also gated). Metrics are refreshed
+// so the campaign cards show live delivery/open/click counts.
 export async function campaignDispatch(): Promise<JobResult> {
   const db = getDb()
   const nowISO = new Date().toISOString()
@@ -135,8 +138,80 @@ export async function campaignDispatch(): Promise<JobResult> {
     if (c.schedule_at && c.schedule_at > nowISO) continue // not due yet
     const result = await dispatchCampaign(c.id, `agent:marketing_automation`)
     if (!('error' in result)) { sent += result.sent; suppressed += result.suppressed }
+    await refreshCampaignMetrics(c.id)
   }
-  return { ok: true, handled: sent, note: `campaign-dispatch: ${sent} sent, ${suppressed} suppressed (all through the gate)` }
+  const drip = await dripAdvance()
+  const dripHandled = drip.handled ?? 0
+  return { ok: true, handled: sent + dripHandled, note: `campaign-dispatch: ${sent} broadcast sent, ${suppressed} suppressed; drip: ${dripHandled} steps (all through the gate)` }
+}
+
+// dripAdvance — advance due drip-sequence enrollments one step. Each step send
+// passes the same 7-step gate; a completed sequence is marked done. Idempotent by
+// next_send_at gating (a step only fires once its due time passes).
+export async function dripAdvance(): Promise<JobResult> {
+  const db = getDb()
+  const nowISO = new Date().toISOString()
+  // Due enrollments across all active drip campaigns.
+  const { data: enrollments } = await db
+    .from('comm_campaign_enrollments')
+    .select('id, campaign_id, member_id, household_id, agency_id, current_step, comm_campaigns!inner(id, type, channel, sequence_id, status, archived_at)')
+    .eq('status', 'enrolled')
+    .lte('next_send_at', nowISO)
+    .limit(1000)
+
+  let handled = 0
+  for (const e of (enrollments ?? []) as unknown as Array<{ id: string; campaign_id: string; member_id: string; household_id: string; agency_id: string | null; current_step: number; comm_campaigns: { type: string; channel: string; sequence_id: string | null; status: string; archived_at: string | null } }>) {
+    const camp = e.comm_campaigns
+    if (!camp || camp.type !== 'drip' || camp.status !== 'active' || camp.archived_at || !camp.sequence_id) continue
+
+    const { data: seq } = await db.from('comm_sequences').select('steps, status').eq('id', camp.sequence_id).maybeSingle()
+    const steps = (seq?.steps ?? []) as Array<{ delay_days: number; template_id?: string; subject?: string }>
+    if (!seq || seq.status !== 'active' || e.current_step >= steps.length) {
+      await db.from('comm_campaign_enrollments').update({ status: 'completed' }).eq('id', e.id)
+      continue
+    }
+
+    const step = steps[e.current_step]
+    if (!step?.template_id || !(await isTemplateApproved(step.template_id))) {
+      // Skip an unapproved/empty step but keep advancing so the drip doesn't stall.
+      await db.from('comm_campaign_enrollments').update({ current_step: e.current_step + 1, next_send_at: nowISO }).eq('id', e.id)
+      continue
+    }
+
+    const { data: member } = await db.from('household_members').select('email, phone, full_name').eq('id', e.member_id).maybeSingle()
+    const to = camp.channel === 'email' ? member?.email : member?.phone
+    if (to) {
+      const { data: tpl } = await db.from('comm_templates').select('body').eq('id', step.template_id).maybeSingle()
+      await sendThroughGate({
+        channel: camp.channel as 'sms' | 'email',
+        to,
+        subject: step.subject,
+        body: tpl?.body ?? '',
+        actor: 'agent:marketing_automation',
+        memberId: e.member_id,
+        householdId: e.household_id,
+        agencyId: e.agency_id,
+        entity: { type: 'campaign', id: e.campaign_id },
+        templateId: step.template_id,
+        campaignId: e.campaign_id,
+        sequenceStep: e.current_step,
+        isSecurity: false,
+        recipientContext: { full_name: member?.full_name ?? null },
+      })
+      handled++
+    }
+
+    // Advance the cursor; schedule the next step by its delay, or complete.
+    const nextStep = e.current_step + 1
+    if (nextStep >= steps.length) {
+      await db.from('comm_campaign_enrollments').update({ status: 'completed', current_step: nextStep, last_sent_at: nowISO }).eq('id', e.id)
+    } else {
+      const delayDays = Number(steps[nextStep]?.delay_days ?? 0)
+      const next = new Date(Date.now() + delayDays * 86400000).toISOString()
+      await db.from('comm_campaign_enrollments').update({ current_step: nextStep, next_send_at: next, last_sent_at: nowISO }).eq('id', e.id)
+    }
+  }
+  return { ok: true, handled, note: `drip-advance: ${handled} steps sent through the gate` }
 }
 
 // data-quality — flag households/members missing contact info.

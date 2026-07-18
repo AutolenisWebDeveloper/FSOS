@@ -18,6 +18,7 @@ export default async function CommsTimelinePage() {
 
   const nav = (
     <div className="flex flex-wrap gap-2">
+      <Button asChild variant="outline"><Link href="/app/comms/inbox">Inbox</Link></Button>
       <Button asChild variant="outline"><Link href="/app/comms/sms">SMS</Link></Button>
       <Button asChild variant="outline"><Link href="/app/comms/email">Email</Link></Button>
       <Button asChild variant="outline"><Link href="/app/comms/templates">Templates</Link></Button>

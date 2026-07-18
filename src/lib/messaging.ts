@@ -37,20 +37,38 @@ export async function sendEmail(to: string, subject: string, html: string, text?
   }
 }
 
+/** Absolute base URL for building Twilio status-callback links (best-effort). */
+function appBaseUrl(): string {
+  const raw =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.APP_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '') ||
+    ''
+  return raw.replace(/\/$/, '')
+}
+
 export async function sendSms(to: string, body: string): Promise<SendResult> {
   const sid = process.env.TWILIO_ACCOUNT_SID
   const token = process.env.TWILIO_AUTH_TOKEN
   const from = process.env.TWILIO_PHONE_NUMBER
-  if (!sid || !token || !from) return { ok: false, error: 'Twilio env not set' }
+  // Prefer a Messaging Service SID when configured (handles number pools + opt-out).
+  const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID
+  if (!sid || !token || (!from && !messagingServiceSid)) return { ok: false, error: 'Twilio env not set' }
   if (!to) return { ok: false, error: 'No recipient phone' }
   try {
+    const params: Record<string, string> = { To: to, Body: body }
+    if (messagingServiceSid) params.MessagingServiceSid = messagingServiceSid
+    else if (from) params.From = from
+    // Ask Twilio to POST delivery-status updates to our webhook (sent/delivered/failed).
+    const base = appBaseUrl()
+    if (base) params.StatusCallback = `${base}/api/webhooks/twilio/status`
     const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
       method: 'POST',
       headers: {
         Authorization: 'Basic ' + Buffer.from(`${sid}:${token}`).toString('base64'),
         'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: new URLSearchParams({ To: to, From: from, Body: body }),
+      body: new URLSearchParams(params),
     })
     if (!res.ok) return { ok: false, error: `Twilio ${res.status}: ${(await res.text()).slice(0, 200)}` }
     const json = (await res.json().catch(() => ({}))) as { sid?: string }

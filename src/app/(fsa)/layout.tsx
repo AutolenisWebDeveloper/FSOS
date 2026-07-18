@@ -16,6 +16,7 @@ import {
   Briefcase,
   DollarSign,
   MessageSquare,
+  BookOpen,
   ClipboardList,
   FolderOpen,
   Workflow,
@@ -73,6 +74,8 @@ const NAV: NavItem[] = [
   { href: '/app/commissions', label: 'Commissions', icon: DollarSign, group: 'Pipeline' },
 
   { href: '/app/comms', label: 'Comms', icon: MessageSquare, group: 'Engage' },
+  { href: '/app/comms/inbox', label: 'Inbox', icon: MessageSquare, group: 'Engage' },
+  { href: '/app/knowledge', label: 'Knowledge Library', icon: BookOpen, group: 'Engage' },
   { href: '/app/contacts/upload', label: 'Contact Upload', icon: Upload, group: 'Engage' },
   { href: '/app/forms', label: 'Client Forms', icon: ClipboardList, group: 'Engage' },
   { href: '/app/workshops', label: 'Workshops', icon: GraduationCap, group: 'Engage' },

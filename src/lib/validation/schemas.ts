@@ -430,6 +430,23 @@ export const CampaignCreateSchema = z.object({
   channel: z.enum(['sms', 'email']),
   category: z.enum(TEMPLATE_CATEGORY),
   template_id: uuid,
+  // broadcast = one send; drip = multi-step sequence advanced by the dispatch cron.
+  type: z.enum(['broadcast', 'drip']).default('broadcast'),
+  subject: z.string().trim().max(200).optional().or(z.literal('').transform(() => undefined)),
+  sequence_id: uuid.optional(),
+  // A/B testing: weighted split across approved-template variants. Empty = single send.
+  ab_enabled: z.boolean().default(false),
+  variants: z
+    .array(
+      z.object({
+        key: z.string().trim().min(1).max(20),
+        template_id: uuid,
+        subject: z.string().trim().max(200).optional(),
+        weight: z.coerce.number().int().min(1).max(100).default(50),
+      }),
+    )
+    .max(6)
+    .default([]),
   // audience selection — a segment definition; the dispatch job re-checks the gate per recipient.
   audience: z
     .object({
@@ -854,3 +871,66 @@ export const ContactPatchSchema = z
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'No changes provided' })
 export type ContactPatch = z.infer<typeof ContactPatchSchema>
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AI Knowledge Library + two-way conversations + campaign variants (migration 033).
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const KNOWLEDGE_KIND = ['document', 'faq', 'policy', 'procedure', 'template', 'business_info'] as const
+
+export const KnowledgeCreateSchema = z.object({
+  title: z.string().trim().min(1, 'Title is required').max(240),
+  kind: z.enum(KNOWLEDGE_KIND).default('document'),
+  category: z.string().trim().max(80).optional().or(z.literal('').transform(() => undefined)),
+  summary: z.string().trim().max(2000).optional().or(z.literal('').transform(() => undefined)),
+  content: z.string().trim().max(50000).default(''),
+  tags: z.array(z.string().trim().min(1).max(40)).max(30).default([]),
+  status: z.enum(['draft', 'published', 'archived']).default('published'),
+  is_assumption: z.boolean().default(false),
+  visibility: z.enum(['internal', 'client_safe']).default('internal'),
+})
+export type KnowledgeCreate = z.infer<typeof KnowledgeCreateSchema>
+
+export const KnowledgePatchSchema = z
+  .object({
+    title: z.string().trim().min(1).max(240).optional(),
+    kind: z.enum(KNOWLEDGE_KIND).optional(),
+    category: z.string().trim().max(80).nullable().optional(),
+    summary: z.string().trim().max(2000).nullable().optional(),
+    content: z.string().trim().max(50000).optional(),
+    tags: z.array(z.string().trim().min(1).max(40)).max(30).optional(),
+    status: z.enum(['draft', 'published', 'archived']).optional(),
+    is_assumption: z.boolean().optional(),
+    visibility: z.enum(['internal', 'client_safe']).optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, { message: 'No changes provided' })
+export type KnowledgePatch = z.infer<typeof KnowledgePatchSchema>
+
+// A human/manual reply from the FSA inbox into a conversation thread. Still routed
+// through the 7-step gate at send time (never a bypass).
+export const ConversationReplySchema = z.object({
+  body: z.string().trim().min(1, 'Message is required').max(4000),
+  subject: z.string().trim().max(200).optional(),
+  template_id: uuid.optional(),
+  idempotency_key: z.string().min(8).max(200),
+})
+export type ConversationReply = z.infer<typeof ConversationReplySchema>
+
+export const ConversationPatchSchema = z
+  .object({
+    status: z.enum(['open', 'snoozed', 'closed']).optional(),
+    ai_autoreply: z.boolean().optional(),
+    assigned_user: uuid.nullable().optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, { message: 'No changes provided' })
+export type ConversationPatch = z.infer<typeof ConversationPatchSchema>
+
+// A/B variant for a campaign: an approved template + optional subject + weight.
+const CampaignVariantSchema = z.object({
+  key: z.string().trim().min(1).max(20),
+  template_id: uuid,
+  subject: z.string().trim().max(200).optional(),
+  weight: z.coerce.number().int().min(1).max(100).default(50),
+})
+export const CampaignVariantsSchema = z.array(CampaignVariantSchema).max(6)
+export type CampaignVariant = z.infer<typeof CampaignVariantSchema>

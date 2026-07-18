@@ -46,9 +46,38 @@ export async function POST(req: NextRequest) {
     }
     if (tpl.channel !== v.data.channel) return NextResponse.json({ error: 'Template channel does not match campaign channel.' }, { status: 400 })
 
+    // A/B variants: every variant template must exist, be approved, and match channel.
+    if (v.data.ab_enabled && v.data.variants.length > 0) {
+      for (const variant of v.data.variants) {
+        const { data: vt } = await db.from('comm_templates').select('id, approval_status, channel, archived_at').eq('id', variant.template_id).maybeSingle()
+        if (!vt) return NextResponse.json({ error: `Variant "${variant.key}" template not found.` }, { status: 404 })
+        if (vt.approval_status !== 'approved' || vt.archived_at) return NextResponse.json({ error: `Variant "${variant.key}" template is not approved.`, reason: 'unapproved_template' }, { status: 422 })
+        if (vt.channel !== v.data.channel) return NextResponse.json({ error: `Variant "${variant.key}" template channel mismatch.` }, { status: 400 })
+      }
+    }
+
+    // Drip campaigns require an attached sequence.
+    if (v.data.type === 'drip' && !v.data.sequence_id) {
+      return NextResponse.json({ error: 'A drip campaign requires a sequence.', reason: 'missing_sequence' }, { status: 400 })
+    }
+
     const { data, error } = await db
       .from('comm_campaigns')
-      .insert({ name: v.data.name, channel: v.data.channel, category: v.data.category, template_id: v.data.template_id, audience: v.data.audience, schedule_at: v.data.schedule_at ? new Date(v.data.schedule_at).toISOString() : null, quiet_hours_ack: true, status: 'draft' })
+      .insert({
+        name: v.data.name,
+        channel: v.data.channel,
+        category: v.data.category,
+        template_id: v.data.template_id,
+        type: v.data.type,
+        subject: v.data.subject ?? null,
+        sequence_id: v.data.sequence_id ?? null,
+        ab_enabled: v.data.ab_enabled,
+        variants: v.data.ab_enabled ? v.data.variants : [],
+        audience: v.data.audience,
+        schedule_at: v.data.schedule_at ? new Date(v.data.schedule_at).toISOString() : null,
+        quiet_hours_ack: true,
+        status: 'draft',
+      })
       .select('*')
       .single()
     if (error || !data) return NextResponse.json({ error: error?.message ?? 'Insert failed' }, { status: 500 })

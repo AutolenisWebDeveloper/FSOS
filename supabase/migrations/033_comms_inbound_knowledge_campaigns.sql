@@ -151,18 +151,35 @@ create table if not exists knowledge_documents (
   is_assumption boolean not null default false,
   visibility    text not null default 'internal' check (visibility in ('internal','client_safe')),
   -- Full-text index over title + summary + content + tags for AI retrieval.
-  search_tsv    tsvector generated always as (
-                  setweight(to_tsvector('english', coalesce(title,'')), 'A') ||
-                  setweight(to_tsvector('english', coalesce(summary,'')), 'B') ||
-                  setweight(to_tsvector('english', coalesce(array_to_string(tags,' '),'')), 'B') ||
-                  setweight(to_tsvector('english', coalesce(content,'')), 'C')
-                ) stored,
+  -- Maintained by a trigger (below) rather than a GENERATED column: Postgres
+  -- rejects to_tsvector(...) inside a stored generated column as "not immutable"
+  -- (the text→regconfig resolution is not immutable), so a BEFORE trigger is the
+  -- portable way to keep this weighted vector in sync on insert/update.
+  search_tsv    tsvector,
   usage_count   integer not null default 0,
   created_by    text,
   updated_by    text,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
 );
+
+-- Recompute the weighted search vector on every insert/update.
+create or replace function knowledge_documents_tsv_update() returns trigger as $$
+begin
+  new.search_tsv :=
+    setweight(to_tsvector('english', coalesce(new.title,'')), 'A') ||
+    setweight(to_tsvector('english', coalesce(new.summary,'')), 'B') ||
+    setweight(to_tsvector('english', coalesce(array_to_string(new.tags,' '),'')), 'B') ||
+    setweight(to_tsvector('english', coalesce(new.content,'')), 'C');
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists trg_knowledge_documents_tsv on knowledge_documents;
+create trigger trg_knowledge_documents_tsv
+  before insert or update of title, summary, tags, content on knowledge_documents
+  for each row execute function knowledge_documents_tsv_update();
+
 create index if not exists idx_knowledge_tsv on knowledge_documents using gin(search_tsv);
 create index if not exists idx_knowledge_kind on knowledge_documents(kind, status);
 create index if not exists idx_knowledge_tags on knowledge_documents using gin(tags);
@@ -261,7 +278,8 @@ insert into ai_agents (key, name, is_guardrail) values
 --    Farmers-specific figures are assumption-flagged (never asserted as fact).
 -- ─────────────────────────────────────────────────────────
 insert into knowledge_documents (title, kind, category, summary, content, tags, source, status, is_assumption, visibility)
-values
+select v.title, v.kind, v.category, v.summary, v.content, v.tags::text[], v.source, v.status, v.is_assumption::boolean, v.visibility
+from (values
   ('FSOS Communication Compliance — quiet hours & consent',
    'policy', 'compliance',
    'Automated SMS/email only sends inside 9am–8pm recipient-local, with valid channel consent, off DNC, using an approved template.',
@@ -282,4 +300,5 @@ values
    'How the AI invites a consented contact to book a review and hands off to the calendar.',
    'When a consented contact expresses interest in a review: (1) confirm the best contact channel and consent, (2) share the scheduling link or offered times, (3) create/confirm the appointment, (4) send a reminder inside quiet hours, (5) log the activity on the household timeline. Never provide product advice during scheduling — keep it logistical and educational.',
    '{scheduling,review,appointment,procedure}', 'manual', 'published', false, 'internal')
-  on conflict do nothing;
+) as v(title, kind, category, summary, content, tags, source, status, is_assumption, visibility)
+where not exists (select 1 from knowledge_documents k where k.title = v.title);

@@ -19,6 +19,7 @@ import { getDb } from '@/lib/supabase/client'
 import { dispatch, type DispatchRequest } from './dispatcher'
 import type { GateResult } from './gate'
 import { getOrCreateConversation, touchConversation, normalizeContact, type Channel } from './conversations'
+import { loadHoursPolicy, isWithinOperatingHours } from './hours'
 import { recordMessageEvent } from './events'
 import { personalize, type RecipientContext } from './personalize'
 import { instrumentEmailHtml } from './tracking'
@@ -190,11 +191,16 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
   // Compute the gate context FRESH (send-time re-check — WF-9 invariant). Step 4
   // is satisfied by an approved template OR, for AI-authored replies with no
   // template, an approved AI policy (both AI kill switches on).
-  const [consent, dnc, templateApproved] = await Promise.all([
+  const [consent, dnc, templateApproved, hoursPolicy] = await Promise.all([
     hasConsent(convMemberId, ctx.channel),
     onDNC(to, ctx.channel),
     isTemplateApproved(ctx.templateId),
+    loadHoursPolicy(),
   ])
+  // Operator hours of operation (business-local). A human-typed 1:1 reply from the
+  // FSA inbox is NOT gated by business hours — the licensed operator is present and
+  // choosing to send. Automated/AI/bulk sends ARE gated (held outside hours).
+  const withinBusinessHours = ctx.humanAuthored === true ? true : await isWithinOperatingHours(hoursPolicy)
   const approved =
     templateApproved ||
     ctx.humanAuthored === true ||
@@ -251,6 +257,7 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
     gate: {
       hasConsent: consent,
       recipientLocalHour: recipientLocalHour(ctx.utcOffsetHours),
+      withinBusinessHours,
       onDNC: dnc,
       usesApprovedTemplateOrPolicy: approved,
       isSecurity: ctx.isSecurity === true,

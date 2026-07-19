@@ -24,6 +24,7 @@
 import { getDb } from '@/lib/supabase/client'
 import { runAgent } from '@/jobs/agent-runner'
 import { sendThroughGate } from '@/lib/comms/send'
+import { isWithinOperatingHours } from '@/lib/comms/hours'
 import { searchKnowledge, renderKnowledgeContext } from '@/lib/knowledge/library'
 import { containsRecommendationLanguage } from '@/lib/compliance/guardrail'
 import { FINRA_DISCLAIMER } from '@/lib/compliance'
@@ -291,6 +292,12 @@ export async function runOutreachAgent(agentKey: OutreachAgentKey): Promise<{ se
   const t = targets[agentKey]
   const stats = { sent: 0, blocked: 0, escalated: 0, skipped: 0 }
   if (!t || !t.enabled || t.daily_target <= 0) return stats
+
+  // Hours-of-operation pre-check: outside the operator's configured window the
+  // workforce does NOT contact anyone (the daily cron runs mid-morning; a manual
+  // "run now" at night dispatches nothing). Defense in depth — the send gate would
+  // also defer each message — but this keeps the queue clean and sends zero at night.
+  if (!(await isWithinOperatingHours())) return stats
 
   // Remaining quota = today's target minus what already sent today.
   const today = new Date().toISOString().slice(0, 10)

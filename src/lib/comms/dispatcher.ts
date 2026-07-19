@@ -106,17 +106,27 @@ export async function dispatch(req: DispatchRequest, deps: DispatchDeps = defaul
   const gate = evaluateGate({ draft: req.body, channel: req.channel, ...req.gate })
 
   if (!gate.allowed) {
-    await deps.recordComplianceEvent(req, gate)
-    await deps.createEscalation(req, gate)
+    // A non-escalating block (business_hours) is an operational DEFERRAL, not a
+    // compliance violation: audit it and hold the send, but do NOT record a
+    // compliance event or create a human-FSA escalation. Every other block escalates.
+    if (gate.escalate) {
+      await deps.recordComplianceEvent(req, gate)
+      await deps.createEscalation(req, gate)
+    }
     await deps.writeAudit({
       actor: req.actor,
-      // Securities blocks are firewall events; all other blocks are comms.blocked.
-      action: gate.blockedStep === 'is_security' ? 'firewall.blocked' : 'comms.blocked',
+      // Securities blocks are firewall events; deferrals are comms.deferred; all other
+      // blocks are comms.blocked.
+      action: gate.blockedStep === 'is_security'
+        ? 'firewall.blocked'
+        : gate.escalate
+          ? 'comms.blocked'
+          : 'comms.deferred',
       entity: req.entity?.type ?? 'message',
       entityId: req.entity?.id ?? null,
       diff: { channel: req.channel, to: req.to, blockedStep: gate.blockedStep, reason: gate.reason },
     })
-    return { sent: false, gate, escalated: true }
+    return { sent: false, gate, escalated: gate.escalate }
   }
 
   // Passed the gate → send. SMS carries the required AI-disclosure/opt-out footer.

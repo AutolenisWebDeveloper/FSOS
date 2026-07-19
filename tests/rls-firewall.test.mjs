@@ -32,6 +32,13 @@ let canRunAsPostgres = false
 try { sh('id postgres'); canRunAsPostgres = true } catch { /* no postgres user */ }
 
 if (!PGBIN || !canRunAsPostgres) {
+  // In CI this proof MUST run — a missing toolchain is a failure, not a pass.
+  // Locally (no CI_REQUIRE_INFRA) we skip cleanly so the suite stays runnable.
+  if (process.env.CI_REQUIRE_INFRA === '1') {
+    console.error('FAIL: CI_REQUIRE_INFRA=1 but local Postgres / postgres user is unavailable.')
+    console.error('The RLS-firewall proof (Case 7) cannot silently skip in CI — provision Postgres.')
+    process.exit(1)
+  }
   console.log('SKIP: local Postgres / postgres user unavailable — run in an environment with both.')
   console.log('(Case 7 was also verified on the live Supabase preview branch: Migrations ✅.)')
   process.exit(0)

@@ -30,20 +30,16 @@ export function NavLink({
       href={href}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'group relative flex h-9 items-center gap-2.5 rounded-lg pl-3 pr-2 text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-shell',
+        'group flex h-9 items-center gap-2.5 rounded-xl border-l-2 pl-2.5 pr-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-shell',
         active
-          ? 'bg-shell-raised font-semibold text-shell-foreground [&_svg]:text-accent'
-          : 'text-shell-foreground/75 hover:bg-shell-raised/70 hover:text-shell-foreground [&_svg]:text-shell-muted hover:[&_svg]:text-shell-foreground',
+          ? 'border-l-accent bg-shell-raised font-semibold text-shell-foreground'
+          : 'border-l-transparent text-shell-foreground/80 hover:bg-shell-raised hover:text-shell-foreground',
       )}
     >
-      {/* Active indicator — a short rounded accent bar (premium nav affordance). */}
-      {active ? (
-        <span aria-hidden className="absolute left-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-full bg-accent" />
-      ) : null}
       {icon}
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {typeof count === 'number' && count > 0 ? (
-        <span className="numeric inline-flex min-w-[20px] items-center justify-center rounded-full bg-accent px-1.5 text-[11px] font-semibold text-accent-foreground shadow-elev-xs">
+        <span className="numeric inline-flex min-w-[20px] items-center justify-center rounded-full bg-accent px-1.5 text-[11px] font-medium text-accent-foreground">
           {count}
         </span>
       ) : null}

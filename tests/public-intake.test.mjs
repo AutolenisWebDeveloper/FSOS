@@ -45,16 +45,23 @@ ok('still blocked while window is open', rateLimit(key, 5, 60_000) === false)
 // A different key (different IP / different surface) is independent.
 ok('different key is not rate-limited', rateLimit('workshop-reg:198.51.100.2', 5, 60_000) === true)
 
-// A tiny window expires and re-allows.
+// limit=1 with a REAL window: first request allowed, second blocked. Using a
+// 60s window keeps this deterministic — the window cannot expire between the two
+// synchronous calls (the old 1ms window here flaked on loaded CI runners).
 const burstKey = 'burst:key'
-ok('first request in tiny window allowed', rateLimit(burstKey, 1, 1) === true)
+ok('first request in window allowed', rateLimit(burstKey, 1, 60_000) === true)
 ok('second immediate request blocked', rateLimit(burstKey, 1, 60_000) === false)
-// Busy-wait ~3ms so the 1ms window rolls over (no async timers in this harness).
-const until = Date.now() + 3
+
+// A short window expires and re-allows. Separate key + a window we then wait PAST
+// deterministically (busy-wait, since this harness has no async timers) — we only
+// assert the roll-over after actively spinning beyond resetAt, so it cannot flake.
+const rollKey = 'roll:key'
+ok('first request in short window allowed', rateLimit(rollKey, 1, 5) === true)
+const until = Date.now() + 25
 while (Date.now() < until) {
-  /* spin */
+  /* spin well past the 5ms window so it is guaranteed to have rolled over */
 }
-ok('request allowed again after the window rolls over', rateLimit(burstKey, 1, 60_000) === true)
+ok('request allowed again after the window rolls over', rateLimit(rollKey, 1, 60_000) === true)
 
 // clientIp prefers x-forwarded-for's first hop, falls back to x-real-ip, then unknown.
 const ipFwd = clientIp(new Request('https://x', { headers: { 'x-forwarded-for': '203.0.113.9, 10.0.0.1' } }))

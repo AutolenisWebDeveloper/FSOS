@@ -32,14 +32,18 @@ const config: Config = {
         shell: {
           DEFAULT: 'hsl(var(--shell))',
           raised: 'hsl(var(--shell-raised))',
+          highlight: 'hsl(var(--shell-highlight))',
           foreground: 'hsl(var(--shell-foreground))',
           muted: 'hsl(var(--shell-muted))',
           border: 'hsl(var(--shell-border))',
         },
+        // Recessed canvas surface for section wells / zebra rows.
+        sunken: 'hsl(var(--surface-sunken))',
         primary: {
           DEFAULT: 'hsl(var(--primary))',
           foreground: 'hsl(var(--primary-foreground))',
           soft: 'hsl(var(--primary-soft))',
+          deep: 'hsl(var(--primary-deep))',
         },
         secondary: {
           DEFAULT: 'hsl(var(--secondary))',
@@ -85,14 +89,6 @@ const config: Config = {
           assumption: 'hsl(var(--status-assumption))',
           // Guardrail 1: the is_security / FFS-managed marker (purple).
           security: 'hsl(var(--status-security))',
-        },
-        // Farmers-blue-forward data-viz palette (charts, sparklines, legends).
-        chart: {
-          1: 'hsl(var(--chart-1))',
-          2: 'hsl(var(--chart-2))',
-          3: 'hsl(var(--chart-3))',
-          4: 'hsl(var(--chart-4))',
-          5: 'hsl(var(--chart-5))',
         },
       },
       borderRadius: {

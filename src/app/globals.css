@@ -3,92 +3,97 @@
 @tailwind utilities;
 
 /*
- * FSOS design tokens — Farmers-branded financial operating system.
- * Dark-first, dense, institutional. A deep FARMERS NAVY shell (sidebar + topbar)
- * wraps a light content CANVAS — that high-contrast chrome-vs-content split is the
- * core visual move. The brand accent is FARMERS BLUE (primary actions, selection,
- * links, focus, charts); FARMERS RED is reserved for critical/blocking states only;
- * the signature GOLD survives for the GDC tier + "config default" assumption marker
- * (guardrail §2.3), and PURPLE stays the securities-firewall marker (guardrail §2.1).
- * shadcn/ui components and every archetype shell read these HSL variables via
- * tailwind.config.ts. Legacy command-center screens keep their own inline styling
- * (CLAUDE.md §1.6); the base rules below stay minimal so preflight does not fight them.
+ * FSOS design tokens — FSOS Design System (docs/design-system.md).
+ * Dark-first, dense, branded, financial-services. A dark navy SHELL (sidebar +
+ * topbar) wraps a light content CANVAS — that high contrast is the core visual
+ * move, carried forward from the legacy Command Center. shadcn/ui components and
+ * every archetype shell read these HSL variables via tailwind.config.ts.
+ * Legacy command-center screens keep their own inline styling (CLAUDE.md §1.6);
+ * the base rules below intentionally stay minimal so preflight does not fight them.
  */
 @layer base {
   :root {
-    /* ---- Shell (deep Farmers navy) — sidebar / topbar / dense panels ---- */
-    --shell:            212 84% 11%;   /* #041d33 — deep institutional Farmers navy */
-    --shell-raised:     211 56% 17%;   /* #123049 — panels inside the shell */
-    --shell-foreground: 210 32% 97%;
-    --shell-muted:      210 22% 69%;   /* AA on the navy shell */
-    --shell-border:     211 40% 25%;
+    /* ====================================================================
+     * FSOS — FARMERS-BRANDED INSTITUTIONAL PALETTE
+     * The core identity: a deep Farmers NAVY shell wrapping a cool light
+     * CANVAS, driven by a confident Farmers BLUE, with Farmers RED reserved
+     * for destructive / critical alerts. The two compliance guardrail colors
+     * are held fixed and MUST NOT be repurposed: GOLD = assumptions ("config
+     * default — verify"), PURPLE = securities firewall / FFS-managed. Every
+     * value resolves through a token — never hardcode a brand color.
+     * ==================================================================== */
 
-    /* ---- Content canvas (light, cool Farmers-blue-tinted neutral) ---- */
-    --background:       210 33% 98%;   /* #f5f8fb */
-    --foreground:       213 44% 12%;   /* #0b1d2f — deep navy ink */
+    /* ---- Shell (Farmers navy) — sidebar / topbar / dense dark panels ---- */
+    --shell:            214 56% 12%;   /* #0d2138 — deep Farmers navy */
+    --shell-raised:     213 40% 18%;   /* #1b3252 — panels inside the shell */
+    --shell-highlight:  210 90% 60%;   /* top-lit hairline / brand glow on the shell */
+    --shell-foreground: 210 32% 96%;
+    --shell-muted:      211 24% 67%;
+    --shell-border:     213 32% 24%;
+
+    /* ---- Content canvas (cool light — white cards read as elevated) ---- */
+    --background:       214 34% 96%;   /* faint blue-gray so surfaces separate */
+    --foreground:       214 46% 12%;   /* near-navy ink */
 
     --card:             0 0% 100%;
-    --card-foreground:  213 44% 12%;
+    --card-foreground:  214 46% 12%;
     --popover:          0 0% 100%;
-    --popover-foreground: 213 44% 12%;
+    --popover-foreground: 214 46% 12%;
 
-    --muted:            211 30% 95%;
-    --muted-foreground: 213 15% 40%;   /* ≥4.5:1 on card/canvas */
+    /* A recessed surface for section wells, report filters, table zebra. */
+    --surface-sunken:   214 32% 94.5%;
+
+    --muted:            214 30% 93.5%;
+    --muted-foreground: 214 15% 40%;   /* AA (≥4.5:1) secondary ink on canvas */
 
     /* ---- Brand (Farmers blue) ---- */
-    --primary:            208 94% 38%;   /* #0669bb — confident Farmers blue, white text ≥5:1 */
+    --primary:            214 88% 40%;   /* #0b5fcc — confident Farmers blue */
     --primary-foreground: 0 0% 100%;
-    --primary-soft:       208 88% 93%;   /* soft blue wash */
+    --primary-soft:       213 92% 94%;   /* soft blue wash */
+    --primary-deep:       215 90% 30%;   /* pressed / gradient floor */
 
-    --secondary:          210 32% 94%;
-    --secondary-foreground: 213 40% 22%;
+    --secondary:          214 30% 93%;
+    --secondary-foreground: 214 42% 22%;
 
-    --accent:             204 92% 45%;   /* #0a93de — brighter Farmers sky blue: links/focus on navy */
+    --accent:             209 92% 46%;   /* #0d86ef — brighter blue highlight / active bars */
     --accent-foreground:  0 0% 100%;
 
-    /* ---- Signature gold (GDC tier, assumptions, attention) ---- */
+    /* ---- Signature gold — GUARDRAIL: assumptions + attention ONLY. Never success. */
     --gold:            43 89% 51%;       /* #f0b429 */
-    --gold-deep:       38 76% 34%;       /* #996915 — text-grade gold: ≥4.5:1 on light for small labels */
+    --gold-deep:       38 76% 34%;       /* #996915 — text-grade gold: ≥4.5:1 on light */
     --gold-foreground: 215 40% 12%;
 
-    /* ---- Farmers red — critical / blocking / destructive only ---- */
-    --destructive:        356 74% 45%;   /* #c81f33 — Farmers red, white text ≥5:1 */
+    /* ---- Farmers red — destructive / critical / blocking ---- */
+    --destructive:        350 78% 43%;   /* #c31838 — Farmers red */
     --destructive-foreground: 0 0% 100%;
 
-    --border:           212 24% 88%;
-    --input:            212 22% 84%;
-    --ring:             208 94% 40%;
+    --border:           214 24% 87%;
+    --input:            214 22% 83%;
+    --ring:             214 88% 42%;
 
     --radius: 0.625rem;
 
     /* ---- Status ---- */
-    --status-draft:      213 12% 52%;
-    --status-active:     208 94% 40%;    /* Farmers blue — follows brand */
-    --status-pending:    38 92% 45%;     /* amber — in-progress */
-    --status-won:        152 55% 39%;    /* #2f9e6a — emerald success (never blue/red) */
-    --status-lost:       356 74% 45%;    /* Farmers red — lost/error */
-    --status-blocked:    356 74% 38%;    /* deep red — blocked */
-    --status-escalated:  262 47% 42%;    /* #553c9a — purple */
-    --status-assumption: 38 72% 42%;     /* gold — "config default — verify" */
-    --status-security:   262 47% 42%;    /* purple — is_security / FFS-managed */
-
-    /* ---- Chart palette (blue-forward, Farmers) — data viz + sparklines ---- */
-    --chart-1: 208 94% 42%;   /* Farmers blue */
-    --chart-2: 199 90% 46%;   /* sky */
-    --chart-3: 152 55% 39%;   /* emerald */
-    --chart-4: 38 92% 50%;    /* amber */
-    --chart-5: 262 47% 52%;   /* purple */
+    --status-draft:      214 12% 50%;
+    --status-active:     214 88% 42%;    /* Farmers blue — follows brand */
+    --status-pending:    38 92% 45%;
+    --status-won:        152 58% 37%;    /* #26996a — placed / active / success only */
+    --status-lost:       350 78% 45%;    /* Farmers red — lost / error only */
+    --status-blocked:    350 80% 38%;    /* deeper Farmers red — blocked */
+    --status-escalated:  262 47% 44%;    /* GUARDRAIL purple — escalated → human/FFS */
+    --status-assumption: 38 72% 42%;     /* GUARDRAIL gold — "config default — verify" */
+    --status-security:   262 47% 44%;    /* GUARDRAIL purple — is_security / FFS-managed */
 
     /* ---- Elevation (premium, financial-grade depth) ----
      * Layered, low-alpha shadows tuned to the navy brand. Cards sit flush by
      * default and lift on interaction; overlays float on the strongest tier. */
-    --shadow-xs: 0 1px 2px 0 hsl(213 44% 12% / 0.05);
-    --shadow-sm: 0 1px 2px 0 hsl(213 44% 12% / 0.06), 0 2px 4px -1px hsl(213 44% 12% / 0.05);
-    --shadow-md: 0 2px 4px -1px hsl(213 44% 12% / 0.07), 0 6px 16px -3px hsl(213 44% 12% / 0.10);
-    --shadow-lg: 0 10px 20px -5px hsl(213 44% 12% / 0.12), 0 18px 40px -10px hsl(213 44% 12% / 0.16);
-    --shadow-xl: 0 20px 40px -10px hsl(213 44% 12% / 0.18), 0 28px 64px -14px hsl(213 44% 12% / 0.22);
+    --shadow-xs: 0 1px 2px 0 hsl(214 46% 12% / 0.05);
+    --shadow-sm: 0 1px 2px 0 hsl(214 46% 12% / 0.06), 0 1px 3px 0 hsl(214 46% 12% / 0.05);
+    --shadow-md: 0 2px 4px -1px hsl(214 46% 12% / 0.07), 0 6px 16px -3px hsl(214 46% 14% / 0.10);
+    --shadow-lg: 0 10px 20px -5px hsl(214 46% 12% / 0.12), 0 16px 40px -10px hsl(214 46% 14% / 0.14);
+    --shadow-xl: 0 18px 36px -10px hsl(214 46% 12% / 0.16), 0 28px 64px -14px hsl(214 46% 14% / 0.20);
     /* Focus ring — a soft brand halo used by inputs, tiles, and interactive cards. */
-    --ring-halo: 0 0 0 3px hsl(var(--ring) / 0.26);
+    --ring-halo: 0 0 0 3px hsl(var(--ring) / 0.28);
   }
 
   * {
@@ -175,43 +180,32 @@
     100% { transform: translateX(100%); }
   }
 
-  /* Subtle depth for the dark navy shell — a top-lit vertical gradient. */
+  /* Subtle depth for the dark Farmers-navy shell — a top-lit vertical gradient
+   * with a faint brand glow, so the sidebar/topbar read as a lit institutional
+   * surface rather than a flat block. */
   .shell-gradient {
-    background-image: linear-gradient(
-      180deg,
-      hsl(var(--shell-raised) / 0.55) 0%,
-      hsl(var(--shell)) 42%
-    );
+    background-color: hsl(var(--shell));
+    background-image:
+      radial-gradient(120% 60% at 50% -10%, hsl(var(--shell-highlight) / 0.14), transparent 60%),
+      linear-gradient(180deg, hsl(var(--shell-raised) / 0.60) 0%, hsl(var(--shell)) 44%);
   }
 
-  /* Premium content surface — a crisp card that reads as a distinct plane on the
-   * canvas without heavy shadow. The enterprise default for panels/sections. */
-  .surface-1 {
-    background: hsl(var(--card));
-    border: 1px solid hsl(var(--border));
-    border-radius: calc(var(--radius) + 0.125rem);
-    box-shadow: var(--shadow-sm);
+  /* Recessed section well — a subtle canvas step-down used to group dense bands
+   * (report filters, sub-toolbars) so the page has real surface hierarchy. */
+  .surface-well {
+    background-color: hsl(var(--surface-sunken));
+    border: 1px solid hsl(var(--border) / 0.7);
   }
 
-  /* A hairline gradient rule that carries the Farmers-blue accent — used to
-   * underline executive headers and section dividers with a touch of brand. */
-  .rule-accent {
-    height: 1px;
-    background: linear-gradient(
-      90deg,
-      hsl(var(--primary) / 0.55),
-      hsl(var(--primary) / 0.12) 40%,
-      hsl(var(--border) / 0)
-    );
+  /* A hairline top-highlight for premium dark cards/bands on the shell. */
+  .shell-hairline {
+    box-shadow: inset 0 1px 0 0 hsl(var(--shell-highlight) / 0.10);
   }
 
-  /* KPI value — tight, tabular, executive-scale metric figure. */
-  .metric-value {
-    font-family: var(--font-dm-mono), ui-monospace, monospace;
-    font-variant-numeric: tabular-nums;
-    font-feature-settings: 'tnum';
-    letter-spacing: -0.01em;
-    font-weight: 600;
+  /* Primary action / brand tile gradient — a restrained two-stop Farmers-blue
+   * fill that gives buttons and the identity mark subtle dimensionality. */
+  .brand-fill {
+    background-image: linear-gradient(180deg, hsl(var(--primary)) 0%, hsl(var(--primary-deep)) 100%);
   }
 }
 
@@ -222,8 +216,8 @@
 html { height: 100%; }
 body {
   min-height: 100%;
-  background: #f5f8fb;
-  color: #0b1d2f;
+  background: hsl(214 34% 96%);
+  color: #12243b;
   font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 13px;
   line-height: 1.5;

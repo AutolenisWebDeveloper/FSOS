@@ -35,3 +35,6 @@ Thumbs.db
 
 # Rule-fetcher runtime audit log (generated per run)
 data/rule_fetch_log.json
+
+# Superpowers subagent-driven-development scratch (controller working state)
+.superpowers/

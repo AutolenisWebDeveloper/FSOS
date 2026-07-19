@@ -137,6 +137,7 @@ export async function retrieveChunks(
       )
     if (tsq) builder = builder.textSearch('search_tsv', tsq, { type: 'websearch', config: 'english' })
     if (opts.product) builder = builder.overlaps('product_scope', [opts.product.toUpperCase(), 'ALL'])
+    if (opts.state) builder = builder.overlaps('state_scope', [opts.state.toUpperCase(), 'ALL'])
 
     const { data, error } = await builder.limit(limit)
     if (error) return []

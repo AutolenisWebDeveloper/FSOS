@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { evaluateAccess, toRoles, type Role, type SessionClaims } from '@/lib/auth/rbac'
+import { unconfiguredInternalAuthAllowed } from '@/lib/auth/config-gate'
 
 // Two responsibilities, in order:
 //  1. Legacy: the internal command center at "/" stays behind HTTP Basic auth
@@ -18,7 +19,15 @@ export const config = {
 
 function legacyBasicAuth(req: NextRequest): NextResponse | null {
   const expectedPass = process.env.FSOS_ADMIN_PASSWORD
-  if (!expectedPass) return null
+  if (!expectedPass) {
+    // No password configured: fail CLOSED in production (challenge with no valid
+    // credential = locked until one is set); allow local/dev to pass through.
+    if (unconfiguredInternalAuthAllowed()) return null
+    return new NextResponse('Authentication required', {
+      status: 401,
+      headers: { 'WWW-Authenticate': 'Basic realm="FSOS Command Center", charset="UTF-8"' },
+    })
+  }
   const expectedUser = process.env.FSOS_ADMIN_USER || 'markist'
   const header = req.headers.get('authorization') || ''
   if (header.startsWith('Basic ')) {

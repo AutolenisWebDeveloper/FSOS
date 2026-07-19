@@ -28,7 +28,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
@@ -43,5 +43,9 @@ jobs:
       - name: Tests
         run: npm test
 
+      # The RLS proof stands up an ephemeral Postgres via initdb + runuser -u
+      # postgres + chown, which require root. GitHub-hosted runners execute steps
+      # as the non-root `runner` user, so run this one step under sudo — preserving
+      # PATH (for node/npm) and CI_REQUIRE_INFRA so it hard-fails rather than skips.
       - name: RLS firewall proof
-        run: npm run test:rls
+        run: sudo env "PATH=$PATH" CI_REQUIRE_INFRA=1 npm run test:rls

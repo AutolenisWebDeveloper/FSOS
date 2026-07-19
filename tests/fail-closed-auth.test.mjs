@@ -68,5 +68,17 @@ ok(
   'unset NODE_ENV allows (test/local runners unbroken)',
 )
 
+// Vercel deployment with NODE_ENV somehow unset → still DENY (belt-and-suspenders).
+ok(
+  unconfiguredInternalAuthAllowed({ VERCEL: '1' }) === false,
+  'a Vercel deployment denies even if NODE_ENV is unset (VERCEL guard)',
+)
+
+// The escape hatch is strict '1' — a stray truthy value must NOT re-open prod.
+ok(
+  unconfiguredInternalAuthAllowed({ NODE_ENV: 'production', ALLOW_INSECURE_LOCAL: 'true' }) === false,
+  "ALLOW_INSECURE_LOCAL='true' (not '1') does NOT re-open production (strict match)",
+)
+
 console.log(`\nfail-closed-auth: ${pass} passed, ${fail} failed.`)
 if (fail > 0) process.exit(1)

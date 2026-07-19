@@ -112,7 +112,7 @@ with today as (
   group by agent_key
 )
 select
-  t.agent_key,
+  coalesce(dt.agent_key, td.agent_key) as agent_key,
   coalesce(a.enabled, false)      as agent_enabled,
   coalesce(dt.daily_target, 0)    as daily_target,
   coalesce(dt.channel, 'sms')     as channel,

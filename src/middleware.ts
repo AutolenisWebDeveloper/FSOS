@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { evaluateAccess, toRoles, type Role, type SessionClaims } from '@/lib/auth/rbac'
-import { unconfiguredInternalAuthAllowed } from '@/lib/auth/config-gate'
 
 // Two responsibilities, in order:
-//  1. Legacy: the internal command center at "/" stays behind HTTP Basic auth
-//     (unchanged from the original FSOS — activates only when FSOS_ADMIN_PASSWORD
-//     is set). Legacy modules are intentionally left untouched.
-//  2. New: the coarse portal gate (middleware-auth.md §4) for /app, /admin,
+//  1. The legacy command center at "/" is RETIRED. "/" now redirects to the
+//     official dashboard at /app (which enforces the portal auth below). The
+//     old HTTP Basic gate is gone with it.
+//  2. The coarse portal gate (middleware-auth.md §4) for /app, /admin,
 //     /compliance, /partner, /client, /super — auth redirect + role + MFA. Fine-
 //     grained row authorization stays in RLS + layout guards (never here).
 
@@ -15,36 +14,6 @@ export const config = {
   // Everything except Next internals, static assets, and API routes (which
   // enforce their own auth / cron secrets).
   matcher: ['/((?!_next/static|_next/image|favicon.ico|robots.txt|icon.svg|api/).*)'],
-}
-
-function legacyBasicAuth(req: NextRequest): NextResponse | null {
-  const expectedPass = process.env.FSOS_ADMIN_PASSWORD
-  if (!expectedPass) {
-    // No password configured: fail CLOSED in production (challenge with no valid
-    // credential = locked until one is set); allow local/dev to pass through.
-    if (unconfiguredInternalAuthAllowed()) return null
-    return new NextResponse('Authentication required', {
-      status: 401,
-      headers: { 'WWW-Authenticate': 'Basic realm="FSOS Command Center", charset="UTF-8"' },
-    })
-  }
-  const expectedUser = process.env.FSOS_ADMIN_USER || 'markist'
-  const header = req.headers.get('authorization') || ''
-  if (header.startsWith('Basic ')) {
-    try {
-      const decoded = atob(header.slice(6))
-      const idx = decoded.indexOf(':')
-      if (decoded.slice(0, idx) === expectedUser && decoded.slice(idx + 1) === expectedPass) {
-        return null // authorized → continue
-      }
-    } catch {
-      /* fall through to challenge */
-    }
-  }
-  return new NextResponse('Authentication required', {
-    status: 401,
-    headers: { 'WWW-Authenticate': 'Basic realm="FSOS Command Center", charset="UTF-8"' },
-  })
 }
 
 /** Decode the `aal` claim from a Supabase access-token JWT without a network call. */
@@ -62,10 +31,10 @@ function aalFromJwt(token: string | undefined): string | null {
 export async function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname
 
-  // (1) Legacy command center at "/".
+  // (1) The legacy command center at "/" is retired — send everyone to the
+  // official /app dashboard, which then enforces the portal auth gate below.
   if (path === '/') {
-    const challenge = legacyBasicAuth(req)
-    return challenge ?? NextResponse.next()
+    return NextResponse.redirect(new URL('/app', req.url))
   }
 
   // (2) Portal gate. Build a response we can attach refreshed auth cookies to.

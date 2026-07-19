@@ -35,7 +35,13 @@ export const JOBS: Record<string, JobHandler> = {
   'cross-sell-scan': async () => (await h()).crossSellScan(),
   'commission-reconcile': async () => (await h()).commissionReconcile(),
   'campaign-dispatch': async () => (await h()).campaignDispatch(),
-  'agent-runner': placeholder('agent-runner'),
+  // The AI workforce daily run — builds the prioritized outreach queue and dispatches
+  // every enabled outreach agent up to its quota, all through the compliance gate.
+  'workforce-orchestrator': async () => (await h()).workforceOrchestrator(),
+  // 'agent-runner' is the durable runner primitive (jobs/agent-runner.ts); the
+  // workforce-orchestrator job above is its first scheduled consumer. Alias kept so
+  // the registered cron name continues to resolve.
+  'agent-runner': async () => (await h()).workforceOrchestrator(),
   'data-quality': async () => (await h()).dataQuality(),
   'backup-verify': async () => (await h()).backupVerify(),
 }

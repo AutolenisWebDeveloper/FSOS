@@ -53,6 +53,13 @@ export interface SendContext {
   /** Flag AI-authored sends (still gate-checked) for audit + UI. */
   aiGenerated?: boolean
   /**
+   * The agent that authored an AI send with no fixed template. Its per-agent kill
+   * switch (plus the global gateway) is what satisfies gate step 4 for that send —
+   * disable the agent and its outreach immediately blocks + escalates. Defaults to
+   * the conversation responder. Ignored unless aiGenerated && no templateId.
+   */
+  aiAuthorAgentKey?: string
+  /**
    * A 1:1 reply personally typed by an authenticated, licensed operator (the FSA
    * inbox). The human IS the content approval for gate step 4 — but recommendation
    * (5), securities (6), consent (1), quiet-hours (2), and DNC (3) are STILL
@@ -112,20 +119,23 @@ async function hasConsent(memberId: string | null | undefined, channel: Channel)
 
 /**
  * "Approved AI policy" for gate step 4 — the non-template path for AI-authored
- * green-zone replies (CLAUDE.md §7: "approved template OR approved AI policy").
+ * green-zone messages (CLAUDE.md §7: "approved template OR approved AI policy").
  * A policy is approved only when BOTH kill switches are on: the global AI gateway
- * AND the conversation agent. This keeps AI auto-reply fully operator-controlled —
- * disabling either switch immediately blocks + escalates instead of sending. Note
- * this only satisfies step 4; the AI draft still must clear recommendation (5),
- * securities (6), consent (1), quiet-hours (2), and DNC (3).
+ * AND the specific agent that authored the message (the conversation responder for
+ * inbound replies; the acting outreach agent — cross_sell / term_conversion /
+ * referral_followup / marketing_automation — for proactive workforce outreach).
+ * This keeps every AI auto-send fully operator-controlled: disabling either switch
+ * immediately blocks + escalates instead of sending. It only satisfies step 4; the
+ * AI draft still must clear recommendation (5), securities (6), consent (1),
+ * quiet-hours (2), and DNC (3).
  */
-async function hasApprovedAiPolicy(): Promise<boolean> {
+async function hasApprovedAiPolicy(agentKey = 'conversation'): Promise<boolean> {
   if (process.env.AI_GATEWAY_DISABLED === '1') return false
   try {
     const db = getDb()
     const [{ data: pol }, { data: agent }] = await Promise.all([
       db.from('ai_policies').select('gateway_enabled').eq('id', 'global').maybeSingle(),
-      db.from('ai_agents').select('enabled').eq('key', 'conversation').maybeSingle(),
+      db.from('ai_agents').select('enabled').eq('key', agentKey).maybeSingle(),
     ])
     const gatewayOn = pol?.gateway_enabled !== false
     return gatewayOn && agent?.enabled === true
@@ -188,7 +198,7 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
   const approved =
     templateApproved ||
     ctx.humanAuthored === true ||
-    (ctx.aiGenerated === true && !ctx.templateId ? await hasApprovedAiPolicy() : false)
+    (ctx.aiGenerated === true && !ctx.templateId ? await hasApprovedAiPolicy(ctx.aiAuthorAgentKey) : false)
 
   // Pre-insert the message row (queued) so email tracking can reference its id and
   // so a blocked send is still visible in the timeline. The final status/provider

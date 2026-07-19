@@ -214,6 +214,22 @@ export async function dripAdvance(): Promise<JobResult> {
   return { ok: true, handled, note: `drip-advance: ${handled} steps sent through the gate` }
 }
 
+// workforce-orchestrator — the AI workforce's daily run. Builds the prioritized
+// outreach queue from detection signals, then dispatches every enabled outreach agent
+// up to its daily quota. Each send is drafted via the gateway and routes ONLY through
+// sendThroughGate (consent/quiet-hours/DNC/recommendation/securities enforced). The
+// whole thing is kill-switch-gated per agent + globally; a disabled agent contributes
+// zero sends. Idempotent by queue_date (unique key) + per-agent dedupe in runAgent.
+export async function workforceOrchestrator(): Promise<JobResult> {
+  const { runWorkforce } = await import('@/lib/ai/workforce')
+  const result = await runWorkforce()
+  const parts = Object.entries(result.dispatch)
+    .map(([k, s]) => `${k}: ${s.sent} sent/${s.blocked} blocked/${s.escalated} esc/${s.skipped} skip`)
+    .join('; ')
+  await writeAudit({ actor: SYSTEM, action: 'ai.run', entity: 'workforce', diff: { built: result.built.byAgent, dispatch: result.dispatch, greenzone: true } })
+  return { ok: true, handled: result.totalSent, note: `workforce: ${result.built.queued} queued; ${parts}` }
+}
+
 // data-quality — flag households/members missing contact info.
 export async function dataQuality(): Promise<JobResult> {
   const db = getDb()

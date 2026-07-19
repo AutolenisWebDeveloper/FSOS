@@ -3,7 +3,7 @@
 //
 // Reads data/seed_corpus.json (20 authority-tagged, citation-referenced rule
 // chunks) and loads it into compliance_documents + compliance_chunks (migration
-// 035). Grouping: one compliance_documents row per (source_org + section_ref)
+// 036). Grouping: one compliance_documents row per (source_org + section_ref)
 // source doc; one compliance_chunks row per chunk. Idempotent — chunks upsert by
 // chunk_key, so re-running updates in place rather than duplicating.
 //

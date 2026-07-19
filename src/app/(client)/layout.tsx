@@ -19,7 +19,7 @@ const NAV: NavItem[] = [
 export default async function ClientLayout({ children }: { children: React.ReactNode }) {
   await requireRole('client', '/client')
   return (
-    <PortalShell portalLabel="Client" nav={NAV}>
+    <PortalShell portalLabel="Client" nav={NAV} settingsHref="/client/preferences">
       {children}
     </PortalShell>
   )

@@ -1,9 +1,10 @@
 import * as React from 'react'
 import Link from 'next/link'
-import { Bell, Search, Sparkles, UserCircle2 } from 'lucide-react'
+import { Bell, Search, Sparkles } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { NavLink } from './NavLink'
 import { MobileTabBar } from './MobileTabBar'
+import { ProfileMenu } from './ProfileMenu'
 import { IdentityLockup } from './CharacterPanels'
 import { MonoLabel } from '@/components/ui/typography'
 
@@ -53,6 +54,7 @@ export function PortalShell({
   searchHref,
   assistantHref,
   notificationsHref,
+  settingsHref,
   children,
 }: {
   portalLabel: string
@@ -64,6 +66,8 @@ export function PortalShell({
   searchHref?: string
   assistantHref?: string
   notificationsHref?: string
+  /** Account-menu target for this portal's settings/preferences page. */
+  settingsHref?: string
   children: React.ReactNode
 }) {
   const groups = groupNav(nav)
@@ -137,13 +141,7 @@ export function PortalShell({
               <Bell className="h-[18px] w-[18px]" strokeWidth={1.75} aria-hidden />
             </button>
           )}
-          <button
-            type="button"
-            aria-label="Profile"
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-shell-muted hover:bg-shell-raised hover:text-shell-foreground"
-          >
-            <UserCircle2 className="h-[20px] w-[20px]" strokeWidth={1.75} aria-hidden />
-          </button>
+          <ProfileMenu settingsHref={settingsHref} />
         </div>
       </header>
 

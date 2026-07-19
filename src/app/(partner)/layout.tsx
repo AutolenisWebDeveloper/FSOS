@@ -25,7 +25,7 @@ export default async function PartnerLayout({ children }: { children: React.Reac
   ]
 
   return (
-    <PortalShell portalLabel="Agency Owner" nav={nav}>
+    <PortalShell portalLabel="Agency Owner" nav={nav} settingsHref="/partner/settings">
       {children}
     </PortalShell>
   )

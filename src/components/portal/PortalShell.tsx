@@ -71,9 +71,9 @@ export function PortalShell({
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* ── Topbar (56px, dark shell) ────────────────────────────────────── */}
-      <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-shell-border bg-shell px-4 text-shell-foreground">
+      <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-shell-border bg-shell/95 px-4 text-shell-foreground shadow-elev-sm backdrop-blur-md supports-[backdrop-filter]:bg-shell/80">
         <div className="flex items-center gap-2 md:hidden">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-sm font-semibold text-primary-foreground">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-accent to-primary text-sm font-semibold text-primary-foreground ring-1 ring-white/10">
             M
           </div>
           <MonoLabel muted={false} className="text-shell-muted">
@@ -149,7 +149,7 @@ export function PortalShell({
 
       <div className="flex">
         {/* ── Sidebar (260px, dark shell) ────────────────────────────────── */}
-        <aside className="sticky top-14 hidden h-[calc(100vh-3.5rem)] w-[260px] shrink-0 flex-col overflow-y-auto border-r border-shell-border bg-shell px-3 py-4 md:flex">
+        <aside className="shell-gradient sticky top-14 hidden h-[calc(100vh-3.5rem)] w-[260px] shrink-0 flex-col overflow-y-auto border-r border-shell-border px-3 py-4 md:flex">
           <Link href={homeHref} className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-accent">
             <IdentityLockup portalLabel={`${portalLabel} Command Center`} />
           </Link>

@@ -15,7 +15,7 @@ import type { ShellData, AgentState } from '@/lib/data/shell'
 export function IdentityLockup({ portalLabel }: { portalLabel: string }) {
   return (
     <div className="flex items-center gap-3 px-1">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary text-lg font-semibold text-primary-foreground">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-primary text-lg font-semibold text-primary-foreground shadow-elev-md ring-1 ring-white/10">
         M
       </div>
       <div className="min-w-0">

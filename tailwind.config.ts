@@ -91,6 +91,18 @@ const config: Config = {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
+        xl: 'calc(var(--radius) + 4px)',
+      },
+      // Brand-tuned elevation — remaps the default Tailwind shadow scale to the
+      // layered navy tokens in globals.css so every `shadow-sm/md/lg/xl` reads
+      // as intentional, financial-grade depth rather than generic gray drop.
+      boxShadow: {
+        xs: 'var(--shadow-xs)',
+        sm: 'var(--shadow-sm)',
+        DEFAULT: 'var(--shadow-sm)',
+        md: 'var(--shadow-md)',
+        lg: 'var(--shadow-lg)',
+        xl: 'var(--shadow-xl)',
       },
       keyframes: {
         'accordion-down': {
@@ -101,10 +113,19 @@ const config: Config = {
           from: { height: 'var(--radix-accordion-content-height)' },
           to: { height: '0' },
         },
+        shimmer: {
+          '100%': { transform: 'translateX(100%)' },
+        },
+        'fade-in-up': {
+          from: { opacity: '0', transform: 'translateY(4px)' },
+          to: { opacity: '1', transform: 'translateY(0)' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
+        shimmer: 'shimmer 1.6s ease-in-out infinite',
+        'fade-in-up': 'fade-in-up 0.24s ease-out',
       },
     },
   },

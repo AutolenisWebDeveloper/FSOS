@@ -37,6 +37,7 @@ import {
   Database,
   FileUp,
   LifeBuoy,
+  Settings as SettingsIcon,
 } from 'lucide-react'
 import { requireRole } from '@/lib/auth/session'
 import { PortalShell, type NavItem } from '@/components/portal/PortalShell'
@@ -93,6 +94,7 @@ const NAV: NavItem[] = [
   { href: '/app/compliance/intelligence', label: 'Compliance Intelligence', icon: ScanSearch, group: 'Operate' },
   { href: '/app/reports', label: 'Reports', icon: BarChart3, group: 'Operate' },
   { href: '/app/contacts/ffs', label: 'FFS Contacts', icon: PhoneCall, group: 'Operate' },
+  { href: '/app/settings', label: 'Settings', icon: SettingsIcon, group: 'Operate' },
   { href: '/app/help', label: 'Help & Support', icon: LifeBuoy, group: 'Operate' },
 ]
 
@@ -107,6 +109,7 @@ export default async function FsaLayout({ children }: { children: React.ReactNod
       searchHref="/app/search"
       assistantHref="/app/assistant"
       notificationsHref="/app/notifications"
+      settingsHref="/app/settings"
     >
       {children}
     </PortalShell>

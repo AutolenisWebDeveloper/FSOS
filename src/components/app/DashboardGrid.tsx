@@ -3,10 +3,11 @@
 import * as React from 'react'
 import Link from 'next/link'
 import { Responsive, WidthProvider, type Layout } from 'react-grid-layout'
-import { Check, Plus, Settings2, X, RotateCcw } from 'lucide-react'
+import { Check, Plus, Settings2, X, RotateCcw, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { MonoLabel, Numeric, Money } from '@/components/ui/typography'
 import { putJson } from '@/lib/client/api'
@@ -231,7 +232,18 @@ function WidgetCard({
 }) {
   if (!def) return null
   const body = (
-    <div className="flex h-full flex-col justify-between rounded-lg border bg-card p-4 transition-colors hover:border-primary/40">
+    <div
+      className={cn(
+        'group relative flex h-full flex-col justify-between overflow-hidden rounded-xl border bg-card p-4 shadow-elev-xs transition-all duration-200',
+        editing ? 'cursor-grab active:cursor-grabbing' : 'hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md',
+      )}
+    >
+      {!editing ? (
+        <span
+          aria-hidden
+          className="absolute inset-y-0 left-0 w-0.5 bg-primary/0 transition-colors duration-200 group-hover:bg-primary/70"
+        />
+      ) : null}
       <div className="flex items-start justify-between gap-2">
         <MonoLabel>{def.label}</MonoLabel>
         {editing ? (
@@ -246,9 +258,17 @@ function WidgetCard({
         ) : null}
       </div>
       <div>
-        <Numeric as="div" className="text-[28px] font-semibold leading-none">
-          {value}
-        </Numeric>
+        <div className="flex items-end justify-between gap-2">
+          <Numeric as="div" className="text-[28px] font-semibold leading-none tracking-tight">
+            {value}
+          </Numeric>
+          {!editing ? (
+            <ChevronRight
+              className="h-4 w-4 shrink-0 -translate-x-1 text-muted-foreground/50 opacity-0 transition-all duration-200 group-hover:translate-x-0 group-hover:text-primary group-hover:opacity-100"
+              aria-hidden
+            />
+          ) : null}
+        </div>
         {def.hint ? <p className="mt-1.5 text-xs text-muted-foreground">{unavailable ? "Couldn't load — retry" : def.hint}</p> : null}
       </div>
     </div>
@@ -257,7 +277,7 @@ function WidgetCard({
   // links to its source records (anti-dead-end, design-system.md A1).
   if (editing) return body
   return (
-    <Link href={def.href} className="block h-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-lg">
+    <Link href={def.href} className="block h-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-xl">
       {body}
     </Link>
   )

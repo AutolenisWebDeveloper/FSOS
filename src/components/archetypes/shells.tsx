@@ -93,21 +93,41 @@ export function StatTile({
   hint?: string
 }) {
   const card = (
-    <Card className={href ? 'transition-colors hover:border-primary/40' : undefined}>
+    <Card
+      className={cn(
+        'group relative h-full overflow-hidden',
+        href && 'transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md',
+      )}
+    >
+      {/* Signature left accent that ignites on hover for interactive tiles. */}
+      {href ? (
+        <span
+          aria-hidden
+          className="absolute inset-y-0 left-0 w-0.5 bg-primary/0 transition-colors duration-200 group-hover:bg-primary/70"
+        />
+      ) : null}
       <CardHeader className="pb-2">
         <MonoLabel>{label}</MonoLabel>
       </CardHeader>
       <CardContent>
-        <Numeric as="div" className="text-[28px] font-semibold leading-none">
-          {value}
-        </Numeric>
+        <div className="flex items-end justify-between gap-2">
+          <Numeric as="div" className="text-[28px] font-semibold leading-none tracking-tight">
+            {value}
+          </Numeric>
+          {href ? (
+            <ChevronRight
+              className="h-4 w-4 shrink-0 -translate-x-1 text-muted-foreground/50 opacity-0 transition-all duration-200 group-hover:translate-x-0 group-hover:text-primary group-hover:opacity-100"
+              aria-hidden
+            />
+          ) : null}
+        </div>
         {hint ? <p className="mt-1.5 text-xs text-muted-foreground">{hint}</p> : null}
       </CardContent>
     </Card>
   )
   if (!href) return card
   return (
-    <Link href={href} className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+    <Link href={href} className="block rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
       {card}
     </Link>
   )
@@ -162,7 +182,7 @@ export function DetailShell({
   return (
     <div className="space-y-4">
       {/* Dark-tinted header band (design-system.md A3): status chips + primary actions. */}
-      <div className="-mx-4 -mt-6 mb-2 border-b border-shell-border bg-shell px-4 py-4 text-shell-foreground md:-mx-6 md:px-6">
+      <div className="shell-gradient -mx-4 -mt-6 mb-2 border-b border-shell-border px-4 py-5 text-shell-foreground shadow-elev-sm md:-mx-6 md:px-6">
         <div className="mx-auto flex max-w-[1400px] flex-wrap items-start justify-between gap-3">
           <div className="space-y-2">
             {breadcrumb ? (
@@ -444,15 +464,34 @@ export function AuthShell({
   footer?: React.ReactNode
 }) {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
-      <Card className="w-full max-w-sm">
-        <CardHeader className="text-center">
-          <CardTitle className="text-lg">{title}</CardTitle>
-          {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
-        </CardHeader>
-        <CardContent className="space-y-4">{children}</CardContent>
-        {footer ? <div className="border-t p-4 text-center text-sm text-muted-foreground">{footer}</div> : null}
-      </Card>
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-shell p-4 text-shell-foreground">
+      {/* Branded navy backdrop with a soft radial brand glow. */}
+      <div className="shell-gradient absolute inset-0" aria-hidden />
+      <div
+        className="pointer-events-none absolute inset-0 opacity-70"
+        aria-hidden
+        style={{
+          backgroundImage:
+            'radial-gradient(60rem 40rem at 50% -10%, hsl(var(--accent) / 0.16), transparent 60%)',
+        }}
+      />
+      <div className="relative w-full max-w-sm space-y-6">
+        {/* Identity lockup above the card. */}
+        <div className="flex flex-col items-center gap-3 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-primary text-xl font-semibold text-primary-foreground shadow-elev-lg ring-1 ring-white/10">
+            M
+          </div>
+          <div className="mono-label text-shell-muted">FSA Command Center</div>
+        </div>
+        <Card className="w-full shadow-elev-xl">
+          <CardHeader className="text-center">
+            <CardTitle className="text-lg">{title}</CardTitle>
+            {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
+          </CardHeader>
+          <CardContent className="space-y-4">{children}</CardContent>
+          {footer ? <div className="border-t p-4 text-center text-sm text-muted-foreground">{footer}</div> : null}
+        </Card>
+      </div>
     </main>
   )
 }

@@ -67,10 +67,52 @@
     --status-escalated:  262 47% 42%;    /* #553c9a — purple */
     --status-assumption: 38 72% 42%;     /* gold — "config default — verify" */
     --status-security:   262 47% 42%;    /* purple — is_security / FFS-managed */
+
+    /* ---- Elevation (premium, financial-grade depth) ----
+     * Layered, low-alpha shadows tuned to the navy brand. Cards sit flush by
+     * default and lift on interaction; overlays float on the strongest tier. */
+    --shadow-xs: 0 1px 2px 0 hsl(215 40% 12% / 0.04);
+    --shadow-sm: 0 1px 2px 0 hsl(215 40% 12% / 0.05), 0 1px 3px 0 hsl(215 40% 12% / 0.04);
+    --shadow-md: 0 2px 4px -1px hsl(215 40% 12% / 0.06), 0 4px 12px -2px hsl(215 40% 12% / 0.08);
+    --shadow-lg: 0 8px 16px -4px hsl(215 40% 12% / 0.10), 0 12px 32px -8px hsl(215 40% 12% / 0.12);
+    --shadow-xl: 0 16px 32px -8px hsl(215 40% 12% / 0.14), 0 24px 56px -12px hsl(215 40% 12% / 0.18);
+    /* Focus ring — a soft brand halo used by inputs, tiles, and interactive cards. */
+    --ring-halo: 0 0 0 3px hsl(var(--ring) / 0.28);
   }
 
   * {
     border-color: hsl(var(--border));
+  }
+
+  /* Crisp type rendering — a small detail that reads as "premium" everywhere. */
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    scroll-behavior: smooth;
+  }
+
+  /* Branded text selection. */
+  ::selection {
+    background: hsl(var(--primary) / 0.16);
+    color: hsl(var(--foreground));
+  }
+
+  /* Unified focus-visible affordance across all interactive elements. */
+  :focus-visible {
+    outline: 2px solid transparent;
+  }
+
+  /* Respect reduced-motion — disable non-essential animation/transition. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }
 
@@ -91,6 +133,45 @@
     font-variant-numeric: tabular-nums;
     font-feature-settings: 'tnum';
   }
+
+  /* Premium elevation utilities (map to the layered token scale above). */
+  .shadow-elev-xs { box-shadow: var(--shadow-xs); }
+  .shadow-elev-sm { box-shadow: var(--shadow-sm); }
+  .shadow-elev-md { box-shadow: var(--shadow-md); }
+  .shadow-elev-lg { box-shadow: var(--shadow-lg); }
+  .shadow-elev-xl { box-shadow: var(--shadow-xl); }
+
+  /* Skeleton shimmer — a moving sheen instead of a flat pulse. */
+  .shimmer {
+    position: relative;
+    overflow: hidden;
+    background: hsl(var(--muted));
+  }
+  .shimmer::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      hsl(0 0% 100% / 0.55),
+      transparent
+    );
+    animation: fsos-shimmer 1.6s ease-in-out infinite;
+  }
+  @keyframes fsos-shimmer {
+    100% { transform: translateX(100%); }
+  }
+
+  /* Subtle depth for the dark navy shell — a top-lit vertical gradient. */
+  .shell-gradient {
+    background-image: linear-gradient(
+      180deg,
+      hsl(var(--shell-raised) / 0.55) 0%,
+      hsl(var(--shell)) 42%
+    );
+  }
 }
 
 /*
@@ -106,6 +187,17 @@ body {
   font-size: 13px;
   line-height: 1.5;
 }
-::-webkit-scrollbar { width: 4px; height: 4px; }
-::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.15); border-radius: 2px; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(15, 30, 54, 0.18);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background-color: rgba(15, 30, 54, 0.32); background-clip: content-box; }
+* { scrollbar-width: thin; scrollbar-color: rgba(15, 30, 54, 0.22) transparent; }
+/* On the dark navy shell, invert the thumb so it stays visible. */
+.bg-shell ::-webkit-scrollbar-thumb,
+.shell-gradient ::-webkit-scrollbar-thumb { background-color: rgba(226, 232, 240, 0.22); background-clip: content-box; }
 a { color: inherit; text-decoration: none; }

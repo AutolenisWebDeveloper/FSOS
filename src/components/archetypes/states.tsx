@@ -32,25 +32,29 @@ export function EmptyState({
 }) {
   return (
     <div
-      className={cn('flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-10 text-center', className)}
+      className={cn('flex flex-col items-center justify-center gap-4 rounded-xl border border-dashed bg-muted/20 p-12 text-center', className)}
     >
-      <Icon className="h-8 w-8 text-muted-foreground" />
-      <div className="space-y-1">
-        <p className="font-medium">{title}</p>
-        {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
+      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted text-muted-foreground ring-8 ring-muted/40">
+        <Icon className="h-6 w-6" />
       </div>
-      {action}
+      <div className="space-y-1.5">
+        <p className="text-[15px] font-semibold">{title}</p>
+        {description ? <p className="mx-auto max-w-sm text-sm text-muted-foreground">{description}</p> : null}
+      </div>
+      {action ? <div className="pt-1">{action}</div> : null}
     </div>
   )
 }
 
 export function ForbiddenState({ description }: { description?: string }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-lg border p-10 text-center">
-      <ShieldAlert className="h-8 w-8 text-status-blocked" />
-      <div className="space-y-1">
-        <p className="font-medium">You don&apos;t have access to this</p>
-        <p className="text-sm text-muted-foreground">
+    <div className="flex flex-col items-center justify-center gap-4 rounded-xl border bg-muted/20 p-12 text-center">
+      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-status-blocked/10 text-status-blocked ring-8 ring-status-blocked/5">
+        <ShieldAlert className="h-6 w-6" />
+      </div>
+      <div className="space-y-1.5">
+        <p className="text-[15px] font-semibold">You don&apos;t have access to this</p>
+        <p className="mx-auto max-w-sm text-sm text-muted-foreground">
           {description ?? 'Your role does not permit this resource. If this is unexpected, contact an administrator.'}
         </p>
       </div>
@@ -72,7 +76,7 @@ export function CardsSkeleton({ count = 4 }: { count?: number }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4" aria-hidden>
       {Array.from({ length: count }).map((_, i) => (
-        <Skeleton key={i} className="h-28 w-full" />
+        <Skeleton key={i} className="h-28 w-full rounded-xl" />
       ))}
     </div>
   )

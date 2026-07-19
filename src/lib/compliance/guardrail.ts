@@ -68,6 +68,39 @@ export function withinQuietHours(recipientLocalHour: number): boolean {
 }
 
 /**
+ * Operator-configured HOURS OF OPERATION for automated outreach — the FSA's control
+ * over when the AI may work. Evaluated in the BUSINESS timezone. This can only ever
+ * make sending MORE restrictive than the legal quiet-hours floor: the gate always
+ * applies withinQuietHours() (recipient-local 9–20) AND this window, so a wider
+ * business window can never push a send past the TCPA floor. When disabled/unset,
+ * only the legal floor applies (no behavior change).
+ */
+export interface BusinessHoursPolicy {
+  enabled: boolean
+  /** Inclusive start hour (0–23), business-local. */
+  startHour: number
+  /** Exclusive end hour (1–24), business-local. */
+  endHour: number
+  /** Allowed days of week: 0=Sun … 6=Sat. Empty ⇒ no day allowed. */
+  days: number[]
+}
+
+/**
+ * True if a send is inside the operator's hours of operation. Pure + deterministic.
+ * A null/undefined or disabled policy imposes NO extra restriction (returns true) —
+ * the legal quiet-hours floor still applies separately in the gate.
+ */
+export function withinBusinessHours(
+  businessLocalHour: number,
+  businessLocalDay: number,
+  policy?: BusinessHoursPolicy | null,
+): boolean {
+  if (!policy || !policy.enabled) return true
+  if (!policy.days.includes(businessLocalDay)) return false
+  return businessLocalHour >= policy.startHour && businessLocalHour < policy.endHour
+}
+
+/**
  * Validate an AI-drafted client-facing message. Collects EVERY failing reason
  * (not just the first) so the escalation carries full context. allow === true
  * only when there are zero reasons.

@@ -106,6 +106,8 @@ export default async function WorkforcePage() {
           <Link href="/app/ai/escalations" className="text-primary hover:underline">Escalations</Link>
           <span>·</span>
           <Link href="/super/ai/targets" className="text-primary hover:underline">Manage quotas</Link>
+          <span>·</span>
+          <Link href="/super/ai/hours" className="text-primary hover:underline">Hours of operation</Link>
         </div>
         <RunWorkforceButton />
       </div>

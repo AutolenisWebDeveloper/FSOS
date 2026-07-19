@@ -17,6 +17,7 @@ export const AUDIT_ACTIONS = [
   'stage.changed',
   'comms.sent',
   'comms.blocked',
+  'comms.deferred',
   'consent.captured',
   'consent.revoked',
   'firewall.blocked',

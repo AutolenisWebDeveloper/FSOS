@@ -18,7 +18,7 @@ execSync(
 )
 const require = createRequire(import.meta.url)
 const { evaluateGate } = require(join(out, 'comms/gate.js'))
-const { validateAIClientMessage, containsRecommendationLanguage } = require(join(out, 'compliance/guardrail.js'))
+const { validateAIClientMessage, containsRecommendationLanguage, withinBusinessHours, withinQuietHours } = require(join(out, 'compliance/guardrail.js'))
 const { findForbiddenSecuritiesFields, assertNotSecuritiesSystemOfRecord, isSecurity } = require(
   join(out, 'compliance/firewall.js'),
 )
@@ -133,6 +133,42 @@ t('isSecurity reads the flag', () => {
   assert.equal(isSecurity({ is_security: true }), true)
   assert.equal(isSecurity({ is_security: false }), false)
   assert.equal(isSecurity({}), false)
+})
+
+console.log('Hours of operation (operator control — can only tighten the legal floor)')
+
+const bizPolicy = { enabled: true, startHour: 9, endHour: 17, days: [1, 2, 3, 4, 5] } // Mon–Fri 9–5
+
+t('withinBusinessHours respects the configured window', () => {
+  assert.equal(withinBusinessHours(10, 1, bizPolicy), true)   // 10am Monday → open
+  assert.equal(withinBusinessHours(18, 1, bizPolicy), false)  // 6pm Monday → closed
+  assert.equal(withinBusinessHours(8, 1, bizPolicy), false)   // 8am Monday → before open
+  assert.equal(withinBusinessHours(10, 0, bizPolicy), false)  // Sunday → closed day
+})
+
+t('a disabled/absent policy imposes no extra restriction', () => {
+  assert.equal(withinBusinessHours(23, 0, { enabled: false, startHour: 9, endHour: 17, days: [1] }), true)
+  assert.equal(withinBusinessHours(23, 0, null), true)
+})
+
+t('the gate DEFERS (does not escalate) a send outside business hours', () => {
+  const r = evaluateGate({ ...okCtx, draft: 'Hi there', channel: 'sms', withinBusinessHours: false })
+  assert.equal(r.allowed, false)
+  assert.equal(r.blockedStep, 'business_hours')
+  assert.equal(r.escalate, false) // operational deferral, NOT a compliance escalation
+})
+
+t('business hours can never widen past the legal quiet-hours floor', () => {
+  // Even if the business window "allowed" it, the earlier quiet-hours step blocks a
+  // 6am recipient-local send and that block ESCALATES (it is a legal violation).
+  const r = evaluateGate({ ...okCtx, draft: 'Hi', channel: 'sms', recipientLocalHour: 6, withinBusinessHours: true })
+  assert.equal(r.blockedStep, 'quiet_hours')
+  assert.equal(r.escalate, true)
+})
+
+t('inside both the floor and business hours, the send passes', () => {
+  const r = evaluateGate({ ...okCtx, draft: 'Hi there', channel: 'sms', recipientLocalHour: 12, withinBusinessHours: true })
+  assert.equal(r.allowed, true)
 })
 
 console.log(`\nAll ${passed} assertions passed.`)

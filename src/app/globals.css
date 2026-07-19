@@ -45,7 +45,7 @@
 
     /* ---- Signature gold (GDC tier, assumptions, attention) ---- */
     --gold:            43 89% 51%;       /* #f0b429 */
-    --gold-deep:       38 72% 42%;       /* #b7791f */
+    --gold-deep:       38 76% 34%;       /* #996915 — text-grade gold: ≥4.5:1 on light for small labels */
     --gold-foreground: 215 40% 12%;
 
     --destructive:        0 72% 51%;     /* #e53e3e */

@@ -15,6 +15,14 @@ export interface WidgetDef {
   /** Where the tile links to — the underlying list/detail (anti-dead-end). */
   href: string
   hint?: string
+  /**
+   * Action-needed counters: a non-zero value means the FSA has work waiting
+   * (speed-to-lead, human review, past-due). The dashboard raises these to a
+   * gold "needs you" state when value > 0 and lets them recede to calm at 0, so
+   * the grid reads as a triage surface rather than a flat readout. Money and
+   * inventory metrics leave this unset — they inform, they don't alert.
+   */
+  attention?: boolean
 }
 
 export const DASHBOARD_WIDGETS = [
@@ -22,9 +30,9 @@ export const DASHBOARD_WIDGETS = [
   { key: 'open_opportunities', label: 'Open opportunities', kind: 'count', href: '/app/opportunities/board', hint: 'In pipeline' },
   { key: 'households', label: 'Households', kind: 'count', href: '/app/households' },
   { key: 'policies', label: 'Policies', kind: 'count', href: '/app/policies' },
-  { key: 'referrals_awaiting', label: 'Referrals awaiting action', kind: 'count', href: '/app/referrals', hint: 'Speed-to-lead' },
-  { key: 'ai_escalations', label: 'AI escalations', kind: 'count', href: '/app/ai/escalations', hint: 'Awaiting human review' },
-  { key: 'overdue_tasks', label: 'Overdue tasks', kind: 'count', href: '/app/tasks', hint: 'Past due' },
+  { key: 'referrals_awaiting', label: 'Referrals awaiting action', kind: 'count', href: '/app/referrals', hint: 'Speed-to-lead', attention: true },
+  { key: 'ai_escalations', label: 'AI escalations', kind: 'count', href: '/app/ai/escalations', hint: 'Awaiting human review', attention: true },
+  { key: 'overdue_tasks', label: 'Overdue tasks', kind: 'count', href: '/app/tasks', hint: 'Past due', attention: true },
   { key: 'conversions_due', label: 'Conversions due (≤90d)', kind: 'count', href: '/app/conversions', hint: 'Educational outreach only' },
   { key: 'cross_sell_targets', label: 'Cross-sell targets', kind: 'count', href: '/app/cross-sell' },
   { key: 'expected_commission_open', label: 'Expected commission (open)', kind: 'currency', href: '/app/opportunities', hint: 'Un-weighted pipeline' },
@@ -38,4 +46,9 @@ export const WIDGET_KEYS = DASHBOARD_WIDGETS.map((w) => w.key) as [WidgetKey, ..
 
 export function widgetDef(key: string): WidgetDef | undefined {
   return DASHBOARD_WIDGETS.find((w) => w.key === key)
+}
+
+/** True for action-needed counters (referrals waiting, escalations, overdue). */
+export function isAttentionWidget(key: string): boolean {
+  return widgetDef(key)?.attention === true
 }

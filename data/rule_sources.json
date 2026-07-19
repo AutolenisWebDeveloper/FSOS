@@ -1,8 +1,9 @@
 {
   "_meta": {
-    "purpose": "Curated registry of the exact governing documents the rule-fetcher pulls, one entry per fetchable FINRA/SEC/state chunk in data/seed_corpus.json. Grouped by 'url' so each source page is fetched once. scripts/fetch-rules.ts fetches each unique url, extracts the section named by extract_hint, and replaces the paraphrased seed chunk_text with verbatim text (verbatim=true) for every chunk mapped to that page. Unreachable/blocked/PDF sources are logged and SKIPPED — the chunk stays paraphrased (verbatim=false). NEVER fabricate rule text.",
-    "not_in_registry_by_design": "STANDARD-1035-loan-boot (IRC/derived), STANDARD-buffered-limited-protection (FFS 326349), FORM-311883-esign-terms (FFS form), FFS-PROC-STUB, CARRIER-STUB — these are firm/carrier/derived sources with no single public primary URL; they require manual upload via the Knowledge Library tab.",
-    "fetch_policy": "Respect robots.txt; rate-limit 1 request / 2s; descriptive User-Agent; log URL + HTTP status + character count for every fetch."
+    "purpose": "Curated registry of the exact governing documents the rule-fetcher pulls, one entry per fetchable FINRA/SEC/state chunk in data/seed_corpus.json. Each entry may carry a committed local `file` (an official-source PDF/text under data/regulatory_sources/) which the fetcher PREFERS over `url` — so verbatim text loads offline, no proxy needed. `url` is retained as provenance. scripts/fetch-rules.ts loads each unique source once, extracts the section named by extract_hint, and replaces the paraphrased seed chunk_text with verbatim text (verbatim=true). Unreadable sources / hint-not-found are logged and SKIPPED (chunk stays verbatim=false). NEVER fabricate rule text.",
+    "not_in_registry_by_design": "STANDARD-1035-loan-boot (IRC/derived), STANDARD-buffered-limited-protection (FFS 326349), FORM-311883-esign-terms (FFS form), FFS-PROC-STUB, CARRIER-STUB — firm/carrier/derived sources with no single public primary URL; upload manually via the Knowledge Library tab.",
+    "local_sources_note": "data/regulatory_sources/ holds the operator-supplied official-source package (FINRA rule extracts 01-06, FINRA 2024 Oversight Report 07, SEC Reg BI adopting release 08, TX 28 TAC 11, NAIC #613 16, plus TX framework 09 and NAIC #275 15 for reference). SHA256SUMS.txt records their hashes.",
+    "fetch_policy": "Local files: read directly (PDF via pdf2json). Remote URLs: respect robots.txt; rate-limit 1 request / 2s; descriptive User-Agent; log source + status + character count for every load."
   },
   "sources": [
     {
@@ -10,54 +11,61 @@
       "source_org": "FINRA",
       "section_ref": "Rule 2330(b)(1)(A)",
       "authority_type": "FINRA_RULE",
+      "file": "data/regulatory_sources/01_FINRA_Rule_2330.pdf",
       "url": "https://www.finra.org/rules-guidance/rulebooks/finra-rules/2330",
-      "extract_hint": "(b)(1)(A)"
+      "extract_hint": "Recommendation requirements"
     },
     {
       "chunk_id": "FINRA-2330-b1B-exchange",
       "source_org": "FINRA",
       "section_ref": "Rule 2330(b)(1)(B)",
       "authority_type": "FINRA_RULE",
+      "file": "data/regulatory_sources/01_FINRA_Rule_2330.pdf",
       "url": "https://www.finra.org/rules-guidance/rulebooks/finra-rules/2330",
-      "extract_hint": "(b)(1)(B)"
+      "extract_hint": "For an exchange, the analysis must consider"
     },
     {
       "chunk_id": "FINRA-2330-b2-profile",
       "source_org": "FINRA",
       "section_ref": "Rule 2330(b)(2)",
       "authority_type": "FINRA_RULE",
+      "file": "data/regulatory_sources/01_FINRA_Rule_2330.pdf",
       "url": "https://www.finra.org/rules-guidance/rulebooks/finra-rules/2330",
-      "extract_hint": "(b)(2)"
+      "extract_hint": "Customer information"
     },
     {
       "chunk_id": "FINRA-2330-c-principal",
       "source_org": "FINRA",
       "section_ref": "Rule 2330(c)",
       "authority_type": "FINRA_RULE",
+      "file": "data/regulatory_sources/01_FINRA_Rule_2330.pdf",
       "url": "https://www.finra.org/rules-guidance/rulebooks/finra-rules/2330",
-      "extract_hint": "(c) Principal Review and Approval"
+      "extract_hint": "Principal review"
     },
     {
       "chunk_id": "FINRA-2111-suitability",
       "source_org": "FINRA",
       "section_ref": "Rule 2111",
       "authority_type": "FINRA_RULE",
+      "file": "data/regulatory_sources/02_FINRA_Rule_2111.pdf",
       "url": "https://www.finra.org/rules-guidance/rulebooks/finra-rules/2111",
-      "extract_hint": "(a)"
+      "extract_hint": "Core obligation"
     },
     {
       "chunk_id": "FINRA-breakpoint-ROA",
       "source_org": "FINRA",
       "section_ref": "Rule 2342 / mutual fund breakpoint guidance",
       "authority_type": "FINRA_RULE",
-      "url": "https://www.finra.org/rules-guidance/key-topics/breakpoints",
-      "extract_hint": "breakpoint"
+      "file": "data/regulatory_sources/03_FINRA_Rule_2342.pdf",
+      "url": "https://www.finra.org/rules-guidance/rulebooks/finra-rules/2342",
+      "extract_hint": "A member may not sell investment-company shares"
     },
     {
       "chunk_id": "FINRA-2010-commercial-honor",
       "source_org": "FINRA",
       "section_ref": "Rule 2010",
       "authority_type": "FINRA_RULE",
+      "file": "data/regulatory_sources/04_FINRA_Rule_2010.pdf",
       "url": "https://www.finra.org/rules-guidance/rulebooks/finra-rules/2010",
       "extract_hint": "high standards of commercial honor"
     },
@@ -66,64 +74,72 @@
       "source_org": "FINRA",
       "section_ref": "Rule 4511",
       "authority_type": "FINRA_RULE",
+      "file": "data/regulatory_sources/05_FINRA_Rule_4511.pdf",
       "url": "https://www.finra.org/rules-guidance/rulebooks/finra-rules/4511",
-      "extract_hint": "General Requirements"
+      "extract_hint": "make and preserve books and records"
     },
     {
       "chunk_id": "FINRA-RN-22-18-esign",
       "source_org": "FINRA",
       "section_ref": "Regulatory Notice 22-18",
       "authority_type": "FINRA_RULE",
+      "file": "data/regulatory_sources/06_FINRA_RN_22-18.pdf",
       "url": "https://www.finra.org/rules-guidance/notices/22-18",
-      "extract_hint": "forged or falsified"
+      "extract_hint": "forgery or falsification"
     },
     {
       "chunk_id": "SEC-REGBI-care",
       "source_org": "SEC",
       "section_ref": "17 CFR 240.15l-1(a)(2)(ii)",
       "authority_type": "SEC_RULE",
-      "url": "https://www.ecfr.gov/current/title-17/chapter-II/part-240/section-240.15l-1",
-      "extract_hint": "Care Obligation"
+      "file": "data/regulatory_sources/08_SEC_Regulation_Best_Interest_34-86031.pdf",
+      "url": "https://www.sec.gov/rules/final/2019/34-86031.pdf",
+      "extract_hint": "exercise reasonable diligence, care, and skill to: (1) understand the"
     },
     {
       "chunk_id": "SEC-REGBI-alternatives",
       "source_org": "SEC",
       "section_ref": "17 CFR 240.15l-1 (Adopting Release, care obligation guidance)",
       "authority_type": "SEC_RULE",
+      "file": "data/regulatory_sources/08_SEC_Regulation_Best_Interest_34-86031.pdf",
       "url": "https://www.sec.gov/rules/final/2019/34-86031.pdf",
-      "extract_hint": "reasonably available alternatives"
+      "extract_hint": "should consider reasonably available alternatives offered by"
     },
     {
       "chunk_id": "FINRA-2024-report-VA-rationale",
       "source_org": "FINRA",
       "section_ref": "2024 Annual Regulatory Oversight Report — Variable Annuities, Effective Practices",
       "authority_type": "SUITABILITY_STANDARD",
+      "file": "data/regulatory_sources/07_FINRA_2024_Oversight_Report.pdf",
       "url": "https://www.finra.org/rules-guidance/guidance/reports/2024-finra-annual-regulatory-oversight-report",
-      "extract_hint": "Variable Annuities"
+      "extract_hint": "do not replicate rationales provided for other customers"
     },
     {
       "chunk_id": "FINRA-2024-report-VA-dataintegrity",
       "source_org": "FINRA",
       "section_ref": "2024 Annual Regulatory Oversight Report — Variable Annuities, Findings",
       "authority_type": "SUITABILITY_STANDARD",
+      "file": "data/regulatory_sources/07_FINRA_2024_Oversight_Report.pdf",
       "url": "https://www.finra.org/rules-guidance/guidance/reports/2024-finra-annual-regulatory-oversight-report",
-      "extract_hint": "Variable Annuities"
+      "extract_hint": "Insufficient Data Quality"
     },
     {
       "chunk_id": "STATE-TX-replacement",
       "source_org": "Texas Department of Insurance",
-      "section_ref": "TX 28 TAC §§3.9701 et seq. (replacement)",
+      "section_ref": "TX 28 TAC §§3.9721-3.9722 (replacement)",
       "authority_type": "STATE_REQUIREMENT",
-      "url": "https://texreg.sos.state.tx.us/public/readtac$ext.ViewTAC?tac_view=5&ti=28&pt=1&ch=3&sch=EE",
-      "extract_hint": "replacement"
+      "file": "data/regulatory_sources/11_TX_28_TAC_3.9721-3.9722_Adoption.pdf",
+      "url": "https://www.tdi.texas.gov/rules/2023/documents/",
+      "extract_hint": "must obtain a statement signed by the consumer"
     },
     {
       "chunk_id": "STATE-NAIC-613",
       "source_org": "NAIC (as adopted by states)",
       "section_ref": "NAIC Model #613 — Replacement of Life Insurance and Annuities",
       "authority_type": "STATE_REQUIREMENT",
+      "file": "data/regulatory_sources/16_NAIC_Model_613.pdf",
       "url": "https://content.naic.org/sites/default/files/inline-files/MDL-613.pdf",
-      "extract_hint": "replacement notice"
+      "extract_hint": "signed by both the applicant and the producer"
     }
   ]
 }

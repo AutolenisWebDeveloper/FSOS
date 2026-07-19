@@ -23,7 +23,8 @@
 // Run:  npx tsx scripts/fetch-rules.ts
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { dirname, join } from 'node:path'
+import { dirname, join, isAbsolute } from 'node:path'
+import PDFParser from 'pdf2json'
 import { getDb, ConfigError } from '../src/lib/supabase/client'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -31,7 +32,7 @@ const USER_AGENT = 'FSOS-ComplianceIntelligence-RuleFetcher/1.0 (internal compli
 const RATE_MS = 2000
 const FETCH_TIMEOUT_MS = 25_000
 const MIN_SECTION_CHARS = 80
-const MAX_SECTION_CHARS = 6000
+const MAX_SECTION_CHARS = 2600
 
 // ── env (.env.local passthrough, matching the repo's other scripts) ───────────
 function loadEnvLocal(): void {
@@ -59,7 +60,11 @@ interface Source {
   source_org: string
   section_ref: string
   authority_type: string
+  /** Remote primary-source URL (provenance; used when no local `file` is given). */
   url: string
+  /** Optional local source file (repo-relative), preferred over `url` when present.
+   *  A committed, offline copy of the governing document (e.g. a supplied PDF). */
+  file?: string
   extract_hint: string
 }
 interface CorpusChunk {
@@ -73,6 +78,7 @@ interface CorpusChunk {
   state_scope?: string[]
   governs_nigo_patterns?: string[]
   source_url?: string
+  source_file?: string
   fetched_at?: string
   paraphrase_backup?: string
   [k: string]: unknown
@@ -151,6 +157,53 @@ async function robotsAllows(url: string): Promise<{ allowed: boolean; note: stri
   return { allowed: true, note: 'robots allows' }
 }
 
+// ── local file sources (committed primary-source docs; offline, no proxy) ─────
+/** Extract raw text from a PDF via pdf2json (already a repo dependency). */
+function extractPdfText(absPath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const parser = new PDFParser(null, true)
+    parser.on('pdfParser_dataError', (e: Error | { parserError: Error }) =>
+      reject(e instanceof Error ? e : (e?.parserError ?? new Error('pdf parse error'))),
+    )
+    parser.on('pdfParser_dataReady', () => {
+      try {
+        resolve(parser.getRawTextContent())
+      } catch (err) {
+        reject(err instanceof Error ? err : new Error(String(err)))
+      }
+    })
+    parser.loadPDF(absPath)
+  })
+}
+
+/** Strip pdf2json artifacts (fake-worker warning, page-break markers) + normalize. */
+function normalizePdfText(text: string): string {
+  return text
+    .replace(/Warning: Setting up fake worker\./g, ' ')
+    .replace(/-{4,}Page \(\d+\) Break-{4,}/g, '\n\n')
+    .replace(/\r/g, '')
+    .replace(/[ \t ]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+/** Load a local source file (PDF → extracted text; else utf8). */
+async function loadLocalSource(relPath: string): Promise<FetchResult> {
+  const abs = isAbsolute(relPath) ? relPath : join(root, relPath)
+  if (!existsSync(abs)) return { ok: false, status: 0, bytes: 0, text: '', error: `local file not found: ${relPath}` }
+  try {
+    if (abs.toLowerCase().endsWith('.pdf')) {
+      const raw = await extractPdfText(abs)
+      const text = normalizePdfText(raw)
+      return { ok: true, status: 200, bytes: text.length, text, contentType: 'application/pdf(local)' }
+    }
+    const text = readFileSync(abs, 'utf8')
+    return { ok: true, status: 200, bytes: text.length, text, contentType: 'text/plain(local)' }
+  } catch (e) {
+    return { ok: false, status: 0, bytes: 0, text: '', error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
 // ── extraction ────────────────────────────────────────────────────────────────
 function htmlToText(html: string): string {
   return html
@@ -187,8 +240,14 @@ function extractSection(text: string, hint: string): string | null {
     if (token && token !== needle) idx = hay.indexOf(token)
   }
   if (idx === -1) return null
-  // Start a little before the hint to capture the lead-in sentence.
-  const start = Math.max(0, idx - 40)
+  // Begin a little before the hint to capture the lead-in, then snap to a clean
+  // boundary: prefer a sentence/line break within the preceding ~180 chars, else
+  // a word boundary — so a citation never starts mid-word ("gation,…").
+  let start = Math.max(0, idx - 60)
+  const lead = text.slice(start, idx)
+  const sent = Math.max(lead.lastIndexOf('. '), lead.lastIndexOf('\n'))
+  if (sent >= 0) start += sent + 1
+  else while (start > 0 && start < idx && !/\s/.test(text[start - 1])) start++
   const slice = text.slice(start, start + MAX_SECTION_CHARS).trim()
   if (slice.length < MIN_SECTION_CHARS) return null
   return slice
@@ -313,63 +372,84 @@ async function main(): Promise<void> {
     }
   }
 
-  // Group sources by URL so each page is fetched exactly once.
-  const byUrl = new Map<string, Source[]>()
+  // Group sources so each distinct source (local file OR remote page) is loaded
+  // exactly once. A committed local `file` is preferred over `url`.
+  const groups = new Map<string, { key: string; file?: string; url: string; entries: Source[] }>()
   for (const s of sources) {
-    const arr = byUrl.get(s.url) ?? []
-    arr.push(s)
-    byUrl.set(s.url, arr)
+    const key = s.file ? `file:${s.file}` : `url:${s.url}`
+    const g = groups.get(key) ?? { key, file: s.file, url: s.url, entries: [] }
+    g.entries.push(s)
+    groups.set(key, g)
   }
 
   const outcomes: ChunkOutcome[] = []
-  const fetchLog: { url: string; status: number; bytes: number; contentType?: string; note: string }[] = []
+  const fetchLog: { source: string; kind: 'file' | 'url'; status: number; bytes: number; contentType?: string; note: string }[] = []
   let corpusChanged = false
 
-  console.log(`\nFetching ${byUrl.size} unique source page(s) for ${sources.length} chunk(s)…\n`)
+  console.log(`\nLoading ${groups.size} unique source(s) for ${sources.length} chunk(s)…\n`)
 
-  for (const [url, entries] of byUrl) {
-    const robots = await robotsAllows(url)
-    if (!robots.allowed) {
-      fetchLog.push({ url, status: 0, bytes: 0, note: robots.note })
-      console.log(`  ⤫ ${url}\n      SKIP — ${robots.note}`)
-      for (const e of entries) outcomes.push({ chunk_id: e.chunk_id, url, status: 'skipped', reason: robots.note })
-      continue
+  for (const g of groups.values()) {
+    const isFile = Boolean(g.file)
+    const label = isFile ? (g.file as string) : g.url
+    let res: FetchResult
+
+    if (isFile) {
+      // Local, committed primary-source document — no network, no robots/rate-limit.
+      res = await loadLocalSource(g.file as string)
+    } else {
+      const robots = await robotsAllows(g.url)
+      if (!robots.allowed) {
+        fetchLog.push({ source: g.url, kind: 'url', status: 0, bytes: 0, note: robots.note })
+        console.log(`  ⤫ ${g.url}\n      SKIP — ${robots.note}`)
+        for (const e of g.entries) outcomes.push({ chunk_id: e.chunk_id, url: g.url, status: 'skipped', reason: robots.note })
+        continue
+      }
+      res = await httpGet(g.url)
+      await sleep(RATE_MS)
     }
 
-    const res = await httpGet(url)
-    fetchLog.push({ url, status: res.status, bytes: res.bytes, contentType: res.contentType, note: res.error ?? 'ok' })
-    console.log(`  → ${url}\n      HTTP ${res.status} · ${res.bytes} chars${res.contentType ? ` · ${res.contentType.split(';')[0]}` : ''}${res.error ? ` · ${res.error}` : ''}`)
-
-    await sleep(RATE_MS)
+    fetchLog.push({
+      source: label,
+      kind: isFile ? 'file' : 'url',
+      status: res.status,
+      bytes: res.bytes,
+      contentType: res.contentType,
+      note: res.error ?? 'ok',
+    })
+    console.log(
+      `  ${isFile ? '📄' : '→'} ${label}\n      ${isFile ? 'local' : `HTTP ${res.status}`} · ${res.bytes} chars${res.contentType ? ` · ${res.contentType.split(';')[0]}` : ''}${res.error ? ` · ${res.error}` : ''}`,
+    )
 
     if (!res.ok || !res.text) {
-      const reason = res.error ? `fetch error: ${res.error}` : `HTTP ${res.status}`
-      for (const e of entries) outcomes.push({ chunk_id: e.chunk_id, url, status: 'skipped', reason })
+      const reason = res.error ? `load error: ${res.error}` : `HTTP ${res.status}`
+      for (const e of g.entries) outcomes.push({ chunk_id: e.chunk_id, url: label, status: 'skipped', reason })
       continue
     }
-    if (PDF_URL(url, res.contentType)) {
-      const reason = 'PDF source — automatic extraction not supported; upload manually'
-      for (const e of entries) outcomes.push({ chunk_id: e.chunk_id, url, status: 'skipped', reason })
+    // A remote PDF we cannot parse stays a skip; a LOCAL pdf was already extracted.
+    if (!isFile && PDF_URL(g.url, res.contentType)) {
+      const reason = 'remote PDF — provide a local `file` copy to extract; skipped'
+      for (const e of g.entries) outcomes.push({ chunk_id: e.chunk_id, url: label, status: 'skipped', reason })
       continue
     }
 
-    const pageText = htmlToText(res.text)
-    for (const e of entries) {
+    const pageText = isFile ? res.text : htmlToText(res.text)
+    for (const e of g.entries) {
       const chunk = chunkById.get(e.chunk_id)
       if (!chunk) {
-        outcomes.push({ chunk_id: e.chunk_id, url, status: 'skipped', reason: 'chunk_id not in seed corpus' })
+        outcomes.push({ chunk_id: e.chunk_id, url: label, status: 'skipped', reason: 'chunk_id not in seed corpus' })
         continue
       }
       const section = extractSection(pageText, e.extract_hint)
       if (!section) {
-        outcomes.push({ chunk_id: e.chunk_id, url, status: 'skipped', reason: `extract_hint "${e.extract_hint}" not found on page` })
+        outcomes.push({ chunk_id: e.chunk_id, url: label, status: 'skipped', reason: `extract_hint "${e.extract_hint}" not found in source` })
         continue
       }
       // Replace the paraphrase with verbatim text (keep a one-time backup).
       if (chunk.paraphrase_backup === undefined) chunk.paraphrase_backup = chunk.chunk_text
       chunk.chunk_text = section
       chunk.verbatim = true
-      chunk.source_url = url
+      chunk.source_url = g.url
+      if (g.file) chunk.source_file = g.file
       chunk.fetched_at = new Date().toISOString()
       corpusChanged = true
 
@@ -378,7 +458,7 @@ async function main(): Promise<void> {
         const n = await upsertVerbatimChunks(db, chunk, section)
         dbNote = ` · db rows upserted: ${n}`
       }
-      outcomes.push({ chunk_id: e.chunk_id, url, status: 'verbatim', reason: 'section extracted', chars: section.length })
+      outcomes.push({ chunk_id: e.chunk_id, url: label, status: 'verbatim', reason: 'section extracted', chars: section.length })
       console.log(`      ✓ ${e.chunk_id} — verbatim ${section.length} chars${dbNote}`)
     }
   }

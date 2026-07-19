@@ -1,0 +1,47 @@
+name: CI
+
+# Runs the type, lint, and behavioral gates on every PR and push. Nothing
+# automated ran these before — the compliance/RLS/auth proofs were opt-in via a
+# local `npm test`. CI_REQUIRE_INFRA=1 makes the Postgres/esbuild-dependent
+# proofs HARD-FAIL instead of silently skipping (they must actually run here).
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel superseded runs on the same ref to save minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      # The RLS-firewall and resolution/fail-closed proofs must run in CI —
+      # a missing toolchain is a failure, not a green no-op (see the tests).
+      CI_REQUIRE_INFRA: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run type-check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests
+        run: npm test
+
+      - name: RLS firewall proof
+        run: npm run test:rls

@@ -17,12 +17,13 @@ import type { ShellData, AgentState } from '@/lib/data/shell'
 export function IdentityLockup({ portalLabel }: { portalLabel: string }) {
   return (
     <div className="flex items-center gap-3 px-1">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-primary text-lg font-semibold text-primary-foreground shadow-elev-md ring-1 ring-white/10">
-        M
+      <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-accent text-lg font-semibold text-primary-foreground shadow-elev-md ring-1 ring-inset ring-white/15">
+        <span aria-hidden className="absolute inset-x-1 top-1 h-1/2 rounded-t-lg bg-white/10" />
+        <span className="relative">M</span>
       </div>
       <div className="min-w-0">
-        <div className="truncate text-[17px] font-semibold leading-tight text-shell-foreground">Markist</div>
-        <MonoLabel muted={false} className="text-shell-muted">
+        <div className="truncate text-[17px] font-semibold leading-tight tracking-tight text-shell-foreground">Markist</div>
+        <MonoLabel muted={false} className="text-accent/90">
           {portalLabel}
         </MonoLabel>
       </div>

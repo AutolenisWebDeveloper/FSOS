@@ -45,15 +45,17 @@ export function PageHeader({
   actions?: React.ReactNode
 }) {
   return (
-    <header className="space-y-2">
+    <header className="space-y-3">
       {breadcrumb ? <Breadcrumb items={breadcrumb} /> : null}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-          {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
+          <h1 className="text-[1.7rem] font-semibold leading-tight tracking-tight text-foreground">{title}</h1>
+          {description ? <p className="max-w-2xl text-sm text-muted-foreground">{description}</p> : null}
         </div>
-        {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
+        {actions ? <div className="flex flex-shrink-0 items-center gap-2">{actions}</div> : null}
       </div>
+      {/* Signature Farmers-blue hairline — a subtle brand cue under every header. */}
+      <div className="rule-accent" aria-hidden />
     </header>
   )
 }

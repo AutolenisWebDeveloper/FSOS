@@ -16,12 +16,17 @@ SaaS. A **dark navy shell** (sidebar + topbar) wraps a **light content canvas** 
 high-contrast chrome-vs-content split is the core visual move. Three signature markers
 carry identity and must never be lost:
 
-1. **Dark navy shell** with light canvas.
+1. **Deep Farmers-navy shell** with light canvas.
 2. **Uppercase DM Mono section labels** (11px, tracked) — the strongest character marker.
 3. **Identity lockup** — the "M / Markist / … COMMAND CENTER" block atop every sidebar.
 
-Color strategy: **Restrained** (Product floor) — tinted neutrals + one indigo accent,
-with a disciplined semantic-status vocabulary and a single signature gold.
+Color strategy: **Restrained** (Product floor) — cool Farmers-blue-tinted neutrals + one
+**Farmers-blue** accent, with a disciplined semantic-status vocabulary. The signature
+**gold** survives for the GDC tier + "config default" assumption marker, **purple** stays
+the securities-firewall marker, and **Farmers red** is reserved for critical / blocking
+states only. (Farmers brand: navy → shell, blue → primary/selection/links/charts/focus,
+red → critical alerts only. Palette lives in `globals.css`; there is no Farmers logo asset
+in the repo, so the "Markist" wordmark lockup carries identity.)
 
 ---
 
@@ -34,26 +39,27 @@ All tokens are HSL CSS variables in `src/app/globals.css :root`, surfaced throug
 
 | Token | Tailwind | Role |
 |---|---|---|
-| `--shell` `226 44% 12%` | `bg-shell` | Sidebar, topbar, dense dark panels |
-| `--shell-raised` `225 34% 17%` | `bg-shell-raised` | Panels inside the shell |
-| `--shell-foreground` `220 24% 96%` | `text-shell-foreground` | Text on the shell |
-| `--shell-muted` `222 18% 64%` | `text-shell-muted` | Secondary text on the shell |
-| `--shell-border` `224 28% 24%` | `border-shell-border` | Dividers on the shell |
-| `--background` `225 24% 98%` | `bg-background` | Light content canvas |
-| `--foreground` `226 42% 12%` | `text-foreground` | Primary ink |
+| `--shell` `212 84% 11%` | `bg-shell` | Sidebar, topbar, dense dark panels (Farmers navy) |
+| `--shell-raised` `211 56% 17%` | `bg-shell-raised` | Panels inside the shell |
+| `--shell-foreground` `210 32% 97%` | `text-shell-foreground` | Text on the shell |
+| `--shell-muted` `210 22% 69%` | `text-shell-muted` | Secondary text on the shell |
+| `--shell-border` `211 40% 25%` | `border-shell-border` | Dividers on the shell |
+| `--background` `210 33% 98%` | `bg-background` | Light content canvas (cool tint) |
+| `--foreground` `213 44% 12%` | `text-foreground` | Primary ink (deep navy) |
 | `--card` `0 0% 100%` | `bg-card` | Card / panel surface |
-| `--muted` `224 30% 95%` | `bg-muted` | Table header, subtle fills |
-| `--muted-foreground` `224 14% 42%` | `text-muted-foreground` | Secondary ink (AA on canvas) |
+| `--muted` `211 30% 95%` | `bg-muted` | Table header, subtle fills |
+| `--muted-foreground` `213 15% 40%` | `text-muted-foreground` | Secondary ink (AA on canvas) |
 | `--border` / `--input` | `border-border` / `border-input` | Hairlines, control borders |
 
 ### 2.2 Brand & accent
 
 | Token | Tailwind | Role |
 |---|---|---|
-| `--primary` `231 62% 53%` (indigo) | `bg-primary` / `text-primary` | Primary actions, active nav, links |
-| `--primary-soft` `231 78% 92%` | `bg-primary-soft` | Soft brand wash |
-| `--accent` `231 74% 59%` | `bg-accent` / `text-accent` | Highlights, focus, active bars |
-| `--ring` `231 62% 53%` | `ring-ring` | Focus ring (halo: `--ring-halo`) |
+| `--primary` `208 94% 38%` (Farmers blue) | `bg-primary` / `text-primary` | Primary actions, active nav, links, charts |
+| `--primary-soft` `208 88% 93%` | `bg-primary-soft` | Soft brand wash |
+| `--accent` `204 92% 45%` (sky blue) | `bg-accent` / `text-accent` | Highlights, focus, active nav indicator |
+| `--ring` `208 94% 40%` | `ring-ring` | Focus ring (halo: `--ring-halo`) |
+| `--chart-1…5` | `bg-chart-*` / `text-chart-*` | Blue-forward data-viz palette |
 
 ### 2.3 Signature gold & semantics
 
@@ -62,7 +68,8 @@ All tokens are HSL CSS variables in `src/app/globals.css :root`, surfaced throug
 - **Purple** (`--status-security` / `--status-escalated` `262 47% 42%`) = securities /
   FFS-managed / escalated. Makes the firewall visible.
 - **Green** (`--status-won` `152 55% 39%`) = won / placed / active only.
-- **Red** (`--status-lost` `0 72% 51%`) = lost / blocked / error only.
+- **Farmers red** (`--destructive` / `--status-lost` `356 74% 45%`) = critical / lost / blocked /
+  error only. Never decorative — do not flood the UI with red.
 
 Status ramp: `--status-{draft,active,pending,won,lost,blocked,escalated,assumption,security}`,
 each surfaced as `bg-status-*` / `text-status-*` and consumed by `<Badge>`.

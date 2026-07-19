@@ -75,9 +75,9 @@ export function PortalShell({
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* ── Topbar (56px, dark shell) ────────────────────────────────────── */}
-      <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-shell-border bg-shell/95 px-4 text-shell-foreground shadow-elev-sm backdrop-blur-md supports-[backdrop-filter]:bg-shell/80">
+      <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-shell-border bg-shell/95 px-4 text-shell-foreground shadow-elev-sm backdrop-blur-md after:pointer-events-none after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-gradient-to-r after:from-primary/50 after:via-accent/25 after:to-transparent supports-[backdrop-filter]:bg-shell/80">
         <div className="flex items-center gap-2 md:hidden">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-accent to-primary text-sm font-semibold text-primary-foreground ring-1 ring-white/10">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-accent text-sm font-semibold text-primary-foreground ring-1 ring-inset ring-white/15">
             M
           </div>
           <MonoLabel muted={false} className="text-shell-muted">

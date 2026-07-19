@@ -9,11 +9,15 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: 'bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 hover:shadow-md',
-        destructive: 'bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90 hover:shadow-md',
-        outline: 'border border-input bg-background shadow-xs hover:bg-accent hover:text-accent-foreground hover:border-accent/40',
-        secondary: 'bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/80',
-        ghost: 'hover:bg-accent hover:text-accent-foreground active:translate-y-0',
+        default:
+          'bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 hover:shadow-md focus-visible:ring-ring',
+        destructive:
+          'bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90 hover:shadow-md focus-visible:ring-destructive',
+        // Tinted brand hover — premium and legible, not a solid color flip.
+        outline:
+          'border border-input bg-background shadow-xs hover:border-primary/45 hover:bg-primary/[0.05] hover:text-primary',
+        secondary: 'bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/70',
+        ghost: 'text-foreground/80 hover:bg-muted hover:text-foreground active:translate-y-0',
         link: 'text-primary underline-offset-4 hover:underline active:translate-y-0',
       },
       size: {

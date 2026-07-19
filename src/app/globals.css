@@ -3,44 +3,47 @@
 @tailwind utilities;
 
 /*
- * FSOS design tokens — FSOS Design System (docs/design-system.md).
- * Dark-first, dense, branded, financial-services. A dark navy SHELL (sidebar +
- * topbar) wraps a light content CANVAS — that high contrast is the core visual
- * move, carried forward from the legacy Command Center. shadcn/ui components and
- * every archetype shell read these HSL variables via tailwind.config.ts.
- * Legacy command-center screens keep their own inline styling (CLAUDE.md §1.6);
- * the base rules below intentionally stay minimal so preflight does not fight them.
+ * FSOS design tokens — Farmers-branded financial operating system.
+ * Dark-first, dense, institutional. A deep FARMERS NAVY shell (sidebar + topbar)
+ * wraps a light content CANVAS — that high-contrast chrome-vs-content split is the
+ * core visual move. The brand accent is FARMERS BLUE (primary actions, selection,
+ * links, focus, charts); FARMERS RED is reserved for critical/blocking states only;
+ * the signature GOLD survives for the GDC tier + "config default" assumption marker
+ * (guardrail §2.3), and PURPLE stays the securities-firewall marker (guardrail §2.1).
+ * shadcn/ui components and every archetype shell read these HSL variables via
+ * tailwind.config.ts. Legacy command-center screens keep their own inline styling
+ * (CLAUDE.md §1.6); the base rules below stay minimal so preflight does not fight them.
  */
 @layer base {
   :root {
-    /* ---- Shell (deep indigo-navy) — sidebar / topbar / dense panels ---- */
-    --shell:            226 44% 12%;   /* #11162e — richer, warmer indigo-navy */
-    --shell-raised:     225 34% 17%;   /* #1c2340 — panels inside the shell */
-    --shell-foreground: 220 24% 96%;
-    --shell-muted:      222 18% 64%;
-    --shell-border:     224 28% 24%;
+    /* ---- Shell (deep Farmers navy) — sidebar / topbar / dense panels ---- */
+    --shell:            212 84% 11%;   /* #041d33 — deep institutional Farmers navy */
+    --shell-raised:     211 56% 17%;   /* #123049 — panels inside the shell */
+    --shell-foreground: 210 32% 97%;
+    --shell-muted:      210 22% 69%;   /* AA on the navy shell */
+    --shell-border:     211 40% 25%;
 
-    /* ---- Content canvas (light) ---- */
-    --background:       225 24% 98%;
-    --foreground:       226 42% 12%;
+    /* ---- Content canvas (light, cool Farmers-blue-tinted neutral) ---- */
+    --background:       210 33% 98%;   /* #f5f8fb */
+    --foreground:       213 44% 12%;   /* #0b1d2f — deep navy ink */
 
     --card:             0 0% 100%;
-    --card-foreground:  226 42% 12%;
+    --card-foreground:  213 44% 12%;
     --popover:          0 0% 100%;
-    --popover-foreground: 226 42% 12%;
+    --popover-foreground: 213 44% 12%;
 
-    --muted:            224 30% 95%;
-    --muted-foreground: 224 14% 42%;
+    --muted:            211 30% 95%;
+    --muted-foreground: 213 15% 40%;   /* ≥4.5:1 on card/canvas */
 
-    /* ---- Brand (modern indigo) ---- */
-    --primary:            231 62% 53%;   /* #4453cf — confident modern indigo */
+    /* ---- Brand (Farmers blue) ---- */
+    --primary:            208 94% 38%;   /* #0669bb — confident Farmers blue, white text ≥5:1 */
     --primary-foreground: 0 0% 100%;
-    --primary-soft:       231 78% 92%;   /* soft indigo wash */
+    --primary-soft:       208 88% 93%;   /* soft blue wash */
 
-    --secondary:          225 30% 94%;
-    --secondary-foreground: 226 40% 22%;
+    --secondary:          210 32% 94%;
+    --secondary-foreground: 213 40% 22%;
 
-    --accent:             231 74% 59%;   /* #4c63e6 — brighter indigo highlight */
+    --accent:             204 92% 45%;   /* #0a93de — brighter Farmers sky blue: links/focus on navy */
     --accent-foreground:  0 0% 100%;
 
     /* ---- Signature gold (GDC tier, assumptions, attention) ---- */
@@ -48,36 +51,44 @@
     --gold-deep:       38 76% 34%;       /* #996915 — text-grade gold: ≥4.5:1 on light for small labels */
     --gold-foreground: 215 40% 12%;
 
-    --destructive:        0 72% 51%;     /* #e53e3e */
+    /* ---- Farmers red — critical / blocking / destructive only ---- */
+    --destructive:        356 74% 45%;   /* #c81f33 — Farmers red, white text ≥5:1 */
     --destructive-foreground: 0 0% 100%;
 
-    --border:           222 22% 88%;
-    --input:            222 22% 85%;
-    --ring:             231 62% 53%;
+    --border:           212 24% 88%;
+    --input:            212 22% 84%;
+    --ring:             208 94% 40%;
 
     --radius: 0.625rem;
 
     /* ---- Status ---- */
-    --status-draft:      222 14% 55%;
-    --status-active:     231 62% 53%;    /* indigo — follows brand */
-    --status-pending:    38 92% 45%;
-    --status-won:        152 55% 39%;    /* #2f9e6a — vivid modern emerald */
-    --status-lost:       0 72% 51%;      /* #e53e3e — lost/blocked/error only */
-    --status-blocked:    0 72% 42%;
+    --status-draft:      213 12% 52%;
+    --status-active:     208 94% 40%;    /* Farmers blue — follows brand */
+    --status-pending:    38 92% 45%;     /* amber — in-progress */
+    --status-won:        152 55% 39%;    /* #2f9e6a — emerald success (never blue/red) */
+    --status-lost:       356 74% 45%;    /* Farmers red — lost/error */
+    --status-blocked:    356 74% 38%;    /* deep red — blocked */
     --status-escalated:  262 47% 42%;    /* #553c9a — purple */
     --status-assumption: 38 72% 42%;     /* gold — "config default — verify" */
     --status-security:   262 47% 42%;    /* purple — is_security / FFS-managed */
 
+    /* ---- Chart palette (blue-forward, Farmers) — data viz + sparklines ---- */
+    --chart-1: 208 94% 42%;   /* Farmers blue */
+    --chart-2: 199 90% 46%;   /* sky */
+    --chart-3: 152 55% 39%;   /* emerald */
+    --chart-4: 38 92% 50%;    /* amber */
+    --chart-5: 262 47% 52%;   /* purple */
+
     /* ---- Elevation (premium, financial-grade depth) ----
      * Layered, low-alpha shadows tuned to the navy brand. Cards sit flush by
      * default and lift on interaction; overlays float on the strongest tier. */
-    --shadow-xs: 0 1px 2px 0 hsl(226 42% 12% / 0.04);
-    --shadow-sm: 0 1px 2px 0 hsl(226 42% 12% / 0.05), 0 1px 3px 0 hsl(226 42% 12% / 0.04);
-    --shadow-md: 0 2px 4px -1px hsl(226 42% 12% / 0.06), 0 4px 12px -2px hsl(226 42% 12% / 0.08);
-    --shadow-lg: 0 8px 16px -4px hsl(226 42% 12% / 0.10), 0 12px 32px -8px hsl(226 42% 12% / 0.12);
-    --shadow-xl: 0 16px 32px -8px hsl(226 42% 12% / 0.14), 0 24px 56px -12px hsl(226 42% 12% / 0.18);
+    --shadow-xs: 0 1px 2px 0 hsl(213 44% 12% / 0.05);
+    --shadow-sm: 0 1px 2px 0 hsl(213 44% 12% / 0.06), 0 2px 4px -1px hsl(213 44% 12% / 0.05);
+    --shadow-md: 0 2px 4px -1px hsl(213 44% 12% / 0.07), 0 6px 16px -3px hsl(213 44% 12% / 0.10);
+    --shadow-lg: 0 10px 20px -5px hsl(213 44% 12% / 0.12), 0 18px 40px -10px hsl(213 44% 12% / 0.16);
+    --shadow-xl: 0 20px 40px -10px hsl(213 44% 12% / 0.18), 0 28px 64px -14px hsl(213 44% 12% / 0.22);
     /* Focus ring — a soft brand halo used by inputs, tiles, and interactive cards. */
-    --ring-halo: 0 0 0 3px hsl(var(--ring) / 0.28);
+    --ring-halo: 0 0 0 3px hsl(var(--ring) / 0.26);
   }
 
   * {
@@ -172,6 +183,36 @@
       hsl(var(--shell)) 42%
     );
   }
+
+  /* Premium content surface — a crisp card that reads as a distinct plane on the
+   * canvas without heavy shadow. The enterprise default for panels/sections. */
+  .surface-1 {
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    border-radius: calc(var(--radius) + 0.125rem);
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* A hairline gradient rule that carries the Farmers-blue accent — used to
+   * underline executive headers and section dividers with a touch of brand. */
+  .rule-accent {
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      hsl(var(--primary) / 0.55),
+      hsl(var(--primary) / 0.12) 40%,
+      hsl(var(--border) / 0)
+    );
+  }
+
+  /* KPI value — tight, tabular, executive-scale metric figure. */
+  .metric-value {
+    font-family: var(--font-dm-mono), ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+    letter-spacing: -0.01em;
+    font-weight: 600;
+  }
 }
 
 /*
@@ -181,8 +222,8 @@
 html { height: 100%; }
 body {
   min-height: 100%;
-  background: #f4f6f9;
-  color: #1a2332;
+  background: #f5f8fb;
+  color: #0b1d2f;
   font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 13px;
   line-height: 1.5;

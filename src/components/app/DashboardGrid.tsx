@@ -11,7 +11,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { MonoLabel, Numeric, Money } from '@/components/ui/typography'
 import { putJson } from '@/lib/client/api'
-import { DASHBOARD_WIDGETS } from '@/lib/analytics/catalog'
+import { DASHBOARD_WIDGETS, isAttentionWidget } from '@/lib/analytics/catalog'
 import type { WidgetValue } from '@/lib/analytics/metrics'
 import type { DashboardWidgetPlacement } from '@/lib/validation/schemas'
 
@@ -97,6 +97,15 @@ export function DashboardGrid({
   const visible = placements.filter((p) => p.visible)
   const hidden = placements.filter((p) => !p.visible)
 
+  // Book-level triage: which action-needed queues actually have work waiting.
+  // Computed from live values (not tile visibility) so hiding a tile never hides
+  // an alert. A failed metric (null) counts as calm — the tile itself shows the
+  // retry note; we don't raise a false alarm on a load error.
+  const attentionQueues = React.useMemo(
+    () => DASHBOARD_WIDGETS.filter((w) => isAttentionWidget(w.key) && (values.get(w.key)?.value ?? 0) > 0),
+    [values],
+  )
+
   const persist = React.useCallback((next: Placement[]) => {
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(async () => {
@@ -138,7 +147,11 @@ export function DashboardGrid({
     <div className="space-y-4">
       {/* Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <MonoLabel>{editing ? 'Editing — drag to move, drag a corner to resize' : 'Your dashboard'}</MonoLabel>
+        {editing ? (
+          <MonoLabel>Editing — drag to move, drag a corner to resize</MonoLabel>
+        ) : (
+          <TriageSummary queues={attentionQueues} />
+        )}
         <div className="flex items-center gap-2">
           {editing ? (
             <>
@@ -193,17 +206,22 @@ export function DashboardGrid({
               compactType="vertical"
               onLayoutChange={onLayoutChange}
             >
-              {visible.map((p) => (
-                <div key={p.key}>
-                  <WidgetCard
-                    def={defs.get(p.key)}
-                    value={widgetValue(values, p.key)}
-                    unavailable={values.get(p.key)?.value === null}
-                    editing={editing}
-                    onHide={() => hideWidget(p.key)}
-                  />
-                </div>
-              ))}
+              {visible.map((p) => {
+                const def = defs.get(p.key)
+                const raw = values.get(p.key)?.value ?? null
+                return (
+                  <div key={p.key}>
+                    <WidgetCard
+                      def={def}
+                      value={widgetValue(values, p.key)}
+                      unavailable={raw === null}
+                      active={isAttentionWidget(p.key) && (raw ?? 0) > 0}
+                      editing={editing}
+                      onHide={() => hideWidget(p.key)}
+                    />
+                  </div>
+                )
+              })}
             </ResponsiveGridLayout>
           </div>
           <StackedGrid visible={visible} defs={defs} values={values} className="lg:hidden" />
@@ -221,31 +239,41 @@ function WidgetCard({
   def,
   value,
   unavailable,
+  active,
   editing,
   onHide,
 }: {
-  def: { label: string; href: string; hint?: string } | undefined
+  def: { label: string; href: string; hint?: string; attention?: boolean } | undefined
   value: React.ReactNode
   unavailable: boolean
+  /** An attention widget whose value > 0 — this tile has work waiting. */
+  active?: boolean
   editing?: boolean
   onHide?: () => void
 }) {
   if (!def) return null
+  // Attention state (referrals waiting, escalations, overdue) raises the tile to a
+  // gold "needs you" treatment only while there's actually work; at 0 it stays the
+  // calm baseline so a cleared queue recedes. Conveyed by dot + text + color, never
+  // color alone.
   const body = (
     <div
       className={cn(
         'group relative flex h-full flex-col justify-between overflow-hidden rounded-xl border bg-card p-4 shadow-elev-xs transition-all duration-200',
-        editing ? 'cursor-grab active:cursor-grabbing' : 'hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md',
+        active && 'border-gold/40 bg-gold/[0.05]',
+        editing
+          ? 'cursor-grab active:cursor-grabbing'
+          : cn('hover:-translate-y-0.5 hover:shadow-md', active ? 'hover:border-gold/70' : 'hover:border-primary/40'),
       )}
     >
-      {!editing ? (
-        <span
-          aria-hidden
-          className="absolute inset-y-0 left-0 w-0.5 bg-primary/0 transition-colors duration-200 group-hover:bg-primary/70"
-        />
-      ) : null}
       <div className="flex items-start justify-between gap-2">
-        <MonoLabel>{def.label}</MonoLabel>
+        <span className="flex items-center gap-1.5">
+          {active ? <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-gold" /> : null}
+          <MonoLabel muted={!active} className={cn(active && 'text-gold-deep')}>
+            {def.label}
+            {active ? <span className="sr-only"> — needs attention</span> : null}
+          </MonoLabel>
+        </span>
         {editing ? (
           <button
             type="button"
@@ -259,12 +287,18 @@ function WidgetCard({
       </div>
       <div>
         <div className="flex items-end justify-between gap-2">
-          <Numeric as="div" className="text-[28px] font-semibold leading-none tracking-tight">
+          <Numeric
+            as="div"
+            className={cn('text-[28px] font-semibold leading-none tracking-tight', active && 'text-gold-deep')}
+          >
             {value}
           </Numeric>
           {!editing ? (
             <ChevronRight
-              className="h-4 w-4 shrink-0 -translate-x-1 text-muted-foreground/50 opacity-0 transition-all duration-200 group-hover:translate-x-0 group-hover:text-primary group-hover:opacity-100"
+              className={cn(
+                'h-4 w-4 shrink-0 -translate-x-1 text-muted-foreground/50 opacity-0 transition-all duration-200 group-hover:translate-x-0 group-hover:opacity-100',
+                active ? 'group-hover:text-gold-deep' : 'group-hover:text-primary',
+              )}
               aria-hidden
             />
           ) : null}
@@ -283,6 +317,29 @@ function WidgetCard({
   )
 }
 
+// The book-level "what needs me" line. Gold when any action queue has work; a
+// calm, settled "All clear" when every queue is empty. The tiles carry the
+// detail — this just orients the eye before it scans.
+function TriageSummary({ queues }: { queues: readonly { key: string }[] }) {
+  const n = queues.length
+  if (n === 0) {
+    return (
+      <span className="flex items-center gap-1.5 text-muted-foreground">
+        <Check className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        <MonoLabel muted={false} className="text-muted-foreground">All clear</MonoLabel>
+      </span>
+    )
+  }
+  return (
+    <span className="flex items-center gap-1.5">
+      <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-gold" />
+      <MonoLabel muted={false} className="text-gold-deep">
+        {n} {n === 1 ? 'queue needs' : 'queues need'} action
+      </MonoLabel>
+    </span>
+  )
+}
+
 // Static fallback grid (SSR + tablet/mobile), same tiles in saved order.
 function StackedGrid({
   visible,
@@ -291,15 +348,25 @@ function StackedGrid({
   className,
 }: {
   visible: Placement[]
-  defs: Map<string, { label: string; href: string; hint?: string }>
+  defs: Map<string, { label: string; href: string; hint?: string; attention?: boolean }>
   values: Map<string, WidgetValue>
   className?: string
 }) {
   return (
     <div className={`grid gap-4 sm:grid-cols-2 lg:grid-cols-4 ${className ?? ''}`}>
-      {visible.map((p) => (
-        <WidgetCard key={p.key} def={defs.get(p.key)} value={widgetValue(values, p.key)} unavailable={values.get(p.key)?.value === null} />
-      ))}
+      {visible.map((p) => {
+        const def = defs.get(p.key)
+        const raw = values.get(p.key)?.value ?? null
+        return (
+          <WidgetCard
+            key={p.key}
+            def={def}
+            value={widgetValue(values, p.key)}
+            unavailable={raw === null}
+            active={isAttentionWidget(p.key) && (raw ?? 0) > 0}
+          />
+        )
+      })}
     </div>
   )
 }

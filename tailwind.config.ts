@@ -32,14 +32,18 @@ const config: Config = {
         shell: {
           DEFAULT: 'hsl(var(--shell))',
           raised: 'hsl(var(--shell-raised))',
+          highlight: 'hsl(var(--shell-highlight))',
           foreground: 'hsl(var(--shell-foreground))',
           muted: 'hsl(var(--shell-muted))',
           border: 'hsl(var(--shell-border))',
         },
+        // Recessed canvas surface for section wells / zebra rows.
+        sunken: 'hsl(var(--surface-sunken))',
         primary: {
           DEFAULT: 'hsl(var(--primary))',
           foreground: 'hsl(var(--primary-foreground))',
           soft: 'hsl(var(--primary-soft))',
+          deep: 'hsl(var(--primary-deep))',
         },
         secondary: {
           DEFAULT: 'hsl(var(--secondary))',

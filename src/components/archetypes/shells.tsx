@@ -1,9 +1,11 @@
 import * as React from 'react'
 import Link from 'next/link'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, ArrowUpRight } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { MonoLabel, Numeric } from '@/components/ui/typography'
+import { BrandMark } from '@/components/portal/BrandMark'
 
 /*
  * Presentational archetype shells (archetypes.md). Server-component-safe (no
@@ -115,50 +117,79 @@ export function DashboardShell({
   )
 }
 
-/** A1 KPI tile — every tile links to its underlying list/detail (no dead ends). */
+/**
+ * A1 executive KPI tile — an icon-anchored metric card: glyph chip, mono label,
+ * a prominent tabular value, and optional supporting context. Every interactive
+ * tile links to its underlying list/detail (no dead ends) and lifts on hover.
+ * `tone` tints the icon chip: `brand` for money/production, `attention` (gold)
+ * for queues that need action, `neutral` for inventory counts.
+ */
 export function StatTile({
   label,
   value,
   href,
   hint,
+  icon: Icon,
+  tone = 'neutral',
 }: {
   label: string
   value: React.ReactNode
   /** Optional — omit for a summary tile that isn't a link. */
   href?: string
   hint?: string
+  icon?: LucideIcon
+  tone?: 'neutral' | 'brand' | 'attention'
 }) {
   const card = (
     <Card
       className={cn(
-        'group relative h-full overflow-hidden',
-        href && 'transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md',
+        'group relative flex h-full flex-col overflow-hidden p-4',
+        tone === 'attention' && 'border-gold/45 bg-gradient-to-b from-gold/[0.07] to-transparent',
+        href && 'transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md',
+        href && (tone === 'attention' ? 'hover:border-gold/70' : 'hover:border-primary/40'),
       )}
     >
-      {/* Signature left accent that ignites on hover for interactive tiles. */}
-      {href ? (
-        <span
-          aria-hidden
-          className="absolute inset-y-0 left-0 w-0.5 bg-primary/0 transition-colors duration-200 group-hover:bg-primary/70"
-        />
-      ) : null}
-      <CardHeader className="pb-2">
-        <MonoLabel>{label}</MonoLabel>
-      </CardHeader>
-      <CardContent>
-        <div className="flex items-end justify-between gap-2">
-          <Numeric as="div" className="text-[28px] font-semibold leading-none tracking-tight">
-            {value}
-          </Numeric>
-          {href ? (
-            <ChevronRight
-              className="h-4 w-4 shrink-0 -translate-x-1 text-muted-foreground/50 opacity-0 transition-all duration-200 group-hover:translate-x-0 group-hover:text-primary group-hover:opacity-100"
-              aria-hidden
-            />
-          ) : null}
-        </div>
-        {hint ? <p className="mt-1.5 text-xs text-muted-foreground">{hint}</p> : null}
-      </CardContent>
+      <span aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/60" />
+      <div className="flex items-start justify-between gap-2">
+        {Icon ? (
+          <span
+            aria-hidden
+            className={cn(
+              'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset',
+              tone === 'attention'
+                ? 'bg-gold/15 text-gold-deep ring-gold/25'
+                : tone === 'brand'
+                  ? 'bg-primary-soft/70 text-primary ring-primary/15'
+                  : 'bg-muted text-muted-foreground ring-border/60',
+            )}
+          >
+            <Icon className="h-[18px] w-[18px]" strokeWidth={1.9} />
+          </span>
+        ) : (
+          <MonoLabel className={cn(tone === 'attention' && 'text-gold-deep')}>{label}</MonoLabel>
+        )}
+        {href ? (
+          <ArrowUpRight
+            className={cn(
+              'h-4 w-4 shrink-0 text-muted-foreground/40 opacity-0 transition-all duration-200 group-hover:opacity-100',
+              tone === 'attention' ? 'group-hover:text-gold-deep' : 'group-hover:text-primary',
+            )}
+            aria-hidden
+          />
+        ) : null}
+      </div>
+      <div className={cn(Icon ? 'mt-3' : 'mt-2')}>
+        {Icon ? (
+          <MonoLabel className={cn('truncate', tone === 'attention' && 'text-gold-deep')}>{label}</MonoLabel>
+        ) : null}
+        <Numeric
+          as="div"
+          className={cn('mt-1.5 text-[30px] font-semibold leading-none tracking-tight', tone === 'attention' && 'text-gold-deep')}
+        >
+          {value}
+        </Numeric>
+        {hint ? <p className="mt-2 text-xs text-muted-foreground">{hint}</p> : null}
+      </div>
     </Card>
   )
   if (!href) return card
@@ -514,9 +545,7 @@ export function AuthShell({
       <div className="relative w-full max-w-sm space-y-6">
         {/* Identity lockup above the card. */}
         <div className="flex flex-col items-center gap-3 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-primary text-xl font-semibold text-primary-foreground shadow-elev-lg ring-1 ring-white/10">
-            M
-          </div>
+          <BrandMark size="lg" />
           <div className="mono-label text-shell-muted">FSA Command Center</div>
         </div>
         <Card className="w-full shadow-elev-xl">

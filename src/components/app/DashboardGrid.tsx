@@ -3,7 +3,7 @@
 import * as React from 'react'
 import Link from 'next/link'
 import { Responsive, WidthProvider, type Layout } from 'react-grid-layout'
-import { Check, Plus, Settings2, X, RotateCcw, ChevronRight } from 'lucide-react'
+import { Check, Plus, Settings2, X, RotateCcw, ArrowUpRight } from 'lucide-react'
 import { toast } from 'sonner'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { MonoLabel, Numeric, Money } from '@/components/ui/typography'
 import { putJson } from '@/lib/client/api'
 import { DASHBOARD_WIDGETS, isAttentionWidget } from '@/lib/analytics/catalog'
+import { widgetIcon } from './widgetIcons'
 import type { WidgetValue } from '@/lib/analytics/metrics'
 import type { DashboardWidgetPlacement } from '@/lib/validation/schemas'
 
@@ -213,6 +214,8 @@ export function DashboardGrid({
                   <div key={p.key}>
                     <WidgetCard
                       def={def}
+                      iconKey={p.key}
+                      currency={values.get(p.key)?.kind === 'currency'}
                       value={widgetValue(values, p.key)}
                       unavailable={raw === null}
                       active={isAttentionWidget(p.key) && (raw ?? 0) > 0}
@@ -237,6 +240,8 @@ export function DashboardGrid({
 
 function WidgetCard({
   def,
+  iconKey,
+  currency,
   value,
   unavailable,
   active,
@@ -244,6 +249,10 @@ function WidgetCard({
   onHide,
 }: {
   def: { label: string; href: string; hint?: string; attention?: boolean } | undefined
+  /** Widget key used to resolve the executive-KPI icon. */
+  iconKey: string
+  /** Currency metric — tints the icon chip brand-blue vs. neutral for counts. */
+  currency?: boolean
   value: React.ReactNode
   unavailable: boolean
   /** An attention widget whose value > 0 — this tile has work waiting. */
@@ -252,27 +261,37 @@ function WidgetCard({
   onHide?: () => void
 }) {
   if (!def) return null
+  const Icon = widgetIcon(iconKey)
   // Attention state (referrals waiting, escalations, overdue) raises the tile to a
   // gold "needs you" treatment only while there's actually work; at 0 it stays the
-  // calm baseline so a cleared queue recedes. Conveyed by dot + text + color, never
-  // color alone.
+  // calm baseline so a cleared queue recedes. Conveyed by icon + dot + text + color.
   const body = (
     <div
       className={cn(
         'group relative flex h-full flex-col justify-between overflow-hidden rounded-xl border bg-card p-4 shadow-elev-xs transition-all duration-200',
-        active && 'border-gold/40 bg-gold/[0.05]',
+        active
+          ? 'border-gold/45 bg-gradient-to-b from-gold/[0.07] to-transparent'
+          : 'hover:border-primary/40',
         editing
           ? 'cursor-grab active:cursor-grabbing'
-          : cn('hover:-translate-y-0.5 hover:shadow-md', active ? 'hover:border-gold/70' : 'hover:border-primary/40'),
+          : cn('hover:-translate-y-0.5 hover:shadow-md', active && 'hover:border-gold/70'),
       )}
     >
+      {/* Top-lit hairline for a touch of financial-grade depth. */}
+      <span aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/60" />
       <div className="flex items-start justify-between gap-2">
-        <span className="flex items-center gap-1.5">
-          {active ? <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-gold" /> : null}
-          <MonoLabel muted={!active} className={cn(active && 'text-gold-deep')}>
-            {def.label}
-            {active ? <span className="sr-only"> — needs attention</span> : null}
-          </MonoLabel>
+        <span
+          aria-hidden
+          className={cn(
+            'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset transition-colors',
+            active
+              ? 'bg-gold/15 text-gold-deep ring-gold/25'
+              : currency
+                ? 'bg-primary-soft/70 text-primary ring-primary/15'
+                : 'bg-muted text-muted-foreground ring-border/60',
+          )}
+        >
+          <Icon className="h-[18px] w-[18px]" strokeWidth={1.9} />
         </span>
         {editing ? (
           <button
@@ -283,27 +302,35 @@ function WidgetCard({
           >
             <X className="h-4 w-4" />
           </button>
-        ) : null}
+        ) : (
+          <ArrowUpRight
+            className={cn(
+              'h-4 w-4 shrink-0 text-muted-foreground/40 opacity-0 transition-all duration-200 group-hover:opacity-100',
+              active ? 'group-hover:text-gold-deep' : 'group-hover:text-primary',
+            )}
+            aria-hidden
+          />
+        )}
       </div>
-      <div>
-        <div className="flex items-end justify-between gap-2">
-          <Numeric
-            as="div"
-            className={cn('text-[28px] font-semibold leading-none tracking-tight', active && 'text-gold-deep')}
-          >
-            {value}
-          </Numeric>
-          {!editing ? (
-            <ChevronRight
-              className={cn(
-                'h-4 w-4 shrink-0 -translate-x-1 text-muted-foreground/50 opacity-0 transition-all duration-200 group-hover:translate-x-0 group-hover:opacity-100',
-                active ? 'group-hover:text-gold-deep' : 'group-hover:text-primary',
-              )}
-              aria-hidden
-            />
-          ) : null}
+      <div className="mt-3">
+        <div className="flex items-center gap-1.5">
+          {active ? <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-gold" /> : null}
+          <MonoLabel muted={!active} className={cn('truncate', active && 'text-gold-deep')}>
+            {def.label}
+            {active ? <span className="sr-only"> — needs attention</span> : null}
+          </MonoLabel>
         </div>
-        {def.hint ? <p className="mt-1.5 text-xs text-muted-foreground">{unavailable ? "Couldn't load — retry" : def.hint}</p> : null}
+        <Numeric
+          as="div"
+          className={cn('mt-1.5 text-[30px] font-semibold leading-none tracking-tight', active && 'text-gold-deep')}
+        >
+          {value}
+        </Numeric>
+        {def.hint ? (
+          <p className={cn('mt-2 text-xs', unavailable ? 'text-status-lost' : 'text-muted-foreground')}>
+            {unavailable ? "Couldn't load — retry" : def.hint}
+          </p>
+        ) : null}
       </div>
     </div>
   )
@@ -361,6 +388,8 @@ function StackedGrid({
           <WidgetCard
             key={p.key}
             def={def}
+            iconKey={p.key}
+            currency={values.get(p.key)?.kind === 'currency'}
             value={widgetValue(values, p.key)}
             unavailable={raw === null}
             active={isAttentionWidget(p.key) && (raw ?? 0) > 0}

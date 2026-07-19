@@ -6,6 +6,7 @@ import { NavLink } from './NavLink'
 import { MobileTabBar } from './MobileTabBar'
 import { ProfileMenu } from './ProfileMenu'
 import { IdentityLockup } from './CharacterPanels'
+import { BrandMark } from './BrandMark'
 import { MonoLabel } from '@/components/ui/typography'
 
 export interface NavItem {
@@ -74,12 +75,10 @@ export function PortalShell({
   const homeHref = nav[0]?.href ?? '/'
   return (
     <div className="min-h-screen bg-background text-foreground">
-      {/* ── Topbar (56px, dark shell) ────────────────────────────────────── */}
-      <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-shell-border bg-shell/95 px-4 text-shell-foreground shadow-elev-sm backdrop-blur-md supports-[backdrop-filter]:bg-shell/80">
+      {/* ── Topbar (56px, dark Farmers-navy shell) ───────────────────────── */}
+      <header className="shell-gradient shell-hairline sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-shell-border px-4 text-shell-foreground shadow-elev-md backdrop-blur-md supports-[backdrop-filter]:bg-shell/85">
         <div className="flex items-center gap-2 md:hidden">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-accent to-primary text-sm font-semibold text-primary-foreground ring-1 ring-white/10">
-            M
-          </div>
+          <BrandMark size="sm" />
           <MonoLabel muted={false} className="text-shell-muted">
             {portalLabel}
           </MonoLabel>
@@ -88,14 +87,14 @@ export function PortalShell({
             portal ever shows a dead search field. Otherwise a spacer keeps the
             account actions right-aligned. */}
         {searchHref ? (
-          <form action={searchHref} role="search" className="relative hidden max-w-md flex-1 items-center md:flex">
-            <Search className="pointer-events-none absolute left-3 h-4 w-4 text-shell-muted" strokeWidth={1.75} aria-hidden />
+          <form action={searchHref} role="search" className="group relative hidden max-w-md flex-1 items-center md:flex">
+            <Search className="pointer-events-none absolute left-3 h-4 w-4 text-shell-muted transition-colors group-focus-within:text-accent" strokeWidth={1.75} aria-hidden />
             <input
               type="search"
               name="q"
-              placeholder="Search…"
+              placeholder="Search agencies, households, cases…"
               aria-label="Global search"
-              className="h-9 w-full rounded-lg border border-shell-border bg-shell-raised pl-9 pr-3 text-sm text-shell-foreground placeholder:text-shell-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className="h-9 w-full rounded-lg border border-shell-border bg-shell-raised/70 pl-9 pr-3 text-sm text-shell-foreground placeholder:text-shell-muted transition-colors hover:border-shell-muted/50 focus:outline-none focus-visible:border-accent focus-visible:bg-shell-raised focus-visible:ring-2 focus-visible:ring-accent/40"
             />
           </form>
         ) : (
@@ -126,7 +125,7 @@ export function PortalShell({
 
       <div className="flex">
         {/* ── Sidebar (260px, dark shell) ────────────────────────────────── */}
-        <aside className="shell-gradient sticky top-14 hidden h-[calc(100vh-3.5rem)] w-[260px] shrink-0 flex-col overflow-y-auto border-r border-shell-border px-3 py-4 md:flex">
+        <aside className="shell-gradient shell-hairline sticky top-14 hidden h-[calc(100vh-3.5rem)] w-[260px] shrink-0 flex-col overflow-y-auto border-r border-shell-border px-3 py-4 md:flex">
           <Link href={homeHref} className="block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-accent">
             <IdentityLockup portalLabel={`${portalLabel} Command Center`} />
           </Link>

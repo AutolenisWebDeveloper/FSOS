@@ -4,6 +4,7 @@ import { Check, ArrowRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { MonoLabel } from '@/components/ui/typography'
 import { AssumptionBadge } from '@/components/archetypes/states'
+import { BrandMark } from './BrandMark'
 import type { ShellData, AgentState } from '@/lib/data/shell'
 
 /*
@@ -17,11 +18,14 @@ import type { ShellData, AgentState } from '@/lib/data/shell'
 export function IdentityLockup({ portalLabel }: { portalLabel: string }) {
   return (
     <div className="flex items-center gap-3 px-1">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-primary text-lg font-semibold text-primary-foreground shadow-elev-md ring-1 ring-white/10">
-        M
-      </div>
+      <BrandMark size="md" />
       <div className="min-w-0">
-        <div className="truncate text-[17px] font-semibold leading-tight text-shell-foreground">Markist</div>
+        <div className="flex items-baseline gap-1.5">
+          <span className="truncate text-[17px] font-semibold leading-tight tracking-tight text-shell-foreground">
+            Markist
+          </span>
+          <span className="mono-label text-[9px] leading-none text-shell-muted/80">FSOS</span>
+        </div>
         <MonoLabel muted={false} className="text-shell-muted">
           {portalLabel}
         </MonoLabel>

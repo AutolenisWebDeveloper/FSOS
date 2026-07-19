@@ -1,8 +1,8 @@
-// The command center JSX runs entirely client-side
-// This page wraps it in a Next.js server component shell
+import { redirect } from 'next/navigation'
 
-import CommandCenter from '@/components/pages/CommandCenter'
-
+// The legacy command center is retired. The official dashboard is /app.
+// Middleware already redirects "/" → /app; this is a defense-in-depth fallback
+// (and severs the last import of the legacy CommandCenter component).
 export default function Home() {
-  return <CommandCenter />
+  redirect('/app')
 }

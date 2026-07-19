@@ -19,6 +19,13 @@ try {
   mod = await import(out)
   rmSync(dir, { recursive: true, force: true })
 } catch (e) {
+  // In CI this proof MUST run — a missing bundler is a failure, not a pass.
+  // Locally (no CI_REQUIRE_INFRA) we skip cleanly so the suite stays runnable.
+  if (process.env.CI_REQUIRE_INFRA === '1') {
+    console.error('FAIL: CI_REQUIRE_INFRA=1 but esbuild is unavailable:', e.message)
+    console.error('The entity-resolution proof cannot silently skip in CI.')
+    process.exit(1)
+  }
   console.log('resolution.test.mjs — SKIPPED (esbuild unavailable):', e.message)
   process.exit(0)
 }

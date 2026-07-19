@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { ConfigError } from '@/lib/supabase/client'
+import { unconfiguredInternalAuthAllowed } from '@/lib/auth/config-gate'
 
 /**
  * If `err` is a configuration error (missing env vars), return a clear 503 the
@@ -67,15 +68,21 @@ export async function readJson<T = Record<string, unknown>>(
  *    the browser then replays automatically on same-origin fetches).
  *
  * When neither `FSOS_API_SECRET` nor `FSOS_ADMIN_PASSWORD` is configured the
- * gate is disabled (returns null) so local/dev and un-configured deployments
- * keep working — configuring either one turns protection on.
+ * gate fails CLOSED in production (a misconfigured deploy denies rather than
+ * exposing internal routes / client PII); local/dev still runs without secrets,
+ * and an explicit `ALLOW_INSECURE_LOCAL=1` opt-out exists — see config-gate.ts.
  */
 export function requireInternalAuth(req: NextRequest): NextResponse | null {
   const apiSecret = process.env.FSOS_API_SECRET
   const adminUser = process.env.FSOS_ADMIN_USER
   const adminPass = process.env.FSOS_ADMIN_PASSWORD
 
-  if (!apiSecret && !adminPass) return null // protection not configured
+  if (!apiSecret && !adminPass) {
+    // No credential configured: allow only outside production (or explicit opt-out).
+    return unconfiguredInternalAuthAllowed()
+      ? null
+      : NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
 
   const header = req.headers.get('authorization') || ''
 

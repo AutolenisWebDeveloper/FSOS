@@ -2,7 +2,15 @@
 
 > This file is the authoritative build contract for FSOS (Financial Services Operating System).
 > Read it fully before writing any code. Everything here is binding.
-> Companion specs live in `/docs`: `sitemap.md`, `routes.md`, `middleware-auth.md`, `build-order.md`, `archetypes.md`, `data-guardrails.md`.
+>
+> **Companion docs (all under version control — read the ones your task touches):**
+> - **Architecture & build order:** `docs/build-order.md`, `docs/routes.md`, `docs/sitemap.md`, `docs/archetypes.md`, `docs/middleware-auth.md`, `docs/data-guardrails.md`.
+> - **Feature specs:** `docs/specs/*` (`p0-core.md`, `rbac-matrix.md`, `data-api-map.md`, `cases-commission.md`, `review-conversion-crosssell.md`, `comms-ai-compliance.md`, `workflows-core-spine.md`, `workflows-ops-compliance.md`, `portals-admin.md`, `acceptance-checklist.md`, `missing-requirement-analysis.md`).
+> - **Compliance Intelligence module (§3):** `docs/compliance/*`.
+> - **Design system:** root `DESIGN.md` (as-built token/component reference) + `docs/design-system.md` (narrative) + `docs/design-audit.md`; product register in root `PRODUCT.md`.
+> - **Integrations & ops:** `docs/ghl_integration.md`, `docs/make_scenarios.md`, `docs/go-live-plan.md`, `docs/legacy-port.md`, `docs/legacy-mapping.md`, `docs/plugin-install-runbook.md`.
+>
+> Last reviewed against the codebase: 2026-07-19 (see §10 for the current subsystem map).
 
 ---
 
@@ -14,7 +22,7 @@ FSOS is a private, internal operating system for a **Farmers Financial Services 
 
 ## 1. Fixed technology stack — do not substitute
 
-- **Next.js 14** (App Router) + **TypeScript** (strict mode)
+- **Next.js 15** (App Router; pinned `next@15.5.x` in `package.json`) + **React 18** + **TypeScript** (strict mode). *(Prose in some companion docs still says "Next.js 14" — `package.json` is the source of truth; treat 15 as current.)*
 - **Supabase** (Postgres, Auth, Row-Level Security, Storage, Edge Functions)
 - **Vercel** (hosting) + **Vercel Cron** (scheduled jobs)
 - **Tailwind CSS** + **shadcn/ui** (component layer)
@@ -32,7 +40,7 @@ FSOS is a private, internal operating system for a **Farmers Financial Services 
    ```
 3. **Public routes** must remain auth-guard-free: `/[slug]` (agency referral), `/upload/[slug]`, `/forms/[formId]`, and everything under the P-0 public surface listed in `docs/sitemap.md`.
 4. **Read before write:** before creating or editing any file, read the existing file. Never recreate a file that already exists — extend or fix it.
-5. **Build discipline:** after any code change, run `npm run build` and fix EVERY error before stopping.
+5. **Build discipline:** after any code change, run `npm run build` and fix EVERY error before stopping. The repo also ships a guardrail/gate test suite — run `npm test` (build/compliance/auth-matrix/guardrail/p0+p1 gates/FNA/public-intake/comms/workforce) and, for RLS changes, `npm run test:rls`. Do not weaken or delete a guardrail test to make it pass.
 6. **Styling:** use Tailwind + shadcn/ui for all new UI. (Legacy command-center screens that use inline styles stay inline; do not convert them unless asked.)
 7. **Validation:** every form and every API input is validated with **Zod**; derive TS types via `z.infer`. No unvalidated writes.
 
@@ -131,4 +139,26 @@ A page is NOT done because the screen renders. Per `docs/archetypes.md`, each pa
 2. For each page, open `docs/routes.md` (where the file goes) + `docs/sitemap.md` (its priority/archetype) + `docs/archetypes.md` (its inherited standard).
 3. Enforce `docs/middleware-auth.md` for every portal.
 4. Apply the three guardrails (§2) and communications compliance (§7) everywhere they touch.
-5. Run `npm run build`, fix all errors, verify the page's Definition of Done (§8) before moving on.
+5. Run `npm run build` and `npm test`, fix all errors, verify the page's Definition of Done (§8) before moving on.
+
+---
+
+## 10. Current subsystem map (read before writing — don't re-scaffold)
+
+The build is well past greenfield. Before adding anything, check whether a home for it already exists — extend it, don't duplicate (§1 convention 4).
+
+- **App shell:** all seven route groups exist — `(fsa)`, `(admin)`, `(compliance)`, `(partner)`, `(client)`, `(super)`, `(public)` — plus the public surfaces `/[slug]`, `/upload`, `/forms`, `/events`, `/unsubscribe`, `/about`, `/privacy`, `/terms`.
+- **`src/lib/` shared subsystems (reuse these):**
+  - `supabase/` + `client` — `getDb()` and SSR clients (never instantiate at module level).
+  - `auth/` — session/role/scope resolution for the middleware-auth layer.
+  - `comms/` + `messaging.ts` — the SMS/email dispatcher and its §7 compliance checks.
+  - `compliance/` + `compliance.ts` — the Compliance Guardrail validator (§2.2) and firewall gates.
+  - `ai/`, `anthropic.ts`, `columnAI.ts` — the model-agnostic AI gateway; route all model calls through it.
+  - `knowledge/` — Compliance Intelligence retrieval (chunks/citations) for the §3 module.
+  - `fna/` + `fna.ts` — Financial Needs Analysis generation.
+  - `ghl.ts`, `ghlContacts.ts`, `contacts/`, `import/`, `csv.ts`, `spreadsheet.ts` — GHL sync + CSV/spreadsheet import/mapping.
+  - `apollo.ts` — Apollo enrichment. `audit/` — the append-only `audit_log` writer. `validation/` — shared Zod schemas. `analytics/`, `data/`, `portal/`, `forms.ts`, `tokens.ts`, `http.ts`, `utils.ts` — supporting utilities.
+- **Background jobs (§6):** `src/jobs/` — `agent-runner.ts`, `handlers.ts`, `index.ts` (durable, event-driven; not chat sessions).
+- **UI:** `src/components/ui/*` (shadcn/ui primitives), `src/components/archetypes/*` and `src/components/portal/*` (shared shells), plus per-portal folders. The legacy inline-styled command center lives in `src/components/pages/fsos_command_center.jsx` — do not convert it unless asked (§1 convention 6).
+- **Tests:** `tests/*.test.mjs` run via `npm test`; RLS/firewall proof via `npm run test:rls`.
+- **Scripts:** `scripts/` — `migrate.mjs`, `create-user.mjs`, `seed-demo.mjs`, `load-seed-corpus.mjs`, `fetch-rules.ts`.

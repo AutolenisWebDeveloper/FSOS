@@ -934,3 +934,92 @@ const CampaignVariantSchema = z.object({
 })
 export const CampaignVariantsSchema = z.array(CampaignVariantSchema).max(6)
 export type CampaignVariant = z.infer<typeof CampaignVariantSchema>
+
+// ─── Compliance Intelligence module (owner-authorized; docs/compliance/) ──────
+// Validation for the NIGO-resolution / RightBridge / note-authoring subsystem.
+// Every route input is validated here (CLAUDE.md §1.7); TS types via z.infer.
+
+export const AUTHORITY_TYPE_VALUES = [
+  'FINRA_RULE',
+  'SEC_RULE',
+  'STATE_REQUIREMENT',
+  'CARRIER_REQUIREMENT',
+  'FORM_INSTRUCTION',
+  'FFS_PROCEDURE',
+  'SUITABILITY_STANDARD',
+  'INTERNAL_PREFERENCE',
+] as const
+
+const scopeArray = z
+  .array(z.string().trim().min(1).max(40))
+  .max(40)
+  .optional()
+  .transform((v) => (v ?? []).map((s) => s.toUpperCase()))
+
+// Ingest a governing document into the knowledge library (chunked + tier-tagged).
+export const ComplianceIngestSchema = z.object({
+  title: z.string().trim().min(2).max(300),
+  authority_type: z.enum(AUTHORITY_TYPE_VALUES),
+  source_org: z.string().trim().max(120).optional(),
+  section_ref: z.string().trim().max(120).optional(),
+  effective_date: z.string().trim().max(40).optional(),
+  product_scope: scopeArray,
+  state_scope: scopeArray,
+  carrier: z.string().trim().max(120).optional(),
+  is_assumption: z.boolean().optional().default(false),
+  verbatim: z.boolean().optional().default(false),
+  text: z.string().trim().min(1).max(500_000),
+})
+export type ComplianceIngest = z.infer<typeof ComplianceIngestSchema>
+
+// Analyze a NIGO: parse → retrieve → classify → validate → explain → draft → cite.
+export const NigoAnalyzeSchema = z.object({
+  nigo_text: z.string().trim().min(5).max(50_000),
+  case_id: uuid.optional(),
+  work_item: z.string().trim().max(120).optional(),
+  client_ref: z.string().trim().max(120).optional(),
+  product: z.string().trim().max(40).optional(),
+  carrier: z.string().trim().max(120).optional(),
+  reviewer: z.string().trim().max(120).optional(),
+  state: z.string().trim().max(40).optional(),
+})
+export type NigoAnalyze = z.infer<typeof NigoAnalyzeSchema>
+
+// Record the outcome + lessons learned once a NIGO is resolved (the memory).
+export const NigoOutcomeSchema = z.object({
+  case_id: uuid,
+  outcome: z.enum(['open', 'resolved', 'rejected', 'escalated', 'withdrawn']),
+  lessons_learned: z.string().trim().max(5_000).optional(),
+})
+export type NigoOutcome = z.infer<typeof NigoOutcomeSchema>
+
+// Draft / harden a suitability note against the objective standard.
+export const ComplianceNoteSchema = z.object({
+  case_facts: z.string().trim().min(5).max(20_000),
+  product: z.string().trim().max(40).optional(),
+  transaction_type: z.string().trim().max(60).optional(),
+  is_replacement: z.boolean().optional().default(false),
+  has_loan: z.boolean().optional().default(false),
+  is_exchange_1035: z.boolean().optional().default(false),
+  is_buffered: z.boolean().optional().default(false),
+  existing_note: z.string().trim().max(20_000).optional(),
+})
+export type ComplianceNote = z.infer<typeof ComplianceNoteSchema>
+
+// Required-forms / signatures checklist for a specific transaction.
+export const ComplianceChecklistSchema = z.object({
+  product: z.string().trim().min(1).max(40),
+  carrier: z.string().trim().max(120).optional(),
+  transaction_type: z.string().trim().max(60).optional(),
+  state: z.string().trim().max(40).optional(),
+})
+export type ComplianceChecklist = z.infer<typeof ComplianceChecklistSchema>
+
+// Ingest a RightBridge report (parsed text) + optional case link, for consistency.
+export const RightbridgeIngestSchema = z.object({
+  report_type: z.enum(['product_profiler', 'life_wizard', 'other']).optional().default('product_profiler'),
+  title: z.string().trim().max(200).optional(),
+  case_id: uuid.optional(),
+  report_text: z.string().trim().min(20).max(500_000),
+})
+export type RightbridgeIngest = z.infer<typeof RightbridgeIngestSchema>

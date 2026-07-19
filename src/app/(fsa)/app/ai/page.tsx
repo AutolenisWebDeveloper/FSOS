@@ -23,6 +23,7 @@ export default async function AiCenterPage() {
 
   return (
     <DashboardShell title="AI Operations" description="Observe and control the autonomous system. Every run is logged with confidence + cost.">
+      <StatTile label="Workforce (today)" value="View" href="/app/ai/workforce" hint="Daily outreach quotas & sends" />
       <StatTile label="Active agents" value={`${active}/${agents.data.length}`} href="/app/ai/agents" />
       <StatTile label="Runs (24h)" value={runsToday} href="/app/ai/runs" />
       <StatTile label="Escalations open" value={escalations.ok ? escalations.data.length : 0} href="/app/ai/escalations" />

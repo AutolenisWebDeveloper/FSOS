@@ -10,6 +10,7 @@
     { "path": "/api/cron/cross-sell-scan", "schedule": "30 9 * * *" },
     { "path": "/api/cron/commission-reconcile", "schedule": "0 11 * * *" },
     { "path": "/api/cron/campaign-dispatch", "schedule": "*/30 * * * *" },
+    { "path": "/api/cron/workforce-orchestrator", "schedule": "0 15 * * *" },
     { "path": "/api/cron/data-quality", "schedule": "0 6 * * *" },
     { "path": "/api/cron/backup-verify", "schedule": "0 3 * * *" }
   ],

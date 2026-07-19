@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Farmers Financial Solutions — Secure Client Form</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
+
+:root {
+  --navy:#0f1e36; --navy2:#162844;
+  --bg:#f7f8fa; --card:#fff; --border:#e4e8ef;
+  --text:#1a2332; --muted:#6b7a8d; --dim:#a8b4c0;
+  --blue:#2b6cb0; --blue-bg:#ebf8ff; --blue-border:#bee3f8;
+  --green:#276749; --green2:#38a169; --green-bg:#f0fff4; --green-border:#9ae6b4;
+  --red:#e53e3e; --red-bg:#fff5f5; --red-border:#fed7d7;
+  --gold:#b7791f;
+  --shadow:0 1px 4px rgba(0,0,0,.08);
+  --shadow2:0 8px 32px rgba(0,0,0,.12);
+}
+
+* { box-sizing:border-box; margin:0; padding:0; }
+body { background:var(--bg); color:var(--text); font-family:'DM Sans',sans-serif; font-size:14px; line-height:1.6; min-height:100vh; }
+
+/* HEADER */
+.form-header {
+  background:var(--navy);
+  padding:20px 24px;
+  display:flex;
+  align-items:center;
+  gap:14px;
+}
+.fh-logo {
+  width:40px; height:40px;
+  background:linear-gradient(135deg,#4299e1,#2b6cb0);
+  border-radius:10px;
+  display:flex; align-items:center; justify-content:center;
+  font-size:16px; font-weight:700; color:#fff; flex-shrink:0;
+}
+.fh-title { color:#fff; font-size:15px; font-weight:600; }
+.fh-sub { color:rgba(255,255,255,.55); font-size:11px; margin-top:1px; }
+.fh-secure {
+  margin-left:auto;
+  display:flex; align-items:center; gap:5px;
+  font-size:10px; font-family:'DM Mono',monospace;
+  color:rgba(255,255,255,.4); letter-spacing:.06em;
+}
+
+/* PROGRESS BAR */
+.progress-wrap {
+  background:var(--card);
+  border-bottom:1px solid var(--border);
+  padding:0 24px;
+}
+.progress-steps {
+  display:flex;
+  overflow-x:auto;
+  gap:0;
+}
+.prog-step {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding:14px 16px;
+  font-size:11px;
+  color:var(--dim);
+  white-space:nowrap;
+  cursor:pointer;
+  border-bottom:2px solid transparent;
+  transition:all .15s;
+  flex-shrink:0;
+}
+.prog-step.active { color:var(--blue); border-bottom-color:var(--blue); }
+.prog-step.done { color:var(--green2); }
+.prog-num {
+  width:20px; height:20px;
+  border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  font-size:10px; font-weight:700;
+  background:var(--bg);
+  color:var(--dim);
+  border:1px solid var(--border);
+  flex-shrink:0;
+}
+.prog-step.active .prog-num { background:var(--blue); color:#fff; border-color:var(--blue); }
+.prog-step.done .prog-num { background:var(--green2); color:#fff; border-color:var(--green2); }
+
+/* MAIN */
+.form-main {
+  max-width:680px;
+  margin:0 auto;
+  padding:32px 20px 80px;
+}
+
+/* FORM CARD */
+.form-card {
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:12px;
+  box-shadow:var(--shadow);
+  overflow:hidden;
+  margin-bottom:16px;
+}
+.form-card-head {
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:18px 22px;
+  border-bottom:1px solid var(--border);
+  background:linear-gradient(135deg,var(--navy),var(--navy2));
+  color:#fff;
+}
+.fc-icon {
+  width:44px; height:44px;
+  border-radius:10px;
+  background:rgba(255,255,255,.12);
+  display:flex; align-items:center; justify-content:center;
+  font-size:20px; flex-shrink:0;
+}
+.fc-title { font-size:16px; font-weight:600; }
+.fc-sub { font-size:11px; color:rgba(255,255,255,.6); margin-top:2px; }
+.form-body { padding:22px; }
+
+/* SECTIONS */
+.section-title {
+  font-size:11px;
+  font-weight:700;
+  color:var(--navy);
+  text-transform:uppercase;
+  letter-spacing:.1em;
+  margin:20px 0 12px;
+  padding-bottom:8px;
+  border-bottom:2px solid var(--blue-border);
+  display:flex; align-items:center; gap:7px;
+}
+.section-title:first-child { margin-top:0; }
+
+/* FIELDS */
+.field-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.field-full { grid-column:1/-1; }
+.field { margin-bottom:0; }
+.field label {
+  display:block;
+  font-size:11px;
+  font-weight:600;
+  color:var(--text);
+  margin-bottom:5px;
+}
+.field label .req { color:var(--red); margin-left:2px; }
+.field input, .field select, .field textarea {
+  width:100%;
+  background:var(--bg);
+  border:1.5px solid var(--border);
+  border-radius:7px;
+  padding:10px 12px;
+  font-family:'DM Sans',sans-serif;
+  font-size:13px;
+  color:var(--text);
+  outline:none;
+  transition:border-color .15s, box-shadow .15s;
+}
+.field input:focus, .field select:focus, .field textarea:focus {
+  border-color:var(--blue);
+  box-shadow:0 0 0 3px rgba(43,108,176,.1);
+}
+.field input.error, .field select.error { border-color:var(--red); }
+.field textarea { resize:vertical; min-height:80px; }
+.field select option { background:var(--card); }
+.field-prefix {
+  position:relative;
+}
+.field-prefix .prefix-symbol {
+  position:absolute;
+  left:12px;
+  top:50%;
+  transform:translateY(-50%);
+  color:var(--muted);
+  font-size:13px;
+  pointer-events:none;
+}
+.field-prefix input { padding-left:24px; }
+
+/* RADIO / CHECKBOX GROUPS */
+.radio-group, .check-group {
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-top:4px;
+}
+.radio-option, .check-option {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  background:var(--bg);
+  border:1.5px solid var(--border);
+  border-radius:7px;
+  padding:8px 12px;
+  cursor:pointer;
+  font-size:12px;
+  transition:all .15s;
+  user-select:none;
+}
+.radio-option:hover, .check-option:hover { border-color:var(--blue-border); }
+.radio-option.selected { background:var(--blue-bg); border-color:var(--blue); color:var(--blue); font-weight:500; }
+.check-option.selected { background:var(--green-bg); border-color:var(--green-border); color:var(--green); font-weight:500; }
+.ro-dot {
+  width:14px; height:14px;
+  border-radius:50%;
+  border:2px solid var(--dim);
+  flex-shrink:0;
+  display:flex; align-items:center; justify-content:center;
+}
+.radio-option.selected .ro-dot { border-color:var(--blue); background:var(--blue); }
+.ro-inner { width:6px; height:6px; background:#fff; border-radius:50%; display:none; }
+.radio-option.selected .ro-inner { display:block; }
+.co-box {
+  width:14px; height:14px;
+  border-radius:3px;
+  border:2px solid var(--dim);
+  flex-shrink:0;
+  display:flex; align-items:center; justify-content:center;
+  font-size:9px;
+}
+.check-option.selected .co-box { border-color:var(--green2); background:var(--green2); color:#fff; }
+
+/* CALCULATED FIELDS */
+.calc-result {
+  background:var(--blue-bg);
+  border:1px solid var(--blue-border);
+  border-radius:7px;
+  padding:12px 14px;
+  margin-top:12px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}
+.cr-label { font-size:11px; color:var(--blue); font-family:'DM Mono',monospace; text-transform:uppercase; letter-spacing:.06em; }
+.cr-val { font-size:20px; font-weight:700; color:var(--navy); }
+
+/* RISK SCORE */
+.risk-meter {
+  margin-top:12px;
+  padding:14px 16px;
+  border-radius:8px;
+  border:1px solid var(--border);
+}
+.risk-bar-track { height:8px; background:var(--border); border-radius:4px; overflow:hidden; margin:8px 0; }
+.risk-bar-fill { height:100%; border-radius:4px; transition:width .5s; }
+.risk-labels { display:flex; justify-content:space-between; font-size:9px; color:var(--muted); font-family:'DM Mono',monospace; }
+
+/* NAV BUTTONS */
+.form-nav {
+  display:flex;
+  gap:10px;
+  justify-content:flex-end;
+  padding:16px 22px;
+  border-top:1px solid var(--border);
+  background:var(--bg);
+}
+.btn-back {
+  padding:10px 20px;
+  border-radius:7px;
+  border:1.5px solid var(--border);
+  background:var(--card);
+  color:var(--text);
+  font-family:'DM Sans',sans-serif;
+  font-size:13px;
+  font-weight:500;
+  cursor:pointer;
+  transition:all .15s;
+}
+.btn-back:hover { border-color:#bee3f8; color:var(--blue); }
+.btn-next {
+  padding:10px 24px;
+  border-radius:7px;
+  border:none;
+  background:var(--blue);
+  color:#fff;
+  font-family:'DM Sans',sans-serif;
+  font-size:13px;
+  font-weight:600;
+  cursor:pointer;
+  transition:background .15s;
+  display:flex; align-items:center; gap:6px;
+}
+.btn-next:hover { background:#2c5282; }
+.btn-submit {
+  padding:12px 28px;
+  border-radius:7px;
+  border:none;
+  background:var(--green2);
+  color:#fff;
+  font-family:'DM Sans',sans-serif;
+  font-size:14px;
+  font-weight:600;
+  cursor:pointer;
+  transition:background .15s;
+  display:flex; align-items:center; gap:8px;
+}
+.btn-submit:hover { background:var(--green); }
+
+/* SUBMITTED STATE */
+.success-card {
+  background:var(--card);
+  border:1px solid var(--green-border);
+  border-radius:12px;
+  padding:40px 32px;
+  text-align:center;
+  box-shadow:var(--shadow2);
+}
+.success-icon {
+  width:64px; height:64px;
+  background:var(--green-bg);
+  border:2px solid var(--green-border);
+  border-radius:50%;
+  margin:0 auto 16px;
+  display:flex; align-items:center; justify-content:center;
+  font-size:28px;
+}
+.success-title { font-size:22px; font-weight:700; color:var(--navy); margin-bottom:8px; }
+.success-sub { font-size:13px; color:var(--muted); line-height:1.7; max-width:400px; margin:0 auto; }
+.ref-num {
+  font-family:'DM Mono',monospace;
+  font-size:12px;
+  background:var(--bg);
+  border:1px solid var(--border);
+  border-radius:5px;
+  padding:6px 14px;
+  display:inline-block;
+  margin-top:14px;
+  color:var(--muted);
+}
+
+/* SECURITY BADGE */
+.security-strip {
+  background:var(--navy);
+  padding:10px 24px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:20px;
+  flex-wrap:wrap;
+}
+.sec-item {
+  display:flex;
+  align-items:center;
+  gap:5px;
+  font-size:10px;
+  color:rgba(255,255,255,.5);
+  font-family:'DM Mono',monospace;
+  letter-spacing:.04em;
+}
+
+/* TOOLTIP */
+.help-icon {
+  display:inline-flex;
+  width:14px; height:14px;
+  border-radius:50%;
+  background:var(--dim);
+  color:#fff;
+  font-size:9px;
+  align-items:center;
+  justify-content:center;
+  margin-left:4px;
+  cursor:help;
+  flex-shrink:0;
+}
+
+@media(max-width:600px) {
+  .field-grid { grid-template-columns:1fr; }
+  .form-main { padding:16px 14px 60px; }
+  .form-nav { flex-direction:column; }
+  .btn-back,.btn-next,.btn-submit { width:100%; justify-content:center; }
+}
+
+@media print {
+  .form-header,.progress-wrap,.form-nav,.security-strip { display:none; }
+  .form-main { padding:0; max-width:100%; }
+  .form-card { box-shadow:none; border:1px solid #ddd; }
+}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="form-header">
+  <div class="fh-logo">M</div>
+  <div>
+    <div class="fh-title">Markist — Farmers Financial Solutions, LLC</div>
+    <div class="fh-sub">Secure Client Information Form</div>
+  </div>
+  <div class="fh-secure">🔒 SSL Encrypted · CONFIDENTIAL</div>
+</div>
+
+<!-- PROGRESS -->
+<div class="progress-wrap">
+  <div class="progress-steps" id="progress-steps"></div>
+</div>
+
+<!-- SECURITY STRIP -->
+<div class="security-strip">
+  <div class="sec-item">🔒 256-bit encryption</div>
+  <div class="sec-item">🏦 Farmers Financial Solutions, LLC · FINRA/SIPC</div>
+  <div class="sec-item">🛡 Your data is private and confidential</div>
+  <div class="sec-item">⏱ This form expires in 30 days</div>
+</div>
+
+<!-- MAIN FORM AREA -->
+<div class="form-main" id="form-main"></div>
+
+<script>
+// ── FORM DEFINITIONS ──────────────────────────────────
+const FORMS_CONFIG = {
+  "customer-questionnaire": {
+    title:"Customer Questionnaire",
+    subtitle:"Personal Information (Confidential) · Form 318507",
+    icon:"📋",
+    intro:"Please take a few minutes to complete this form before your appointment with Markist. Your answers help us prepare a more personalized financial review.",
+    sections:[
+      {title:"Personal Information", fields:[
+        {id:"first_name",label:"First Name",type:"text",required:true,half:true},
+        {id:"last_name",label:"Last Name",type:"text",required:true,half:true},
+        {id:"spouse_name",label:"Spouse's Name",type:"text",half:true},
+        {id:"cell_phone",label:"Cell Phone",type:"tel",required:true,half:true},
+        {id:"email",label:"Email Address",type:"email",required:true,half:true},
+        {id:"spouse_email",label:"Spouse's Email",type:"email",half:true},
+        {id:"address",label:"Address",type:"text"},
+        {id:"city",label:"City",type:"text",half:true},
+        {id:"zip",label:"ZIP Code",type:"text",half:true},
+      ]},
+      {title:"Areas of Concern", fields:[
+        {id:"concerns",label:"Please check all topics that concern you",type:"checkboxes",options:[
+          "Retirement Preparation","Mortgage","Saving for College","Caring for Parents",
+          "Savings and Investments","Final Expenses","Income Taxes","Long Term Care",
+          "Major Purchase / Lease","Estate & Inheritance Considerations"
+        ]},
+      ]},
+      {title:"Financial Accounts", fields:[
+        {id:"has_401k",label:"Do you have a 401(k) through work?",type:"radio",options:["Yes","No"]},
+        {id:"job_change",label:"Have you changed jobs in the last 5 years?",type:"radio",options:["Yes","No"]},
+        {id:"review_401k",label:"Would you like us to review your 401(k)?",type:"radio",options:["Yes","No","N/A"]},
+        {id:"has_ira",label:"Do you have a Traditional or Roth IRA?",type:"radio",options:["Yes","No"]},
+        {id:"discuss_ira",label:"Would you like to discuss IRA options?",type:"radio",options:["Yes","No"]},
+      ]},
+      {title:"Life Insurance", fields:[
+        {id:"has_life",label:"Do you have Life Insurance?",type:"radio",options:["Yes","No"]},
+        {id:"life_10x",label:"If Yes — is it 10× your annual salary?",type:"radio",options:["Yes","No","N/A"],help:"Financial experts recommend life insurance equal to 10 times your annual income to adequately protect your family."},
+        {id:"employer_life",label:"Is your life insurance through your employer?",type:"radio",options:["Yes","No","N/A"]},
+        {id:"discuss_life",label:"Would you like to discuss Life Insurance Options?",type:"radio",options:["Yes","No"]},
+      ]},
+    ]
+  },
+
+  "customer-profile": {
+    title:"Customer Profile Worksheet",
+    subtitle:"Financial Goals & Risk Tolerance · Form 31-4996",
+    icon:"👤",
+    intro:"This worksheet helps us understand your financial goals, current situation, and investment risk tolerance so we can provide appropriate guidance during your review.",
+    sections:[
+      {title:"Personal & Contact Information", fields:[
+        {id:"first_name",label:"First Name",type:"text",required:true,half:true},
+        {id:"last_name",label:"Last Name",type:"text",required:true,half:true},
+        {id:"dob",label:"Date of Birth",type:"date",required:true,half:true},
+        {id:"gender",label:"Gender",type:"select",options:["Male","Female","Prefer not to say"],half:true},
+        {id:"marital_status",label:"Marital Status",type:"select",options:["Single","Married","Divorced","Widowed"],half:true},
+        {id:"dependents",label:"Number of Dependents",type:"number",half:true},
+        {id:"cell_phone",label:"Cell Phone",type:"tel",required:true,half:true},
+        {id:"email",label:"Email",type:"email",required:true,half:true},
+        {id:"employer",label:"Employer",type:"text",half:true},
+        {id:"occupation",label:"Occupation",type:"text",half:true},
+      ]},
+      {title:"Financial Goals", fields:[
+        {id:"goal_retirement",label:"Priority: Investing for retirement",type:"radio",options:["Not really","Somewhat","Very concerned"]},
+        {id:"goal_survivorship",label:"Priority: Meeting survivorship needs",type:"radio",options:["Not really","Somewhat","Very concerned"]},
+        {id:"goal_life",label:"Priority: Life Insurance",type:"radio",options:["Not really","Somewhat","Very concerned"]},
+        {id:"goal_ltc",label:"Priority: Long term care protection",type:"radio",options:["Not really","Somewhat","Very concerned"]},
+        {id:"goal_disability",label:"Priority: Income in case of disability",type:"radio",options:["Not really","Somewhat","Very concerned"]},
+        {id:"goal_college",label:"Priority: Investing for college",type:"radio",options:["Not really","Somewhat","Very concerned"]},
+      ]},
+      {title:"Current Financial Information", fields:[
+        {id:"annual_income",label:"Annual Income",type:"number",prefix:"$",required:true,half:true},
+        {id:"spouse_income",label:"Spouse Annual Income",type:"number",prefix:"$",half:true},
+        {id:"household_debt",label:"Estimated Household Debt",type:"number",prefix:"$",half:true},
+        {id:"net_worth",label:"Estimated Net Worth",type:"number",prefix:"$",half:true},
+        {id:"tax_bracket",label:"Estimated Federal Tax Bracket",type:"select",options:["10%","12%","22%","24%","32%","35%","37%"],half:true},
+        {id:"time_horizon",label:"Investment Time Horizon",type:"select",options:["1–3 years","3–7 years","7–10 years","10–15 years","15+ years"],half:true},
+      ]},
+      {title:"Risk Tolerance Assessment", risk:true, fields:[
+        {id:"risk_q1",label:"1. Investment objective that best describes this purchase:",type:"radio",options:["Current income (1)","Tax-free income (2)","Asset growth with current income (3)","Maximum capital appreciation (4)"]},
+        {id:"risk_q2",label:"2. Comfort with investments that may decrease in value temporarily:",type:"radio",options:["Strongly disagree (1)","Disagree (2)","Somewhat agree (3)","Agree (4)","Strongly agree (5)"]},
+        {id:"risk_q3",label:"3. Your investment experience:",type:"radio",options:["Never invested (1)","Bonds only (2)","Only through employer plan (3)","Some experience (4)","Extensive experience (5)"]},
+        {id:"risk_q4",label:"4. How long could you cover living expenses with liquid assets?",type:"radio",options:["1 month or less (1)","1–3 months (2)","3–6 months (3)","6–12 months (4)","12+ months (5)"]},
+        {id:"risk_q5",label:"5. Outlook for income over next 5 years:",type:"radio",options:["Will greatly decrease (1)","Will decrease slightly (2)","Stay the same (3)","Increase slightly (4)","Greatly increase (5)"]},
+        {id:"risk_q6",label:"6. Your age range:",type:"radio",options:["61 and older (1)","41 to 60 (2)","18 to 40 (3)"]},
+      ]},
+    ]
+  },
+
+  "financial-needs-analysis": {
+    title:"Financial Needs Analysis",
+    subtitle:"Comprehensive Financial Review Intake · Form FNA-001",
+    icon:"🎯",
+    intro:"Your answers help us prepare a personalized Financial Needs Analysis report before your appointment. This usually takes about 8–10 minutes. All information is confidential.",
+    sections:[
+      {title:"Personal Information", fields:[
+        {id:"first_name",label:"First Name",type:"text",required:true,half:true},
+        {id:"last_name",label:"Last Name",type:"text",required:true,half:true},
+        {id:"dob",label:"Date of Birth",type:"date",required:true,half:true},
+        {id:"marital_status",label:"Marital Status",type:"select",options:["Single","Married","Divorced","Widowed"],half:true},
+        {id:"dependents",label:"Number of Dependents",type:"number",half:true},
+        {id:"phone",label:"Best Phone Number",type:"tel",required:true,half:true},
+        {id:"email",label:"Email Address",type:"email",required:true,half:true},
+        {id:"employer",label:"Employer / Occupation",type:"text",half:true},
+      ]},
+      {title:"Income & Financial Position", fields:[
+        {id:"annual_income",label:"Annual Household Income",type:"number",prefix:"$",required:true,half:true},
+        {id:"monthly_savings",label:"Monthly Amount You Save / Invest",type:"number",prefix:"$",half:true},
+        {id:"net_worth",label:"Estimated Net Worth",type:"number",prefix:"$",half:true},
+        {id:"401k_balance",label:"401(k) / Employer Plan Balance",type:"number",prefix:"$",half:true},
+        {id:"ira_balance",label:"IRA Balance (all accounts)",type:"number",prefix:"$",half:true},
+        {id:"emergency_fund",label:"Do you have 3–6 months expenses saved as an emergency fund?",type:"radio",options:["Yes","No","Partially"]},
+      ]},
+      {title:"Life Insurance", fields:[
+        {id:"has_life_ins",label:"Do you currently have life insurance?",type:"radio",options:["Yes — Term","Yes — Permanent","Yes — Both","No"]},
+        {id:"life_coverage",label:"Total Life Insurance Coverage",type:"number",prefix:"$",half:true},
+        {id:"life_coverage_adequate",label:"Do you feel your coverage is adequate?",type:"radio",options:["Yes","No","Not Sure"],help:"Coverage adequacy is generally 10× your annual income, enough to replace your income for your family."},
+      ]},
+      {title:"Retirement Goals", fields:[
+        {id:"retirement_age",label:"Target Retirement Age",type:"number",half:true},
+        {id:"retirement_income_goal",label:"Desired Monthly Income in Retirement",type:"number",prefix:"$",half:true,help:"Think about what you'd need monthly to maintain your current lifestyle."},
+        {id:"social_security",label:"Expected Monthly Social Security Benefit",type:"number",prefix:"$",half:true},
+        {id:"has_401k",label:"Do you have a 401(k) or employer retirement plan?",type:"radio",options:["Yes","No"]},
+        {id:"has_ira",label:"Do you have an IRA?",type:"radio",options:["Yes — Traditional","Yes — Roth","Yes — Both","No"]},
+      ]},
+      {title:"Priorities & Preferences", fields:[
+        {id:"primary_concern",label:"What is your #1 financial concern right now?",type:"select",options:["Retirement income","Life insurance gap","Debt reduction","College funding","Tax reduction","Business succession","Estate planning","Market volatility"]},
+        {id:"secondary_concern",label:"Secondary financial concern",type:"select",options:["None","Retirement income","Life insurance gap","Debt reduction","College funding","Tax reduction","Business succession","Estate planning","Market volatility"]},
+        {id:"risk_tolerance",label:"How would you describe your investment risk tolerance?",type:"radio",options:["Conservative — I want to preserve what I have","Moderate — I want balanced growth and protection","Aggressive — I want to maximize long-term growth"]},
+        {id:"investment_horizon",label:"How long before you'll need this money?",type:"select",options:["Less than 5 years","5–10 years","10–20 years","20+ years"]},
+        {id:"estate_docs",label:"Do you have a will or up-to-date estate planning documents?",type:"radio",options:["Yes — up to date","Yes — needs updating","No — not yet"]},
+        {id:"business_owner",label:"Are you a business owner?",type:"radio",options:["Yes","No"]},
+        {id:"long_term_care",label:"Have you considered long-term care insurance?",type:"radio",options:["Yes — I have coverage","Yes — I'm interested","No — not a priority","I'm not sure what it is"]},
+        {id:"additional_notes",label:"Anything else you'd like us to know before your review?",type:"textarea"},
+      ]},
+    ]
+  },
+
+  "liability-exposure": {
+    title:"Liability Exposure Worksheet",
+    subtitle:"Declaration of Assets · Form 31-8352 · Confidential",
+    icon:"⚖️",
+    intro:"This worksheet calculates your total assets at risk and helps us understand your protection needs. All figures are kept strictly confidential.",
+    sections:[
+      {title:"Real Estate", fields:[
+        {id:"client_name",label:"Your Name",type:"text",required:true},
+        {id:"home_market",label:"Home — Market Value",type:"number",prefix:"$",half:true},
+        {id:"home_mortgage",label:"Home — Mortgage Balance",type:"number",prefix:"$",half:true},
+        {id:"home2_market",label:"2nd Home/Land — Market Value",type:"number",prefix:"$",half:true},
+        {id:"home2_mortgage",label:"2nd Home/Land — Mortgage",type:"number",prefix:"$",half:true},
+        {id:"rental_market",label:"Rental Property — Market Value",type:"number",prefix:"$",half:true},
+        {id:"rental_mortgage",label:"Rental Property — Mortgage",type:"number",prefix:"$",half:true},
+      ]},
+      {title:"Income & Future Wages", fields:[
+        {id:"income1",label:"Your Annual Income",type:"number",prefix:"$",half:true},
+        {id:"income2",label:"Spouse/Partner Annual Income",type:"number",prefix:"$",half:true},
+      ]},
+      {title:"Personal Property", fields:[
+        {id:"personal_contents",label:"Personal Contents & Furnishings",type:"number",prefix:"$",half:true},
+        {id:"autos",label:"Automobiles",type:"number",prefix:"$",half:true},
+        {id:"jewelry",label:"Jewelry",type:"number",prefix:"$",half:true},
+        {id:"other_personal",label:"Other Valuables",type:"number",prefix:"$",half:true},
+      ]},
+      {title:"Investments & Retirement", fields:[
+        {id:"iras",label:"IRAs",type:"number",prefix:"$",half:true},
+        {id:"401k",label:"401(k) / Profit Sharing",type:"number",prefix:"$",half:true},
+        {id:"savings",label:"Savings / CDs",type:"number",prefix:"$",half:true},
+        {id:"stocks_mutual",label:"Stocks / Mutual Funds",type:"number",prefix:"$",half:true},
+        {id:"annuities",label:"Annuities",type:"number",prefix:"$",half:true},
+        {id:"cash_other",label:"Cash / Other",type:"number",prefix:"$",half:true},
+      ]},
+      {title:"Life Insurance Summary", fields:[
+        {id:"life_term1",label:"Term Life Insurance Amount",type:"number",prefix:"$",half:true},
+        {id:"life_perm1",label:"Permanent Life Insurance Amount",type:"number",prefix:"$",half:true},
+        {id:"life_employer1",label:"Employer-Provided Life Insurance",type:"number",prefix:"$",half:true},
+      ]},
+    ]
+  }
+};
+
+// ── STATE ─────────────────────────────────────────────
+const urlParams = new URLSearchParams(window.location.search);
+const formId = urlParams.get("form") || "financial-needs-analysis";
+const clientName = urlParams.get("client") || "";
+const token = urlParams.get("t") || Date.now();
+
+const CONFIG = FORMS_CONFIG[formId] || FORMS_CONFIG["financial-needs-analysis"];
+const sections = CONFIG.sections;
+
+let currentSection = 0;
+let formData = {};
+let submitted = false;
+
+// ── HELPERS ───────────────────────────────────────────
+const fmt = n => n ? "$" + Number(n).toLocaleString("en-US") : "$0";
+
+function getRiskScore() {
+  let score = 0;
+  ["risk_q1","risk_q2","risk_q3","risk_q4","risk_q5","risk_q6"].forEach(k => {
+    const v = formData[k];
+    if(v) { const m = v.match(/\((\d)\)/); if(m) score += parseInt(m[1]); }
+  });
+  return score;
+}
+function getRiskLabel(score) {
+  if(score >= 23) return { label:"Aggressive", color:"#e53e3e", pct: 100 };
+  if(score >= 13) return { label:"Moderate", color:"#dd6b20", pct: 50 };
+  return { label:"Conservative", color:"#2b6cb0", pct: 15 };
+}
+
+function calcLiabilityAssets() {
+  const realEstate = [
+    (+formData.home_market||0) - (+formData.home_mortgage||0),
+    (+formData.home2_market||0) - (+formData.home2_mortgage||0),
+    (+formData.rental_market||0) - (+formData.rental_mortgage||0),
+  ].reduce((a,b)=>a+Math.max(0,b),0);
+  const income = (+formData.income1||0)*10*0.25 + (+formData.income2||0)*10*0.25;
+  const personal = [formData.personal_contents,formData.autos,formData.jewelry,formData.other_personal].reduce((a,b)=>a+(+b||0),0);
+  const investments = [formData.iras,formData["401k"],formData.savings,formData.stocks_mutual,formData.annuities,formData.cash_other].reduce((a,b)=>a+(+b||0),0);
+  return { realEstate, income, personal, investments, total: realEstate+income+personal+investments };
+}
+
+// ── RENDER ────────────────────────────────────────────
+function renderProgress() {
+  const el = document.getElementById("progress-steps");
+  el.innerHTML = sections.map((s,i) => `
+    <div class="prog-step ${i < currentSection ? "done" : i === currentSection ? "active" : ""}">
+      <div class="prog-num">${i < currentSection ? "✓" : i+1}</div>
+      ${s.title}
+    </div>`).join("");
+}
+
+function renderField(f, sectionRisk) {
+  const val = formData[f.id] || "";
+  const fullWidth = !f.half;
+
+  let inner = "";
+
+  if(f.type === "radio") {
+    inner = `<div class="radio-group">
+      ${f.options.map(o => `
+        <div class="radio-option ${val === o ? "selected" : ""}" onclick="selectRadio('${f.id}','${o.replace(/'/g,"\\'")}',this)">
+          <div class="ro-dot"><div class="ro-inner"></div></div>
+          ${o}
+        </div>`).join("")}
+    </div>`;
+
+  } else if(f.type === "checkboxes") {
+    const vals = Array.isArray(formData[f.id]) ? formData[f.id] : [];
+    inner = `<div class="check-group">
+      ${f.options.map(o => `
+        <div class="check-option ${vals.includes(o) ? "selected" : ""}" onclick="toggleCheck('${f.id}','${o.replace(/'/g,"\\'")}',this)">
+          <div class="co-box">${vals.includes(o)?"✓":""}</div>
+          ${o}
+        </div>`).join("")}
+    </div>`;
+
+  } else if(f.type === "select") {
+    inner = `<select onchange="setField('${f.id}',this.value)">
+      <option value="">— select —</option>
+      ${f.options.map(o=>`<option ${val===o?"selected":""}>${o}</option>`).join("")}
+    </select>`;
+
+  } else if(f.type === "textarea") {
+    inner = `<textarea onchange="setField('${f.id}',this.value)" placeholder="Optional — your comments here">${val}</textarea>`;
+
+  } else if(f.prefix) {
+    inner = `<div class="field-prefix">
+      <span class="prefix-symbol">${f.prefix}</span>
+      <input type="number" value="${val}" placeholder="0" oninput="setField('${f.id}',this.value)" min="0">
+    </div>`;
+  } else {
+    inner = `<input type="${f.type||"text"}" value="${val}" ${f.required?'required':''} oninput="setField('${f.id}',this.value)" placeholder="${f.type==="date"?"":""}">`;
+  }
+
+  const help = f.help ? `<span class="help-icon" title="${f.help}">?</span>` : "";
+
+  return `<div class="field ${fullWidth?"field-full":""}">
+    <label>${f.label}${f.required?'<span class="req">*</span>':''}${help}</label>
+    ${inner}
+  </div>`;
+}
+
+function renderSection() {
+  if(submitted) { renderSubmitted(); return; }
+  const sec = sections[currentSection];
+  const isLast = currentSection === sections.length - 1;
+  const main = document.getElementById("form-main");
+
+  const liabilityCalc = (formId === "liability-exposure" && currentSection === 3) ? (() => {
+    const c = calcLiabilityAssets();
+    return `<div class="calc-result">
+      <div><div class="cr-label">Total Assets at Risk</div><div style="font-size:11px;color:var(--muted);margin-top:2px">Real estate + wage garnishment + personal + investments</div></div>
+      <div class="cr-val">${fmt(c.total)}</div>
+    </div>`;
+  })() : "";
+
+  const riskMeter = sec.risk ? (() => {
+    const score = getRiskScore();
+    const r = getRiskLabel(score);
+    return score > 0 ? `<div class="risk-meter">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <div style="font-size:11px;font-weight:600;color:var(--text)">Risk Tolerance Score: ${score} / 27</div>
+        <div style="font-size:12px;font-weight:700;color:${r.color}">${r.label}</div>
+      </div>
+      <div class="risk-bar-track"><div class="risk-bar-fill" style="width:${(score/27*100)}%;background:${r.color}"></div></div>
+      <div class="risk-labels"><span>Conservative (6–12)</span><span>Moderate (13–22)</span><span>Aggressive (23–27)</span></div>
+    </div>` : "";
+  })() : "";
+
+  const intro = currentSection === 0 ? `
+    <div style="background:var(--blue-bg);border:1px solid var(--blue-border);border-radius:8px;padding:14px 16px;margin-bottom:16px;font-size:12px;color:var(--blue);">
+      ${clientName ? `<strong>Hello${clientName ? ", "+clientName : ""}!</strong> ` : ""}${CONFIG.intro}
+    </div>` : "";
+
+  const fields = sec.fields.map(f => renderField(f, sec.risk)).join("");
+
+  main.innerHTML = `
+    ${intro}
+    <div class="form-card">
+      <div class="form-card-head">
+        <div class="fc-icon">${CONFIG.icon}</div>
+        <div>
+          <div class="fc-title">${CONFIG.title}</div>
+          <div class="fc-sub">${CONFIG.subtitle}</div>
+        </div>
+      </div>
+      <div class="form-body">
+        <div class="section-title">${sec.title}</div>
+        <div class="field-grid">${fields}</div>
+        ${liabilityCalc}
+        ${riskMeter}
+      </div>
+      <div class="form-nav">
+        ${currentSection > 0 ? '<button class="btn-back" onclick="prevSection()">← Back</button>' : ''}
+        ${isLast
+          ? '<button class="btn-submit" onclick="submitForm()">✓ Submit Form →</button>'
+          : '<button class="btn-next" onclick="nextSection()">Continue →</button>'}
+      </div>
+    </div>
+    <div style="text-align:center;font-size:10px;color:var(--muted);margin-top:12px;line-height:1.6">
+      Form ${CONFIG.subtitle.split("·")[1]?.trim()||"FFS"} · This information is confidential and used solely for financial planning purposes.<br>
+      Securities offered through Farmers Financial Solutions, LLC, Member FINRA & SIPC.
+    </div>`;
+}
+
+function renderSubmitted() {
+  const refNum = "FFS-" + token.toString().slice(-6).toUpperCase();
+  document.getElementById("form-main").innerHTML = `
+    <div class="success-card">
+      <div class="success-icon">✓</div>
+      <div class="success-title">Form Submitted Successfully</div>
+      <div class="success-sub">
+        Thank you${clientName ? ", "+clientName : ""}! Your information has been received securely and linked to your client record.<br><br>
+        <strong>What happens next:</strong><br>
+        Your FSA, Markist, will review your responses and prepare for your appointment. You may receive a confirmation email shortly.
+      </div>
+      <div class="ref-num">Reference: ${refNum}</div>
+      <div style="margin-top:20px;font-size:11px;color:var(--muted)">You may now close this window.</div>
+    </div>`;
+}
+
+// ── ACTIONS ───────────────────────────────────────────
+window.setField = (id, val) => { formData[id] = val; };
+window.selectRadio = (id, val, el) => {
+  formData[id] = val;
+  el.closest(".radio-group").querySelectorAll(".radio-option").forEach(o => o.classList.remove("selected"));
+  el.classList.add("selected");
+  // live risk score update
+  if(id.startsWith("risk_q")) {
+    const sec = sections[currentSection];
+    if(sec.risk) {
+      const score = getRiskScore();
+      const r = getRiskLabel(score);
+      const meter = document.querySelector(".risk-meter");
+      if(meter && score > 0) {
+        meter.querySelector(".risk-bar-fill").style.width = (score/27*100)+"%";
+        meter.querySelector(".risk-bar-fill").style.background = r.color;
+        meter.querySelectorAll("[style*='font-weight:700']")[0].textContent = r.label;
+        meter.querySelectorAll("[style*='font-weight:700']")[0].style.color = r.color;
+        meter.querySelectorAll(".cr-val, [class*='font-size:11px']")[0] && (meter.querySelector("[style*='font-weight:600']").textContent = `Risk Tolerance Score: ${score} / 27`);
+      } else if(score > 0) {
+        const grid = document.querySelector(".field-grid");
+        if(grid) { const rm = document.createElement("div"); rm.innerHTML = getRiskLabel(score) ? "" : ""; }
+      }
+    }
+    // re-render to update meter
+    renderSection();
+  }
+  // live asset calc update
+  if(formId === "liability-exposure") {
+    const cr = document.querySelector(".calc-result .cr-val");
+    if(cr) cr.textContent = fmt(calcLiabilityAssets().total);
+  }
+};
+window.toggleCheck = (id, val, el) => {
+  if(!Array.isArray(formData[id])) formData[id] = [];
+  if(formData[id].includes(val)) {
+    formData[id] = formData[id].filter(x => x !== val);
+    el.classList.remove("selected");
+    el.querySelector(".co-box").textContent = "";
+  } else {
+    formData[id].push(val);
+    el.classList.add("selected");
+    el.querySelector(".co-box").textContent = "✓";
+  }
+};
+window.nextSection = () => {
+  const req = sections[currentSection].fields.filter(f => f.required);
+  const missing = req.filter(f => !formData[f.id]);
+  if(missing.length) { alert("Please complete required fields: " + missing.map(f=>f.label).join(", ")); return; }
+  currentSection++;
+  renderProgress();
+  renderSection();
+  window.scrollTo({top:0,behavior:"smooth"});
+};
+window.prevSection = () => {
+  currentSection = Math.max(0, currentSection - 1);
+  renderProgress();
+  renderSection();
+  window.scrollTo({top:0,behavior:"smooth"});
+};
+window.submitForm = () => {
+  // In production: POST to /api/forms/submit with formData, token, formId
+  // fetch('/api/forms/submit', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token, form_id: formId, response_data: formData }) })
+  submitted = true;
+  renderProgress();
+  renderSection();
+  window.scrollTo({top:0,behavior:"smooth"});
+};
+
+// ── INIT ─────────────────────────────────────────────
+renderProgress();
+renderSection();
+
+// Live update for number fields (liability calc)
+document.addEventListener("input", e => {
+  if(formId === "liability-exposure") {
+    const cr = document.querySelector(".calc-result .cr-val");
+    if(cr) cr.textContent = fmt(calcLiabilityAssets().total);
+  }
+});
+</script>
+</body>
+</html>

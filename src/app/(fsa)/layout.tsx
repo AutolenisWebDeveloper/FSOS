@@ -1,0 +1,117 @@
+import {
+  LayoutDashboard,
+  LayoutGrid,
+  TrendingUp,
+  Newspaper,
+  Building2,
+  UserPlus,
+  Users,
+  FileText,
+  FileSignature,
+  ClipboardCheck,
+  Target,
+  Repeat,
+  ArrowLeftRight,
+  Shuffle,
+  Briefcase,
+  DollarSign,
+  MessageSquare,
+  BookOpen,
+  ClipboardList,
+  FolderOpen,
+  Workflow,
+  CheckSquare,
+  Calendar,
+  GraduationCap,
+  Calculator,
+  Bot,
+  AlertTriangle,
+  ShieldCheck,
+  ScanSearch,
+  BarChart3,
+  Sparkles,
+  Bell,
+  Contact,
+  PhoneCall,
+  Upload,
+  Database,
+  FileUp,
+  LifeBuoy,
+  Settings as SettingsIcon,
+} from 'lucide-react'
+import { requireRole } from '@/lib/auth/session'
+import { PortalShell, type NavItem } from '@/components/portal/PortalShell'
+import { ShellCharacterPanels } from '@/components/portal/CharacterPanels'
+import { loadShellData } from '@/lib/data/shell'
+
+// Session is read per request; never statically render a guarded portal.
+export const dynamic = 'force-dynamic'
+
+// P0 nav grouped into OS clusters (design-system.md §5.2) with lucide icons.
+const NAV: NavItem[] = [
+  { href: '/app', label: 'Dashboard', icon: LayoutDashboard, group: 'Overview' },
+  { href: '/app/dashboards', label: 'Dashboards', icon: LayoutGrid, group: 'Overview' },
+  { href: '/app/forecasts', label: 'Forecasts', icon: TrendingUp, group: 'Overview' },
+  { href: '/app/executive/briefing', label: 'Briefing', icon: Newspaper, group: 'Overview' },
+  { href: '/app/notifications', label: 'Notifications', icon: Bell, group: 'Overview' },
+
+  { href: '/app/agencies', label: 'Agencies', icon: Building2, group: 'Book' },
+  { href: '/app/contacts', label: 'Contacts', icon: Contact, group: 'Book' },
+  { href: '/app/referrals', label: 'Referrals', icon: UserPlus, group: 'Book' },
+  { href: '/app/households', label: 'Households', icon: Users, group: 'Book' },
+  { href: '/app/policies', label: 'Policies', icon: FileText, group: 'Book' },
+  { href: '/app/book/import', label: 'District Book', icon: Database, group: 'Book' },
+  { href: '/app/crosssell', label: 'Cross-Sell Import', icon: FileUp, group: 'Book' },
+  { href: '/app/winback/import', label: 'Win-Back Import', icon: FileUp, group: 'Book' },
+  { href: '/app/conversions/import', label: 'Life Conversion Import', icon: FileUp, group: 'Book' },
+  { href: '/app/contacts/review', label: 'Import Review', icon: ClipboardCheck, group: 'Book' },
+
+  { href: '/app/reviews', label: 'Reviews', icon: ClipboardCheck, group: 'Pipeline' },
+  { href: '/app/fna', label: 'FNA Generator', icon: FileSignature, group: 'Pipeline' },
+  { href: '/app/opportunities', label: 'Opportunities', icon: Target, group: 'Pipeline' },
+  { href: '/app/conversions', label: 'Term Conversion', icon: Repeat, group: 'Pipeline' },
+  { href: '/app/opra', label: 'OPRA Transfers', icon: ArrowLeftRight, group: 'Pipeline' },
+  { href: '/app/cross-sell', label: 'Cross-Sell', icon: Shuffle, group: 'Pipeline' },
+  { href: '/app/cases', label: 'Cases', icon: Briefcase, group: 'Pipeline' },
+  { href: '/app/commissions', label: 'Commissions', icon: DollarSign, group: 'Pipeline' },
+
+  { href: '/app/comms', label: 'Comms', icon: MessageSquare, group: 'Engage' },
+  { href: '/app/comms/inbox', label: 'Inbox', icon: MessageSquare, group: 'Engage' },
+  { href: '/app/knowledge', label: 'Knowledge Library', icon: BookOpen, group: 'Engage' },
+  { href: '/app/contacts/upload', label: 'Contact Upload', icon: Upload, group: 'Engage' },
+  { href: '/app/forms', label: 'Client Forms', icon: ClipboardList, group: 'Engage' },
+  { href: '/app/workshops', label: 'Workshops', icon: GraduationCap, group: 'Engage' },
+  { href: '/app/documents', label: 'Documents', icon: FolderOpen, group: 'Engage' },
+  { href: '/app/workflows', label: 'Workflows', icon: Workflow, group: 'Engage' },
+  { href: '/app/tasks', label: 'Tasks', icon: CheckSquare, group: 'Engage' },
+  { href: '/app/calendar', label: 'Calendar', icon: Calendar, group: 'Engage' },
+  { href: '/app/tools/calculator', label: 'Sales Calculator', icon: Calculator, group: 'Engage' },
+
+  { href: '/app/ai', label: 'AI Operations', icon: Bot, group: 'Operate' },
+  { href: '/app/ai/escalations', label: 'AI Escalations', icon: AlertTriangle, group: 'Operate' },
+  { href: '/app/assistant', label: 'AI Assistant', icon: Sparkles, group: 'Operate' },
+  { href: '/app/compliance', label: 'Compliance', icon: ShieldCheck, group: 'Operate' },
+  { href: '/app/compliance/intelligence', label: 'Compliance Intelligence', icon: ScanSearch, group: 'Operate' },
+  { href: '/app/reports', label: 'Reports', icon: BarChart3, group: 'Operate' },
+  { href: '/app/contacts/ffs', label: 'FFS Contacts', icon: PhoneCall, group: 'Operate' },
+  { href: '/app/settings', label: 'Settings', icon: SettingsIcon, group: 'Operate' },
+  { href: '/app/help', label: 'Help & Support', icon: LifeBuoy, group: 'Operate' },
+]
+
+export default async function FsaLayout({ children }: { children: React.ReactNode }) {
+  await requireRole('fsa', '/app')
+  const shellData = await loadShellData()
+  return (
+    <PortalShell
+      portalLabel="FSA"
+      nav={NAV}
+      panels={<ShellCharacterPanels data={shellData} />}
+      searchHref="/app/search"
+      assistantHref="/app/assistant"
+      notificationsHref="/app/notifications"
+      settingsHref="/app/settings"
+    >
+      {children}
+    </PortalShell>
+  )
+}

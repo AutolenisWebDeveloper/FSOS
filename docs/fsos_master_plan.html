@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FSOS Master Plan — Farmers FSA Operating System</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;1,9..144,300&display=swap');
+
+  :root {
+    --bg: #0a0a0f;
+    --bg2: #111118;
+    --bg3: #1a1a24;
+    --border: rgba(255,255,255,0.08);
+    --border2: rgba(255,255,255,0.15);
+    --text: #e8e6f0;
+    --muted: #7a7890;
+    --dim: #4a4860;
+
+    --auto: #22d3a0;
+    --auto-bg: rgba(34,211,160,0.08);
+    --auto-border: rgba(34,211,160,0.25);
+
+    --assist: #f5a623;
+    --assist-bg: rgba(245,166,35,0.08);
+    --assist-border: rgba(245,166,35,0.25);
+
+    --human: #e05c7a;
+    --human-bg: rgba(224,92,122,0.08);
+    --human-border: rgba(224,92,122,0.25);
+
+    --blue: #5b9cf6;
+    --blue-bg: rgba(91,156,246,0.08);
+
+    --purple: #9b72f7;
+    --purple-bg: rgba(155,114,247,0.08);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  /* ── HEADER ── */
+  .header {
+    border-bottom: 1px solid var(--border);
+    padding: 48px 40px 36px;
+    position: relative;
+    overflow: hidden;
+  }
+  .header::before {
+    content: '';
+    position: absolute;
+    top: -60px; right: -60px;
+    width: 400px; height: 400px;
+    background: radial-gradient(circle, rgba(91,156,246,0.06) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .header-tag {
+    font-size: 10px;
+    letter-spacing: .12em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+  .header h1 {
+    font-family: 'Fraunces', serif;
+    font-size: 42px;
+    font-weight: 300;
+    line-height: 1.1;
+    color: #fff;
+    margin-bottom: 8px;
+  }
+  .header h1 em {
+    font-style: italic;
+    color: var(--auto);
+  }
+  .header-sub {
+    color: var(--muted);
+    font-size: 12px;
+    max-width: 600px;
+  }
+
+  /* ── NAV ── */
+  .nav {
+    display: flex;
+    gap: 2px;
+    padding: 0 40px;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+  }
+  .nav-btn {
+    padding: 14px 18px;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: .06em;
+    color: var(--muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+    transition: color .2s, border-color .2s;
+    text-transform: uppercase;
+  }
+  .nav-btn:hover { color: var(--text); }
+  .nav-btn.active { color: #fff; border-bottom-color: var(--auto); }
+
+  /* ── MAIN ── */
+  .main { padding: 0 40px 60px; }
+  .section { display: none; padding-top: 36px; }
+  .section.active { display: block; }
+
+  /* ── SECTION HEADERS ── */
+  .sec-title {
+    font-family: 'Fraunces', serif;
+    font-size: 26px;
+    font-weight: 300;
+    color: #fff;
+    margin-bottom: 6px;
+  }
+  .sec-desc {
+    color: var(--muted);
+    font-size: 12px;
+    margin-bottom: 28px;
+    max-width: 640px;
+  }
+
+  /* ── LEGEND ── */
+  .legend {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+  }
+  .leg {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 11px;
+  }
+  .leg-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* ── TASK GROUPS ── */
+  .group { margin-bottom: 32px; }
+  .group-title {
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .task-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 10px;
+  }
+  .task-card {
+    border-radius: 8px;
+    padding: 14px 16px;
+    border: 1px solid;
+    position: relative;
+    cursor: default;
+    transition: transform .15s, box-shadow .15s;
+  }
+  .task-card:hover { transform: translateY(-1px); }
+  .task-card.auto   { background: var(--auto-bg);   border-color: var(--auto-border);   }
+  .task-card.assist { background: var(--assist-bg); border-color: var(--assist-border); }
+  .task-card.human  { background: var(--human-bg);  border-color: var(--human-border);  }
+
+  .task-badge {
+    font-size: 9px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    font-weight: 500;
+    padding: 2px 7px;
+    border-radius: 4px;
+    margin-bottom: 8px;
+    display: inline-block;
+  }
+  .auto   .task-badge { background: var(--auto-bg);   color: var(--auto);   border: 1px solid var(--auto-border);   }
+  .assist .task-badge { background: var(--assist-bg); color: var(--assist); border: 1px solid var(--assist-border); }
+  .human  .task-badge { background: var(--human-bg);  color: var(--human);  border: 1px solid var(--human-border);  }
+
+  .task-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: #fff;
+    margin-bottom: 4px;
+    line-height: 1.4;
+  }
+  .task-desc { font-size: 11px; color: var(--muted); line-height: 1.5; margin-bottom: 6px; }
+  .task-tool { font-size: 10px; color: var(--dim); }
+
+  /* ── SUMMARY STRIP ── */
+  .summary-strip {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 32px;
+  }
+  .sum-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    text-align: center;
+  }
+  .sum-num {
+    font-family: 'Fraunces', serif;
+    font-size: 48px;
+    font-weight: 300;
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+  .sum-num.green { color: var(--auto); }
+  .sum-num.amber { color: var(--assist); }
+  .sum-num.red   { color: var(--human); }
+  .sum-lbl { font-size: 11px; color: var(--muted); }
+
+  /* ── INFRA LAYER CARDS ── */
+  .layer-stack { display: flex; flex-direction: column; gap: 4px; margin-bottom: 28px; }
+  .layer {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    display: grid;
+    grid-template-columns: 180px 1fr auto;
+    gap: 16px;
+    align-items: center;
+    transition: border-color .2s;
+    cursor: pointer;
+  }
+  .layer:hover { border-color: var(--border2); }
+  .layer.expanded { border-color: var(--border2); border-radius: 10px 10px 0 0; }
+  .layer-label {
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin-bottom: 4px;
+  }
+  .layer-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: #fff;
+  }
+  .layer-tools { font-size: 11px; color: var(--muted); }
+  .layer-status {
+    font-size: 10px;
+    padding: 3px 9px;
+    border-radius: 20px;
+    white-space: nowrap;
+  }
+  .status-free   { background: var(--auto-bg);   color: var(--auto);   border: 1px solid var(--auto-border);   }
+  .status-low    { background: var(--assist-bg); color: var(--assist); border: 1px solid var(--assist-border); }
+  .status-medium { background: var(--blue-bg);   color: var(--blue);   border: 1px solid rgba(91,156,246,.25); }
+  .status-dm     { background: var(--purple-bg); color: var(--purple); border: 1px solid rgba(155,114,247,.25); }
+
+  .layer-detail {
+    display: none;
+    background: var(--bg3);
+    border: 1px solid var(--border2);
+    border-top: none;
+    border-radius: 0 0 10px 10px;
+    padding: 16px 20px;
+    margin-bottom: 4px;
+  }
+  .layer-detail.open { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  .detail-col h4 { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); margin-bottom: 8px; }
+  .detail-item { font-size: 11px; color: var(--muted); padding: 3px 0; border-bottom: 1px solid var(--border); }
+  .detail-item:last-child { border-bottom: none; }
+
+  /* ── PHASE CARDS ── */
+  .phase-grid { display: flex; flex-direction: column; gap: 16px; }
+  .phase-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .phase-head {
+    padding: 20px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .phase-num {
+    font-family: 'Fraunces', serif;
+    font-size: 36px;
+    font-weight: 300;
+    line-height: 1;
+    min-width: 44px;
+  }
+  .p1 .phase-num { color: var(--auto); }
+  .p2 .phase-num { color: var(--assist); }
+  .p3 .phase-num { color: var(--blue); }
+  .p4 .phase-num { color: var(--purple); }
+
+  .phase-meta { flex: 1; }
+  .phase-title { font-size: 16px; font-weight: 500; color: #fff; margin-bottom: 2px; }
+  .phase-timeline { font-size: 11px; color: var(--muted); }
+  .phase-goal {
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .phase-toggle { color: var(--dim); font-size: 18px; transition: transform .2s; }
+  .phase-card.open .phase-toggle { transform: rotate(180deg); }
+
+  .phase-body { display: none; padding: 0 24px 24px; }
+  .phase-card.open .phase-body { display: block; }
+
+  .phase-steps { list-style: none; margin-bottom: 20px; }
+  .phase-steps li {
+    display: flex;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    align-items: flex-start;
+  }
+  .phase-steps li:last-child { border-bottom: none; }
+  .step-n {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px;
+    color: var(--muted);
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .step-content { flex: 1; }
+  .step-content strong { color: #fff; font-weight: 500; display: block; margin-bottom: 2px; }
+  .step-content span { color: var(--muted); }
+
+  .phase-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .pm { background: var(--bg3); border-radius: 8px; padding: 12px; border: 1px solid var(--border); }
+  .pm-val { font-size: 20px; font-weight: 500; color: #fff; margin-bottom: 2px; }
+  .pm-lbl { font-size: 10px; color: var(--dim); }
+
+  .risk-box {
+    background: var(--human-bg);
+    border: 1px solid var(--human-border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 11px;
+  }
+  .risk-box strong { color: var(--human); display: block; margin-bottom: 3px; }
+  .risk-box span { color: var(--muted); }
+
+  /* ── YOUR 3 TASKS ── */
+  .three-tasks {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+  .t3 {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    position: relative;
+    overflow: hidden;
+  }
+  .t3::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+  }
+  .t3.t1::before { background: var(--auto); }
+  .t3.t2::before { background: var(--assist); }
+  .t3.t3c::before { background: var(--human); }
+  .t3-num {
+    font-family: 'Fraunces', serif;
+    font-size: 56px;
+    font-weight: 300;
+    line-height: 1;
+    margin-bottom: 12px;
+    opacity: .15;
+    position: absolute;
+    right: 20px;
+    top: 16px;
+  }
+  .t3.t1 .t3-num { color: var(--auto); opacity: .2; }
+  .t3.t2 .t3-num { color: var(--assist); opacity: .2; }
+  .t3.t3c .t3-num { color: var(--human); opacity: .2; }
+  .t3-label { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+  .t3-title { font-size: 16px; font-weight: 500; color: #fff; margin-bottom: 8px; line-height: 1.3; }
+  .t3-desc { font-size: 12px; color: var(--muted); line-height: 1.6; }
+  .t3-time {
+    margin-top: 14px;
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    display: inline-block;
+  }
+  .t1 .t3-time { background: var(--auto-bg); color: var(--auto); border: 1px solid var(--auto-border); }
+  .t2 .t3-time { background: var(--assist-bg); color: var(--assist); border: 1px solid var(--assist-border); }
+  .t3c .t3-time { background: var(--human-bg); color: var(--human); border: 1px solid var(--human-border); }
+
+  /* ── COMPLIANCE WALL ── */
+  .compliance-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px; }
+  .comp-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+  }
+  .comp-card.warn { border-color: var(--human-border); background: var(--human-bg); }
+  .comp-title { font-size: 12px; font-weight: 500; color: #fff; margin-bottom: 6px; }
+  .comp-title.warn { color: var(--human); }
+  .comp-rule { font-size: 11px; color: var(--muted); padding: 4px 0; border-bottom: 1px solid var(--border); }
+  .comp-rule:last-child { border-bottom: none; }
+  .comp-rule.ok::before  { content: '✓  '; color: var(--auto); }
+  .comp-rule.no::before  { content: '✕  '; color: var(--human); }
+  .comp-rule.req::before { content: '→  '; color: var(--assist); }
+
+  /* ── SCROLLBAR ── */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  @media (max-width: 700px) {
+    .header { padding: 28px 20px 22px; }
+    .header h1 { font-size: 28px; }
+    .nav { padding: 0 20px; }
+    .main { padding: 0 20px 40px; }
+    .three-tasks { grid-template-columns: 1fr; }
+    .summary-strip { grid-template-columns: 1fr; }
+    .phase-metrics { grid-template-columns: 1fr 1fr; }
+    .compliance-grid { grid-template-columns: 1fr; }
+    .layer { grid-template-columns: 1fr auto; }
+    .layer-tools { display: none; }
+    .layer-detail.open { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="header-tag">Farmers FSA · Financial Services Operating System</div>
+  <h1>Your <em>complete</em><br>operating plan</h1>
+  <div class="header-sub">Full infrastructure · All tasks by automation level · Phased build sequence · Compliance boundaries · Your 3 required actions</div>
+</div>
+
+<!-- NAV -->
+<div class="nav">
+  <button class="nav-btn active" onclick="showTab('overview')">Overview</button>
+  <button class="nav-btn" onclick="showTab('tasks')">All tasks</button>
+  <button class="nav-btn" onclick="showTab('infra')">Infrastructure</button>
+  <button class="nav-btn" onclick="showTab('phases')">Build phases</button>
+  <button class="nav-btn" onclick="showTab('compliance')">Compliance</button>
+  <button class="nav-btn" onclick="showTab('yours')">Your 3 tasks</button>
+</div>
+
+<div class="main">
+
+<!-- ══════════════════════════════════════════════════
+     OVERVIEW
+══════════════════════════════════════════════════ -->
+<div id="tab-overview" class="section active">
+  <div class="sec-title">The complete picture</div>
+  <div class="sec-desc">Everything the system does — and the 3 things only you do. Click any tab above to go deeper.</div>
+
+  <div class="summary-strip">
+    <div class="sum-card">
+      <div class="sum-num green">28</div>
+      <div class="sum-lbl">Fully automated tasks<br>run without you</div>
+    </div>
+    <div class="sum-card">
+      <div class="sum-num amber">12</div>
+      <div class="sum-lbl">AI-assisted tasks<br>you review or approve</div>
+    </div>
+    <div class="sum-card">
+      <div class="sum-num red">3</div>
+      <div class="sum-lbl">Tasks only you<br>can do (licensed)</div>
+    </div>
+  </div>
+
+  <!-- HOW IT FLOWS -->
+  <div class="group">
+    <div class="group-title">How it flows — end to end</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;">
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px;text-align:center;">
+        <div style="font-size:10px;color:var(--dim);letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px;">Step 1</div>
+        <div style="font-size:13px;color:#fff;font-weight:500;margin-bottom:4px;">Data ingestion</div>
+        <div style="font-size:11px;color:var(--muted);">APEX CSV + AgencyZoom webhooks → Supabase</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px;text-align:center;">
+        <div style="font-size:10px;color:var(--dim);letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px;">Step 2</div>
+        <div style="font-size:13px;color:#fff;font-weight:500;margin-bottom:4px;">Identity resolution</div>
+        <div style="font-size:11px;color:var(--muted);">Dedup · golden records · agency_id stamp</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px;text-align:center;">
+        <div style="font-size:10px;color:var(--dim);letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px;">Step 3</div>
+        <div style="font-size:13px;color:#fff;font-weight:500;margin-bottom:4px;">Opportunity scoring</div>
+        <div style="font-size:11px;color:var(--muted);">SQL rules: OPRA · conversion · life · retirement</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px;text-align:center;">
+        <div style="font-size:10px;color:var(--dim);letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px;">Step 4</div>
+        <div style="font-size:13px;color:#fff;font-weight:500;margin-bottom:4px;">Compliance gate</div>
+        <div style="font-size:11px;color:var(--muted);">Consent ✓ · DNC scrub ✓ · score threshold ✓</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px;text-align:center;">
+        <div style="font-size:10px;color:var(--dim);letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px;">Step 5</div>
+        <div style="font-size:13px;color:#fff;font-weight:500;margin-bottom:4px;">GHL pipelines</div>
+        <div style="font-size:11px;color:var(--muted);">Qualified leads pushed into 4 pipelines</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px;text-align:center;">
+        <div style="font-size:10px;color:var(--dim);letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px;">Step 6</div>
+        <div style="font-size:13px;color:#fff;font-weight:500;margin-bottom:4px;">AI agent outreach</div>
+        <div style="font-size:11px;color:var(--muted);">Educate · qualify · book the meeting</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--auto-border);border-radius:8px;padding:14px;text-align:center;">
+        <div style="font-size:10px;color:var(--dim);letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px;">Step 7</div>
+        <div style="font-size:13px;color:var(--auto);font-weight:500;margin-bottom:4px;">7AM briefing</div>
+        <div style="font-size:11px;color:var(--muted);">Your daily priority list — emailed automatically</div>
+      </div>
+      <div style="background:var(--human-bg);border:1px solid var(--human-border);border-radius:8px;padding:14px;text-align:center;">
+        <div style="font-size:10px;color:var(--human);letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px;">Step 8 — You</div>
+        <div style="font-size:13px;color:#fff;font-weight:500;margin-bottom:4px;">Licensed FSA meetings</div>
+        <div style="font-size:11px;color:var(--muted);">Advise · recommend · close · submit</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- WHAT THE SYSTEM HANDLES -->
+  <div class="group">
+    <div class="group-title">What runs 24/7 without you</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px;">
+      <div class="task-card auto" style="padding:12px 14px;">
+        <div class="task-name">Nightly data ingestion across all 10–15 agencies</div>
+        <div class="task-tool">n8n + AgencyZoom API + Supabase</div>
+      </div>
+      <div class="task-card auto" style="padding:12px 14px;">
+        <div class="task-name">Deduplication and golden record maintenance</div>
+        <div class="task-tool">Supabase / pg_trgm</div>
+      </div>
+      <div class="task-card auto" style="padding:12px 14px;">
+        <div class="task-name">4-category opportunity scoring on every customer</div>
+        <div class="task-tool">pg_cron SQL scoring engine</div>
+      </div>
+      <div class="task-card auto" style="padding:12px 14px;">
+        <div class="task-name">Compliance gate: consent + DNC + threshold</div>
+        <div class="task-tool">Supabase consent ledger</div>
+      </div>
+      <div class="task-card auto" style="padding:12px 14px;">
+        <div class="task-name">Qualified leads pushed to GHL pipelines</div>
+        <div class="task-tool">n8n → GHL API webhook</div>
+      </div>
+      <div class="task-card auto" style="padding:12px 14px;">
+        <div class="task-name">Outreach sequences with AI disclosure</div>
+        <div class="task-tool">GHL workflow + Conversation AI</div>
+      </div>
+      <div class="task-card auto" style="padding:12px 14px;">
+        <div class="task-name">Inbound call answering + appointment booking</div>
+        <div class="task-tool">GHL Voice AI / Retell</div>
+      </div>
+      <div class="task-card auto" style="padding:12px 14px;">
+        <div class="task-name">No-show re-booking sequences</div>
+        <div class="task-tool">GHL workflow</div>
+      </div>
+      <div class="task-card auto" style="padding:12px 14px;">
+        <div class="task-name">Activity logging to every customer record</div>
+        <div class="task-tool">GHL + n8n sync → Supabase</div>
+      </div>
+      <div class="task-card auto" style="padding:12px 14px;">
+        <div class="task-name">7AM daily executive briefing email</div>
+        <div class="task-tool">n8n + Supabase views + email</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     ALL TASKS
+══════════════════════════════════════════════════ -->
+<div id="tab-tasks" class="section">
+  <div class="sec-title">Every task, every category</div>
+  <div class="sec-desc">All tasks across all revenue categories — filtered by automation level.</div>
+
+  <div class="legend">
+    <div class="leg"><div class="leg-dot" style="background:var(--auto)"></div><span style="color:var(--muted)">Fully automated — runs without you</span></div>
+    <div class="leg"><div class="leg-dot" style="background:var(--assist)"></div><span style="color:var(--muted)">AI-assisted — you review or spot-check</span></div>
+    <div class="leg"><div class="leg-dot" style="background:var(--human)"></div><span style="color:var(--human)">FSA only — licensed action required</span></div>
+  </div>
+
+  <!-- FILTER -->
+  <div style="display:flex;gap:6px;margin-bottom:24px;flex-wrap:wrap;">
+    <button class="nav-btn active" style="font-size:10px;padding:6px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg3);color:#fff;" onclick="filterTasks('all',this)">All</button>
+    <button class="nav-btn" style="font-size:10px;padding:6px 12px;border:1px solid var(--auto-border);border-radius:6px;background:var(--auto-bg);color:var(--auto);" onclick="filterTasks('auto',this)">Automated only</button>
+    <button class="nav-btn" style="font-size:10px;padding:6px 12px;border:1px solid var(--assist-border);border-radius:6px;background:var(--assist-bg);color:var(--assist);" onclick="filterTasks('assist',this)">AI-assisted only</button>
+    <button class="nav-btn" style="font-size:10px;padding:6px 12px;border:1px solid var(--human-border);border-radius:6px;background:var(--human-bg);color:var(--human);" onclick="filterTasks('human',this)">FSA only</button>
+  </div>
+
+  <div id="all-tasks"></div>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     INFRASTRUCTURE
+══════════════════════════════════════════════════ -->
+<div id="tab-infra" class="section">
+  <div class="sec-title">System infrastructure</div>
+  <div class="sec-desc">Every tool in the stack, what it does, what it costs, and who controls it. Click a layer to expand.</div>
+
+  <div class="layer-stack" id="layer-stack"></div>
+
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:20px;margin-top:8px;">
+    <div style="font-size:12px;font-weight:500;color:#fff;margin-bottom:8px;">Data flow summary</div>
+    <div style="font-size:11px;color:var(--muted);line-height:1.8;">
+      APEX CSV (manual weekly upload) → Google Drive watched folder → n8n ingestion → Supabase staging → dedup / identity resolution → golden records → pg_cron scoring → compliance gate (consent_ledger + dnc_flag) → n8n pushes qualified contacts to GHL via API → GHL pipelines + workflows fire outreach → AI agents handle inbound/outbound → activity logged back to Supabase → n8n generates 7AM briefing → FSA reads briefing → FSA runs licensed meetings.
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     BUILD PHASES
+══════════════════════════════════════════════════ -->
+<div id="tab-phases" class="section">
+  <div class="sec-title">Phased build plan</div>
+  <div class="sec-desc">What gets built in what order. Each phase builds on the last. Revenue begins in Phase 1.</div>
+  <div class="phase-grid" id="phase-grid"></div>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     COMPLIANCE
+══════════════════════════════════════════════════ -->
+<div id="tab-compliance" class="section">
+  <div class="sec-title">Compliance boundaries</div>
+  <div class="sec-desc">What AI and automation can do vs. what is legally reserved for you. Non-negotiable.</div>
+
+  <div class="compliance-grid">
+    <div class="comp-card">
+      <div class="comp-title">What AI agents CAN do</div>
+      <div class="comp-rule ok">Answer inbound calls and route them</div>
+      <div class="comp-rule ok">Book appointments on your calendar</div>
+      <div class="comp-rule ok">Send educational content about products</div>
+      <div class="comp-rule ok">Qualify interest and gather basic info</div>
+      <div class="comp-rule ok">Send timed follow-up reminders</div>
+      <div class="comp-rule ok">Reactivate dormant contacts</div>
+      <div class="comp-rule ok">Answer FAQs from the knowledge base</div>
+      <div class="comp-rule ok">Capture and log consent / opt-outs</div>
+      <div class="comp-rule ok">Disclose AI identity at every interaction</div>
+      <div class="comp-rule ok">Score and prioritize the book of business</div>
+    </div>
+    <div class="comp-card warn">
+      <div class="comp-title warn">What AI agents CANNOT do</div>
+      <div class="comp-rule no">Make any product recommendation</div>
+      <div class="comp-rule no">Conduct suitability determinations</div>
+      <div class="comp-rule no">Discuss surrender charges or tax treatment</div>
+      <div class="comp-rule no">Recommend an annuity or IRA rollover</div>
+      <div class="comp-rule no">Compare or select between products</div>
+      <div class="comp-rule no">Submit or process any application</div>
+      <div class="comp-rule no">Provide personalized financial advice</div>
+      <div class="comp-rule no">Close a life or financial services sale</div>
+      <div class="comp-rule no">Operate without an AI disclosure</div>
+      <div class="comp-rule no">Contact opted-out / DNC contacts</div>
+    </div>
+    <div class="comp-card">
+      <div class="comp-title">Required before first outreach</div>
+      <div class="comp-rule req">Consent ledger live in Supabase</div>
+      <div class="comp-rule req">AI disclosure in every message template</div>
+      <div class="comp-rule req">DNC scrub logic in n8n before all campaigns</div>
+      <div class="comp-rule req">GHL STOP/opt-out handling confirmed active</div>
+      <div class="comp-rule req">A2P 10DLC SMS campaign registered in GHL</div>
+      <div class="comp-rule req">DM confirmation of AI Employee enablement</div>
+    </div>
+    <div class="comp-card">
+      <div class="comp-title">Regulatory framework</div>
+      <div class="comp-rule req">TCPA + FCC 24-17: AI voice = artificial voice, written consent required for marketing calls</div>
+      <div class="comp-rule req">Texas SB 140 (eff. 9/1/25): texts and automated messages covered, DTPA private right of action</div>
+      <div class="comp-rule req">TRAIGA (eff. 1/1/26): AI disclosure required, NIST AI RMF safe harbor, $10k–$200k penalties</div>
+      <div class="comp-rule req">FINRA Rule 2330 + Reg BI: any annuity/securities recommendation triggers suitability + best-interest obligations</div>
+      <div class="comp-rule req">Texas Ins. Code Ch. 1115: annuity best-interest + 4-credit training required</div>
+      <div class="comp-rule req">Farmers agent terms: APEX data = Farmers trade secret, no third-party scraping</div>
+    </div>
+  </div>
+
+  <div style="background:var(--human-bg);border:1px solid var(--human-border);border-radius:10px;padding:18px;margin-top:4px;">
+    <div style="font-size:12px;font-weight:500;color:var(--human);margin-bottom:6px;">The hard wall</div>
+    <div style="font-size:12px;color:var(--muted);line-height:1.7;">Every workflow, every AI agent script, and every GHL sequence must be designed so that the moment a conversation moves from education or scheduling into recommendation, advice, suitability, or product selection — it immediately hands off to you. There is no exception. Farmers Financial Solutions is a FINRA-registered broker-dealer. You are the licensed professional. The AI's job is to get the right person in front of you at the right time. Your job is everything that happens in that meeting.</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     YOUR 3 TASKS
+══════════════════════════════════════════════════ -->
+<div id="tab-yours" class="section">
+  <div class="sec-title">Your 3 required tasks</div>
+  <div class="sec-desc">This is your entire operational role once the system is built. Everything else is automated.</div>
+
+  <div class="three-tasks">
+    <div class="t3 t1">
+      <div class="t3-num">1</div>
+      <div class="t3-label">Weekly · delegatable to VA</div>
+      <div class="t3-title">APEX book-of-business pull</div>
+      <div class="t3-desc">Log into APEX, open your saved BOB report view, export CSV, drop in Google Drive folder. One agency takes under 5 minutes. Or hire a VA at $8–12/hr to do it under their own authorized login. Everything downstream fires automatically the moment the file lands.</div>
+      <div class="t3-time">45–75 min/week total · or $0 with VA</div>
+    </div>
+    <div class="t3 t2">
+      <div class="t3-num">2</div>
+      <div class="t3-label">Daily · 10 minutes</div>
+      <div class="t3-title">Read your 7AM briefing</div>
+      <div class="t3-desc">Every morning the system emails you a ranked priority list: new high-score opportunities, conversion deadlines, appointments booked, pipeline movements, opt-outs. You never log into APEX, AgencyZoom, or GHL to figure out what to do. The briefing tells you. Your job is to execute the top 5–10 actions.</div>
+      <div class="t3-time">10 min/day · no login required</div>
+    </div>
+    <div class="t3 t3c">
+      <div class="t3-num">3</div>
+      <div class="t3-label">Daily · your core value</div>
+      <div class="t3-title">Run licensed FSA meetings</div>
+      <div class="t3-desc">Every OPRA review, term conversion, life needs analysis, and retirement discovery meeting was identified, outreached, prequalified, and booked by the system. You show up. You advise. You determine suitability. You make the recommendation. You submit the application. This is the work only a licensed FSA can do — and it's 100% of your time.</div>
+      <div class="t3-time">High-value · non-delegatable</div>
+    </div>
+  </div>
+
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:24px;">
+    <div style="font-family:'Fraunces',serif;font-size:20px;font-weight:300;color:#fff;margin-bottom:12px;">The bottom line</div>
+    <div style="font-size:13px;color:var(--muted);line-height:1.8;max-width:640px;">
+      The system handles all the prospecting, all the data work, all the outreach, all the follow-up, all the appointment booking, all the compliance logging, and your morning briefing — across all 10–15 agencies, every single day. What's left for you is the only thing that requires your license: the advice conversation. The system finds who to talk to and why. You show up and close.
+    </div>
+    <div style="margin-top:20px;display:flex;gap:12px;flex-wrap:wrap;">
+      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:14px 18px;">
+        <div style="font-size:22px;font-weight:500;color:var(--auto);margin-bottom:2px;">~0</div>
+        <div style="font-size:11px;color:var(--muted)">Hours/week on admin</div>
+      </div>
+      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:14px 18px;">
+        <div style="font-size:22px;font-weight:500;color:var(--auto);margin-bottom:2px;">100%</div>
+        <div style="font-size:11px;color:var(--muted)">Time on licensed work</div>
+      </div>
+      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:14px 18px;">
+        <div style="font-size:22px;font-weight:500;color:var(--auto);margin-bottom:2px;">$0–25</div>
+        <div style="font-size:11px;color:var(--muted)">Monthly Phase 1 cost</div>
+      </div>
+      <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:14px 18px;">
+        <div style="font-size:22px;font-weight:500;color:var(--auto);margin-bottom:2px;">30–60</div>
+        <div style="font-size:11px;color:var(--muted)">Days to first revenue</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /main -->
+
+<script>
+// ── TAB NAV ──
+function showTab(id) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-'+id).classList.add('active');
+  event.target.classList.add('active');
+}
+
+// ── TASK DATA ──
+const tasks = [
+  { cat:'Data & reporting', level:'auto', name:'Pull AgencyZoom data nightly', desc:'n8n webhook per agency → writes to Supabase automatically', tool:'n8n + AgencyZoom API' },
+  { cat:'Data & reporting', level:'auto', name:'Ingest APEX CSV on upload', desc:'File lands in Google Drive folder → n8n processes immediately', tool:'n8n + Google Drive + Supabase' },
+  { cat:'Data & reporting', level:'auto', name:'Dedup and build golden records', desc:'pg_trgm + upsert logic runs on every import', tool:'Supabase / Postgres' },
+  { cat:'Data & reporting', level:'auto', name:'Run all 4 scoring jobs nightly', desc:'OPRA, conversion, life, retirement SQL computed at 2AM', tool:'pg_cron + Supabase' },
+  { cat:'Data & reporting', level:'auto', name:'Generate 7AM executive briefing', desc:'n8n queries views → formats → emails you the prioritized list', tool:'n8n + email' },
+  { cat:'Data & reporting', level:'assist', name:'Upload APEX CSV to watched folder', desc:'You pull the BOB from APEX and drop in Google Drive — once/week per agency', tool:'Manual trigger (or VA)' },
+  { cat:'Data & reporting', level:'assist', name:'Validate data anomalies', desc:'System flags mismatches; you confirm or override merge decisions', tool:'Supabase review queue' },
+
+  { cat:'OPRA transfers', level:'auto', name:'Identify OPRA-eligible customers', desc:'SQL flags mono-line, tenure, and premium daily', tool:'Supabase scoring engine' },
+  { cat:'OPRA transfers', level:'auto', name:'Push qualified leads to GHL pipeline', desc:'Webhook fires on score threshold; contact created in OPRA pipeline', tool:'n8n + GHL API' },
+  { cat:'OPRA transfers', level:'auto', name:'Send initial consented outreach SMS/email', desc:'GHL workflow fires on pipeline stage entry', tool:'GHL workflow + Conversation AI' },
+  { cat:'OPRA transfers', level:'auto', name:'Send follow-up reminders (2–3 touches)', desc:'Timed workflow steps handle cadence automatically', tool:'GHL workflow' },
+  { cat:'OPRA transfers', level:'assist', name:'AI handles inbound OPRA questions', desc:'Conversation AI answers FAQs and books appointment; you review transcripts', tool:'GHL Conversation AI' },
+  { cat:'OPRA transfers', level:'human', name:'OPRA review call and transfer decision', desc:'Only you can review the full picture and initiate the transfer', tool:'Your calendar · licensed action' },
+
+  { cat:'Term conversions', level:'auto', name:'Identify policies in conversion window', desc:'SQL flags term policies by issue date and conversion deadline', tool:'Supabase scoring engine' },
+  { cat:'Term conversions', level:'auto', name:'Sort by deadline urgency 30/60/90 days', desc:'Score weighted by days remaining — most urgent surfaces first', tool:'Supabase SQL' },
+  { cat:'Term conversions', level:'auto', name:'Send deadline-aware outreach sequence', desc:'Personalized message includes the deadline date; AI handles follow-up', tool:'GHL workflow + merge fields' },
+  { cat:'Term conversions', level:'auto', name:'Book conversion review appointment', desc:'AI sets the appointment directly on your GHL calendar', tool:'GHL Voice / Conversation AI' },
+  { cat:'Term conversions', level:'human', name:'Conversion illustration and presentation', desc:'You review the illustration, explain options, and make the recommendation', tool:'Your meeting · licensed action' },
+  { cat:'Term conversions', level:'human', name:'Submit conversion application', desc:'Only a licensed agent can submit the conversion with Farmers', tool:'APEX / Farmers platform' },
+
+  { cat:'Life insurance cross-sell', level:'auto', name:'Identify auto+home households with no life', desc:'SQL joins policy records — flags households missing life coverage', tool:'Supabase scoring engine' },
+  { cat:'Life insurance cross-sell', level:'auto', name:'Run life cross-sell nurture sequence', desc:'Multi-touch educational SMS/email campaign runs on autopilot', tool:'GHL workflow + Conversation AI' },
+  { cat:'Life insurance cross-sell', level:'auto', name:'Book needs analysis appointment', desc:'AI qualifies interest and books the call directly', tool:'GHL Conversation AI' },
+  { cat:'Life insurance cross-sell', level:'assist', name:'AI gathers basic needs-analysis inputs', desc:'Conversation AI collects household size, income range, and coverage goals before your call', tool:'GHL Conversation AI' },
+  { cat:'Life insurance cross-sell', level:'human', name:'Needs analysis and product recommendation', desc:'Suitability determination and product recommendation require your license', tool:'Your meeting · licensed action' },
+  { cat:'Life insurance cross-sell', level:'human', name:'Life application submission', desc:'You complete and submit the life application', tool:'Farmers platform' },
+
+  { cat:'Retirement / annuity discovery', level:'auto', name:'Identify age-50+ with no FS product', desc:'SQL flags the retirement-eligible segment nightly', tool:'Supabase scoring engine' },
+  { cat:'Retirement / annuity discovery', level:'auto', name:'Send retirement discovery invitation', desc:'Educational outreach — no product mention, invites to a conversation', tool:'GHL workflow' },
+  { cat:'Retirement / annuity discovery', level:'assist', name:'AI conducts initial discovery conversation', desc:'Gathers retirement timeline, current accounts, and goals — books the meeting', tool:'GHL Conversation AI' },
+  { cat:'Retirement / annuity discovery', level:'human', name:'Suitability fact-find and recommendation', desc:'FINRA Rule 2330 + Reg BI — only you can make an annuity/investment recommendation', tool:'Your meeting · licensed action' },
+  { cat:'Retirement / annuity discovery', level:'human', name:'Application and compliance documentation', desc:'Annuity paperwork, suitability forms, and principal review are FSA-only', tool:'Farmers / FFS platform' },
+
+  { cat:'Inbound and reactivation', level:'auto', name:'Answer inbound calls 24/7', desc:'Voice AI receptionist routes calls, answers FAQs, and books appointments', tool:'GHL Voice AI / Retell' },
+  { cat:'Inbound and reactivation', level:'auto', name:'Instant speed-to-lead response', desc:'New lead gets an AI reply within 60 seconds from any source', tool:'GHL workflow + Conversation AI' },
+  { cat:'Inbound and reactivation', level:'auto', name:'Reactivation campaign for dormant customers', desc:'AI identifies stale records and launches re-engagement sequence', tool:'GHL workflow + scoring' },
+  { cat:'Inbound and reactivation', level:'auto', name:'Log all activity to customer record', desc:'Every call, text, email, and appointment auto-logged in GHL and Supabase', tool:'GHL + n8n sync' },
+  { cat:'Inbound and reactivation', level:'auto', name:'No-show re-booking sequence', desc:'Missed appointment triggers automatic reschedule workflow', tool:'GHL workflow' },
+
+  { cat:'Compliance and oversight', level:'auto', name:'Capture and timestamp all opt-in consent', desc:'Every form submission writes to consent ledger automatically', tool:'GHL forms + Supabase' },
+  { cat:'Compliance and oversight', level:'auto', name:'Honor STOP / opt-out instantly', desc:'GHL recognizes STOP keywords and sets DNC flag automatically', tool:'GHL native' },
+  { cat:'Compliance and oversight', level:'auto', name:'Scrub contacts against DNC before campaigns', desc:'n8n checks dnc_flag in Supabase before any outreach workflow fires', tool:'n8n + Supabase' },
+  { cat:'Compliance and oversight', level:'auto', name:'Add AI disclosure to every outreach', desc:'Disclosure language baked into every message template — cannot be skipped', tool:'GHL workflow templates' },
+  { cat:'Compliance and oversight', level:'assist', name:'Review AI conversation transcripts weekly', desc:'You spot-check transcripts to catch drift or compliance issues', tool:'GHL conversation log' },
+  { cat:'Compliance and oversight', level:'assist', name:'Maintain AIS Program document', desc:'TRAIGA safe-harbor requires a living AI governance doc — you own and update it', tool:'Internal policy doc' },
+];
+
+function renderTasks(filter) {
+  const container = document.getElementById('all-tasks');
+  container.innerHTML = '';
+  const cats = [...new Set(tasks.map(t=>t.cat))];
+  cats.forEach(cat => {
+    const catTasks = tasks.filter(t => t.cat===cat && (filter==='all' || t.level===filter));
+    if(!catTasks.length) return;
+    const g = document.createElement('div'); g.className='group';
+    g.innerHTML = `<div class="group-title">${cat}</div><div class="task-grid"></div>`;
+    const grid = g.querySelector('.task-grid');
+    catTasks.forEach(t => {
+      const badge = t.level==='auto' ? 'Automated' : t.level==='assist' ? 'AI + you' : 'FSA only';
+      grid.innerHTML += `<div class="task-card ${t.level}">
+        <span class="task-badge">${badge}</span>
+        <div class="task-name">${t.name}</div>
+        <div class="task-desc">${t.desc}</div>
+        <div class="task-tool">${t.tool}</div>
+      </div>`;
+    });
+    container.appendChild(g);
+  });
+}
+renderTasks('all');
+
+function filterTasks(f, btn) {
+  document.querySelectorAll('#tab-tasks button').forEach(b=>b.style.fontWeight='');
+  btn.style.fontWeight='500';
+  renderTasks(f);
+}
+
+// ── INFRA DATA ──
+const layers = [
+  {
+    num:'L1', name:'Data sources', tools:'APEX · AgencyZoom · Manual uploads', status:'Manual weekly', statusClass:'status-low',
+    what:['APEX BOB export (CSV, manual)', 'AgencyZoom webhook + CSV export', 'Referrals and corrections (manual)'],
+    how:['Agent or VA logs into APEX weekly', 'n8n catches AgencyZoom webhooks per agency', 'Google Drive watched folder triggers ingestion'],
+    why:['APEX has no API — manual export only', 'AgencyZoom exposes webhook + REST API', 'Single watched folder = single trigger point']
+  },
+  {
+    num:'L2', name:'n8n automation layer', tools:'Self-hosted n8n · Google Drive · Make', status:'$5–20/mo VPS', statusClass:'status-low',
+    what:['Per-agency ingestion workflows (10–15)', 'CSV processing and field normalization', 'Supabase API writes', 'GHL push on score threshold'],
+    how:['One n8n workflow per agency owner', 'Google Drive file trigger on CSV upload', 'Scheduled daily runs at 2AM'],
+    why:['Unlimited executions vs Make 1k ops/mo limit', 'Self-hosted = no per-task pricing', 'Per-agency isolation with agency_id stamping']
+  },
+  {
+    num:'L3', name:'Supabase master database', tools:'Supabase / Postgres · pg_trgm · pg_cron', status:'Free tier', statusClass:'status-free',
+    what:['customers — golden record + dedup', 'policies — type, dates, premium, face amount', 'scores — OPRA, conversion, life, retirement', 'consent_ledger — opt-in, DNC, timestamps', 'activity — every touch logged'],
+    how:['Deterministic dedup: email + phone normalize', 'Fuzzy match: pg_trgm on name + zip + DOB', 'Upsert on conflict: golden record maintained', 'pg_cron runs scoring SQL at 2AM nightly'],
+    why:['500MB free = 2–5M rows — well within scale', 'Full Postgres = SQL scoring engine at $0', 'REST API auto-generated — no extra build']
+  },
+  {
+    num:'L4', name:'Scoring engine', tools:'Supabase SQL · pg_cron · optional LLM re-rank', status:'$0 rules-based', statusClass:'status-free',
+    what:['OPRA score: mono-line + tenure + premium', 'Conversion score: term policy + days-to-deadline', 'Life score: auto+home, no life policy', 'Retirement score: age 50+, no FS product', 'top_action field written per customer'],
+    how:['Pure SQL functions — no AI cost', 'Nightly pg_cron job at 2AM', 'Optional: LLM re-ranks top 100 candidates only'],
+    why:['Explainable = compliance asset', 'LLM batch cost = pennies on top candidates only', 'Rules-based first — proves revenue before ML']
+  },
+  {
+    num:'L5', name:'GoHighLevel engagement layer', tools:'GHL sub-account · Workflows · Calendars · Custom objects', status:'DM account', statusClass:'status-dm',
+    what:['OPRA Transfers pipeline (6 stages)', 'Term Conversions pipeline (6 stages)', 'Life Cross-sell pipeline (6 stages)', 'Retirement Discovery pipeline (5 stages)', 'Custom fields: scores, dates, flags per contact'],
+    how:['n8n pushes qualified contacts via GHL API', 'Score custom field change triggers workflow', 'Workflow fires outreach sequence automatically', 'Calendar books directly to FSA schedule'],
+    why:['Sub-account = isolated data per FSA', 'DM enables AI Employee for Voice/Conversation AI', 'Snapshot = copy pipelines to new agency owners']
+  },
+  {
+    num:'L6', name:'AI agent workforce', tools:'GHL Conversation AI · GHL Voice AI · Retell/Bland fallback', status:'$97/mo when live', statusClass:'status-medium',
+    what:['Receptionist: inbound call routing + booking', 'OPRA nurture: educate + schedule', 'Conversion reminder: deadline + books FSA', 'Life nurture: educational + invite', 'Retirement discovery: discovery + books FSA', 'Reactivation: dormant customer re-engage'],
+    how:['All agents open with AI disclosure', 'Knowledge base = Farmers-approved product FAQs', 'Hard handoff to FSA on any product question', 'Transcripts logged to GHL + Supabase'],
+    why:['Inbound first — lower TCPA risk', 'Existing customers = established business relationship', 'Hard advice boundary = FINRA/Reg BI protection']
+  },
+  {
+    num:'L7', name:'7AM executive briefing', tools:'n8n · Supabase views · Email', status:'$0', statusClass:'status-free',
+    what:['New high-score opportunities overnight', 'Conversion deadlines (30/60/90 days)', 'Appointments booked + no-shows', 'Pipeline stage movements + stalls', 'Opt-outs flagged (compliance)', 'Top-10 priority action list for the day'],
+    how:['n8n scheduled at 7AM daily', 'Queries 6 pre-built Supabase views', 'Formats and sends via SMTP / SendGrid', 'Optional: LLM writes natural language narrative'],
+    why:['FSA never logs into any system to know what to do', 'Cross-agency rollup in one email', 'Opt-out count = daily compliance health check']
+  }
+];
+
+const layerStack = document.getElementById('layer-stack');
+layers.forEach((l,i) => {
+  const div = document.createElement('div');
+  div.innerHTML = `
+    <div class="layer" onclick="toggleLayer(${i})">
+      <div>
+        <div class="layer-label">Layer ${l.num.replace('L','')}</div>
+        <div class="layer-name">${l.name}</div>
+      </div>
+      <div class="layer-tools">${l.tools}</div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span class="layer-status ${l.statusClass}">${l.status}</span>
+        <span style="color:var(--dim);font-size:16px;" id="toggle-${i}">▾</span>
+      </div>
+    </div>
+    <div class="layer-detail" id="detail-${i}">
+      <div class="detail-col">
+        <h4>What it does</h4>
+        ${l.what.map(w=>`<div class="detail-item">${w}</div>`).join('')}
+      </div>
+      <div class="detail-col">
+        <h4>How it works</h4>
+        ${l.how.map(h=>`<div class="detail-item">${h}</div>`).join('')}
+      </div>
+      <div class="detail-col">
+        <h4>Why this choice</h4>
+        ${l.why.map(y=>`<div class="detail-item">${y}</div>`).join('')}
+      </div>
+    </div>`;
+  layerStack.appendChild(div);
+});
+
+function toggleLayer(i) {
+  const detail = document.getElementById('detail-'+i);
+  const toggle = document.getElementById('toggle-'+i);
+  const isOpen = detail.classList.contains('open');
+  detail.classList.toggle('open', !isOpen);
+  toggle.style.transform = isOpen ? '' : 'rotate(180deg)';
+}
+
+// ── PHASE DATA ──
+const phases = [
+  {
+    cls:'p1', num:'01', title:'MVP spine — first revenue',
+    timeline:'Weeks 1–6', goal:'OPRA + conversion appointments booked',
+    steps:[
+      {n:'1', title:'Get sub-account Admin access', desc:'Confirm DM grants Admin role + AI Employee plan status'},
+      {n:'2', title:'Stand up Supabase', desc:'Create project, build schema (customers, policies, scores, consent_ledger, activity), set up keep-alive ping and weekly backup'},
+      {n:'3', title:'First APEX BOB pull', desc:'One agency only. Pull the saved BOB report CSV, drop in Google Drive watched folder'},
+      {n:'4', title:'Build n8n ingestion workflow', desc:'Google Drive trigger → read CSV → normalize fields → stamp agency_id → upsert to Supabase'},
+      {n:'5', title:'Build conversion + OPRA scoring SQL', desc:'Two pg_cron SQL functions. Write scores to scores table nightly'},
+      {n:'6', title:'Build GHL Conversions and OPRA pipelines', desc:'Custom fields for conversion_deadline, opra_score, policy_type. Two pipelines, 6 stages each'},
+      {n:'7', title:'Build n8n → GHL push workflow', desc:'Query Supabase for score > threshold → push to GHL contact → trigger pipeline stage entry'},
+      {n:'8', title:'Build first outreach sequence', desc:'One consented SMS + email per pipeline with AI disclosure + calendar booking link'},
+      {n:'9', title:'Build 7AM briefing', desc:'n8n scheduled at 7AM → query Supabase views → format → send email'},
+    ],
+    metrics:[{v:'1', l:'Agency piloting'},{v:'2', l:'Pipelines live'},{v:'$0–25', l:'Monthly cost'}],
+    risk:'Biggest risk: DM does not grant Admin or AI Employee is not enabled. Mitigate: have this conversation in Week 1 before building anything in GHL.'
+  },
+  {
+    cls:'p2', num:'02', title:'Life cross-sell + retirement layer',
+    timeline:'Weeks 6–12', goal:'All 4 scoring categories live across 3–5 agencies',
+    steps:[
+      {n:'1', title:'Add life cross-sell scoring SQL', desc:'Flag auto+home households with no life policy — daily pg_cron rule'},
+      {n:'2', title:'Add retirement scoring SQL', desc:'Flag customers age 50+ with no FS product'},
+      {n:'3', title:'Build Life and Retirement pipelines in GHL', desc:'Two more pipelines with FSA-only advice handoff stages'},
+      {n:'4', title:'Build life nurture and retirement discovery sequences', desc:'Educational content only — no product mention in retirement outreach'},
+      {n:'5', title:'Roll ingestion to 3–5 agencies', desc:'One n8n workflow per new agency owner + confirm AgencyZoom webhook access'},
+      {n:'6', title:'Optional: add LLM re-rank', desc:'Pass top-50 scored customers to Claude/GPT-4o-mini for narrative summary. Pennies per run.'},
+    ],
+    metrics:[{v:'4', l:'Scoring categories'},{v:'3–5', l:'Agencies live'},{v:'4', l:'GHL pipelines'}],
+    risk:'Biggest risk: suitability / advice overreach in retirement sequences. Mitigate: hard-code AI handoff trigger — any mention of specific product = immediate route to FSA calendar.'
+  },
+  {
+    cls:'p3', num:'03', title:'AI agent workforce + reactivation',
+    timeline:'Weeks 12–20', goal:'AI handling all inbound, nurture, and reactivation',
+    steps:[
+      {n:'1', title:'DM enables AI Employee on sub-account', desc:'Required before Voice AI or Conversation AI can be configured'},
+      {n:'2', title:'Stand up Conversation AI with knowledge base', desc:'Load Farmers product FAQs, OPRA/conversion explanations, appointment rules, AI disclosure language'},
+      {n:'3', title:'Configure inbound Voice AI receptionist', desc:'Routes calls, books appointments, answers FAQs — or Retell/Bland if GHL Voice AI unavailable'},
+      {n:'4', title:'Deploy 6 agent personas with compliance scripts', desc:'Each persona opens with AI disclosure, hard handoff on any product question'},
+      {n:'5', title:'Build reactivation campaign for dormant contacts', desc:'n8n identifies contacts with no activity > 90 days → launches consented re-engagement sequence'},
+      {n:'6', title:'A2P 10DLC campaign registration', desc:'Required for compliant SMS at scale — register use case in GHL before outbound volume increases'},
+    ],
+    metrics:[{v:'6', l:'AI agent roles'},{v:'24/7', l:'Inbound coverage'},{v:'$97/mo', l:'AI Employee cost'}],
+    risk:'Biggest risk: AI cost creep + TCPA/SB 140 exposure on outbound. Mitigate: AI Employee Unlimited caps message cost, monitor usage weekly, counsel-reviewed consent and disclosure before outbound volume scales.'
+  },
+  {
+    cls:'p4', num:'04', title:'Scale to all 10–15 agencies',
+    timeline:'Weeks 20+', goal:'Full system live across every agency owner',
+    steps:[
+      {n:'1', title:'Standardize per-agency ingestion onboarding', desc:'One runbook: new agency owner → add VA as APEX team member → confirm AZ webhook → create n8n workflow → test BOB pull'},
+      {n:'2', title:'GHL snapshot for new agency owners', desc:'Copy pipeline + workflow configuration via GHL snapshot to each new sub-account or agency owner segment'},
+      {n:'3', title:'Cross-agency rollup in 7AM briefing', desc:'Supabase views aggregate across all agency_ids → single briefing covers all 10–15 agencies'},
+      {n:'4', title:'Upgrade Supabase to Pro if nearing limits', desc:'$25/mo adds daily backups, no-pause, 8GB DB — upgrade trigger is approaching 500MB or backup requirement'},
+      {n:'5', title:'Per-agency consent segregation audit', desc:'Each agency_id has its own consent records — confirm no cross-agency contact bleed in compliance review'},
+      {n:'6', title:'Consider hiring a VA for APEX pulls', desc:'At 10–15 agencies × 5 min each = 75 min/week. A trained VA at $8–12/hr eliminates this entirely'},
+    ],
+    metrics:[{v:'10–15', l:'Agencies live'},{v:'1', l:'Daily briefing covers all'},{v:'$100–250', l:'Monthly total cost'}],
+    risk:'Biggest risk: portability — if your DM relationship ends, you lose GHL access. Mitigate: Supabase is YOUR database. Export GHL contacts weekly via scheduled n8n API pull. Your system of record is never only inside GHL.'
+  }
+];
+
+const phaseGrid = document.getElementById('phase-grid');
+phases.forEach((p,i) => {
+  const div = document.createElement('div');
+  div.className = `phase-card ${p.cls}`;
+  div.innerHTML = `
+    <div class="phase-head" onclick="togglePhase(${i})">
+      <div class="phase-num">${p.num}</div>
+      <div class="phase-meta">
+        <div class="phase-title">${p.title}</div>
+        <div class="phase-timeline">${p.timeline}</div>
+      </div>
+      <div class="phase-goal">${p.goal}</div>
+      <div class="phase-toggle">▾</div>
+    </div>
+    <div class="phase-body">
+      <div class="phase-metrics">
+        ${p.metrics.map(m=>`<div class="pm"><div class="pm-val">${m.v}</div><div class="pm-lbl">${m.l}</div></div>`).join('')}
+      </div>
+      <ul class="phase-steps">
+        ${p.steps.map(s=>`<li><span class="step-n">${s.n}</span><div class="step-content"><strong>${s.title}</strong><span>${s.desc}</span></div></li>`).join('')}
+      </ul>
+      <div class="risk-box"><strong>Risk to watch</strong><span>${p.risk}</span></div>
+    </div>`;
+  phaseGrid.appendChild(div);
+  if(i===0) div.classList.add('open');
+});
+
+function togglePhase(i) {
+  const cards = document.querySelectorAll('.phase-card');
+  cards[i].classList.toggle('open');
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>APEX → GHL Data Flow</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600&display=swap');
+  :root {
+    --bg:#0a0a0f; --bg2:#111118; --bg3:#1a1a24;
+    --border:rgba(255,255,255,0.07); --border2:rgba(255,255,255,0.14);
+    --text:#e8e6f0; --muted:#7a7890; --dim:#4a4860;
+    --you:#e05c7a; --you-bg:rgba(224,92,122,0.08); --you-border:rgba(224,92,122,0.25);
+    --cowork:#f5a623; --cowork-bg:rgba(245,166,35,0.08); --cowork-border:rgba(245,166,35,0.25);
+    --auto:#22d3a0; --auto-bg:rgba(34,211,160,0.08); --auto-border:rgba(34,211,160,0.25);
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:'DM Mono',monospace;font-size:13px;padding:32px 28px 60px;}
+
+  .header{margin-bottom:28px;}
+  .header h1{font-family:'Fraunces',serif;font-size:28px;font-weight:300;color:#fff;margin-bottom:6px;}
+  .header p{font-size:12px;color:var(--muted);}
+
+  .legend{display:flex;gap:16px;margin-bottom:24px;flex-wrap:wrap;}
+  .leg{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--muted);}
+  .leg-bar{width:14px;height:3px;border-radius:2px;}
+
+  .flow{display:flex;flex-direction:column;gap:3px;}
+
+  .step{border-radius:10px;border:0.5px solid var(--border);background:var(--bg2);overflow:hidden;cursor:pointer;transition:border-color .15s;}
+  .step:hover{border-color:var(--border2);}
+  .step.you   {border-left:3px solid var(--you);}
+  .step.cowork{border-left:3px solid var(--cowork);}
+  .step.auto  {border-left:3px solid var(--auto);}
+
+  .step-head{display:grid;grid-template-columns:38px 1fr auto;gap:12px;align-items:center;padding:14px 16px;}
+  .step-num{width:30px;height:30px;border-radius:50%;background:var(--bg3);border:0.5px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;color:#fff;flex-shrink:0;}
+  .step-info{}
+  .step-title{font-size:13px;font-weight:500;color:#fff;margin-bottom:3px;}
+  .step-desc{font-size:11px;color:var(--muted);line-height:1.5;}
+  .badge{font-size:10px;font-weight:500;padding:3px 9px;border-radius:20px;white-space:nowrap;}
+  .badge.you    {background:var(--you-bg);   color:var(--you);    border:0.5px solid var(--you-border);}
+  .badge.cowork {background:var(--cowork-bg);color:var(--cowork); border:0.5px solid var(--cowork-border);}
+  .badge.auto   {background:var(--auto-bg);  color:var(--auto);   border:0.5px solid var(--auto-border);}
+
+  .step-detail{display:none;padding:0 16px 16px 62px;border-top:0.5px solid var(--border);}
+  .step-detail.open{display:block;}
+  .detail-inner{padding-top:12px;}
+  .detail-inner p{font-size:11px;color:var(--muted);line-height:1.7;margin-bottom:4px;}
+  .detail-inner strong{color:var(--text);font-weight:500;}
+  code{font-size:10px;background:var(--bg3);padding:2px 5px;border-radius:4px;color:#c8c5e0;}
+  .arrow{display:flex;align-items:center;justify-content:center;height:16px;color:var(--dim);font-size:14px;}
+
+  .folder-tree{background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;padding:12px 14px;margin:8px 0;font-size:11px;color:var(--muted);line-height:1.9;}
+  .folder-tree .dir{color:var(--auto);}
+  .folder-tree .file{color:var(--muted);}
+
+  .note-box{background:var(--cowork-bg);border:0.5px solid var(--cowork-border);border-radius:8px;padding:10px 12px;margin-top:10px;}
+  .note-box p{font-size:11px;color:var(--muted);}
+  .note-box strong{color:var(--cowork);}
+
+  .gate-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:8px 0;}
+  .gate-item{background:var(--bg3);border-radius:6px;padding:8px 10px;font-size:11px;}
+  .gate-item .gi-label{color:var(--auto);font-weight:500;margin-bottom:2px;}
+  .gate-item .gi-val{color:var(--muted);}
+
+  @media(max-width:600px){
+    body{padding:20px 16px 40px;}
+    .step-head{grid-template-columns:32px 1fr;}
+    .badge{display:none;}
+    .gate-grid{grid-template-columns:1fr;}
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>APEX → Supabase → GHL</h1>
+  <p>Every step from your CSV download to outreach firing in GoHighLevel. Tap any step to expand.</p>
+</div>
+
+<div class="legend">
+  <div class="leg"><div class="leg-bar" style="background:var(--you)"></div>You do this</div>
+  <div class="leg"><div class="leg-bar" style="background:var(--cowork)"></div>Cowork does this (Phase 3+)</div>
+  <div class="leg"><div class="leg-bar" style="background:var(--auto)"></div>Fully automatic</div>
+</div>
+
+<div class="flow" id="flow"></div>
+
+<script>
+const steps = [
+  {
+    cls:'you', badge:'You',
+    title:'Log into APEX — open your saved BOB report',
+    desc:'Navigate to Reports → Book of Business → your saved column layout → Export CSV.',
+    detail:`
+      <p><strong>Where in APEX:</strong> Reports tab → Book of Business → select saved view with correct columns → Export → CSV.</p>
+      <p><strong>Saved view setup (one-time with DM):</strong> Configure columns: First Name, Last Name, DOB, Phone, Email, Address, City, State, Zip, Policy Type, Issue Date, Expiration Date, Status, Annual Premium, Face Amount. Save view. Every future pull is 3 clicks.</p>
+      <p><strong>Phase 3+ — Cowork handles this:</strong> You set a schedule (e.g. every Monday 8AM). Cowork opens APEX in your browser under your logged-in session, navigates to the saved report, exports the CSV, and saves it to the correct folder. You do nothing.</p>`
+  },
+  {
+    cls:'you', badge:'You',
+    title:'Save the CSV to your local watched folder',
+    desc:'Drop in /FSA-Operations/apex-imports/[agency-name]/ — the folder name stamps the agency_id automatically.',
+    detail:`
+      <p><strong>Folder structure on your computer:</strong></p>
+      <div class="folder-tree">
+        <div class="dir">📁 FSA-Operations/</div>
+        <div class="dir" style="margin-left:16px">📁 apex-imports/</div>
+        <div class="dir" style="margin-left:32px">📁 smith-insurance/</div>
+        <div class="file" style="margin-left:48px">📄 smith_BOB_2026-06-02.csv</div>
+        <div class="dir" style="margin-left:32px">📁 johnson-agency/</div>
+        <div class="file" style="margin-left:48px">📄 johnson_BOB_2026-06-02.csv</div>
+        <div class="dir" style="margin-left:32px">📁 garcia-insurance/</div>
+        <div class="file" style="margin-left:48px">📄 garcia_BOB_2026-06-02.csv</div>
+      </div>
+      <p><strong>Why subfolders per agency?</strong> n8n reads the parent folder name and stamps every record with that <code>agency_id</code>. You never label records manually.</p>
+      <p><strong>Google Drive sync:</strong> Your local /FSA-Operations/ folder is synced to Google Drive with Google Drive for Desktop (free). n8n watches the Google Drive folder — the moment the file syncs, n8n fires.</p>
+      <div class="note-box"><p><strong>Phase 3+ with Cowork:</strong> Cowork saves the file to the correct subfolder automatically after pulling it from APEX. Your only action is approving the scheduled run.</p></div>`
+  },
+  {
+    cls:'auto', badge:'Automatic',
+    title:'Google Drive sync pushes file to cloud',
+    desc:'Google Drive for Desktop (free) syncs your local folder to cloud within seconds. n8n detects the new file.',
+    detail:`
+      <p><strong>Setup (one-time):</strong> Install Google Drive for Desktop → point it at /FSA-Operations/ → it stays synced automatically.</p>
+      <p><strong>n8n trigger:</strong> Google Drive "New File in Folder" trigger watches each agency subfolder. Fires within 1–2 minutes of the file appearing.</p>
+      <p><strong>Why Google Drive instead of direct n8n file watch?</strong> n8n is running on a VPS in the cloud — it cannot watch your local computer directly. Google Drive bridges your local machine to the cloud trigger.</p>`
+  },
+  {
+    cls:'auto', badge:'Automatic',
+    title:'n8n reads, normalizes, and stamps every row',
+    desc:'CSV parsed → fields normalized → agency_id stamped from folder name → ready for Supabase.',
+    detail:`
+      <p><strong>n8n workflow steps:</strong></p>
+      <p>1. Read CSV node → parse all rows into JSON objects</p>
+      <p>2. Normalize phone → strip non-digits → format as 10-digit <code>5551234567</code></p>
+      <p>3. Normalize email → lowercase, trim whitespace</p>
+      <p>4. Extract <code>agency_id</code> from the Google Drive folder path name</p>
+      <p>5. Parse dates → ISO 8601 format for Supabase (YYYY-MM-DD)</p>
+      <p>6. Split each row into two objects: one for <code>customers</code> table, one for <code>policies</code> table</p>
+      <p><strong>Error handling:</strong> Rows with missing required fields (no phone AND no email) are written to an <code>errors</code> log table and emailed to you in the briefing.</p>`
+  },
+  {
+    cls:'auto', badge:'Automatic',
+    title:'Supabase upsert — dedup and golden records',
+    desc:'Each row upserted into Supabase. Existing customers updated, new ones created, duplicates merged.',
+    detail:`
+      <p><strong>Dedup order:</strong></p>
+      <p>1. <strong>Exact:</strong> normalized email match → same customer → update</p>
+      <p>2. <strong>Exact:</strong> normalized phone match → same customer → update</p>
+      <p>3. <strong>Fuzzy:</strong> last_name + zip + DOB similarity ≥ 85% via pg_trgm → auto-merge</p>
+      <p>4. <strong>Ambiguous:</strong> similarity 60–84% → flagged in <code>review_queue</code> table → shows in your briefing</p>
+      <p>5. <strong>New:</strong> no match → new <code>customer_id</code> created</p>
+      <p><strong>Policy upsert:</strong> <code>INSERT INTO policies ON CONFLICT (policy_number) DO UPDATE</code> — policy records refreshed with latest premium, status, and dates.</p>
+      <p><strong>Result after this step:</strong> Clean, deduplicated customer + policy records in Supabase. Ready to score.</p>`
+  },
+  {
+    cls:'auto', badge:'Automatic',
+    title:'pg_cron scoring engine runs on new records',
+    desc:'Four SQL scoring functions run — OPRA, conversion, life, and retirement scores written to scores table.',
+    detail:`
+      <p><strong>Triggered:</strong> Either by pg_cron on a nightly schedule (2AM) or immediately after ingestion via n8n calling a Supabase Edge Function.</p>
+      <p><strong>OPRA score (0–100):</strong> mono-line (auto OR home only, not both) → +40pts; tenure > 2yr → +20pts; annual premium > $1,200 → +20pts; no prior contact → +20pts</p>
+      <p><strong>Conversion score (0–100):</strong> policy_type = Term → base score; days_to_conversion_deadline ≤ 30 → +50pts (URGENT); ≤ 90 → +30pts; ≤ 180 → +15pts</p>
+      <p><strong>Life score (0–100):</strong> has auto policy → +30pts; has home policy → +30pts; NO life policy on file → +40pts</p>
+      <p><strong>Retirement score (0–100):</strong> age ≥ 50 → +40pts; age ≥ 60 → +60pts; no FS product (annuity/IRA/life) → +40pts</p>
+      <p><strong>top_action field:</strong> set to whichever single score is highest above threshold — this tells GHL which pipeline to assign the contact to.</p>`
+  },
+  {
+    cls:'auto', badge:'Automatic',
+    title:'Compliance gate — 3 checks before GHL',
+    desc:'Consent confirmed, DNC flag checked, score above threshold. All three must pass or contact stays out.',
+    detail:`
+      <div class="gate-grid">
+        <div class="gate-item"><div class="gi-label">Check 1</div><div class="gi-val">consent_ledger has valid opt-in for SMS or email channel</div></div>
+        <div class="gate-item"><div class="gi-label">Check 2</div><div class="gi-val">dnc_flag = false — not on Texas or National DNC list</div></div>
+        <div class="gate-item"><div class="gi-label">Check 3</div><div class="gi-val">Score ≥ threshold (conversion ≥70, OPRA ≥60, life ≥50, retirement ≥50)</div></div>
+      </div>
+      <p><strong>Fails Check 1 (no consent):</strong> Goes into "pending consent" bucket — first contact is consent capture only, no sales message.</p>
+      <p><strong>Fails Check 2 (DNC):</strong> Flagged in Supabase, never pushed to GHL, shown in your briefing as suppressed.</p>
+      <p><strong>Fails Check 3 (low score):</strong> Stays in Supabase, re-scored nightly — pushed to GHL automatically when score rises above threshold.</p>`
+  },
+  {
+    cls:'auto', badge:'Automatic',
+    title:'n8n pushes qualifying contacts to GHL via API',
+    desc:'GHL contact created or updated with all custom fields, assigned to the correct pipeline and stage.',
+    detail:`
+      <p><strong>GHL API call:</strong> <code>POST https://services.leadconnectorhq.com/contacts/</code></p>
+      <p><strong>Contact payload includes:</strong></p>
+      <p>• Standard fields: firstName, lastName, phone, email, address, dateOfBirth</p>
+      <p>• Custom fields: opra_score, conversion_score, life_score, retirement_score, top_action, conversion_deadline, policy_type, agency_id, agency_owner_name</p>
+      <p><strong>Pipeline assignment:</strong> n8n maps <code>top_action</code> value to the correct GHL pipeline ID:</p>
+      <p>• <code>OPRA</code> → OPRA Transfers pipeline, Stage: New</p>
+      <p>• <code>CONVERSION_URGENT</code> or <code>CONVERSION</code> → Term Conversions pipeline, Stage: Identified</p>
+      <p>• <code>LIFE_XSELL</code> → Life Cross-sell pipeline, Stage: Identified</p>
+      <p>• <code>RETIREMENT</code> → Retirement Discovery pipeline, Stage: Identified</p>
+      <p><strong>Existing GHL contact?</strong> Upserted on email — custom fields updated, pipeline stage preserved unless score category changed.</p>`
+  },
+  {
+    cls:'auto', badge:'Automatic',
+    title:'GHL workflow fires — first outreach sent',
+    desc:'Stage entry triggers the sequence. AI disclosure + educational message + calendar link sent within minutes.',
+    detail:`
+      <p><strong>Workflow trigger:</strong> Contact enters Stage 1 of any pipeline → workflow fires immediately.</p>
+      <p><strong>Day 0 — SMS (if consent captured):</strong><br>
+      "Hi [FirstName], this is an automated message from [AgencyName], a Farmers Insurance agency. We noticed [educational hook based on top_action]. I'd love to connect with you — book a time here: [calendar link]. Reply STOP to opt out."</p>
+      <p><strong>Day 2 — Email follow-up:</strong> Educational content based on pipeline (conversion deadline, life coverage gap, retirement readiness).</p>
+      <p><strong>Day 5 — Second SMS:</strong> Short follow-up if no reply.</p>
+      <p><strong>Reply or inbound call:</strong> Conversation AI or Voice AI picks up, qualifies, books the appointment.</p>
+      <p><strong>Appointment booked:</strong> Pipeline stage advances to "Appointment Booked" automatically. Shows in your 7AM briefing.</p>`
+  },
+  {
+    cls:'auto', badge:'Automatic',
+    title:'7AM briefing delivered to your inbox',
+    desc:'All new opportunities, conversion deadlines, booked appointments, and priority actions in one email.',
+    detail:`
+      <p><strong>What appears from this batch in your briefing:</strong></p>
+      <p>• New opportunities created by category (OPRA: X, Conversion: X, Life: X, Retirement: X)</p>
+      <p>• Conversion deadlines: [Name] — 23 days remaining (URGENT)</p>
+      <p>• Appointments booked overnight: [Name] — Thursday 2PM — Conversion Review</p>
+      <p>• Records suppressed (DNC or no consent): X contacts not pushed</p>
+      <p>• Data quality flags: X rows missing email or phone — review needed</p>
+      <p>• Your top-10 priority action list for today, ranked by score</p>
+      <p><strong>You read this. You work the list. You never log into APEX, AgencyZoom, or GHL to figure out what to do.</strong></p>`
+  },
+];
+
+const flow = document.getElementById('flow');
+steps.forEach((s,i)=>{
+  if(i>0){
+    const arr=document.createElement('div');
+    arr.className='arrow';
+    arr.innerHTML='↓';
+    flow.appendChild(arr);
+  }
+  const el=document.createElement('div');
+  el.className=`step ${s.cls}`;
+  el.innerHTML=`
+    <div class="step-head">
+      <div class="step-num">${i+1}</div>
+      <div class="step-info">
+        <div class="step-title">${s.title}</div>
+        <div class="step-desc">${s.desc}</div>
+      </div>
+      <span class="badge ${s.cls}">${s.badge}</span>
+    </div>
+    <div class="step-detail" id="d${i}"><div class="detail-inner">${s.detail}</div></div>`;
+  el.addEventListener('click',()=>document.getElementById('d'+i).classList.toggle('open'));
+  flow.appendChild(el);
+});
+</script>
+</body>
+</html>

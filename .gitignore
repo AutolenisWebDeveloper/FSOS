@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Next.js
+.next/
+out/
+build/
+
+# Environment — NEVER commit these
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Vercel
+.vercel
+
+# TypeScript
+*.tsbuildinfo
+
+# Test compile output (tests/p0-gate.test.mjs)
+.p0-out-*/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Rule-fetcher runtime audit log (generated per run)
+data/rule_fetch_log.json

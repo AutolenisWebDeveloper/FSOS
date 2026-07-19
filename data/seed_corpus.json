@@ -1,0 +1,530 @@
+{
+  "corpus_meta": {
+    "name": "FSOS Compliance Intelligence — Seed Knowledge Corpus",
+    "version": "1.0",
+    "purpose": "Grounding corpus for the NIGO analysis + note-authoring engine. Every chunk is tagged with authority_type (the tier hierarchy) and section_ref (for precise citation). Load into knowledge_chunks; embed chunk_text.",
+    "authority_tiers_high_to_low": [
+      "FINRA_RULE",
+      "SEC_RULE",
+      "STATE_REQUIREMENT",
+      "CARRIER_REQUIREMENT",
+      "FORM_INSTRUCTION",
+      "FFS_PROCEDURE",
+      "SUITABILITY_STANDARD",
+      "INTERNAL_PREFERENCE"
+    ],
+    "verification_note": "FINRA/SEC/state text below is paraphrased-for-index with section_refs to the authoritative source. BEFORE any chunk is used to ground an external NIGO response, load the verbatim rule text from the primary source and set verbatim=true. Chunks are marked verbatim=false until you do.",
+    "critical_gap": "FFS_PROCEDURE and CARRIER_REQUIREMENT chunks are STUBS. The system cannot cite an FFS manual or carrier rule it has never seen. You must upload the actual FFS compliance manual, WSPs, FCB bulletins, and carrier submission guides to populate these tiers."
+  },
+  "chunks": [
+    {
+      "chunk_id": "FINRA-2330-b1A",
+      "authority_type": "FINRA_RULE",
+      "source_org": "FINRA",
+      "section_ref": "Rule 2330(b)(1)(A)",
+      "product_scope": [
+        "VA"
+      ],
+      "state_scope": [
+        "ALL"
+      ],
+      "verbatim": true,
+      "title": "2330 — Reasonable basis to believe suitability (disclosure of features)",
+      "chunk_text": "Recommendation requirements\nA member or associated person may not recommend a purchase or exchange unless there is a reasonable basis to\nbelieve the customer has been informed of material features, would benefit from relevant annuity features, and the\ncontract, subaccounts, riders, and exchange as a whole are suitable. For an exchange, the analysis must consider\nsurrender charges, a new surrender period, loss of existing benefits, increased fees, product enhancements, and\nexchanges within the prior 36 months.\nCustomer information\nBefore recommending a purchase or exchange, reasonable efforts must be made to obtain age, income, financial\nsituation and needs, investment experience and objectives, intended use, time horizon, existing assets including\ninsurance holdings, liquidity needs, liquid net worth, risk tolerance, tax status, and other relevant information.\nDocumentation and transmission\nThe recommending associated person must document and sign the required determinations and promptly transmit a\ncomplete and correct application package to an office of supervisory jurisdiction.\nPrincipal review\nBefore transmission to the insurer for processing, and no later than seven business days after the OSJ receives a\ncomplete and correct package, a registered principal must approve or reject the recommendation and document and sign\nthe determination.\nSupervision and training\nThe member must maintain specific written supervisory procedures, surveillance for potentially inappropriate exchange\nrates, corrective measures, and documented training for associated persons and principals.\nExchange inquiry\nMembers must determine whether the customer had an exchange at the firm and make reasonable efforts to ascertain\nexchanges at other broker-dealers during the preceding 36 months, documenting the inquiry and response.",
+      "governs_nigo_patterns": [
+        "fee disclosure not documented",
+        "surrender charge not disclosed",
+        "rider features not explained",
+        "tax penalty not disclosed"
+      ],
+      "paraphrase_backup": "Before recommending the purchase or exchange of a deferred variable annuity, the associated person must have a reasonable basis to believe the customer has been informed of the material features of the annuity, including surrender charges, potential tax penalties, mortality and expense fees, investment advisory fees, potential charges for and features of riders, insurance and investment components, and market risk.",
+      "source_url": "https://www.finra.org/rules-guidance/rulebooks/finra-rules/2330",
+      "source_file": "data/regulatory_sources/01_FINRA_Rule_2330.pdf",
+      "fetched_at": "2026-07-19T05:55:28.669Z"
+    },
+    {
+      "chunk_id": "FINRA-2330-b1B-exchange",
+      "authority_type": "FINRA_RULE",
+      "source_org": "FINRA",
+      "section_ref": "Rule 2330(b)(1)(B)",
+      "product_scope": [
+        "VA"
+      ],
+      "state_scope": [
+        "ALL"
+      ],
+      "verbatim": true,
+      "title": "2330 — Exchange-specific suitability factors",
+      "chunk_text": "For an exchange, the analysis must consider\nsurrender charges, a new surrender period, loss of existing benefits, increased fees, product enhancements, and\nexchanges within the prior 36 months.\nCustomer information\nBefore recommending a purchase or exchange, reasonable efforts must be made to obtain age, income, financial\nsituation and needs, investment experience and objectives, intended use, time horizon, existing assets including\ninsurance holdings, liquidity needs, liquid net worth, risk tolerance, tax status, and other relevant information.\nDocumentation and transmission\nThe recommending associated person must document and sign the required determinations and promptly transmit a\ncomplete and correct application package to an office of supervisory jurisdiction.\nPrincipal review\nBefore transmission to the insurer for processing, and no later than seven business days after the OSJ receives a\ncomplete and correct package, a registered principal must approve or reject the recommendation and document and sign\nthe determination.\nSupervision and training\nThe member must maintain specific written supervisory procedures, surveillance for potentially inappropriate exchange\nrates, corrective measures, and documented training for associated persons and principals.\nExchange inquiry\nMembers must determine whether the customer had an exchange at the firm and make reasonable efforts to ascertain\nexchanges at other broker-dealers during the preceding 36 months, documenting the inquiry and response.",
+      "governs_nigo_patterns": [
+        "loss of existing benefits not documented",
+        "new surrender period",
+        "36-month prior exchange not addressed",
+        "benefits forfeited not quantified",
+        "exchange rationale insufficient"
+      ],
+      "paraphrase_backup": "For an exchange of a deferred variable annuity, the associated person must consider whether: the customer would incur a surrender charge, be subject to a new surrender period, lose existing benefits (such as death, living, or other contractual benefits), or be subject to increased fees or charges; the customer would benefit from product enhancements and improvements; and the customer has had another exchange within the preceding 36 months.",
+      "source_url": "https://www.finra.org/rules-guidance/rulebooks/finra-rules/2330",
+      "source_file": "data/regulatory_sources/01_FINRA_Rule_2330.pdf",
+      "fetched_at": "2026-07-19T05:55:28.670Z"
+    },
+    {
+      "chunk_id": "FINRA-2330-b2-profile",
+      "authority_type": "FINRA_RULE",
+      "source_org": "FINRA",
+      "section_ref": "Rule 2330(b)(2)",
+      "product_scope": [
+        "VA"
+      ],
+      "state_scope": [
+        "ALL"
+      ],
+      "verbatim": true,
+      "title": "2330 — Suitability profile factors that must be considered",
+      "chunk_text": "Customer information\nBefore recommending a purchase or exchange, reasonable efforts must be made to obtain age, income, financial\nsituation and needs, investment experience and objectives, intended use, time horizon, existing assets including\ninsurance holdings, liquidity needs, liquid net worth, risk tolerance, tax status, and other relevant information.\nDocumentation and transmission\nThe recommending associated person must document and sign the required determinations and promptly transmit a\ncomplete and correct application package to an office of supervisory jurisdiction.\nPrincipal review\nBefore transmission to the insurer for processing, and no later than seven business days after the OSJ receives a\ncomplete and correct package, a registered principal must approve or reject the recommendation and document and sign\nthe determination.\nSupervision and training\nThe member must maintain specific written supervisory procedures, surveillance for potentially inappropriate exchange\nrates, corrective measures, and documented training for associated persons and principals.\nExchange inquiry\nMembers must determine whether the customer had an exchange at the firm and make reasonable efforts to ascertain\nexchanges at other broker-dealers during the preceding 36 months, documenting the inquiry and response.",
+      "governs_nigo_patterns": [
+        "profile factors missing",
+        "time horizon not documented",
+        "liquidity needs not addressed",
+        "risk tolerance",
+        "objectives not stated"
+      ],
+      "paraphrase_backup": "The recommendation must be suitable considering the customer's age, annual income, financial situation and needs, investment experience, investment objectives, intended use of the deferred variable annuity, investment time horizon, existing assets, liquidity needs, liquid net worth, risk tolerance, tax status, and such other information used or considered reasonable.",
+      "source_url": "https://www.finra.org/rules-guidance/rulebooks/finra-rules/2330",
+      "source_file": "data/regulatory_sources/01_FINRA_Rule_2330.pdf",
+      "fetched_at": "2026-07-19T05:55:28.670Z"
+    },
+    {
+      "chunk_id": "FINRA-2330-c-principal",
+      "authority_type": "FINRA_RULE",
+      "source_org": "FINRA",
+      "section_ref": "Rule 2330(c)",
+      "product_scope": [
+        "VA"
+      ],
+      "state_scope": [
+        "ALL"
+      ],
+      "verbatim": true,
+      "title": "2330 — Principal review standard and trigger",
+      "chunk_text": "Principal review\nBefore transmission to the insurer for processing, and no later than seven business days after the OSJ receives a\ncomplete and correct package, a registered principal must approve or reject the recommendation and document and sign\nthe determination.\nSupervision and training\nThe member must maintain specific written supervisory procedures, surveillance for potentially inappropriate exchange\nrates, corrective measures, and documented training for associated persons and principals.\nExchange inquiry\nMembers must determine whether the customer had an exchange at the firm and make reasonable efforts to ascertain\nexchanges at other broker-dealers during the preceding 36 months, documenting the inquiry and response.",
+      "governs_nigo_patterns": [
+        "principal review",
+        "package not complete",
+        "72 hour clock",
+        "resubmission timing"
+      ],
+      "paraphrase_backup": "Prior to transmitting a customer's application for a deferred variable annuity to the issuing insurance company, a registered principal must review and determine whether he or she approves of the recommended transaction. The principal reviews within seven business days of the firm receiving a COMPLETE and CORRECT application package. The trigger is a complete and correct package; the seven business days is a ceiling, not a floor.",
+      "source_url": "https://www.finra.org/rules-guidance/rulebooks/finra-rules/2330",
+      "source_file": "data/regulatory_sources/01_FINRA_Rule_2330.pdf",
+      "fetched_at": "2026-07-19T05:55:28.670Z"
+    },
+    {
+      "chunk_id": "SEC-REGBI-care",
+      "authority_type": "SEC_RULE",
+      "source_org": "SEC",
+      "section_ref": "17 CFR 240.15l-1(a)(2)(ii)",
+      "product_scope": [
+        "VA",
+        "VUL",
+        "MF",
+        "529"
+      ],
+      "state_scope": [
+        "ALL"
+      ],
+      "verbatim": true,
+      "title": "Reg BI — Care Obligation",
+      "chunk_text": "requiring that a broker-dealer exercise reasonable diligence, care, and skill to: (1) understand the \nrisks, rewards and costs of a recommendation; (2) have a reasonable basis to believe that the \nrecommendation is in the best interest of a particular retail customer, based on the retail \ncustomer’s investment profile, and that the recommendation does not place the broker-dealer’s \ninterest ahead of the retail customer’s interest; and (3) have a reasonable basis to believe that a \nseries of transactions is in the best interest of the retail customer and does not place the interest \nof the broker-dealer ahead of the retail customer’s interests. Regulation Best Interest imposes a \nduty of care that enhances existing suitability obligations (as discussed further below). It also \nincludes a requirement under the Care Obligation to specifically address the risk that a broker-\ndealer’s transaction-based recommendations and compensation could result in a series of \nrecommendations that are not in the best interest or a retail customer—a “churning” risk unique \nto the broker-dealer model of providing recommendations and resulting transaction-based \ncompensation. \nRegulation Best Interest also includes a requirement under the Conflict of Interest \nObligation for broker-dealers to establish, maintain, and enforce written policies and procedures \nreasonably designed to (1) mitigate conflicts of interest at the associated person level, (2) \nspecifically address the conflicts of interest presented when broker-dealers place material \nlimitations on the securities or products that may be recommended (i.e., only make \nrecommendations of proprietary or other limited range of products), and (3) eliminate sales \ncontests, bonuses, and non-cash compensation that are based on the sales of specific securities or \nspecific types of securities within a limited period of time. The conflicts of interest associated \nwith incentives at the associated person level and limitations on the securities or products that \n\n62 \n \nmay be recommended to retail customers have raised particular concerns in the context of the \nbroker-dealer, transaction-based relationship. Accordingly, the Commission believes specific \ndisclosure and additional mitigation requirements are appropriate to address those conflicts. \nSales contests, sales quotas, bonuses and non-cash compensation that are based on the sales of \nspecific securities within a limited period of time create high-pressure situations for associated \npersons to increase the sales of specific securities or specific types of securities within",
+      "governs_nigo_patterns": [
+        "basis not shown",
+        "not in best interest",
+        "reasonably available alternatives",
+        "notes not sufficient",
+        "rationale weak",
+        "why this product"
+      ],
+      "paraphrase_backup": "The Care Obligation requires that the broker, in making a recommendation, exercise reasonable diligence, care, and skill to: (A) understand potential risks, rewards, and costs of the recommendation and have a reasonable basis to believe it could be in the retail customer's best interest; (B) have a reasonable basis to believe the recommendation is in the best interest of the particular retail customer based on that customer's investment profile; and (C) have a reasonable basis to believe that a series of recommended transactions is not excessive. The best-interest basis must not place the broker's interest ahead of the customer's.",
+      "source_url": "https://www.sec.gov/rules/final/2019/34-86031.pdf",
+      "source_file": "data/regulatory_sources/08_SEC_Regulation_Best_Interest_34-86031.pdf",
+      "fetched_at": "2026-07-19T05:55:33.198Z"
+    },
+    {
+      "chunk_id": "SEC-REGBI-alternatives",
+      "authority_type": "SEC_RULE",
+      "source_org": "SEC",
+      "section_ref": "17 CFR 240.15l-1 (Adopting Release, care obligation guidance)",
+      "product_scope": [
+        "VA",
+        "VUL",
+        "MF",
+        "529"
+      ],
+      "state_scope": [
+        "ALL"
+      ],
+      "verbatim": true,
+      "title": "Reg BI — Reasonably available alternatives",
+      "chunk_text": "customer, a broker-dealer generally should consider reasonably available alternatives offered by \nthe broker-dealer. It is our view that such a consideration is an inherent aspect of making a “best \ninterest” recommendation, and is a key enhancement over existing broker-dealer suitability \n \n \n636 As noted and further reiterated below, a broker-dealer will not be required to recommend \nthe single “best” of all possible alternatives that might exist, in part because many \ndifferent options may in fact be in the retail customer’s best interest. See infra footnote \n640 and accompanying text. \n\n284 \n \nobligations, which do not necessarily require a comparative assessment among such \nalternatives.637 Similarly, this concept has been applied in the context of guidance regarding \nsuitability and heightened supervision of complex products, stating that when broker-dealers are \nrecommending complex or costly products, they should first consider whether less complex or \ncostly products could achieve the same objectives for their retail customers.638 \nIn terms of conducting such an evaluation, a broker-dealer does not have to conduct an \nevaluation of every possible alternative, either offered outside of the firm (such as where the firm \noffers only proprietary or other limited range of products) or available on the firm’s platform. \nWe appreciate commenter concerns about the impracticality and potential impossibility of such a \n \n \n637 While enforcement actions and related guidance may be construed as interpreting the \nsuitability obligation to include a consideration of available alternatives, it is generally \nlimited to certain circumstances, such as recommendations of mutual funds with different \nshare classes or recommendations of complex or costly products. See In re Application \nof Raghavan Sathianathan, Exchange Act Release No. 54722 at 21 (Nov. 8, 2006); In the \nMatter of Wendell D. Belden, 56 S.E.C. 496 (2003); FINRA Regulatory Notice 12-03. \nSee also FINRA 2018 Letter; MSRB Rule G-42 (requiring a municipal advisor to inform \nits municipal entity or obligated person client whether it has investigated or considered \nother reasonably feasible alternatives to the recommended municipal securities \ntransaction). \nThus, although certain enforcement actions and guidance contemplate a consideration of \navailable alternatives under certain situations, it not a general expectation. Nevertheless, \nsuch statements serve as an example and evidence that the concept is not unfamiliar to \nbroker-dealers. \n638 See FINRA Regulatory Notice 12-03 (“For example, registered re",
+      "governs_nigo_patterns": [
+        "alternatives not considered",
+        "why not a cheaper option",
+        "why this share class",
+        "single fund family vs multi family",
+        "why not consolidate"
+      ],
+      "paraphrase_backup": "As part of the Care Obligation, the broker should consider reasonably available alternatives offered by the firm as part of having a reasonable basis to believe the recommendation is in the customer's best interest. The broker need not evaluate every possible alternative, nor recommend the single 'best' product, but must consider reasonable alternatives and should be able to explain why the recommendation was selected over them.",
+      "source_url": "https://www.sec.gov/rules/final/2019/34-86031.pdf",
+      "source_file": "data/regulatory_sources/08_SEC_Regulation_Best_Interest_34-86031.pdf",
+      "fetched_at": "2026-07-19T05:55:33.201Z"
+    },
+    {
+      "chunk_id": "FINRA-2111-suitability",
+      "authority_type": "FINRA_RULE",
+      "source_org": "FINRA",
+      "section_ref": "Rule 2111",
+      "product_scope": [
+        "MF",
+        "529",
+        "VUL"
+      ],
+      "state_scope": [
+        "ALL"
+      ],
+      "verbatim": true,
+      "title": "2111 — Suitability",
+      "chunk_text": "Core obligation\nA member or associated person must have a reasonable basis to believe a recommended securities transaction or\ninvestment strategy is suitable for the customer based on reasonable diligence concerning the customer’s investment\nprofile.\nInvestment profile\nThe profile includes age, other investments, financial situation and needs, tax status, objectives, experience, time\nhorizon, liquidity needs, risk tolerance, and other disclosed information.\nThree components\nThe rule identifies reasonable-basis suitability, customer-specific suitability, and quantitative suitability.\nReg BI limitation\nRule 2111 does not apply to recommendations subject to Exchange Act Rule 15l-1, Regulation Best Interest.",
+      "governs_nigo_patterns": [
+        "suitability basis",
+        "profile incomplete",
+        "objectives"
+      ],
+      "paraphrase_backup": "A member or associated person must have a reasonable basis to believe that a recommended transaction or investment strategy is suitable for the customer, based on the information obtained through reasonable diligence to ascertain the customer's investment profile, including age, other investments, financial situation and needs, tax status, investment objectives, investment experience, time horizon, liquidity needs, and risk tolerance.",
+      "source_url": "https://www.finra.org/rules-guidance/rulebooks/finra-rules/2111",
+      "source_file": "data/regulatory_sources/02_FINRA_Rule_2111.pdf",
+      "fetched_at": "2026-07-19T05:55:28.677Z"
+    },
+    {
+      "chunk_id": "FINRA-breakpoint-ROA",
+      "authority_type": "FINRA_RULE",
+      "source_org": "FINRA",
+      "section_ref": "Rule 2342 / NTM 95-80 lineage; mutual fund breakpoint guidance",
+      "product_scope": [
+        "MF",
+        "529"
+      ],
+      "state_scope": [
+        "ALL"
+      ],
+      "verbatim": true,
+      "title": "Breakpoints / Rights of Accumulation / Letter of Intent",
+      "chunk_text": "A member may not sell investment-company shares in dollar amounts just below a breakpoint in order to share in the\nhigher sales charges applicable below the breakpoint.\nFINRA considers the facts and circumstances, including whether records demonstrate execution under a bona fide\nasset-allocation program designed to meet diversification needs and investment goals and whether customers were told\nthey might not qualify for otherwise available breakpoint reductions.",
+      "governs_nigo_patterns": [
+        "one fund family",
+        "breakpoint",
+        "multiple fund families declined",
+        "aggregate to qualify for discount",
+        "spreading money across families"
+      ],
+      "leverage_note": "This chunk is the direct bounce for the 'one fund family or decline' NIGO. The rule protects the client's discount; it does not mandate consolidation. A blanket 'one family or decline' is not supported by this FINRA rule — it is at most FFS_PROCEDURE. Retrieval here should surface the gap.",
+      "paraphrase_backup": "Breakpoint discounts reduce front-end sales charges as investment size increases within a single fund family, via Rights of Accumulation (aggregating related holdings) and Letters of Intent. The regulatory concern is breakpoint SELLING abuse: structuring transactions to DEPRIVE a customer of a breakpoint discount they would otherwise qualify for, typically to preserve or increase commission. The rules do NOT prohibit investing across multiple fund families when the customer is informed of and understands the forgone breakpoint discount and the multi-family structure serves the customer's documented objectives.",
+      "source_url": "https://www.finra.org/rules-guidance/rulebooks/finra-rules/2342",
+      "source_file": "data/regulatory_sources/03_FINRA_Rule_2342.pdf",
+      "fetched_at": "2026-07-19T05:55:28.683Z"
+    },
+    {
+      "chunk_id": "FINRA-2010-commercial-honor",
+      "authority_type": "FINRA_RULE",
+      "source_org": "FINRA",
+      "section_ref": "Rule 2010",
+      "product_scope": [
+        "ALL"
+      ],
+      "state_scope": [
+        "ALL"
+      ],
+      "verbatim": true,
+      "title": "2010 — Standards of Commercial Honor",
+      "chunk_text": "A member, in the conduct of its business, shall observe high standards of commercial honor and just and equitable\nprinciples of trade.",
+      "governs_nigo_patterns": [
+        "signature",
+        "e-signature",
+        "falsification",
+        "commercial honor"
+      ],
+      "paraphrase_backup": "A member, in the conduct of its business, shall observe high standards of commercial honor and just and equitable principles of trade. This rule underlies enforcement of signature integrity: forging or falsifying a customer signature, including via electronic signature platforms, violates Rule 2010 and does not require intent to defraud.",
+      "source_url": "https://www.finra.org/rules-guidance/rulebooks/finra-rules/2010",
+      "source_file": "data/regulatory_sources/04_FINRA_Rule_2010.pdf",
+      "fetched_at": "2026-07-19T05:55:28.688Z"
+    },
+    {
+      "chunk_id": "FINRA-4511-books-records",
+      "authority_type": "FINRA_RULE",
+      "source_org": "FINRA",
+      "section_ref": "Rule 4511",
+      "product_scope": [
+        "ALL"
+      ],
+      "state_scope": [
+        "ALL"
+      ],
+      "verbatim": true,
+      "title": "4511 — Books and Records",
+      "chunk_text": "Members must make and preserve books and records required by FINRA rules, the Exchange Act, and applicable\nExchange Act rules.\nFINRA books and records with no otherwise specified retention period must be preserved for at least six years.\nRecords required under FINRA rules must be preserved in a format and medium compliant with Exchange Act Rule\n17a-4.",
+      "governs_nigo_patterns": [
+        "records",
+        "documentation retention",
+        "e-signature audit trail",
+        "altered document"
+      ],
+      "paraphrase_backup": "Members must make and preserve books and records as required under FINRA rules, the Exchange Act, and applicable Exchange Act rules. Record integrity — including accurate, non-altered documentation and proper e-signature audit trails — falls under this obligation together with Rule 2010.",
+      "source_url": "https://www.finra.org/rules-guidance/rulebooks/finra-rules/4511",
+      "source_file": "data/regulatory_sources/05_FINRA_Rule_4511.pdf",
+      "fetched_at": "2026-07-19T05:55:28.707Z"
+    },
+    {
+      "chunk_id": "FINRA-RN-22-18-esign",
+      "authority_type": "FINRA_RULE",
+      "source_org": "FINRA",
+      "section_ref": "Regulatory Notice 22-18",
+      "product_scope": [
+        "ALL"
+      ],
+      "state_scope": [
+        "ALL"
+      ],
+      "verbatim": true,
+      "title": "RN 22-18 — Digital signature forgery and falsification",
+      "chunk_text": "supervise for customer, colleague, and supervisor signature forgery or falsification through\nthird-party digital-signature platforms.\nRegulatory framework\nForgery or falsification may violate Rule 2010. Where the affected document is a firm book or record, Rule 4511 also\napplies because required records must be accurate. Rule 3110 requires a supervisory system reasonably designed for\ncompliance and requires firms to respond to red flags.\nReported detection methods\nFINRA described customer complaints, audit-trail reviews, email reviews, IP-address analysis, discrepancies between\nsigner location and customer residence, use of representative-controlled email addresses, and identical\nrepresentative/customer IP addresses as potential indicators.\nOperational implication\nDigital-signature controls should preserve completion certificates and audit trails and support exception review for\nanomalous email, IP, location, timing, and device data.",
+      "governs_nigo_patterns": [
+        "client signed from rep email",
+        "farmersagent.com signature",
+        "IP mismatch",
+        "docusign red flag"
+      ],
+      "leverage_note": "HIGHEST PERSONAL RISK. Enforcement, not just NIGO. If a case file shows a client signing from a rep-domain email, flag it as enforcement risk and route to compliance principal — do not treat as a routine correction.",
+      "paraphrase_backup": "FINRA reminded firms of obligations to supervise for forgery and falsification of signatures via third-party digital signature platforms (Rules 2010, 4511, 3110). Red flags firms identified include: customer signatures originating from an email address associated with the representative; a customer signing IP address matching the representative's or inconsistent with the customer's address on file; documents sent to a representative-associated or outside-business email. Such conduct violates Rule 2010 and does not require intent to defraud.",
+      "source_url": "https://www.finra.org/rules-guidance/notices/22-18",
+      "source_file": "data/regulatory_sources/06_FINRA_RN_22-18.pdf",
+      "fetched_at": "2026-07-19T05:55:28.714Z"
+    },
+    {
+      "chunk_id": "FINRA-2024-report-VA-rationale",
+      "authority_type": "SUITABILITY_STANDARD",
+      "source_org": "FINRA",
+      "section_ref": "2024 Annual Regulatory Oversight Report — Variable Annuities, Effective Practices",
+      "product_scope": [
+        "VA"
+      ],
+      "state_scope": [
+        "ALL"
+      ],
+      "verbatim": true,
+      "title": "2024 Report — Detailed, non-replicated exchange rationales",
+      "chunk_text": "specific circumstances for each customer and do not replicate rationales provided for other customers; and \nrequiring supervisory principals to verify the information in these rationales that registered representatives \nprovide, including product fees, costs, rider benefits and existing product values.\n XClear Guidance for Retail Customers: Requiring registered representatives, when recommending \nvariable annuities to retail customers, to provide them with clear, accessible materials that allow \nthem to compare the fees, benefits lost or gained and surrender periods for different variable \nannuities.\n XReview Thresholds: Standardizing review thresholds for rates of variable annuity exchanges; and monitoring \nfor emerging trends across registered representatives, customers, products and branches.\n XAutomated Data Supervision: Creating automated solutions to synthesize variable annuity data (including \ngeneral product information, share class, riders and exchange-based activity) in situations warranted by the \nvolume of variable annuity transactions.\nCOMMUNICATIONS AND SALES I VARIABLE ANNUITIES\n\nFINRA Annual Regulatory Oversight Report | January 202457\n XData Integrity: Engaging with insurance carriers (affiliated and non-affiliated) and third-party data providers \n(e.g., Depository Trust and Clearing Corporation (DTCC), consolidated account report providers) to: \n zconfirm their variable annuity data integrity (including general product information, share class, riders and exchange-based activity); and \n zaddress inconsistencies in available data, data formats and reporting processes for variable annuities.\n XData Acquisition: Establishing a supervisory system that collects and uses key transaction data, including, \nbut not limited to:\n ztransaction date;\n zrepresentative name;\n zcustomer name;\n zcustomer age;\n zinvestment amount;\n zwhether the transaction is a new contract or an additional investment;\n zcontract type (qualified vs. non-qualified);\n zcontract number;\n zproduct issuer;\n zproduct name;\n zsource of funds;\n zexchange identifier;\n zshare class; and\n zcommissions.\n XData Analysis: Considering the following data points when conducting a review of a recommended exchange \ntransaction under FINRA Rule 2330 and Reg BI:\n zbranch location;\n zcustomer state of residence;\n zpolicy riders;\n zpolicy fees;\n zissuer of exchanged policy;\n zexchanged policy product name;\n zdate exchanged policy was purchased;\n zwhether the customer has had another variable annuity exchange within the preceding 36 months;\n zliving benefit value, death benefit value or both, t",
+      "governs_nigo_patterns": [
+        "notes not good enough",
+        "rationale insufficient",
+        "expand the notes",
+        "customer specific",
+        "boilerplate",
+        "why the customer desires this feature",
+        "existing contract features"
+      ],
+      "leverage_note": "This is the objective standard behind most 'not good enough' NIGOs. It is finite and listable. A note that hits every element here satisfies the standard; a reviewer who NIGOs it anyway must name the specific missing element.",
+      "paraphrase_backup": "Effective practice: confirm that registered representatives' — and where applicable supervisory principals' — written rationales for variable annuity exchanges address the specific circumstances FOR EACH CUSTOMER and do NOT replicate rationales provided for other customers; and require supervisory principals to VERIFY the information in these rationales, including product fees, costs, rider benefits, and existing product values. Data considered in exchange review includes: living/death benefit value forfeited, surrender charges incurred, source of funds, share class, riders, issuer and purchase date of the exchanged policy, and any prior exchange within 36 months.",
+      "source_url": "https://www.finra.org/rules-guidance/guidance/reports/2024-finra-annual-regulatory-oversight-report",
+      "source_file": "data/regulatory_sources/07_FINRA_2024_Oversight_Report.pdf",
+      "fetched_at": "2026-07-19T05:55:34.180Z"
+    },
+    {
+      "chunk_id": "FINRA-2024-report-VA-dataintegrity",
+      "authority_type": "SUITABILITY_STANDARD",
+      "source_org": "FINRA",
+      "section_ref": "2024 Annual Regulatory Oversight Report — Variable Annuities, Findings",
+      "product_scope": [
+        "VA"
+      ],
+      "state_scope": [
+        "ALL"
+      ],
+      "verbatim": true,
+      "title": "2024 Report — Data quality / integrity findings",
+      "chunk_text": "XPoor and Insufficient Data Quality: Not collecting and retaining key information on variable annuity \ntransactions, particularly in connection with exchange transactions; relying on processes for data collection \nand retention in situations where the volume of variable annuity transactions renders these processes \nineffective; and failing to address inconsistencies in available data for variable annuities, as well as data \nformats and reporting processes.\n XIssuer Buyouts: Not reasonably supervising recommendations related to issuer buyout offers (e.g., registered \nrepresentatives’ recommendations that investors surrender the contract to generate an exchange or new \npurchase) for compliance with FINRA Rule 2330 and Reg BI.\n XAdditional Deposits: Failing to evaluate and supervise registered representatives’ recommendations of \nadditional deposits into existing VA contracts, including review of disclosure, any applicable surrender fees \nrelated to this transaction and rationale for the addition.\n XReasonably Available Alternatives: Pursuant to Reg BI, insufficient consideration of reasonably available \nalternatives to the recommended VA purchase, surrender or exchange. \nEffective Practices \n XAutomated Surveillance: Using automated tools, exception reports and surveillance to review variable \nannuity exchanges; and implementing second-level supervision of supervisory reviews of exchange-related \nexception reports and account applications.\n XDetailed Rationales for VA Exchanges: Confirming that registered representatives’—and, where applicable, \nsupervisory principals’—written rationales for variable annuity exchanges for each customer address the \nspecific circumstances for each customer and do not replicate rationales provided for other customers; and \nrequiring supervisory principals to verify the information in these rationales that registered representatives \nprovide, including product fees, costs, rider benefits and existing product values.\n XClear Guidance for Retail Customers: Requiring registered representatives, when recommending \nvariable annuities to retail customers, to provide them with clear, accessible materials that allow \nthem to compare the fees, benefits lost or gained and surrender periods for different variable \nannuities.\n XReview Thresholds: Standardizing review thresholds for rates of variable annuity exchanges; and monitoring \nfor emerging trends across registered representatives, customers, products and branches.\n XAutomated Data Supervision: Creating automated solutions to synthesize variable annuity data (including \ngeneral pr",
+      "governs_nigo_patterns": [
+        "rightbridge inconsistent",
+        "answered no in rightbridge",
+        "risk tolerance mismatch",
+        "MVA/IVA inconsistent",
+        "premium amount wrong",
+        "contradiction between documents"
+      ],
+      "paraphrase_backup": "Finding: poor and insufficient data quality — failing to collect and retain key VA transaction information and failing to address inconsistencies in available data, data formats, and reporting. Effective practice: confirm data integrity with carriers and third-party providers and address inconsistencies. This grounds the requirement that a suitability tool's answers (e.g., RightBridge fields) be internally consistent with the case notes and other documents.",
+      "source_url": "https://www.finra.org/rules-guidance/guidance/reports/2024-finra-annual-regulatory-oversight-report",
+      "source_file": "data/regulatory_sources/07_FINRA_2024_Oversight_Report.pdf",
+      "fetched_at": "2026-07-19T05:55:34.181Z"
+    },
+    {
+      "chunk_id": "STATE-TX-replacement",
+      "authority_type": "STATE_REQUIREMENT",
+      "source_org": "Texas Department of Insurance",
+      "section_ref": "TX 28 TAC §§3.9701 et seq. (replacement); Ins. Code Ch. 1115",
+      "product_scope": [
+        "VA",
+        "VUL"
+      ],
+      "state_scope": [
+        "TX"
+      ],
+      "verbatim": true,
+      "title": "Texas — Replacement of life insurance and annuities",
+      "chunk_text": "agent must obtain a statement signed by the consumer that meets the requirements of \nTexas Insurance Code §1115.0516(3). The agent must use: \n(1) form FIN196 (07/21), which is adopted by reference and is available on\nthe department's form website; \n(2) the Consumer Decision to Purchase an Annuity Not Based on a\nRecommendation form, adopted by the National Association of Insurance Commissioners \nin the Suitability in Annuity Transactions Model Regulation; or \n(3) another form that:\n(A) is substantially similar to the form specified in paragraph (2) of\nthis subsection; \n2021-7020\n\nTITLE 28. INSURANCE Adopted Sections \nPart I. Texas Department of Insurance Page 7 of 7 \nChapter 3. Life, Accident, and Health Insurance and Annuities \n(B) is understandable to a person with an 8th-grade reading level;\nand \n(C) is written in plain language, consistent with federal plain language\nrecommendations from the Plain Language Action and Information Network. \nCERTIFICATION. This agency certifies that legal counsel has reviewed the adoption and \nfound it to be a valid exercise of the agency's legal authority. \nIssued at Austin, Texas, on October 14, 2021. \n_____________________________________ \nAllison Eberhart \nDeputy General Counsel \nTexas Department of Insurance \nThe Commissioner adopts new 28 TAC §3.9721 and §3.9722. \n_______________________________ \nCassie Brown \nCommissioner of Insurance \nCommissioner's Order No. 2021-7020 \n2021-7020",
+      "governs_nigo_patterns": [
+        "replacement notice",
+        "texas form",
+        "1035 replacement disclosure",
+        "state required form"
+      ],
+      "paraphrase_backup": "Texas replacement regulations require specific replacement notices and disclosures when an existing life insurance policy or annuity is replaced. Required replacement forms and the associated signatures are non-waivable. Texas Insurance Code §1115.054 provides a safe harbor recognizing compliance with FINRA suitability rules for certain annuity transactions, but does not waive the required state replacement forms.",
+      "source_url": "https://www.tdi.texas.gov/rules/2023/documents/",
+      "source_file": "data/regulatory_sources/11_TX_28_TAC_3.9721-3.9722_Adoption.pdf",
+      "fetched_at": "2026-07-19T05:55:34.398Z"
+    },
+    {
+      "chunk_id": "STATE-NAIC-613",
+      "authority_type": "STATE_REQUIREMENT",
+      "source_org": "NAIC (as adopted by states)",
+      "section_ref": "NAIC Model #613 — Replacement of Life Insurance and Annuities",
+      "product_scope": [
+        "VA",
+        "VUL"
+      ],
+      "state_scope": [
+        "ALL_ADOPTING"
+      ],
+      "verbatim": true,
+      "title": "NAIC #613 — Replacement notice signature/timing (absolute)",
+      "chunk_text": "application, a statement signed by both the applicant and the producer as to whether the \napplicant has existing policies or contracts. If the answer is “no,” the producer’s duties with \nrespect to replacement are complete. \n \nB. If the applicant answered “yes” to the question regarding existing coverage referred to in \nSubsection A, the producer shall present and read to the applicant, not later than at the time of \ntaking the application, a notice regarding replacements in the form as described in Appendix A \nor other substantially similar form approved by the commissioner. However, no approval shall \nbe required when amendments to the notice are limited to the omission of references not \napplicable to the product being sold or replaced. The notice shall be signed by both the \napplicant and the producer attesting that the notice has been read aloud by the producer or \nthat the applicant did not wish the notice to be read aloud (in which case the producer need not \nhave read the notice aloud) and left with the applicant. \n \nC. The notice shall list all life insurance policies or annuities proposed to be replaced, properly \nidentified by name of insurer, the insured or annuitant, and policy or contract number if \navailable; and shall include a statement as to whether each policy or contract will be replaced or \nwhether a policy will be used as a source of financing for the new policy or contract. If a policy \nor contract number has not been issued by the existing insurer, alternative identification, such \nas an application or receipt number, shall be listed. \n\nNAIC Model Laws, Regulations, Guidelines and Other Resources—2nd Quarter 2015 \n \n© 2015 National Association of Insurance Commissioners MO-613-5 \nD. In connection with a replacement transaction the producer shall leave with the applicant at the \ntime an application for a new policy or contract is completed the original or a copy of all sales \nmaterial. With respect to electronically presented sales material, it shall be provided to the \npolicy or contract owner in printed form no later than at the time of policy or contract delivery. \n \nE. Except as provided in Section 5C, in connection with a replacement transaction the producer \nshall submit to the insurer to which an application for a policy or contract is presented, a copy of \neach document required by this section, a statement identifying any preprinted or electronically \npresented company approved sales materials used, and copies of any individualized sales \nmaterials, including any illustrations related to the specific policy or contract pur",
+      "governs_nigo_patterns": [
+        "replacement notice unsigned",
+        "notice not dated",
+        "replacement signature timing"
+      ],
+      "paraphrase_backup": "The replacement model requires the producer to present and read (or have the applicant read) the required replacement notice, and to obtain the applicant's and producer's signatures on the notice at or before the time the application is taken. This signature and timing requirement is absolute and not curable by later administrative amendment.",
+      "source_url": "https://content.naic.org/sites/default/files/inline-files/MDL-613.pdf",
+      "source_file": "data/regulatory_sources/16_NAIC_Model_613.pdf",
+      "fetched_at": "2026-07-19T05:55:34.527Z"
+    },
+    {
+      "chunk_id": "STANDARD-1035-loan-boot",
+      "authority_type": "SUITABILITY_STANDARD",
+      "source_org": "IRC / suitability derived",
+      "section_ref": "IRC §1035; boot doctrine",
+      "product_scope": [
+        "VA",
+        "VUL"
+      ],
+      "state_scope": [
+        "ALL"
+      ],
+      "verbatim": false,
+      "title": "1035 exchange — loan carryover / boot",
+      "chunk_text": "A §1035 exchange is tax-free only to the extent no 'boot' is received. If an outstanding policy loan is extinguished at surrender rather than carried over to the receiving contract, the debt relief is treated as boot — a distribution taxable as ordinary income to the extent of gain. Therefore, on any 1035 with an outstanding loan, written confirmation from the ceding carrier that the loan will carry over is required to support the tax-free characterization before the exchange is approved.",
+      "governs_nigo_patterns": [
+        "loan carryover",
+        "loan transfer confirmation",
+        "massmutual loan",
+        "1035 loan tax",
+        "loan extinguished distribution"
+      ]
+    },
+    {
+      "chunk_id": "STANDARD-buffered-limited-protection",
+      "authority_type": "SUITABILITY_STANDARD",
+      "source_org": "FFS 326349 + product mechanics",
+      "section_ref": "FFS Reg BI Supplement 326349 (structured/buffered VA description)",
+      "product_scope": [
+        "VA"
+      ],
+      "state_scope": [
+        "ALL"
+      ],
+      "verbatim": false,
+      "title": "Buffered/structured VA — limited protection + caps",
+      "chunk_text": "A structured/buffered variable annuity offers LIMITED downside protection, not full principal protection: the insurer absorbs the first portion of an annual loss (e.g., the first 10%) and the owner bears losses beyond that; these contracts also cap upside growth in a given period. Exiting a segment before maturity triggers an Interim Value Adjustment (IVA) that may be positive or negative and can reduce the value available for transfer. Notes must describe protection as limited (never full principal protection) and, where an IVA applies to the transaction, disclose it specifically.",
+      "governs_nigo_patterns": [
+        "downside protection both ways",
+        "full principal protection",
+        "IVA not disclosed",
+        "interim value adjustment",
+        "buffer",
+        "cap not disclosed"
+      ]
+    },
+    {
+      "chunk_id": "FORM-311883-esign-terms",
+      "authority_type": "FORM_INSTRUCTION",
+      "source_org": "Farmers Financial Solutions",
+      "section_ref": "Form 311883 — eSignature Terms and Conditions",
+      "product_scope": [
+        "ALL"
+      ],
+      "state_scope": [
+        "ALL"
+      ],
+      "verbatim": false,
+      "title": "Form 311883 — eSignature Terms & Conditions (DocuSign outside Docupace)",
+      "chunk_text": "When DocuSign is used outside of Docupace, the completed eSignature Terms and Conditions Form (311883) must be included with the submission. A DocuSign certificate of completion does NOT satisfy this requirement and is not a substitute for the signed form.",
+      "governs_nigo_patterns": [
+        "311883",
+        "esignature terms and conditions",
+        "docusign outside docupace",
+        "certificate of completion not sufficient"
+      ],
+      "stub_note": "Confirmed from a real NIGO. Upload the actual 311883 form instructions to make this verbatim."
+    },
+    {
+      "chunk_id": "FFS-PROC-STUB",
+      "authority_type": "FFS_PROCEDURE",
+      "source_org": "Farmers Financial Solutions",
+      "section_ref": "STUB — awaiting upload",
+      "product_scope": [
+        "ALL"
+      ],
+      "state_scope": [
+        "ALL"
+      ],
+      "verbatim": false,
+      "title": "FFS internal procedures — PLACEHOLDER",
+      "chunk_text": "PLACEHOLDER. The system cannot cite FFS-specific procedures it has not ingested. Upload the FFS compliance manual, WSPs, FCB bulletins, and Docupace submission procedures. Until then, any NIGO requirement that maps ONLY to an FFS procedure (not a FINRA/SEC/state rule) must be flagged as 'firm policy — not verifiable against uploaded FFS documents,' which is itself the correct and honest output.",
+      "governs_nigo_patterns": [
+        "firm policy",
+        "ffs requires",
+        "our procedures"
+      ],
+      "stub_note": "This is the single most valuable tier to populate. It is what lets the system say 'this is FFS policy, not FINRA' with a citation."
+    },
+    {
+      "chunk_id": "CARRIER-STUB",
+      "authority_type": "CARRIER_REQUIREMENT",
+      "source_org": "Carrier (per carrier)",
+      "section_ref": "STUB — awaiting upload",
+      "product_scope": [
+        "ALL"
+      ],
+      "state_scope": [
+        "ALL"
+      ],
+      "verbatim": false,
+      "title": "Carrier submission requirements — PLACEHOLDER",
+      "chunk_text": "PLACEHOLDER per carrier (Pacific Life, Athene, MassMutual, Equitable, FNWL, etc.). Upload each carrier's submission and form requirements. Example real requirement already observed: Pacific Life accepts a 1035 exchange with an outstanding loan only on the condition that the ceding carrier permits the loan to carry over.",
+      "governs_nigo_patterns": [
+        "carrier requires",
+        "pacific life condition",
+        "athene",
+        "amendment at delivery"
+      ],
+      "stub_note": "Upload carrier submission guides to populate."
+    }
+  ]
+}

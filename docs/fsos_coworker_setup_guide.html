@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>FSOS — Claude Co-worker Setup Guide</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
+:root{
+  --ink:#1a1612;--ink2:#3d3830;--ink3:#7a7060;--dim:#b0a898;
+  --bg:#faf8f4;--bg2:#f2efe8;--card:#fff;
+  --rule:#e8e2d8;--rule2:#d4ccbe;
+  --navy:#0f1e36;--blue:#2b6cb0;--blue-bg:#ebf8ff;--blue-border:#bee3f8;
+  --green:#1a5c3a;--green2:#38a169;--green-bg:#f0fff4;--green-border:#b8dcc8;
+  --red:#b91c1c;--red-bg:#fef2f2;--red-border:#fecaca;
+  --amber:#92400e;--amber-bg:#fffbeb;--amber-border:#fde68a;
+  --purple:#5b21b6;--purple-bg:#f5f3ff;--purple-border:#ddd6fe;
+  --shadow:0 1px 3px rgba(0,0,0,.08);--shadow2:0 8px 32px rgba(0,0,0,.12);
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html{scroll-behavior:smooth;}
+body{background:var(--bg);color:var(--ink);font-family:'DM Sans',sans-serif;font-size:14px;line-height:1.65;}
+
+/* TOP NAV */
+.topnav{background:var(--navy);padding:0 32px;position:sticky;top:0;z-index:100;display:flex;align-items:center;height:50px;gap:0;}
+.topnav-brand{font-family:'Syne',sans-serif;font-weight:800;color:#fff;font-size:13px;letter-spacing:.08em;text-transform:uppercase;margin-right:28px;white-space:nowrap;}
+.nav-links{display:flex;gap:0;overflow-x:auto;}
+.nav-link{padding:0 14px;height:50px;border:none;background:transparent;color:rgba(255,255,255,.5);font-family:'DM Sans',sans-serif;font-size:11px;font-weight:500;cursor:pointer;white-space:nowrap;border-bottom:2px solid transparent;transition:all .15s;text-decoration:none;display:flex;align-items:center;}
+.nav-link:hover{color:rgba(255,255,255,.8);}
+.nav-link.active{color:#fff;border-bottom-color:#fff;}
+
+/* LAYOUT */
+.wrap{max-width:840px;margin:0 auto;padding:40px 24px 100px;}
+.section{display:none;}.section.active{display:block;}
+
+/* HEADERS */
+.eyebrow{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:var(--ink3);margin-bottom:6px;}
+.page-title{font-family:'Syne',sans-serif;font-size:30px;font-weight:800;color:var(--ink);line-height:1.15;margin-bottom:8px;}
+.page-sub{font-size:14px;color:var(--ink2);line-height:1.7;margin-bottom:28px;max-width:600px;}
+.section-title{font-family:'Syne',sans-serif;font-size:16px;font-weight:700;color:var(--ink);margin:28px 0 10px;padding-bottom:8px;border-bottom:2px solid var(--rule);}
+.section-sub{font-size:13px;color:var(--ink2);line-height:1.75;margin-bottom:14px;}
+
+/* CARDS */
+.card{background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:20px 22px;margin-bottom:10px;box-shadow:var(--shadow);}
+.card-title{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:var(--ink);margin-bottom:8px;}
+.card-body{font-size:13px;color:var(--ink2);line-height:1.75;}
+
+/* CODE BLOCKS */
+.code{background:var(--navy);color:#c8d4b8;font-family:'DM Mono',monospace;font-size:11px;border-radius:8px;padding:16px 18px;margin:10px 0;line-height:1.9;overflow-x:auto;white-space:pre;position:relative;}
+.code-label{font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);margin-bottom:5px;}
+.copy-btn{position:absolute;top:10px;right:10px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:rgba(255,255,255,.6);font-family:'DM Mono',monospace;font-size:9px;padding:3px 8px;border-radius:3px;cursor:pointer;transition:all .15s;}
+.copy-btn:hover{background:rgba(255,255,255,.2);color:#fff;}
+
+/* STEP LIST */
+.steps{display:flex;flex-direction:column;gap:8px;}
+.step{display:grid;grid-template-columns:32px 1fr;gap:12px;align-items:flex-start;padding:14px 16px;background:var(--card);border:1px solid var(--rule);border-radius:9px;}
+.step-num{width:28px;height:28px;border-radius:50%;background:var(--navy);color:#fff;font-family:'Syne',sans-serif;font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;}
+.step-title{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:var(--ink);margin-bottom:3px;}
+.step-body{font-size:12px;color:var(--ink2);line-height:1.7;}
+
+/* ALERTS */
+.alert{border-radius:8px;padding:13px 16px;margin:12px 0;font-size:12px;line-height:1.7;}
+.alert-red{background:var(--red-bg);border:1px solid var(--red-border);color:var(--red);}
+.alert-green{background:var(--green-bg);border:1px solid var(--green-border);color:var(--green);}
+.alert-amber{background:var(--amber-bg);border:1px solid var(--amber-border);color:var(--amber);}
+.alert-blue{background:var(--blue-bg);border:1px solid var(--blue-border);color:var(--blue);}
+
+/* GRID */
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;}
+.three-col{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px;}
+
+/* TAGS */
+.tag{font-family:'DM Mono',monospace;font-size:9px;padding:2px 8px;border-radius:4px;display:inline-block;margin:2px;}
+.tag-blue{background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-border);}
+.tag-green{background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);}
+.tag-red{background:var(--red-bg);color:var(--red);border:1px solid var(--red-border);}
+.tag-amber{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-border);}
+.tag-purple{background:var(--purple-bg);color:var(--purple);border:1px solid var(--purple-border);}
+
+/* TABLE */
+.tbl{width:100%;border-collapse:collapse;font-size:12px;margin:10px 0;}
+.tbl th{text-align:left;padding:8px 12px;font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);border-bottom:2px solid var(--rule);background:var(--bg2);}
+.tbl td{padding:9px 12px;border-bottom:1px solid var(--rule);vertical-align:top;color:var(--ink2);}
+.tbl tr:last-child td{border-bottom:none;}
+.tbl tr:hover td{background:var(--bg2);}
+.tbl td:first-child{font-family:'DM Mono',monospace;color:var(--ink);font-weight:500;}
+
+/* ROLE CARD */
+.role-card{background:linear-gradient(135deg,var(--navy),#162844);border-radius:10px;padding:20px 22px;color:#fff;margin-bottom:10px;}
+.role-title{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;margin-bottom:6px;}
+.role-body{font-size:12px;color:rgba(255,255,255,.65);line-height:1.75;}
+
+/* SESSION CARD */
+.session{border:1px solid var(--rule);border-radius:10px;overflow:hidden;margin-bottom:8px;}
+.session-head{background:var(--bg2);padding:12px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--rule);}
+.session-num{font-family:'DM Mono',monospace;font-size:10px;font-weight:500;color:var(--ink3);}
+.session-title{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:var(--ink);}
+.session-tag{margin-left:auto;}
+.session-body{padding:14px 16px;}
+
+/* RESPONSIVE */
+@media(max-width:640px){
+  .two-col,.three-col{grid-template-columns:1fr;}
+  .wrap{padding:20px 14px 80px;}
+  .topnav{padding:0 14px;}
+}
+</style>
+</head>
+<body>
+
+<div class="topnav">
+  <div class="topnav-brand">FSOS Setup Guide</div>
+  <div class="nav-links">
+    <a class="nav-link active" href="#" onclick="show('overview',this)">Overview</a>
+    <a class="nav-link" href="#" onclick="show('project',this)">Project Setup</a>
+    <a class="nav-link" href="#" onclick="show('instructions',this)">Instructions</a>
+    <a class="nav-link" href="#" onclick="show('skills',this)">Skills</a>
+    <a class="nav-link" href="#" onclick="show('prompts',this)">Prompts</a>
+    <a class="nav-link" href="#" onclick="show('sessions',this)">Sessions</a>
+    <a class="nav-link" href="#" onclick="show('workflow',this)">Workflow</a>
+    <a class="nav-link" href="#" onclick="show('compliance',this)">Compliance</a>
+    <a class="nav-link" href="#" onclick="show('reference',this)">Reference</a>
+  </div>
+</div>
+
+<!-- ═══════════════ OVERVIEW ═══════════════ -->
+<div id="tab-overview" class="section active">
+<div class="wrap">
+  <div class="eyebrow">Farmers FSA · Markist · McKinney TX</div>
+  <div class="page-title">FSOS Claude Co-worker<br>Setup Guide</div>
+  <div class="page-sub">One definitive document. Everything you need to set up, configure, and run the FSA Operating System project using Claude as your full-time software co-worker — from first session to production deployment.</div>
+
+  <div class="alert alert-blue">This document replaces all previous setup instructions. Use only this version going forward.</div>
+
+  <div class="section-title">Mental Model</div>
+  <div class="three-col">
+    <div class="card">
+      <div class="card-title">🗂 Project Files</div>
+      <div class="card-body">What Claude reads to understand FSOS. Your requirements, UI design, and database architecture. Uploaded once, referenced every session.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">⚙️ Skills</div>
+      <div class="card-body">Standing rules Claude follows when writing FSOS code. Created once. Never repeated. Code patterns, compliance rules, file paths, build requirements.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">👤 Co-worker</div>
+      <div class="card-body">Claude acting as your lead engineer across every session. Reads the files, follows the skills, builds one task at a time, reports back.</div>
+    </div>
+  </div>
+
+  <div class="section-title">What Is Already Built</div>
+  <table class="tbl">
+    <thead><tr><th>File</th><th>What It Is</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>fsos_command_center.jsx</td><td>Complete React UI — 16 pages, all components, mock data</td><td><span class="tag tag-green">✓ Complete</span></td></tr>
+      <tr><td>fsos_implementation_guide.html</td><td>8-phase build plan, 95 steps, tools reference</td><td><span class="tag tag-green">✓ Complete</span></td></tr>
+      <tr><td>001_initial_schema.sql</td><td>17 tables, scoring functions, RLS, pg_cron, seed data</td><td><span class="tag tag-green">✓ Complete</span></td></tr>
+      <tr><td>fsos_project.tar</td><td>Complete Next.js scaffold — all API routes, pages, types</td><td><span class="tag tag-green">✓ Complete</span></td></tr>
+      <tr><td>Project Instructions</td><td>Claude's role, rules, and constraints for this project</td><td><span class="tag tag-amber">→ Paste now</span></td></tr>
+      <tr><td>fsos-dev skill</td><td>Code patterns and compliance rules baked in</td><td><span class="tag tag-amber">→ Create now</span></td></tr>
+    </tbody>
+  </table>
+
+  <div class="section-title">One Remaining Build Error</div>
+  <div class="alert alert-red">
+    <strong>File:</strong> src/app/api/agencies/referral/route.ts · around line 141<br>
+    <strong>Fix:</strong> Change <code>const query = supabaseAdmin</code> → <code>const query = getDb()</code><br>
+    <strong>Then run:</strong> npm run build — must pass with zero errors before deployment
+  </div>
+
+  <div class="section-title">Setup Checklist</div>
+  <div class="steps">
+    <div class="step"><div class="step-num">1</div><div><div class="step-title">Upload project files to the FSOS project</div><div class="step-body">fsos_command_center.jsx · fsos_implementation_guide.html · 001_initial_schema.sql — all three must be in the project Files panel</div></div></div>
+    <div class="step"><div class="step-num">2</div><div><div class="step-title">Paste the Project Instructions</div><div class="step-body">Go to Instructions tab in this guide → copy the full block → paste into Claude project Instructions box → Save</div></div></div>
+    <div class="step"><div class="step-num">3</div><div><div class="step-title">Create the fsos-dev skill</div><div class="step-body">Go to Skills tab → copy the skill-creator prompt → paste into FSOS project chat → send</div></div></div>
+    <div class="step"><div class="step-num">4</div><div><div class="step-title">Start Session 1</div><div class="step-body">Use the Session 1 opening prompt from the Prompts tab → fix the build error → verify clean build</div></div></div>
+    <div class="step"><div class="step-num">5</div><div><div class="step-title">Work session by session</div><div class="step-body">Use the Sessions tab for the exact prompt for each phase. One session = one task = one verified deliverable.</div></div></div>
+  </div>
+</div>
+</div>
+
+<!-- ═══════════════ PROJECT SETUP ═══════════════ -->
+<div id="tab-project" class="section">
+<div class="wrap">
+  <div class="eyebrow">Step 1</div>
+  <div class="page-title">Project Setup</div>
+  <div class="page-sub">Configure the FSOS project in Claude.ai so every conversation starts fully briefed.</div>
+
+  <div class="section-title">Project Files — Upload These Three</div>
+  <div class="alert alert-amber">All three must be uploaded to the project Files panel before starting any session. Claude reads them at the start of every session.</div>
+  <table class="tbl">
+    <thead><tr><th>File</th><th>Role in the Project</th><th>Claude Uses It For</th></tr></thead>
+    <tbody>
+      <tr><td>fsos_command_center.jsx</td><td>The complete UI — 3,447 lines, 16 pages</td><td>Understanding the UI before modifying it. All styles, components, data arrays.</td></tr>
+      <tr><td>fsos_implementation_guide.html</td><td>The requirements document and build plan</td><td>Phase sequence, step details, tools reference, compliance checklist.</td></tr>
+      <tr><td>001_initial_schema.sql</td><td>The complete database design</td><td>Table names, column names, relationships, scoring functions before writing any query.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="section-title">Project Structure — What Is in the Tar File</div>
+  <div class="code">fsos/
+├── package.json                          Next.js 14 + all dependencies
+├── tsconfig.json                         TypeScript strict mode
+├── next.config.js                        Next.js config
+├── vercel.json                           Vercel deployment config
+├── .env.local.example                    All required environment variables
+├── .gitignore
+│
+├── supabase/
+│   └── migrations/
+│       └── 001_initial_schema.sql        Complete DB schema (run in Supabase SQL Editor)
+│
+└── src/
+    ├── app/
+    │   ├── page.tsx                      Root page → renders CommandCenter
+    │   ├── layout.tsx                    Root layout
+    │   ├── globals.css
+    │   ├── [slug]/page.tsx               Agency referral form (public)
+    │   ├── upload/[slug]/page.tsx        Agency file upload (public)
+    │   ├── forms/[formId]/page.tsx       Client form portal (public)
+    │   └── api/
+    │       ├── forms/submit/route.ts     Receives client form submissions
+    │       ├── forms/send/route.ts       Sends form links via email + SMS
+    │       ├── forms/fna/route.ts        Claude API FNA report generator
+    │       ├── agencies/referral/route.ts Agency referral intake
+    │       ├── agencies/upload/route.ts  Agency file upload handler
+    │       ├── webhooks/ghl/route.ts     GHL events → auto-sends forms, creates cases
+    │       └── dashboard/route.ts        All daily briefing data in one call
+    │
+    ├── components/pages/
+    │   ├── CommandCenter.tsx             Dynamic import wrapper for the UI
+    │   ├── ClientFormPortal.tsx          Public client-facing form page
+    │   └── fsos_command_center.jsx       Full UI (copy here from project files)
+    │
+    └── lib/
+        ├── supabase/client.ts            Lazy Supabase init (getDb() pattern)
+        └── types/database.ts            TypeScript types for all 17 tables</div>
+
+  <div class="section-title">Required Environment Variables</div>
+  <div class="alert alert-red">Never commit real values. Set these in Vercel dashboard only. The .env.local.example file lists all of them.</div>
+  <table class="tbl">
+    <thead><tr><th>Variable</th><th>Where to Get It</th><th>Used By</th></tr></thead>
+    <tbody>
+      <tr><td>NEXT_PUBLIC_SUPABASE_URL</td><td>Supabase → Settings → API</td><td>All Supabase queries</td></tr>
+      <tr><td>NEXT_PUBLIC_SUPABASE_ANON_KEY</td><td>Supabase → Settings → API</td><td>Client-side reads</td></tr>
+      <tr><td>SUPABASE_SERVICE_KEY</td><td>Supabase → Settings → API</td><td>All API routes (server-side only)</td></tr>
+      <tr><td>ANTHROPIC_API_KEY</td><td>console.anthropic.com</td><td>/api/forms/fna (FNA reports)</td></tr>
+      <tr><td>RESEND_API_KEY</td><td>resend.com → API Keys</td><td>/api/forms/send (email delivery)</td></tr>
+      <tr><td>RESEND_FROM_EMAIL</td><td>Your verified domain in Resend</td><td>From address on all form emails</td></tr>
+      <tr><td>NEXT_PUBLIC_URL</td><td>Your Vercel deployment URL</td><td>Form links, referral links</td></tr>
+      <tr><td>GHL_API_KEY</td><td>GHL → Settings → API</td><td>Webhook handler, SMS sends</td></tr>
+      <tr><td>GHL_LOCATION_ID</td><td>GHL → Settings → API</td><td>Webhook handler</td></tr>
+      <tr><td>GHL_WEBHOOK_SECRET</td><td>Generate: any 32-char random string</td><td>Webhook signature verification</td></tr>
+    </tbody>
+  </table>
+</div>
+</div>
+
+<!-- ═══════════════ INSTRUCTIONS ═══════════════ -->
+<div id="tab-instructions" class="section">
+<div class="wrap">
+  <div class="eyebrow">Step 2</div>
+  <div class="page-title">Project Instructions</div>
+  <div class="page-sub">Paste this into the Claude project Instructions box. This defines Claude's role, rules, and operating constraints for every session in this project.</div>
+
+  <div class="alert alert-blue">How to set: In the FSOS project → click the ⋯ menu or Instructions section → Add instructions → paste the block below → Save instructions.</div>
+
+  <div class="code-label">Paste this entire block into Project Instructions</div>
+  <div class="code" id="instructions-code">You are the lead software engineer and technical co-worker for the FSA Operating System (FSOS) — a private internal web application for Markist, a licensed Farmers Financial Services Agent in McKinney, TX.
+
+TECH STACK
+Next.js 14 · TypeScript strict · App Router · Supabase · Vercel
+GoHighLevel (CRM + AI agents) · Make.com (automation) · Anthropic Claude API · Resend
+
+PROJECT FILES IN THIS PROJECT (read before every session)
+- fsos_command_center.jsx — complete React UI, 16 pages, 3,447 lines
+- fsos_implementation_guide.html — 8-phase build plan, 95 steps
+- 001_initial_schema.sql — 17 tables, scoring functions, RLS, pg_cron
+
+CURRENT BUILD STATUS
+One remaining error: src/app/api/agencies/referral/route.ts ~line 141
+Change: const query = supabaseAdmin → const query = getDb()
+Then: npm run build must pass with zero errors
+
+CRITICAL CODE RULES
+1. Always use getDb() from @/lib/supabase/client — NEVER instantiate Supabase at module level
+2. All API routes must export: export const dynamic = 'force-dynamic' and export const runtime = 'nodejs'
+3. Command center uses inline styles only — no Tailwind, no CSS modules, no styled-components
+4. Read existing files before modifying — never recreate what already exists
+5. Run npm run build after every code change — fix all TypeScript errors before stopping
+6. Report at end of every session: what was completed, what you need from me, what is next
+
+FILE PATHS
+- Project root: /home/claude/fsos/
+- API routes: src/app/api/
+- Pages: src/app/
+- Components: src/components/pages/
+- Types: src/lib/types/database.ts
+- Supabase client: src/lib/supabase/client.ts
+- Output deliverables: /mnt/user-data/outputs/
+
+PUBLIC ROUTES (no authentication required)
+- /[slug] — agency referral form
+- /upload/[slug] — agency file upload
+- /forms/[formId] — client form portal
+
+COMPLIANCE — NON-NEGOTIABLE
+AI agents may ONLY: educate, qualify, gather info, schedule, remind, route, follow up, escalate
+AI agents may NEVER: recommend products, make suitability determinations, give investment or insurance advice
+FNA reports must include: "For educational and informational purposes only. Not a product recommendation or suitability determination. Requires licensed FSA review per FINRA Reg BI."
+TCPA: written prior express consent required before any automated SMS
+TRAIGA 2026 (Texas): AI disclosure required in all automated outreach messages
+Call Ryan Anderson (253) 242-0597 before any automated outreach goes live
+
+GDC PAYOUT TIERS (used in commission calculator)
+Under $15k rolling 12-mo → 40% FSA payout
+$15k–$54,999 → 60% FSA payout
+$55k+ → 80% FSA payout
+
+FFS KEY CONTACTS
+Ryan Anderson, FFS Compliance TX: (253) 242-0597 · ryan.anderson@farmersinsurance.com
+Matt Anderson, FSD Central: (818) 584-0264 · matthew.1.anderson@farmersinsurance.com
+Sales Desk: (866) 888-9739 Option 3→3 · Mon–Fri 7AM–5PM PT
+
+WORK PROCESS
+- Work phase by phase per the implementation guide
+- Complete and verify each phase before starting the next
+- One session = one task = one verified deliverable
+- When in doubt, read the implementation guide first</div>
+  <button class="copy-btn" onclick="copyCode('instructions-code')">Copy</button>
+</div>
+</div>
+
+<!-- ═══════════════ SKILLS ═══════════════ -->
+<div id="tab-skills" class="section">
+<div class="wrap">
+  <div class="eyebrow">Step 3</div>
+  <div class="page-title">Skills</div>
+  <div class="page-sub">You need exactly one skill for this project. Create it once — it applies to every future session automatically.</div>
+
+  <div class="alert alert-blue">How to create: In the FSOS project chat, type /skill-creator then paste the prompt below and send. Claude will generate and save the skill.</div>
+
+  <div class="section-title">The One Skill You Need: fsos-dev</div>
+  <div class="card">
+    <div class="card-title">Why only one skill?</div>
+    <div class="card-body">Everything you're doing in FSOS is one type of work — building and maintaining a Next.js codebase. One well-written dev skill covers all of it. Other skills (frontend-design, docx, pdf) already exist in the system and Claude uses them automatically when relevant. You don't create those.</div>
+  </div>
+
+  <div class="code-label">Send this in the FSOS project chat to create the skill</div>
+  <div class="code" id="skill-code">/skill-creator
+
+Create a skill called fsos-dev. This skill is read automatically before 
+any code is written in the FSOS (Farmers FSA Operating System) project.
+
+WHAT THIS SKILL COVERS
+This is a Next.js 14 TypeScript project for a licensed Farmers Financial 
+Services Agent. The skill encodes all project-specific rules so they are 
+never missed.
+
+STACK
+- Next.js 14, TypeScript strict mode, App Router
+- Supabase (PostgreSQL, RLS, pg_cron)
+- Vercel deployment
+- GoHighLevel webhooks
+- Anthropic Claude API (FNA generation)
+- Resend (email)
+- No Tailwind — inline styles only
+
+CRITICAL CODE PATTERNS
+
+1. SUPABASE — Always lazy initialize, never at module level:
+   import { getDb } from '@/lib/supabase/client'
+   const { data } = await getDb().from('table').select('*')
+   NEVER: const supabase = createClient(...) at top of file
+   NEVER: supabaseAdmin.from() at module level
+
+2. API ROUTES — Every route.ts must have these exports:
+   export const dynamic = 'force-dynamic'
+   export const runtime = 'nodejs'
+
+3. COMMAND CENTER — Inline styles only:
+   style={{fontFamily:"'DM Sans',sans-serif", color:'#1a2332'}}
+   NEVER: className="text-gray-800" or any Tailwind class
+   NEVER: import styles from './Component.module.css'
+
+4. EXISTING FILES — Read before touching:
+   Use bash_tool to read any file before modifying it
+   Never recreate a file that already exists
+
+5. BUILD VERIFICATION — Required after every change:
+   cd /home/claude/fsos && npm run build
+   Fix every TypeScript error before stopping
+   Build must pass before reporting completion
+
+FILE STRUCTURE
+Project root: /home/claude/fsos/
+API routes:   src/app/api/[route]/route.ts
+Pages:        src/app/[page]/page.tsx
+Components:   src/components/pages/
+Types:        src/lib/types/database.ts
+Supabase:     src/lib/supabase/client.ts
+Outputs:      /mnt/user-data/outputs/
+
+PUBLIC ROUTES (no auth required)
+/[slug]              Agency referral intake form
+/upload/[slug]       Agency file upload page
+/forms/[formId]      Client form portal
+
+TYPESCRIPT PATTERNS
+When Supabase returns type 'never' on insert:
+  Use getDb() which is typed as any — safe for complex inserts
+When array.reduce has implicit any:
+  Add explicit type: reduce((acc: {field: type}, item: any) => {})
+When eslint-disable needed:
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+COMPLIANCE RULES (included in every AI-facing feature)
+AI agents: educate, qualify, gather info, schedule, remind, route only
+AI agents NEVER recommend products or make suitability determinations
+FNA disclaimer (required on every report):
+  "For educational and informational purposes only. Not a product 
+  recommendation or suitability determination. Requires licensed FSA 
+  review per FINRA Reg BI."
+TCPA: written prior express consent before automated SMS
+TRAIGA 2026: AI disclosure in all automated messages
+
+GDC TIERS
+Under $15k → 40% · $15k-$54,999 → 60% · $55k+ → 80%
+
+REPORTING FORMAT (end of every session)
+✅ Completed: [what was built]
+🔧 Build status: [passing / errors found and fixed]  
+📋 Need from you: [credentials, confirmations, or decisions needed]
+➡ Next session: [what to build next]</div>
+  <button class="copy-btn" onclick="copyCode('skill-code')">Copy</button>
+</div>
+</div>
+
+<!-- ═══════════════ PROMPTS ═══════════════ -->
+<div id="tab-prompts" class="section">
+<div class="wrap">
+  <div class="eyebrow">Reference</div>
+  <div class="page-title">All Prompts</div>
+  <div class="page-sub">Every prompt you need, ready to copy. Use the opening prompt at the start of every session. Then use the task-specific prompts as needed.</div>
+
+  <div class="section-title">Opening Prompt — Use This to Start Every Session</div>
+  <div class="alert alert-blue">Paste this at the start of every new chat in the FSOS project. Replace the bracketed sections.</div>
+  <div class="code" id="opening-prompt">You are my lead software engineer on the FSOS project.
+
+Before starting, read all three project files:
+- fsos_command_center.jsx (the UI — 16 pages)
+- fsos_implementation_guide.html (requirements + build plan)  
+- 001_initial_schema.sql (database design)
+
+Current build status: [paste any errors here, or write "clean"]
+
+Today's task: [ONE specific thing to build or fix]
+
+Rules:
+- Read existing files before touching them
+- Run npm run build after every change
+- Fix every error before stopping
+- End with: what was completed · what you need from me · what is next</div>
+  <button class="copy-btn" onclick="copyCode('opening-prompt')">Copy</button>
+
+  <div class="section-title">Fix Build Error — Session 1</div>
+  <div class="code" id="fix-build">You are my lead software engineer on the FSOS project.
+
+Read: fsos_implementation_guide.html and 001_initial_schema.sql first.
+
+Fix this build error:
+File: src/app/api/agencies/referral/route.ts
+Around line 141: change `const query = supabaseAdmin` to `const query = getDb()`
+
+Then run: npm run build
+Fix every error that appears until the build passes clean.
+
+When build passes, confirm:
+- Zero TypeScript errors
+- Zero missing module errors
+- All routes compiled successfully
+
+Report: build status, what was fixed, what is next.</div>
+  <button class="copy-btn" onclick="copyCode('fix-build')">Copy</button>
+
+  <div class="section-title">Integrate Command Center UI — Session 2</div>
+  <div class="code" id="integrate-ui">Read fsos_command_center.jsx first — the full 3,447-line file.
+
+Task: The CommandCenter.tsx wrapper already exists at 
+src/components/pages/CommandCenter.tsx and imports fsos_command_center.jsx
+via dynamic import. Verify this is working correctly.
+
+Then confirm these routes load without errors:
+- / (root — command center, all 16 pages)
+- /forms/customer-questionnaire?t=test&client=TestClient
+- /steven-johnson (agency referral form)
+- /upload/steven-johnson (agency upload page)
+
+Run: npm run dev
+Report which pages load, which fail, and fix any failures.</div>
+  <button class="copy-btn" onclick="copyCode('integrate-ui')">Copy</button>
+
+  <div class="section-title">Deploy to Vercel — Session 3</div>
+  <div class="code" id="deploy-prompt">Task: Deploy the FSOS project to Vercel.
+
+Before deploying, verify:
+1. npm run build passes with zero errors
+2. All environment variables are listed in .env.local.example
+
+Deployment steps:
+1. Run: npm run build — confirm clean
+2. Run: npx vercel --prod
+3. After deploy: provide the production URL
+4. Tell me exactly which environment variables to set in Vercel dashboard
+5. Tell me exactly what SQL to run in Supabase SQL Editor
+
+I have these credentials ready:
+- Supabase URL: [I will provide]
+- Supabase anon key: [I will provide]
+- Supabase service key: [I will provide]
+- Anthropic API key: [I will provide]
+- Resend API key: [I will provide]
+- GHL API key: [I will provide]
+- GHL Location ID: [I will provide]
+
+Walk me through each step. Do not proceed to the next step until I confirm the previous one is done.</div>
+  <button class="copy-btn" onclick="copyCode('deploy-prompt')">Copy</button>
+
+  <div class="section-title">Connect Live Data — Session 4</div>
+  <div class="code" id="live-data">Task: Connect the FSOS command center to live Supabase data.
+
+The command center currently uses static mock data arrays.
+The /api/dashboard endpoint already exists and returns live data.
+
+Work to do:
+1. Add useEffect to CommandCenter that calls GET /api/dashboard on mount
+2. Store response in state with loading and error states
+3. Map the API response to replace these mock arrays:
+   - PRIORITIES → from data.top_opportunities (mapped by score)
+   - CONV_CASES → from data.urgent_conversions  
+   - OPRA_CASES → from data.opra_due
+   - GDC tier → from data.gdc.tier
+4. Show loading skeleton while data fetches
+5. Fall back to mock data gracefully if API fails
+6. Add refresh button to topbar
+
+Read fsos_command_center.jsx first to understand the exact 
+data shapes before writing any replacement code.
+
+Run npm run build when complete.</div>
+  <button class="copy-btn" onclick="copyCode('live-data')">Copy</button>
+
+  <div class="section-title">Configure GHL Webhook — Session 5</div>
+  <div class="code" id="ghl-webhook">Task: Configure the GHL webhook and test end-to-end.
+
+The webhook handler already exists at /api/webhooks/ghl/route.ts
+It handles: AppointmentBooked, OpportunityStageChanged, ContactDNDUpdated, ContactCreated
+
+Tell me:
+1. The exact URL format to enter in GHL: https://[production-url]/api/webhooks/ghl
+2. Which GHL events to enable
+3. How to generate and set the GHL_WEBHOOK_SECRET
+4. How to verify the webhook is receiving events
+
+Then test:
+- Book a test appointment in GHL
+- Verify a form link is auto-sent to the test contact
+- Verify the activity log shows the form_sent entry in Supabase
+
+Walk me through each GHL configuration step.</div>
+  <button class="copy-btn" onclick="copyCode('ghl-webhook')">Copy</button>
+
+  <div class="section-title">Make.com APEX Import — Session 6</div>
+  <div class="code" id="make-apex">Task: Build the Make.com scenario for APEX CSV ingestion.
+
+Read fsos_implementation_guide.html Phase 1 section first.
+
+Build this Make scenario:
+Trigger: Google Drive — Watch Files in FSOS/APEX_Exports/ folder
+Module 2: CSV — Parse CSV (headers: yes)
+Module 3: Iterator
+Module 4: HTTP POST to /api/customers/upsert (create this endpoint)
+  Body: { first_name, last_name, email, phone, policy_type, 
+          face_amount, conversion_deadline, source: 'apex' }
+
+Create the upsert endpoint at src/app/api/customers/upsert/route.ts:
+- Match on email or apex_id
+- Insert new customers, update existing ones
+- Assign agency_id if provided in the CSV
+- Return: records_processed, records_created, records_updated
+
+Also write the Make scenario as a JSON export so I can import it directly.
+
+Run npm run build when complete.</div>
+  <button class="copy-btn" onclick="copyCode('make-apex')">Copy</button>
+</div>
+</div>
+
+<!-- ═══════════════ SESSIONS ═══════════════ -->
+<div id="tab-sessions" class="section">
+<div class="wrap">
+  <div class="eyebrow">Build Sequence</div>
+  <div class="page-title">Session Roadmap</div>
+  <div class="page-sub">One session = one task = one verified deliverable. Never start the next session until the current one reports clean.</div>
+
+  <div class="session">
+    <div class="session-head"><div class="session-num">Session 1</div><div class="session-title">Fix Build Error + Verify Clean Build</div><span class="session-tag"><span class="tag tag-red">Do First</span></span></div>
+    <div class="session-body">
+      <div class="card-body" style="margin-bottom:10px">Fix <code>const query = supabaseAdmin</code> → <code>const query = getDb()</code> in referral/route.ts. Run npm run build. Fix every error until zero remain.</div>
+      <strong>Deliverable:</strong> npm run build passes with zero errors<br>
+      <strong>Prompt:</strong> See "Fix Build Error" in Prompts tab
+    </div>
+  </div>
+
+  <div class="session">
+    <div class="session-head"><div class="session-num">Session 2</div><div class="session-title">Command Center Integration + Local Dev</div><span class="session-tag"><span class="tag tag-amber">Phase 4</span></span></div>
+    <div class="session-body">
+      <div class="card-body" style="margin-bottom:10px">Verify CommandCenter.tsx loads fsos_command_center.jsx correctly. All 16 pages render. All three public routes work locally.</div>
+      <strong>Deliverable:</strong> npm run dev — all pages load, no console errors<br>
+      <strong>Prompt:</strong> See "Integrate Command Center UI" in Prompts tab
+    </div>
+  </div>
+
+  <div class="session">
+    <div class="session-head"><div class="session-num">Session 3</div><div class="session-title">Supabase Schema + Vercel Deployment</div><span class="session-tag"><span class="tag tag-amber">Phase 4</span></span></div>
+    <div class="session-body">
+      <div class="card-body" style="margin-bottom:10px">Run 001_initial_schema.sql in Supabase SQL Editor. Set all 10 env vars in Vercel. Deploy to production. Verify all API routes respond.</div>
+      <strong>Need before this session:</strong> Supabase URL + keys, Anthropic key, Resend key, GHL key<br>
+      <strong>Prompt:</strong> See "Deploy to Vercel" in Prompts tab
+    </div>
+  </div>
+
+  <div class="session">
+    <div class="session-head"><div class="session-num">Session 4</div><div class="session-title">Connect Command Center to Live Data</div><span class="session-tag"><span class="tag tag-blue">Phase 4</span></span></div>
+    <div class="session-body">
+      <div class="card-body" style="margin-bottom:10px">Replace static mock arrays in command center with live /api/dashboard calls. Loading states, error fallbacks, refresh button.</div>
+      <strong>Deliverable:</strong> Daily Briefing shows live Supabase data<br>
+      <strong>Prompt:</strong> See "Connect Live Data" in Prompts tab
+    </div>
+  </div>
+
+  <div class="session">
+    <div class="session-head"><div class="session-num">Session 5</div><div class="session-title">GHL Webhook + Auto Form Sends</div><span class="session-tag"><span class="tag tag-blue">Phase 3+5</span></span></div>
+    <div class="session-body">
+      <div class="card-body" style="margin-bottom:10px">Configure GHL webhook URL. Test appointment booked → 2 forms auto-sent. Verify form_submissions table gets populated in Supabase.</div>
+      <strong>Deliverable:</strong> Book test appointment → client receives form email<br>
+      <strong>Prompt:</strong> See "Configure GHL Webhook" in Prompts tab
+    </div>
+  </div>
+
+  <div class="session">
+    <div class="session-head"><div class="session-num">Session 6</div><div class="session-title">Agency Owner Links Live</div><span class="session-tag"><span class="tag tag-purple">Phase 6</span></span></div>
+    <div class="session-body">
+      <div class="card-body" style="margin-bottom:10px">Test /steven-johnson referral form end to end. Test /upload/steven-johnson file upload. Verify both create records in Supabase with correct agency_id tag.</div>
+      <strong>Deliverable:</strong> Share real links with all 4 agency owners
+    </div>
+  </div>
+
+  <div class="session">
+    <div class="session-head"><div class="session-num">Session 7</div><div class="session-title">Make.com APEX Ingestion Scenario</div><span class="session-tag"><span class="tag tag-purple">Phase 1</span></span></div>
+    <div class="session-body">
+      <div class="card-body" style="margin-bottom:10px">Build the Make scenario: Google Drive APEX CSV → parse → upsert to Supabase customers table. Test with a real APEX export.</div>
+      <strong>Deliverable:</strong> Drop CSV in Google Drive → customers appear in Supabase<br>
+      <strong>Prompt:</strong> See "Make.com APEX Import" in Prompts tab
+    </div>
+  </div>
+
+  <div class="session">
+    <div class="session-head"><div class="session-num">Session 8</div><div class="session-title">Scoring Engine Verification</div><span class="session-tag"><span class="tag tag-green">Phase 2</span></span></div>
+    <div class="session-body">
+      <div class="card-body" style="margin-bottom:10px">Verify pg_cron is scheduled. Run score manually with SELECT run_nightly_scoring(). Confirm scores table is populated. Verify GHL contacts get score fields updated.</div>
+      <strong>Deliverable:</strong> Scores table has data · Command center shows real opportunity counts
+    </div>
+  </div>
+
+  <div class="session">
+    <div class="session-head"><div class="session-num">Session 9</div><div class="session-title">GHL AI Agents + Knowledge Base</div><span class="session-tag"><span class="tag tag-amber">Phase 7</span></span></div>
+    <div class="session-body">
+      <div class="card-body" style="margin-bottom:10px">Only after DM confirms AI Employee is enabled. Configure 4 AI agents. Load FFS knowledge base. Set TRAIGA compliance disclosure in every agent.</div>
+      <strong>Prerequisite:</strong> DM must enable GHL AI Employee on your sub-account
+    </div>
+  </div>
+
+  <div class="session">
+    <div class="session-head"><div class="session-num">Session 10</div><div class="session-title">Claude in Chrome — APEX Automation</div><span class="session-tag"><span class="tag tag-green">Phase 8</span></span></div>
+    <div class="session-body">
+      <div class="card-body" style="margin-bottom:10px">Install Claude in Chrome extension. Record APEX BOB export workflow. Schedule for Monday 7AM. System is now fully automated.</div>
+      <strong>Deliverable:</strong> Zero manual steps remaining in the weekly cycle
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ═══════════════ WORKFLOW ═══════════════ -->
+<div id="tab-workflow" class="section">
+<div class="wrap">
+  <div class="eyebrow">How It Works</div>
+  <div class="page-title">Daily Workflow</div>
+  <div class="page-sub">Once fully deployed, this is what the system does every day and what your role becomes.</div>
+
+  <div class="section-title">What the System Does Automatically</div>
+  <table class="tbl">
+    <thead><tr><th>Time</th><th>What Happens</th><th>You Do</th></tr></thead>
+    <tbody>
+      <tr><td>Monday 7AM</td><td>Claude Chrome exports APEX BOB → saves to Google Drive</td><td>Nothing</td></tr>
+      <tr><td>Nightly 2AM</td><td>Make ingests new contacts → scoring engine runs → scores push to GHL</td><td>Nothing</td></tr>
+      <tr><td>Every morning</td><td>Daily Briefing ready: priority actions, appointments, GDC, AI activity</td><td>Open the app</td></tr>
+      <tr><td>On booking</td><td>GHL webhook fires → 2 form links auto-sent to client via email</td><td>Nothing</td></tr>
+      <tr><td>On application</td><td>GHL pipeline stage change → commission case auto-created in Supabase</td><td>Nothing</td></tr>
+      <tr><td>Ongoing</td><td>4 AI agents making calls, sending texts, booking appointments</td><td>Review AI Control Center</td></tr>
+      <tr><td>On referral</td><td>Agency owner submits link → customer created, scored, tagged to agency</td><td>Nothing</td></tr>
+    </tbody>
+  </table>
+
+  <div class="section-title">Your Daily Role</div>
+  <div class="three-col">
+    <div class="card">
+      <div class="card-title">Morning (10 min)</div>
+      <div class="card-body">Open Daily Briefing. Review priority actions. Note today's appointments. Check new agency referrals. Call anyone the system flagged as urgent.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">During Appointments</div>
+      <div class="card-body">Open Review Prep page for the checklist. Forms are already filled. Run FNA report in one click. Log the outcome in GHL pipeline.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">End of Day (5 min)</div>
+      <div class="card-body">Check GDC tracker for new cases. Update commission case status. Check Needs Attention banner for agency owners to call tomorrow.</div>
+    </div>
+  </div>
+
+  <div class="section-title">Co-worker Session Best Practices</div>
+  <div class="steps">
+    <div class="step"><div class="step-num">1</div><div><div class="step-title">One task per session</div><div class="step-body">Never ask Claude to build multiple things in one session. "Fix the build error" is a session. "Deploy to Vercel" is a session. Scope is everything.</div></div></div>
+    <div class="step"><div class="step-num">2</div><div><div class="step-title">Always paste current build status</div><div class="step-body">Start every session with the exact error output from your last npm run build. If it's clean, say "build is passing clean." This prevents duplicate work.</div></div></div>
+    <div class="step"><div class="step-num">3</div><div><div class="step-title">Never skip phases</div><div class="step-body">The implementation guide has a phase order for a reason. Data before scoring. Scoring before GHL. GHL before AI agents. Skipping phases creates dependencies that break downstream.</div></div></div>
+    <div class="step"><div class="step-num">4</div><div><div class="step-title">Verify before moving on</div><div class="step-body">Every session ends with a verification step. Build passes, page loads, record appears in Supabase. Do not start Session 4 until Session 3 is verified.</div></div></div>
+    <div class="step"><div class="step-num">5</div><div><div class="step-title">Credentials only when needed</div><div class="step-body">Do not provide Supabase or GHL credentials until Session 3. The build and integration work does not need them. Provide credentials exactly when asked, phase by phase.</div></div></div>
+  </div>
+</div>
+</div>
+
+<!-- ═══════════════ COMPLIANCE ═══════════════ -->
+<div id="tab-compliance" class="section">
+<div class="wrap">
+  <div class="eyebrow">Non-Negotiable</div>
+  <div class="page-title">Compliance Framework</div>
+  <div class="page-sub">Every automated outreach feature must clear this checklist before going live. Call Ryan Anderson before activating anything.</div>
+
+  <div class="alert alert-red"><strong>Ryan Anderson — FFS Compliance TX</strong><br>(253) 242-0597 · ryan.anderson@farmersinsurance.com<br>Call him before any automated outbound SMS or voice goes live. Get his confirmation in writing.</div>
+
+  <div class="section-title">What AI Agents Can and Cannot Do</div>
+  <div class="two-col">
+    <div class="card" style="border-color:var(--green-border)">
+      <div class="card-title" style="color:var(--green)">✓ AI Agents MAY</div>
+      <div class="card-body">
+        Educate clients about financial concepts<br>
+        Qualify interest and gather basic information<br>
+        Schedule and confirm appointments<br>
+        Send reminders and follow-up messages<br>
+        Route clients to the right pipeline<br>
+        Escalate to Markist for licensed decisions<br>
+        Answer general FAQ about financial reviews
+      </div>
+    </div>
+    <div class="card" style="border-color:var(--red-border)">
+      <div class="card-title" style="color:var(--red)">✗ AI Agents May NEVER</div>
+      <div class="card-body">
+        Recommend any specific product by name<br>
+        Make suitability determinations<br>
+        Give investment or insurance advice<br>
+        Recommend carriers, annuity rates, or life insurance amounts<br>
+        Tell a client what they should buy<br>
+        Make any statement that requires a license<br>
+        Act as a licensed FSA in any capacity
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title">Required Legal Disclosures</div>
+  <table class="tbl">
+    <thead><tr><th>Requirement</th><th>Where It Applies</th><th>Exact Language</th></tr></thead>
+    <tbody>
+      <tr><td>FNA Disclaimer</td><td>Every generated FNA report</td><td>"For educational and informational purposes only. Not a product recommendation or suitability determination. Requires licensed FSA review per FINRA Reg BI."</td></tr>
+      <tr><td>TRAIGA 2026</td><td>Every AI-generated SMS or email</td><td>"This message was generated by an AI assistant."</td></tr>
+      <tr><td>TCPA Disclosure</td><td>First automated SMS to any contact</td><td>"This is an automated message from [Agency]. Reply STOP to opt out."</td></tr>
+      <tr><td>TCPA Voice</td><td>AI voice calls</td><td>Must disclose "artificial or prerecorded voice" at start of call</td></tr>
+    </tbody>
+  </table>
+
+  <div class="section-title">Pre-Launch Compliance Checklist</div>
+  <div class="steps">
+    <div class="step"><div class="step-num">1</div><div><div class="step-title">Call Ryan Anderson</div><div class="step-body">Confirm TRAIGA AI disclosure language for SMS and voice. Get written confirmation. Do not activate AI agents without this.</div></div></div>
+    <div class="step"><div class="step-num">2</div><div><div class="step-title">Confirm TCPA consent mechanism</div><div class="step-body">Every contact who receives automated SMS must have given written prior express consent. Verify your consent capture is storing to the consent_ledger table in Supabase.</div></div></div>
+    <div class="step"><div class="step-num">3</div><div><div class="step-title">Write your AIS Program document</div><div class="step-body">Texas TRAIGA 2026 safe harbor requires a written AI governance program. Describes what AI tools you use, their purpose, and your oversight process. 2-3 pages is sufficient.</div></div></div>
+    <div class="step"><div class="step-num">4</div><div><div class="step-title">Get FNA output reviewed</div><div class="step-body">Before sending any FNA report to a client, share a sample with Ryan Anderson and confirm it qualifies as educational, not investment advice.</div></div></div>
+  </div>
+
+  <div class="section-title">Texas SB 140 (Effective September 1, 2025)</div>
+  <div class="alert alert-red">Calling hours: 9AM–9PM only. Private right of action. Penalties up to $1,500 per text for DTPA violations. Do not send automated texts outside these hours under any circumstances.</div>
+</div>
+</div>
+
+<!-- ═══════════════ REFERENCE ═══════════════ -->
+<div id="tab-reference" class="section">
+<div class="wrap">
+  <div class="eyebrow">Quick Reference</div>
+  <div class="page-title">Reference</div>
+  <div class="page-sub">FFS contacts, GDC rates, commission products, and the complete tool stack.</div>
+
+  <div class="section-title">FFS Key Contacts</div>
+  <table class="tbl">
+    <thead><tr><th>Name</th><th>Role</th><th>Phone</th><th>Email</th></tr></thead>
+    <tbody>
+      <tr><td>Sales Desk</td><td>Case consultations, product training</td><td>(866) 888-9739 Opt 3→3</td><td>Mon–Fri 7AM–5PM PT</td></tr>
+      <tr><td>Matt Anderson</td><td>Financial Services Director — Central TX</td><td>(818) 584-0264</td><td>matthew.1.anderson@farmersinsurance.com</td></tr>
+      <tr><td>Ando Agamalian</td><td>Internal Wholesaler — Central</td><td>(818) 584-0205</td><td>ando.agamalian@farmersinsurance.com</td></tr>
+      <tr><td>Ryan Anderson</td><td>FFS Compliance Consultant — TX</td><td>(253) 242-0597</td><td>ryan.anderson@farmersinsurance.com</td></tr>
+      <tr><td>Lora Brandt</td><td>OSJ Supervisory Principal</td><td>(818) 584-0199</td><td>lora.brandt@farmersinsurance.com</td></tr>
+      <tr><td>Commissions</td><td>Commission payment questions</td><td>(866) 888-9739 Opt 6</td><td>usw_ffs_accounting@farmersinsurance.com</td></tr>
+    </tbody>
+  </table>
+
+  <div class="section-title">GDC Payout Tiers</div>
+  <div class="three-col">
+    <div class="card"><div class="card-title">Tier 1</div><div class="card-body">Under $14,999 rolling 12-month GDC<br><strong style="font-size:20px;color:var(--ink)">40%</strong> FSA payout</div></div>
+    <div class="card"><div class="card-title">Tier 2</div><div class="card-body">$15,000 – $54,999 rolling 12-month GDC<br><strong style="font-size:20px;color:var(--blue)">60%</strong> FSA payout</div></div>
+    <div class="card"><div class="card-title">Tier 3</div><div class="card-body">$55,000+ rolling 12-month GDC<br><strong style="font-size:20px;color:var(--green2)">80%</strong> FSA payout</div></div>
+  </div>
+
+  <div class="section-title">Priority Commission Products (pre-loaded in Supabase)</div>
+  <table class="tbl">
+    <thead><tr><th>Carrier</th><th>Product</th><th>Type</th><th>GDC Rate</th></tr></thead>
+    <tbody>
+      <tr><td>MassMutual Ascend</td><td>Legend 7 — Option 1</td><td>FIA</td><td>6.50%</td></tr>
+      <tr><td>MassMutual Ascend</td><td>Landmark 5 — Option 1</td><td>FIA</td><td>5.25%</td></tr>
+      <tr><td>Athene</td><td>Agility 10 — Option 1</td><td>FIA</td><td>7.00%</td></tr>
+      <tr><td>Pacific Life</td><td>Pacific Horizon IUL</td><td>Life (target)</td><td>95% of target</td></tr>
+      <tr><td>Protective</td><td>SPWL</td><td>Life</td><td>7.00%</td></tr>
+      <tr><td>Voya</td><td>Mutual Fund IRA</td><td>MF</td><td>1.00% + 0.50% trail</td></tr>
+      <tr><td>Corebridge</td><td>Power Index Plus — Option 1</td><td>FIA</td><td>5.00%</td></tr>
+    </tbody>
+  </table>
+
+  <div class="section-title">Complete Tool Stack</div>
+  <table class="tbl">
+    <thead><tr><th>Tool</th><th>Role</th><th>Phase</th></tr></thead>
+    <tbody>
+      <tr><td>Supabase</td><td>Master database — 17 tables, scoring engine, RLS</td><td>Phase 1</td></tr>
+      <tr><td>Make.com</td><td>Automation — APEX ingestion, score push, form sends, GDC cases</td><td>Phase 1</td></tr>
+      <tr><td>Google Drive</td><td>File intake bridge — APEX exports and agency uploads</td><td>Phase 1</td></tr>
+      <tr><td>Uptime Robot</td><td>Keeps Supabase alive — pings every 5 minutes (free)</td><td>Phase 1</td></tr>
+      <tr><td>GoHighLevel</td><td>CRM, 5 pipelines, outreach sequences, calendars, AI agents</td><td>Phase 3</td></tr>
+      <tr><td>Twilio (via GHL)</td><td>3 numbers — toll-free (voice AI), 469 (OPRA/conv), 361 (life/retire)</td><td>Phase 3</td></tr>
+      <tr><td>Vercel</td><td>Deploy command center + all API routes + public pages</td><td>Phase 4</td></tr>
+      <tr><td>Resend</td><td>Transactional email — form links, FNA reports, confirmations</td><td>Phase 5</td></tr>
+      <tr><td>Anthropic Claude API</td><td>FNA report generation via your existing Max plan</td><td>Phase 5</td></tr>
+      <tr><td>GHL AI Employee</td><td>4 AI agents — receptionist, appointment, conversion, follow-up</td><td>Phase 7</td></tr>
+      <tr><td>Claude in Chrome</td><td>Automates APEX BOB export every Monday 7AM</td><td>Phase 8</td></tr>
+    </tbody>
+  </table>
+
+  <div class="section-title">Agency Owners</div>
+  <table class="tbl">
+    <thead><tr><th>Agency</th><th>Owner</th><th>City</th><th>Referral Link</th><th>Upload Link</th></tr></thead>
+    <tbody>
+      <tr><td>Johnson Agency</td><td>Steven Johnson</td><td>Corpus Christi</td><td>/steven-johnson</td><td>/upload/steven-johnson</td></tr>
+      <tr><td>Brown Agency</td><td>Sarah Brown</td><td>McKinney</td><td>/sarah-brown</td><td>/upload/sarah-brown</td></tr>
+      <tr><td>Vega Insurance Group</td><td>Carlos Vega Sr.</td><td>San Antonio</td><td>/carlos-vega-sr</td><td>/upload/carlos-vega-sr</td></tr>
+      <tr><td>Taylor Agency</td><td>Jack Taylor</td><td>Plano</td><td>/jack-taylor</td><td>/upload/jack-taylor</td></tr>
+    </tbody>
+  </table>
+</div>
+</div>
+
+<script>
+function show(id, el) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  if(el) el.classList.add('active');
+  window.scrollTo({top:0,behavior:'smooth'});
+  return false;
+}
+function copyCode(id) {
+  const el = document.getElementById(id);
+  const text = el.textContent;
+  navigator.clipboard?.writeText(text.trim()).then(() => {
+    const btn = el.nextElementSibling;
+    if(btn) { btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy', 2000); }
+  });
+}
+// Add copy buttons to all code blocks
+document.querySelectorAll('.code').forEach(el => {
+  if(!el.id) return;
+  if(!el.nextElementSibling || !el.nextElementSibling.classList.contains('copy-btn')) {
+    const btn = document.createElement('button');
+    btn.className = 'copy-btn';
+    btn.textContent = 'Copy';
+    btn.onclick = () => copyCode(el.id);
+    el.style.position = 'relative';
+    el.parentNode.insertBefore(btn, el.nextSibling);
+  }
+});
+</script>
+</body>
+</html>

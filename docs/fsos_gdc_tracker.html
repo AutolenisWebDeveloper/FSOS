@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FSA GDC Tracker</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
+
+:root {
+  --bg:#06080a;
+  --bg2:#0e1117;
+  --bg3:#161c24;
+  --bg4:#1e2530;
+  --line:rgba(255,255,255,0.06);
+  --line2:rgba(255,255,255,0.12);
+  --text:#dde4ed;
+  --muted:#6b7688;
+  --dim:#3a4150;
+  --green:#00e5a0;
+  --green2:#00b880;
+  --green-bg:rgba(0,229,160,0.08);
+  --green-border:rgba(0,229,160,0.22);
+  --amber:#f0b429;
+  --amber-bg:rgba(240,180,41,0.08);
+  --amber-border:rgba(240,180,41,0.22);
+  --red:#ff5263;
+  --red-bg:rgba(255,82,99,0.08);
+  --red-border:rgba(255,82,99,0.22);
+  --blue:#4da6ff;
+  --blue-bg:rgba(77,166,255,0.08);
+  --blue-border:rgba(77,166,255,0.22);
+  --purple:#b97cff;
+  --purple-bg:rgba(185,124,255,0.08);
+}
+
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-serif;font-size:13px;line-height:1.5;min-height:100vh;}
+
+/* MASTHEAD */
+.masthead{padding:28px 32px 20px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;}
+.masthead-left{}
+.tag{font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;}
+.masthead h1{font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:.04em;color:#fff;line-height:1;}
+.masthead-sub{font-size:11px;color:var(--muted);margin-top:4px;font-family:'IBM Plex Mono',monospace;}
+.fsa-pill{background:var(--green-bg);border:1px solid var(--green-border);border-radius:8px;padding:12px 18px;text-align:right;}
+.fsa-pill-val{font-family:'Bebas Neue',sans-serif;font-size:32px;color:var(--green);line-height:1;letter-spacing:.04em;}
+.fsa-pill-lbl{font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-top:2px;}
+
+/* KPI STRIP */
+.kpi-strip{display:grid;grid-template-columns:repeat(6,1fr);gap:1px;background:var(--line);border-bottom:1px solid var(--line);}
+.kpi{background:var(--bg2);padding:16px 20px;}
+.kpi-lbl{font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;}
+.kpi-val{font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:.03em;line-height:1;}
+.kpi-sub{font-size:10px;color:var(--muted);margin-top:3px;font-family:'IBM Plex Mono',monospace;}
+.kpi-val.green{color:var(--green);}
+.kpi-val.amber{color:var(--amber);}
+.kpi-val.blue{color:var(--blue);}
+.kpi-val.purple{color:var(--purple);}
+.kpi-val.red{color:var(--red);}
+
+/* TABS */
+.tabs{display:flex;gap:0;padding:0 32px;border-bottom:1px solid var(--line);overflow-x:auto;background:var(--bg2);}
+.tab{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.06em;text-transform:uppercase;padding:12px 16px;color:var(--muted);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;white-space:nowrap;transition:color .15s,border-color .15s;}
+.tab:hover{color:var(--text);}
+.tab.active{color:var(--green);border-bottom-color:var(--green);}
+
+/* MAIN */
+.main{padding:24px 32px 60px;}
+.section{display:none;}
+.section.active{display:block;}
+
+/* ADD CASE BTN */
+.toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px;}
+.toolbar-left{display:flex;gap:8px;flex-wrap:wrap;}
+.btn-add{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.06em;font-weight:600;padding:8px 18px;border-radius:6px;border:1px solid var(--green-border);background:var(--green-bg);color:var(--green);cursor:pointer;transition:all .15s;}
+.btn-add:hover{background:var(--green);color:var(--bg);}
+.btn-export{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.06em;padding:8px 14px;border-radius:6px;border:1px solid var(--line2);background:transparent;color:var(--muted);cursor:pointer;}
+.filter-pill{font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.06em;padding:5px 10px;border-radius:20px;border:1px solid var(--line2);background:transparent;color:var(--muted);cursor:pointer;transition:all .15s;}
+.filter-pill.active{background:var(--blue-bg);border-color:var(--blue-border);color:var(--blue);}
+.search-box{font-family:'IBM Plex Mono',monospace;font-size:11px;padding:7px 12px;border-radius:6px;border:1px solid var(--line2);background:var(--bg3);color:var(--text);outline:none;width:200px;}
+.search-box:focus{border-color:var(--blue);}
+
+/* CASES TABLE */
+.table-wrap{overflow-x:auto;background:var(--bg2);border:1px solid var(--line);border-radius:10px;}
+table{width:100%;border-collapse:collapse;font-size:11px;}
+thead th{text-align:left;padding:10px 12px;font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--line);white-space:nowrap;background:var(--bg3);cursor:pointer;user-select:none;}
+thead th:hover{color:var(--text);}
+tbody tr{border-bottom:1px solid var(--line);transition:background .1s;}
+tbody tr:last-child{border-bottom:none;}
+tbody tr:hover{background:var(--bg3);}
+tbody td{padding:10px 12px;vertical-align:middle;}
+.td-name{color:var(--text);font-weight:500;}
+.td-carrier{color:var(--muted);}
+.td-product{color:var(--muted);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.td-type{display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:4px;}
+.type-life{background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-border);}
+.type-fa{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-border);}
+.type-fia{background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);}
+.type-va{background:var(--purple-bg);color:var(--purple);border:1px solid rgba(185,124,255,.25);}
+.type-vul{background:rgba(255,150,50,.08);color:#ff9632;border:1px solid rgba(255,150,50,.25);}
+.type-mf{background:rgba(100,200,255,.08);color:#64c8ff;border:1px solid rgba(100,200,255,.25);}
+.td-money{font-family:'IBM Plex Mono',monospace;text-align:right;}
+.td-gdc{color:var(--blue);font-weight:500;}
+.td-fsa{color:var(--green);font-weight:600;}
+.td-rate{color:var(--amber);font-family:'IBM Plex Mono',monospace;}
+.td-trail{color:var(--purple);font-family:'IBM Plex Mono',monospace;}
+.status-badge{display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:4px;}
+.s-pending{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-border);}
+.s-submitted{background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-border);}
+.s-issued{background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);}
+.s-paid{background:rgba(0,229,160,.15);color:#00e5a0;border:1px solid var(--green-border);}
+.s-lapsed{background:var(--red-bg);color:var(--red);border:1px solid var(--red-border);}
+.s-flagged{background:var(--red-bg);color:var(--red);border:1px solid var(--red-border);}
+.row-action{font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid var(--line2);background:transparent;color:var(--muted);cursor:pointer;font-family:'IBM Plex Mono',monospace;}
+.row-action:hover{border-color:var(--green);color:var(--green);}
+
+/* SUMMARY TOTALS ROW */
+.totals-row td{border-top:1px solid var(--line2);background:var(--bg3);font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:11px;padding:10px 12px;}
+
+/* CARRIER BREAKDOWN */
+.breakdown-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-bottom:24px;}
+.bc{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:16px;}
+.bc-carrier{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;color:var(--text);margin-bottom:10px;text-transform:uppercase;letter-spacing:.06em;}
+.bc-row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--line);font-size:11px;}
+.bc-row:last-child{border-bottom:none;}
+.bc-key{color:var(--muted);font-family:'IBM Plex Mono',monospace;}
+.bc-val{font-family:'IBM Plex Mono',monospace;font-weight:500;}
+.bc-val.green{color:var(--green);}
+.bc-val.blue{color:var(--blue);}
+.bc-val.amber{color:var(--amber);}
+.bc-bar{height:3px;background:var(--line);border-radius:2px;margin-top:8px;}
+.bc-bar-fill{height:100%;border-radius:2px;background:var(--green);}
+
+/* MONTHLY CHART */
+.month-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:4px;align-items:flex-end;height:120px;margin-bottom:8px;}
+.month-bar-wrap{display:flex;flex-direction:column;align-items:center;gap:4px;height:100%;}
+.month-bar-track{flex:1;display:flex;align-items:flex-end;width:100%;}
+.month-bar{width:100%;border-radius:3px 3px 0 0;min-height:2px;transition:height .3s;cursor:pointer;position:relative;}
+.month-bar:hover::after{content:attr(data-tip);position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:var(--bg4);border:1px solid var(--line2);border-radius:6px;padding:4px 8px;font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--text);white-space:nowrap;z-index:10;}
+.month-lbl{font-family:'IBM Plex Mono',monospace;font-size:8px;color:var(--dim);text-transform:uppercase;}
+.month-val{font-family:'IBM Plex Mono',monospace;font-size:8px;color:var(--muted);}
+
+/* MODAL */
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:200;align-items:center;justify-content:center;}
+.overlay.open{display:flex;}
+.modal{background:var(--bg2);border:1px solid var(--line2);border-radius:12px;padding:24px;width:580px;max-width:96vw;max-height:90vh;overflow-y:auto;}
+.modal-title{font-family:'Bebas Neue',sans-serif;font-size:22px;color:#fff;letter-spacing:.04em;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--line);}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.field label{display:block;font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:5px;}
+.field input,.field select,.field textarea{width:100%;background:var(--bg3);border:1px solid var(--line2);border-radius:6px;padding:8px 10px;color:var(--text);font-family:'IBM Plex Mono',monospace;font-size:11px;outline:none;transition:border-color .15s;}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--green);}
+.field select option{background:var(--bg3);}
+.gdc-preview{background:var(--bg3);border:1px solid var(--line);border-radius:8px;padding:12px;margin-top:12px;}
+.gdc-preview-title{font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;}
+.gdc-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--line);font-family:'IBM Plex Mono',monospace;font-size:11px;}
+.gdc-row:last-child{border-bottom:none;}
+.gdc-key{color:var(--muted);}
+.gdc-val{font-weight:600;}
+.gdc-val.green{color:var(--green);}
+.gdc-val.blue{color:var(--blue);}
+.gdc-val.amber{color:var(--amber);}
+.modal-actions{display:flex;gap:8px;margin-top:16px;justify-content:flex-end;}
+.btn-save{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;padding:9px 20px;border-radius:6px;border:1px solid var(--green-border);background:var(--green-bg);color:var(--green);cursor:pointer;}
+.btn-save:hover{background:var(--green);color:var(--bg);}
+.btn-cancel{font-family:'IBM Plex Mono',monospace;font-size:10px;padding:9px 16px;border-radius:6px;border:1px solid var(--line2);background:transparent;color:var(--muted);cursor:pointer;}
+
+/* GOAL TRACKER */
+.goal-wrap{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:20px;margin-bottom:20px;}
+.goal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
+.goal-title{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);}
+.goal-edit{font-family:'IBM Plex Mono',monospace;font-size:9px;padding:4px 10px;border-radius:4px;border:1px solid var(--line2);background:transparent;color:var(--muted);cursor:pointer;}
+.goal-bars{display:flex;flex-direction:column;gap:10px;}
+.goal-bar-wrap{}
+.goal-bar-label{display:flex;justify-content:space-between;font-family:'IBM Plex Mono',monospace;font-size:10px;margin-bottom:4px;}
+.goal-bar-name{color:var(--muted);}
+.goal-bar-vals{color:var(--text);}
+.goal-bar-track{height:8px;background:var(--line);border-radius:4px;overflow:hidden;}
+.goal-bar-fill{height:100%;border-radius:4px;transition:width .4s;}
+
+@media(max-width:700px){
+  .kpi-strip{grid-template-columns:repeat(3,1fr);}
+  .main{padding:16px 16px 40px;}
+  .masthead{padding:20px 16px 16px;}
+  .tabs{padding:0 16px;}
+  .form-grid{grid-template-columns:1fr;}
+  .month-grid{grid-template-columns:repeat(6,1fr);}
+}
+</style>
+</head>
+<body>
+
+<!-- MASTHEAD -->
+<div class="masthead">
+  <div class="masthead-left">
+    <div class="tag">FSOS · FSA Commission Tracker · 2026</div>
+    <h1>GDC Tracker</h1>
+    <div class="masthead-sub">All carriers · All products · Live running totals · 80% FSA payout</div>
+  </div>
+  <div class="fsa-pill">
+    <div class="fsa-pill-val" id="hdr-fsa">$0</div>
+    <div class="fsa-pill-lbl">Est. FSA Payout YTD</div>
+  </div>
+</div>
+
+<!-- KPI STRIP -->
+<div class="kpi-strip">
+  <div class="kpi">
+    <div class="kpi-lbl">Total GDC YTD</div>
+    <div class="kpi-val green" id="kpi-gdc">$0</div>
+    <div class="kpi-sub">All carriers combined</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-lbl">FSA Payout YTD</div>
+    <div class="kpi-val green" id="kpi-fsa">$0</div>
+    <div class="kpi-sub">GDC × 80%</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-lbl">Pipeline GDC</div>
+    <div class="kpi-val amber" id="kpi-pipeline">$0</div>
+    <div class="kpi-sub">Pending + submitted</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-lbl">Issued GDC</div>
+    <div class="kpi-val blue" id="kpi-issued">$0</div>
+    <div class="kpi-sub">Cases issued</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-lbl">Annual Trail</div>
+    <div class="kpi-val purple" id="kpi-trail">$0</div>
+    <div class="kpi-sub">Recurring income</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-lbl">Cases Total</div>
+    <div class="kpi-val" id="kpi-cases" style="color:var(--text)">0</div>
+    <div class="kpi-sub" id="kpi-flagged-lbl"></div>
+  </div>
+</div>
+
+<!-- TABS -->
+<div class="tabs">
+  <button class="tab active" onclick="showTab('tracker',this)">All Cases</button>
+  <button class="tab" onclick="showTab('breakdown',this)">Carrier Breakdown</button>
+  <button class="tab" onclick="showTab('monthly',this)">Monthly View</button>
+  <button class="tab" onclick="showTab('goals',this)">Goals</button>
+</div>
+
+<div class="main">
+
+<!-- ALL CASES -->
+<div id="tab-tracker" class="section active">
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <button class="btn-add" onclick="openAdd()">+ Add Case</button>
+      <button class="filter-pill active" onclick="filterStatus('all',this)">All</button>
+      <button class="filter-pill" onclick="filterStatus('pending',this)">Pending</button>
+      <button class="filter-pill" onclick="filterStatus('submitted',this)">Submitted</button>
+      <button class="filter-pill" onclick="filterStatus('issued',this)">Issued</button>
+      <button class="filter-pill" onclick="filterStatus('paid',this)">Paid</button>
+      <button class="filter-pill" onclick="filterStatus('flagged',this)">Flagged</button>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <input class="search-box" type="text" placeholder="Search client or carrier..." oninput="searchCases(this.value)" id="case-search">
+      <button class="btn-export" onclick="exportCSV()">Export CSV</button>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th onclick="sortBy('date')">Date ▾</th>
+          <th onclick="sortBy('client')">Client</th>
+          <th onclick="sortBy('carrier')">Carrier</th>
+          <th>Product</th>
+          <th>Type</th>
+          <th>Age</th>
+          <th onclick="sortBy('premium')" style="text-align:right">Premium</th>
+          <th style="text-align:right">GDC Rate</th>
+          <th onclick="sortBy('gdc')" style="text-align:right">Est. GDC</th>
+          <th onclick="sortBy('fsa')" style="text-align:right">Est. FSA (80%)</th>
+          <th style="text-align:right">Trail/yr</th>
+          <th>Status</th>
+          <th>Pipeline</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="cases-tbody"></tbody>
+      <tfoot><tr class="totals-row" id="totals-row"></tr></tfoot>
+    </table>
+  </div>
+</div>
+
+<!-- CARRIER BREAKDOWN -->
+<div id="tab-breakdown" class="section">
+  <div class="breakdown-grid" id="breakdown-grid"></div>
+</div>
+
+<!-- MONTHLY VIEW -->
+<div id="tab-monthly" class="section">
+  <div style="background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:20px;margin-bottom:16px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);">Monthly GDC & FSA — 2026</div>
+      <div style="display:flex;gap:12px;">
+        <div style="display:flex;align-items:center;gap:5px;font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--blue);"><div style="width:10px;height:10px;background:var(--blue);border-radius:2px;"></div>Est. GDC</div>
+        <div style="display:flex;align-items:center;gap:5px;font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--green);"><div style="width:10px;height:10px;background:var(--green);border-radius:2px;"></div>Est. FSA</div>
+      </div>
+    </div>
+    <div class="month-grid" id="month-gdc-chart"></div>
+    <div class="month-grid" id="month-lbl-row" style="height:auto;margin-top:4px;"></div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Month</th>
+          <th style="text-align:right">Cases</th>
+          <th style="text-align:right">Total Premium</th>
+          <th style="text-align:right">Est. GDC</th>
+          <th style="text-align:right">Est. FSA (80%)</th>
+          <th style="text-align:right">Trail Earned</th>
+          <th style="text-align:right">Actual GDC</th>
+          <th style="text-align:right">Variance</th>
+        </tr>
+      </thead>
+      <tbody id="monthly-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- GOALS -->
+<div id="tab-goals" class="section">
+  <div class="goal-wrap">
+    <div class="goal-header">
+      <div class="goal-title">Annual GDC Goals vs. Actual</div>
+      <button class="goal-edit" onclick="editGoals()">Edit Goals</button>
+    </div>
+    <div class="goal-bars" id="goal-bars"></div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+    <div style="background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:18px;">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:14px;">Top Products by GDC</div>
+      <div id="top-products"></div>
+    </div>
+    <div style="background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:18px;">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:14px;">Pipeline to Goal</div>
+      <div id="pipeline-to-goal"></div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /main -->
+
+<!-- ADD/EDIT CASE MODAL -->
+<div class="overlay" id="modal">
+  <div class="modal">
+    <div class="modal-title" id="modal-title">Add GDC Case</div>
+    <div class="form-grid">
+      <div class="field"><label>Client Name</label><input type="text" id="f-client" placeholder="First Last" oninput="previewGDC()"></div>
+      <div class="field"><label>Date</label><input type="date" id="f-date"></div>
+      <div class="field"><label>Carrier</label><input type="text" id="f-carrier" placeholder="e.g. Athene" list="carrier-list" oninput="previewGDC()"></div>
+      <div class="field"><label>Product Name</label><input type="text" id="f-product" placeholder="e.g. Agility 10 Option 1" oninput="previewGDC()"></div>
+      <div class="field"><label>Product Type</label>
+        <select id="f-type" onchange="previewGDC()">
+          <option value="life">Life Insurance</option>
+          <option value="fa">Fixed Annuity</option>
+          <option value="fia">Fixed Indexed Annuity</option>
+          <option value="va">Variable Annuity</option>
+          <option value="vul">VUL</option>
+          <option value="mf">Mutual Fund / IRA</option>
+        </select>
+      </div>
+      <div class="field"><label>Client Age</label><input type="number" id="f-age" min="18" max="99" placeholder="e.g. 58" oninput="previewGDC()"></div>
+      <div class="field"><label>Premium / Contribution ($)</label><input type="number" id="f-premium" placeholder="e.g. 150000" oninput="previewGDC()"></div>
+      <div class="field"><label>GDC Rate (%) — from FFS schedule</label><input type="number" id="f-gdc-rate" step="0.01" placeholder="e.g. 8.00" oninput="previewGDC()"></div>
+      <div class="field"><label>Trail Rate (%) — 0 if none</label><input type="number" id="f-trail" step="0.01" placeholder="e.g. 0.50" oninput="previewGDC()"></div>
+      <div class="field"><label>Status</label>
+        <select id="f-status">
+          <option value="pending">Pending</option>
+          <option value="submitted">Submitted</option>
+          <option value="issued">Issued</option>
+          <option value="paid">Paid</option>
+          <option value="lapsed">Lapsed</option>
+        </select>
+      </div>
+      <div class="field"><label>Pipeline</label>
+        <select id="f-pipeline">
+          <option value="Life Cross-Sell">Life Cross-Sell</option>
+          <option value="Term Conversion">Term Conversion</option>
+          <option value="Retirement Discovery">Retirement Discovery</option>
+          <option value="OPRA Transfer">OPRA Transfer</option>
+          <option value="Workshop">Workshop</option>
+          <option value="Direct">Direct / Other</option>
+        </select>
+      </div>
+      <div class="field" style="grid-column:1/-1"><label>Notes</label><input type="text" id="f-notes" placeholder="Optional notes"></div>
+    </div>
+
+    <div class="gdc-preview" id="gdc-preview" style="display:none">
+      <div class="gdc-preview-title">Live Calculation Preview</div>
+      <div class="gdc-row"><span class="gdc-key">Premium</span><span class="gdc-val" id="prev-premium">—</span></div>
+      <div class="gdc-row"><span class="gdc-key">GDC Rate</span><span class="gdc-val amber" id="prev-rate">—</span></div>
+      <div class="gdc-row"><span class="gdc-key">Estimated GDC</span><span class="gdc-val blue" id="prev-gdc">—</span></div>
+      <div class="gdc-row"><span class="gdc-key">FSA Payout (80%)</span><span class="gdc-val green" id="prev-fsa">—</span></div>
+      <div class="gdc-row" id="prev-trail-row"><span class="gdc-key">Annual Trail</span><span class="gdc-val" style="color:var(--purple)" id="prev-trail">—</span></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveCase()">Save Case</button>
+    </div>
+  </div>
+</div>
+
+<datalist id="carrier-list">
+  <option value="Pacific Life">
+  <option value="Protective">
+  <option value="Athene">
+  <option value="MassMutual Ascend">
+  <option value="North American">
+  <option value="American Equity">
+  <option value="Midland National">
+  <option value="Jackson National">
+  <option value="Lincoln Financial">
+  <option value="Transamerica">
+  <option value="Farmers New World Life">
+  <option value="Various / FFS">
+</datalist>
+
+<script>
+const FSA_RATE = 0.80;
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+// ── INITIAL SAMPLE CASES ──
+let cases = JSON.parse(localStorage.getItem('fsos_gdc_cases') || 'null') || [
+  {id:1,client:'John Smith',date:'2026-01-15',carrier:'MassMutual Ascend',product:'Legend 7 Option 1',type:'fia',age:62,premium:150000,gdcRate:0.08,trail:0,estGDC:12000,estFSA:9600,annualTrail:0,status:'issued',pipeline:'Retirement Discovery',notes:''},
+  {id:2,client:'Mary Johnson',date:'2026-02-08',carrier:'Pacific Life',product:'Pacific Horizon IUL',type:'life',age:48,premium:80000,gdcRate:0.95,trail:0,estGDC:76000,estFSA:60800,annualTrail:0,status:'submitted',pipeline:'Life Cross-Sell',notes:'Target premium $12k — large case'},
+  {id:3,client:'Carlos Vega',date:'2026-02-22',carrier:'Athene',product:'Agility 10 Option 1',type:'fa',age:67,premium:200000,gdcRate:0.07,trail:0,estGDC:14000,estFSA:11200,annualTrail:0,status:'issued',pipeline:'OPRA Transfer',notes:''},
+  {id:4,client:'Sandra Lee',date:'2026-03-10',carrier:'Various / FFS',product:'Mutual Fund IRA',type:'mf',age:55,premium:50000,gdcRate:0.01,trail:0.005,estGDC:500,estFSA:400,annualTrail:250,status:'paid',pipeline:'Retirement Discovery',notes:'Trail ongoing'},
+  {id:5,client:'Robert Davis',date:'2026-04-03',carrier:'North American',product:'Charter Plus 10',type:'fia',age:59,premium:120000,gdcRate:0.075,trail:0,estGDC:9000,estFSA:7200,annualTrail:0,status:'pending',pipeline:'Workshop',notes:'Met at retirement workshop'},
+  {id:6,client:'Linda Martinez',date:'2026-04-18',carrier:'Protective',product:'Single Premium Whole Life',type:'life',age:65,premium:75000,gdcRate:0.07,trail:0,estGDC:5250,estFSA:4200,annualTrail:0,status:'submitted',pipeline:'Life Cross-Sell',notes:''},
+  {id:7,client:'James Wilson',date:'2026-05-06',carrier:'Athene',product:'Agility 10 Option 2',type:'fa',age:71,premium:180000,gdcRate:0.055,trail:0.0025,estGDC:9900,estFSA:7920,annualTrail:450,status:'pending',pipeline:'OPRA Transfer',notes:'Awaiting paperwork'},
+  {id:8,client:'Patricia Brown',date:'2026-05-20',carrier:'Unknown Carrier',product:'Custom FIA Product',type:'fia',age:60,premium:100000,gdcRate:null,trail:0,estGDC:null,estFSA:null,annualTrail:0,status:'flagged',pipeline:'Retirement Discovery',notes:'Rate not confirmed — add to rate table'},
+];
+let nextId = 9;
+let editId = null;
+let sortKey = 'date';
+let sortAsc = false;
+let statusFilter = 'all';
+let searchQuery = '';
+
+let goals = JSON.parse(localStorage.getItem('fsos_goals') || 'null') || {
+  annualGDC: 500000,
+  annualFSA: 400000,
+  monthlyGDC: 41667,
+  casesPerMonth: 4
+};
+
+// ── UTILITIES ──
+const fmt = n => n == null ? '—' : '$' + Math.round(n).toLocaleString('en-US');
+const fmtFull = n => n == null ? '—' : '$' + n.toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2});
+const fmtPct = n => n == null ? '—' : (n*100).toFixed(2)+'%';
+const typeLabel = {life:'Life',fa:'Fixed Ann.',fia:'FIA',va:'VA',vul:'VUL',mf:'MF/IRA'};
+const typeCls = {life:'type-life',fa:'type-fa',fia:'type-fia',va:'type-va',vul:'type-vul',mf:'type-mf'};
+const sCls = {pending:'s-pending',submitted:'s-submitted',issued:'s-issued',paid:'s-paid',lapsed:'s-lapsed',flagged:'s-flagged'};
+
+function save(){localStorage.setItem('fsos_gdc_cases', JSON.stringify(cases));}
+
+// ── KPI CALCULATIONS ──
+function calcKPIs(){
+  const active = cases.filter(c=>c.status!=='lapsed'&&c.status!=='flagged');
+  const paid_issued = cases.filter(c=>c.status==='issued'||c.status==='paid');
+  const pipeline = cases.filter(c=>c.status==='pending'||c.status==='submitted');
+  const flagged = cases.filter(c=>c.status==='flagged');
+
+  const totalGDC = active.reduce((s,c)=>s+(c.estGDC||0),0);
+  const totalFSA = active.reduce((s,c)=>s+(c.estFSA||0),0);
+  const pipelineGDC = pipeline.reduce((s,c)=>s+(c.estGDC||0),0);
+  const issuedGDC = paid_issued.reduce((s,c)=>s+(c.estGDC||0),0);
+  const totalTrail = active.reduce((s,c)=>s+(c.annualTrail||0),0)*FSA_RATE;
+
+  document.getElementById('kpi-gdc').textContent=fmt(totalGDC);
+  document.getElementById('kpi-fsa').textContent=fmt(totalFSA);
+  document.getElementById('kpi-pipeline').textContent=fmt(pipelineGDC);
+  document.getElementById('kpi-issued').textContent=fmt(issuedGDC);
+  document.getElementById('kpi-trail').textContent=fmt(totalTrail)+'/yr';
+  document.getElementById('kpi-cases').textContent=cases.length;
+  document.getElementById('kpi-flagged-lbl').textContent=flagged.length>0?flagged.length+' flagged':'All rates confirmed';
+  document.getElementById('kpi-flagged-lbl').style.color=flagged.length>0?'var(--red)':'var(--green)';
+  document.getElementById('hdr-fsa').textContent=fmt(totalFSA);
+}
+
+// ── RENDER CASES TABLE ──
+function renderCases(){
+  let data = [...cases];
+  if(statusFilter!=='all') data=data.filter(c=>c.status===statusFilter);
+  if(searchQuery) data=data.filter(c=>
+    c.client.toLowerCase().includes(searchQuery)||
+    c.carrier.toLowerCase().includes(searchQuery)||
+    c.product.toLowerCase().includes(searchQuery)
+  );
+  data.sort((a,b)=>{
+    let va=a[sortKey],vb=b[sortKey];
+    if(va==null) return 1; if(vb==null) return -1;
+    if(typeof va==='string') return sortAsc?va.localeCompare(vb):vb.localeCompare(va);
+    return sortAsc?va-vb:vb-va;
+  });
+
+  const tbody=document.getElementById('cases-tbody');
+  tbody.innerHTML=data.map(c=>`
+    <tr>
+      <td style="color:var(--muted);font-family:'IBM Plex Mono',monospace">${c.date}</td>
+      <td class="td-name">${c.client}</td>
+      <td class="td-carrier">${c.carrier}</td>
+      <td class="td-product" title="${c.product}">${c.product}</td>
+      <td><span class="td-type ${typeCls[c.type]||''}">${typeLabel[c.type]||c.type}</span></td>
+      <td style="color:var(--muted);font-family:'IBM Plex Mono',monospace">${c.age||'—'}</td>
+      <td class="td-money">${fmt(c.premium)}</td>
+      <td class="td-rate td-money">${c.gdcRate!=null?fmtPct(c.gdcRate):'<span style="color:var(--red)">MISSING</span>'}</td>
+      <td class="td-gdc td-money">${fmt(c.estGDC)}</td>
+      <td class="td-fsa td-money">${fmt(c.estFSA)}</td>
+      <td class="td-trail td-money">${c.annualTrail>0?fmt(c.annualTrail*FSA_RATE):'—'}</td>
+      <td><span class="status-badge ${sCls[c.status]||'s-pending'}">${c.status}</span></td>
+      <td style="color:var(--muted);font-size:10px">${c.pipeline||'—'}</td>
+      <td style="display:flex;gap:4px;">
+        <button class="row-action" onclick="editCase(${c.id})">Edit</button>
+        <button class="row-action" style="color:var(--amber)" onclick="cycleStatus(${c.id})">→</button>
+      </td>
+    </tr>`).join('');
+
+  // totals row
+  const vis = data.filter(c=>c.status!=='flagged');
+  const tPrem=vis.reduce((s,c)=>s+(c.premium||0),0);
+  const tGDC=vis.reduce((s,c)=>s+(c.estGDC||0),0);
+  const tFSA=vis.reduce((s,c)=>s+(c.estFSA||0),0);
+  const tTrail=vis.reduce((s,c)=>s+(c.annualTrail||0),0)*FSA_RATE;
+  document.getElementById('totals-row').innerHTML=`
+    <td colspan="6" style="color:var(--muted)">Totals (${vis.length} cases shown)</td>
+    <td class="td-money">${fmt(tPrem)}</td>
+    <td></td>
+    <td class="td-money" style="color:var(--blue)">${fmt(tGDC)}</td>
+    <td class="td-money" style="color:var(--green)">${fmt(tFSA)}</td>
+    <td class="td-money" style="color:var(--purple)">${tTrail>0?fmt(tTrail)+'/yr':'—'}</td>
+    <td colspan="3"></td>`;
+}
+
+// ── CARRIER BREAKDOWN ──
+function renderBreakdown(){
+  const carriers={};
+  cases.filter(c=>c.status!=='lapsed'&&c.status!=='flagged').forEach(c=>{
+    if(!carriers[c.carrier]) carriers[c.carrier]={gdc:0,fsa:0,cases:0,trail:0,products:{}};
+    const cr=carriers[c.carrier];
+    cr.gdc+=(c.estGDC||0); cr.fsa+=(c.estFSA||0); cr.cases++;
+    cr.trail+=(c.annualTrail||0)*FSA_RATE;
+    cr.products[c.product]=(cr.products[c.product]||0)+(c.estGDC||0);
+  });
+  const totalGDC=Object.values(carriers).reduce((s,c)=>s+c.gdc,0);
+  const sorted=Object.entries(carriers).sort(([,a],[,b])=>b.gdc-a.gdc);
+  document.getElementById('breakdown-grid').innerHTML=sorted.map(([name,d])=>`
+    <div class="bc">
+      <div class="bc-carrier">${name}</div>
+      <div class="bc-row"><span class="bc-key">Est. GDC</span><span class="bc-val blue">${fmt(d.gdc)}</span></div>
+      <div class="bc-row"><span class="bc-key">Est. FSA (80%)</span><span class="bc-val green">${fmt(d.fsa)}</span></div>
+      <div class="bc-row"><span class="bc-key">Cases</span><span class="bc-val">${d.cases}</span></div>
+      ${d.trail>0?`<div class="bc-row"><span class="bc-key">Annual Trail</span><span class="bc-val amber">${fmt(d.trail)}/yr</span></div>`:''}
+      <div class="bc-row"><span class="bc-key">% of Total GDC</span><span class="bc-val">${totalGDC>0?((d.gdc/totalGDC)*100).toFixed(1)+'%':'—'}</span></div>
+      <div class="bc-bar"><div class="bc-bar-fill" style="width:${totalGDC>0?(d.gdc/totalGDC*100)+'%':'0%'}"></div></div>
+    </div>`).join('');
+}
+
+// ── MONTHLY VIEW ──
+function renderMonthly(){
+  const monthly={};
+  MONTHS.forEach((m,i)=>{
+    const key=`2026-${String(i+1).padStart(2,'0')}`;
+    monthly[key]={month:m,cases:0,premium:0,gdc:0,fsa:0,trail:0,actual:0};
+  });
+  cases.filter(c=>c.status!=='lapsed').forEach(c=>{
+    const key=c.date?c.date.substring(0,7):null;
+    if(key&&monthly[key]){
+      monthly[key].cases++;
+      monthly[key].premium+=(c.premium||0);
+      monthly[key].gdc+=(c.estGDC||0);
+      monthly[key].fsa+=(c.estFSA||0);
+      monthly[key].trail+=(c.annualTrail||0)*FSA_RATE;
+    }
+  });
+
+  const vals=Object.values(monthly);
+  const maxGDC=Math.max(...vals.map(v=>v.gdc),1);
+
+  // chart
+  const chartEl=document.getElementById('month-gdc-chart');
+  chartEl.innerHTML=vals.map(v=>`
+    <div class="month-bar-wrap">
+      <div class="month-bar-track">
+        <div class="month-bar" style="height:${(v.gdc/maxGDC*100)}%;background:var(--blue);opacity:.6;" data-tip="${v.month}: ${fmt(v.gdc)} GDC"></div>
+      </div>
+    </div>`).join('');
+
+  const lblEl=document.getElementById('month-lbl-row');
+  lblEl.innerHTML=vals.map(v=>`
+    <div style="text-align:center">
+      <div class="month-lbl">${v.month}</div>
+      <div class="month-val">${v.gdc>0?fmt(v.fsa):''}</div>
+    </div>`).join('');
+
+  // table
+  const tbody=document.getElementById('monthly-tbody');
+  tbody.innerHTML=vals.map(v=>{
+    const variance=v.actual-v.gdc;
+    return `<tr>
+      <td style="font-family:'IBM Plex Mono',monospace;font-weight:500">${v.month} 2026</td>
+      <td class="td-money" style="color:var(--muted)">${v.cases}</td>
+      <td class="td-money" style="color:var(--muted)">${fmt(v.premium)}</td>
+      <td class="td-money" style="color:var(--blue)">${fmt(v.gdc)}</td>
+      <td class="td-money" style="color:var(--green)">${fmt(v.fsa)}</td>
+      <td class="td-money" style="color:var(--purple)">${v.trail>0?fmt(v.trail):'-'}</td>
+      <td class="td-money" style="color:var(--muted)">${v.actual>0?fmt(v.actual):'—'}</td>
+      <td class="td-money" style="color:${variance>0?'var(--green)':variance<0?'var(--red)':'var(--muted)'}">${v.actual>0?(variance>=0?'+':'')+fmt(variance):'—'}</td>
+    </tr>`;}).join('');
+}
+
+// ── GOALS ──
+function renderGoals(){
+  const totalGDC=cases.filter(c=>c.status!=='lapsed'&&c.status!=='flagged').reduce((s,c)=>s+(c.estGDC||0),0);
+  const totalFSA=cases.filter(c=>c.status!=='lapsed'&&c.status!=='flagged').reduce((s,c)=>s+(c.estFSA||0),0);
+  const pipelineGDC=cases.filter(c=>c.status==='pending'||c.status==='submitted').reduce((s,c)=>s+(c.estGDC||0),0);
+
+  const bars=[
+    {label:'Annual GDC Goal',goal:goals.annualGDC,actual:totalGDC,color:'var(--blue)'},
+    {label:'Annual FSA Payout Goal',goal:goals.annualFSA,actual:totalFSA,color:'var(--green)'},
+  ];
+  document.getElementById('goal-bars').innerHTML=bars.map(b=>{
+    const pct=Math.min((b.actual/b.goal)*100,100);
+    return `<div class="goal-bar-wrap">
+      <div class="goal-bar-label">
+        <span class="goal-bar-name">${b.label}</span>
+        <span class="goal-bar-vals" style="font-family:'IBM Plex Mono',monospace;font-size:11px;">${fmt(b.actual)} / ${fmt(b.goal)} (${pct.toFixed(1)}%)</span>
+      </div>
+      <div class="goal-bar-track"><div class="goal-bar-fill" style="width:${pct}%;background:${b.color};"></div></div>
+    </div>`;}).join('');
+
+  // top products
+  const byProduct={};
+  cases.filter(c=>c.status!=='lapsed'&&c.status!=='flagged').forEach(c=>{
+    const k=c.product;
+    byProduct[k]=(byProduct[k]||0)+(c.estGDC||0);
+  });
+  const topProds=Object.entries(byProduct).sort(([,a],[,b])=>b-a).slice(0,5);
+  const maxProd=topProds[0]?topProds[0][1]:1;
+  document.getElementById('top-products').innerHTML=topProds.map(([name,gdc])=>`
+    <div style="margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;font-family:'IBM Plex Mono',monospace;font-size:10px;margin-bottom:3px;">
+        <span style="color:var(--muted);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${name}</span>
+        <span style="color:var(--blue)">${fmt(gdc)}</span>
+      </div>
+      <div style="height:3px;background:var(--line);border-radius:2px;"><div style="height:100%;width:${(gdc/maxProd*100)}%;background:var(--blue);border-radius:2px;"></div></div>
+    </div>`).join('') || '<div style="color:var(--dim);font-size:11px;">No cases yet</div>';
+
+  // pipeline to goal
+  const needed=Math.max(goals.annualGDC-totalGDC,0);
+  const ptg=[
+    {label:'GDC Achieved',val:fmt(totalGDC),color:'var(--green)'},
+    {label:'Pipeline GDC',val:fmt(pipelineGDC),color:'var(--amber)'},
+    {label:'Needed to Goal',val:fmt(needed),color:needed===0?'var(--green)':'var(--red)'},
+    {label:'Goal',val:fmt(goals.annualGDC),color:'var(--muted)'},
+  ];
+  document.getElementById('pipeline-to-goal').innerHTML=ptg.map(r=>`
+    <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--line);font-family:'IBM Plex Mono',monospace;font-size:11px;">
+      <span style="color:var(--muted)">${r.label}</span>
+      <span style="font-weight:600;color:${r.color}">${r.val}</span>
+    </div>`).join('');
+}
+
+// ── MODAL ──
+function openAdd(){
+  editId=null;
+  document.getElementById('modal-title').textContent='Add GDC Case';
+  ['f-client','f-carrier','f-product','f-notes'].forEach(id=>document.getElementById(id).value='');
+  ['f-premium','f-gdc-rate','f-trail','f-age'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('f-date').value=new Date().toISOString().split('T')[0];
+  document.getElementById('f-type').value='fia';
+  document.getElementById('f-status').value='pending';
+  document.getElementById('f-pipeline').value='Retirement Discovery';
+  document.getElementById('gdc-preview').style.display='none';
+  document.getElementById('modal').classList.add('open');
+}
+function editCase(id){
+  editId=id;
+  const c=cases.find(x=>x.id===id);
+  if(!c)return;
+  document.getElementById('modal-title').textContent='Edit Case — '+c.client;
+  document.getElementById('f-client').value=c.client;
+  document.getElementById('f-date').value=c.date;
+  document.getElementById('f-carrier').value=c.carrier;
+  document.getElementById('f-product').value=c.product;
+  document.getElementById('f-type').value=c.type;
+  document.getElementById('f-age').value=c.age||'';
+  document.getElementById('f-premium').value=c.premium||'';
+  document.getElementById('f-gdc-rate').value=c.gdcRate!=null?(c.gdcRate*100):'';
+  document.getElementById('f-trail').value=c.trail>0?(c.trail*100):'';
+  document.getElementById('f-status').value=c.status;
+  document.getElementById('f-pipeline').value=c.pipeline||'Direct';
+  document.getElementById('f-notes').value=c.notes||'';
+  previewGDC();
+  document.getElementById('modal').classList.add('open');
+}
+function closeModal(){document.getElementById('modal').classList.remove('open');}
+
+function previewGDC(){
+  const premium=parseFloat(document.getElementById('f-premium').value)||0;
+  const gdcRatePct=parseFloat(document.getElementById('f-gdc-rate').value);
+  const trailPct=parseFloat(document.getElementById('f-trail').value)||0;
+  if(!premium||isNaN(gdcRatePct)){document.getElementById('gdc-preview').style.display='none';return;}
+  const gdcRate=gdcRatePct/100;
+  const trailRate=trailPct/100;
+  const estGDC=premium*gdcRate;
+  const estFSA=estGDC*FSA_RATE;
+  const trail=premium*trailRate*FSA_RATE;
+  document.getElementById('gdc-preview').style.display='block';
+  document.getElementById('prev-premium').textContent=fmtFull(premium);
+  document.getElementById('prev-rate').textContent=fmtPct(gdcRate);
+  document.getElementById('prev-gdc').textContent=fmtFull(estGDC);
+  document.getElementById('prev-fsa').textContent=fmtFull(estFSA);
+  document.getElementById('prev-trail').textContent=trail>0?fmtFull(trail)+'/yr':'None';
+  document.getElementById('prev-trail-row').style.display=trail>0?'flex':'none';
+}
+
+function saveCase(){
+  const client=document.getElementById('f-client').value.trim();
+  const premium=parseFloat(document.getElementById('f-premium').value)||0;
+  const gdcRatePct=parseFloat(document.getElementById('f-gdc-rate').value);
+  if(!client){alert('Client name is required.');return;}
+  const gdcRate=!isNaN(gdcRatePct)?gdcRatePct/100:null;
+  const trailRate=(parseFloat(document.getElementById('f-trail').value)||0)/100;
+  const estGDC=gdcRate!=null?premium*gdcRate:null;
+  const estFSA=estGDC!=null?estGDC*FSA_RATE:null;
+  const annualTrail=premium*trailRate;
+  const status=gdcRate==null?'flagged':document.getElementById('f-status').value;
+
+  const record={
+    id:editId||nextId++,
+    client,
+    date:document.getElementById('f-date').value,
+    carrier:document.getElementById('f-carrier').value.trim(),
+    product:document.getElementById('f-product').value.trim(),
+    type:document.getElementById('f-type').value,
+    age:parseInt(document.getElementById('f-age').value)||null,
+    premium,gdcRate,trail:trailRate,
+    estGDC,estFSA,annualTrail,status,
+    pipeline:document.getElementById('f-pipeline').value,
+    notes:document.getElementById('f-notes').value.trim()
+  };
+
+  if(editId){const i=cases.findIndex(c=>c.id===editId);if(i>-1)cases[i]=record;}
+  else cases.unshift(record);
+
+  save(); closeModal(); refresh();
+}
+
+function cycleStatus(id){
+  const c=cases.find(x=>x.id===id);
+  if(!c)return;
+  const cycle=['pending','submitted','issued','paid','lapsed'];
+  const i=cycle.indexOf(c.status);
+  c.status=cycle[(i+1)%cycle.length];
+  save(); refresh();
+}
+
+function filterStatus(s,btn){
+  statusFilter=s;
+  document.querySelectorAll('.filter-pill').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderCases();
+}
+function searchCases(v){searchQuery=v.toLowerCase();renderCases();}
+function sortBy(key){
+  if(sortKey===key)sortAsc=!sortAsc;
+  else{sortKey=key;sortAsc=false;}
+  renderCases();
+}
+
+function editGoals(){
+  const gdc=prompt('Annual GDC Goal ($):',goals.annualGDC);
+  if(gdc===null)return;
+  const fsa=prompt('Annual FSA Payout Goal ($):',goals.annualFSA);
+  if(fsa===null)return;
+  goals.annualGDC=parseFloat(gdc)||goals.annualGDC;
+  goals.annualFSA=parseFloat(fsa)||goals.annualFSA;
+  localStorage.setItem('fsos_goals',JSON.stringify(goals));
+  renderGoals();
+}
+
+function exportCSV(){
+  const headers=['Date','Client','Carrier','Product','Type','Age','Premium','GDC Rate','Est GDC','Est FSA 80%','Annual Trail FSA','Status','Pipeline','Notes'];
+  const rows=cases.map(c=>[
+    c.date,c.client,c.carrier,c.product,typeLabel[c.type],c.age||'',
+    c.premium||'',c.gdcRate!=null?(c.gdcRate*100).toFixed(2)+'%':'MISSING',
+    c.estGDC||'',c.estFSA||'',c.annualTrail>0?(c.annualTrail*FSA_RATE).toFixed(2):'',
+    c.status,c.pipeline||'',c.notes||''
+  ]);
+  const csv=[headers,...rows].map(r=>r.map(v=>`"${v}"`).join(',')).join('\n');
+  const blob=new Blob([csv],{type:'text/csv'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download='fsos_gdc_tracker.csv';a.click();
+}
+
+function refresh(){
+  calcKPIs();
+  renderCases();
+}
+
+function showTab(id,btn){
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+  document.getElementById('tab-'+id).classList.add('active');
+  btn.classList.add('active');
+  if(id==='breakdown')renderBreakdown();
+  if(id==='monthly')renderMonthly();
+  if(id==='goals')renderGoals();
+}
+
+// INIT
+refresh();
+</script>
+</body>
+</html>

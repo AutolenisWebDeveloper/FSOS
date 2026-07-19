@@ -1,9 +1,13 @@
-import { PageHeader } from '@/components/archetypes'
+import Link from 'next/link'
+import { Newspaper } from 'lucide-react'
+import { PageHeader, Section } from '@/components/archetypes'
+import { Button } from '@/components/ui/button'
 import { getServerSession } from '@/lib/auth/session'
 import { load } from '@/lib/data/query'
 import { computeWidgets } from '@/lib/analytics/metrics'
 import { DASHBOARD_WIDGETS } from '@/lib/analytics/catalog'
 import { DashboardGrid } from '@/components/app/DashboardGrid'
+import { TriageBand } from '@/components/app/TriageBand'
 import type { DashboardWidgetPlacement } from '@/lib/validation/schemas'
 
 export const dynamic = 'force-dynamic'
@@ -33,9 +37,30 @@ export default async function FsaDashboardPage() {
     prefs.ok && prefs.data && Array.isArray(prefs.data.layout) ? prefs.data.layout : null
 
   return (
-    <div className="space-y-6">
-      <PageHeader title="Executive Dashboard" description="Your book at a glance — arrange it once, it stays." />
-      <DashboardGrid widgets={widgets} initialLayout={savedLayout} />
+    <div className="space-y-8">
+      <PageHeader
+        title="Executive Dashboard"
+        description="Your book at a glance — triage first, then the numbers."
+        actions={
+          <Button asChild variant="outline" size="sm">
+            <Link href="/app/executive/briefing">
+              <Newspaper aria-hidden />
+              Daily briefing
+            </Link>
+          </Button>
+        }
+      />
+
+      {/* Read-me-first: the action-needed queues, loud when work is waiting. */}
+      <TriageBand widgets={widgets} />
+
+      {/* The personalized book — every user arranges it; it persists across logins. */}
+      <Section
+        title="Your book"
+        description="Drag, resize, or add tiles — your layout is saved automatically."
+      >
+        <DashboardGrid widgets={widgets} initialLayout={savedLayout} />
+      </Section>
     </div>
   )
 }

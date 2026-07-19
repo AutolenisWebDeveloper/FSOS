@@ -33,7 +33,7 @@ export function MobileTabBar({ items, overflowHref }: { items: TabItem[]; overfl
             href={item.href}
             aria-current={active ? 'page' : undefined}
             className={cn(
-              'flex flex-1 flex-col items-center justify-center gap-0.5 text-[10px]',
+              'flex flex-1 flex-col items-center justify-center gap-0.5 text-[10px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent',
               active ? 'text-accent' : 'text-shell-foreground/70',
             )}
           >
@@ -44,7 +44,7 @@ export function MobileTabBar({ items, overflowHref }: { items: TabItem[]; overfl
       })}
       <Link
         href={overflowHref}
-        className="flex flex-1 flex-col items-center justify-center gap-0.5 text-[10px] text-shell-foreground/70"
+        className="flex flex-1 flex-col items-center justify-center gap-0.5 text-[10px] text-shell-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
       >
         <MoreHorizontal className="h-5 w-5" strokeWidth={1.75} aria-hidden />
         <span>More</span>

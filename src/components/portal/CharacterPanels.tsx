@@ -1,7 +1,9 @@
 import * as React from 'react'
 import Link from 'next/link'
+import { Check, ArrowRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { MonoLabel, Money } from '@/components/ui/typography'
+import { MonoLabel } from '@/components/ui/typography'
+import { AssumptionBadge } from '@/components/archetypes/states'
 import type { ShellData, AgentState } from '@/lib/data/shell'
 
 /*
@@ -77,15 +79,18 @@ export function AiLiveStatusPanel({
               aria-hidden
             />
             <span className="min-w-0 flex-1 truncate">{a.name}</span>
-            <span className="numeric text-xs text-shell-muted">
-              {a.isGuardrail ? '✓' : a.active > 0 ? a.active : '—'}
-            </span>
+            {a.isGuardrail ? (
+              <Check className="h-3.5 w-3.5 shrink-0 text-status-won" strokeWidth={2.5} aria-label="always on" />
+            ) : (
+              <span className="numeric text-xs text-shell-muted">{a.active > 0 ? a.active : '—'}</span>
+            )}
           </li>
         ))}
       </ul>
       <div className="mt-3 flex items-center justify-between border-t border-shell-border pt-2">
-        <Link href="/app/ai" className="mono-label text-accent hover:underline">
-          Open AI Operations →
+        <Link href="/app/ai" className="mono-label inline-flex items-center gap-1 text-accent hover:underline">
+          Open AI Operations
+          <ArrowRight className="h-3 w-3" aria-hidden />
         </Link>
         {escalations > 0 ? (
           <Link
@@ -114,9 +119,9 @@ export function GdcTierPanel({ tier }: { tier: ShellData['tier'] }) {
             {tier.label} — {tier.rateLabel}
           </div>
           <div className="mt-1 text-xs text-shell-muted">{tier.range} GDC</div>
-          <span className="mt-2 inline-flex h-[22px] items-center rounded-[4px] border border-gold/40 bg-gold/15 px-2 font-mono text-[10px] font-medium uppercase tracking-wider text-gold">
-            config default — verify
-          </span>
+          <div className="mt-2">
+            <AssumptionBadge />
+          </div>
         </div>
       </section>
     </Link>

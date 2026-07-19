@@ -30,7 +30,7 @@ export function NavLink({
       href={href}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'group flex h-9 items-center gap-2.5 rounded-xl border-l-2 pl-2.5 pr-2 text-sm transition-colors',
+        'group flex h-9 items-center gap-2.5 rounded-xl border-l-2 pl-2.5 pr-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-shell',
         active
           ? 'border-l-accent bg-shell-raised font-semibold text-shell-foreground'
           : 'border-l-transparent text-shell-foreground/80 hover:bg-shell-raised hover:text-shell-foreground',

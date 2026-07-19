@@ -4,6 +4,7 @@ import * as React from 'react'
 import Link from 'next/link'
 import { CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   Dialog,
   DialogContent,
@@ -98,6 +99,7 @@ export function ConfirmDialog({
   pending?: boolean
 }) {
   const [typed, setTyped] = React.useState('')
+  const fieldId = React.useId()
   const needsType = Boolean(typedConfirmation)
   const canConfirm = !pending && (!needsType || typed === typedConfirmation)
 
@@ -113,15 +115,16 @@ export function ConfirmDialog({
           <DialogDescription>{consequence}</DialogDescription>
         </DialogHeader>
         {needsType ? (
-          <div className="space-y-1">
-            <label className="text-sm text-muted-foreground">
+          <div className="space-y-1.5">
+            <label htmlFor={fieldId} className="text-sm text-muted-foreground">
               Type <span className="font-mono font-medium text-foreground">{typedConfirmation}</span> to confirm
             </label>
-            <input
-              className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            <Input
+              id={fieldId}
               value={typed}
               onChange={(e) => setTyped(e.target.value)}
               autoComplete="off"
+              autoFocus
             />
           </div>
         ) : null}
@@ -133,6 +136,7 @@ export function ConfirmDialog({
             variant={destructive ? 'destructive' : 'default'}
             onClick={onConfirm}
             disabled={!canConfirm}
+            loading={pending}
           >
             {confirmLabel}
           </Button>

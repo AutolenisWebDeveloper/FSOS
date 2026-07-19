@@ -84,6 +84,9 @@ export function PortalShell({
             {portalLabel}
           </MonoLabel>
         </div>
+        {/* Global search — rendered only where the portal wires a target, so no
+            portal ever shows a dead search field. Otherwise a spacer keeps the
+            account actions right-aligned. */}
         {searchHref ? (
           <form action={searchHref} role="search" className="relative hidden max-w-md flex-1 items-center md:flex">
             <Search className="pointer-events-none absolute left-3 h-4 w-4 text-shell-muted" strokeWidth={1.75} aria-hidden />
@@ -92,55 +95,31 @@ export function PortalShell({
               name="q"
               placeholder="Search…"
               aria-label="Global search"
-              className="h-9 w-full rounded-lg border border-shell-border bg-shell-raised pl-9 pr-3 text-sm text-shell-foreground placeholder:text-shell-muted focus:outline-none focus:ring-2 focus:ring-accent"
+              className="h-9 w-full rounded-lg border border-shell-border bg-shell-raised pl-9 pr-3 text-sm text-shell-foreground placeholder:text-shell-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             />
           </form>
         ) : (
-          <label className="relative hidden max-w-md flex-1 items-center md:flex">
-            <Search className="pointer-events-none absolute left-3 h-4 w-4 text-shell-muted" strokeWidth={1.75} aria-hidden />
-            <input
-              type="search"
-              placeholder="Search…"
-              aria-label="Global search"
-              className="h-9 w-full rounded-lg border border-shell-border bg-shell-raised pl-9 pr-3 text-sm text-shell-foreground placeholder:text-shell-muted focus:outline-none focus:ring-2 focus:ring-accent"
-            />
-          </label>
+          <div className="hidden flex-1 md:block" aria-hidden />
         )}
         <div className="ml-auto flex items-center gap-1">
           {assistantHref ? (
             <Link
               href={assistantHref}
               aria-label="AI assistant"
-              className="relative flex h-9 w-9 items-center justify-center rounded-lg text-shell-muted hover:bg-shell-raised hover:text-shell-foreground"
+              className="relative flex h-9 w-9 items-center justify-center rounded-lg text-shell-muted hover:bg-shell-raised hover:text-shell-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               <Sparkles className="h-[18px] w-[18px]" strokeWidth={1.75} aria-hidden />
             </Link>
-          ) : (
-            <button
-              type="button"
-              aria-label="AI priorities"
-              className="relative flex h-9 w-9 items-center justify-center rounded-lg text-shell-muted hover:bg-shell-raised hover:text-shell-foreground"
-            >
-              <Sparkles className="h-[18px] w-[18px]" strokeWidth={1.75} aria-hidden />
-            </button>
-          )}
+          ) : null}
           {notificationsHref ? (
             <Link
               href={notificationsHref}
               aria-label="Notifications"
-              className="flex h-9 w-9 items-center justify-center rounded-lg text-shell-muted hover:bg-shell-raised hover:text-shell-foreground"
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-shell-muted hover:bg-shell-raised hover:text-shell-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               <Bell className="h-[18px] w-[18px]" strokeWidth={1.75} aria-hidden />
             </Link>
-          ) : (
-            <button
-              type="button"
-              aria-label="Notifications"
-              className="flex h-9 w-9 items-center justify-center rounded-lg text-shell-muted hover:bg-shell-raised hover:text-shell-foreground"
-            >
-              <Bell className="h-[18px] w-[18px]" strokeWidth={1.75} aria-hidden />
-            </button>
-          )}
+          ) : null}
           <ProfileMenu settingsHref={settingsHref} />
         </div>
       </header>

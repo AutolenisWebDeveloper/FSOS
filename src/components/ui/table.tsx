@@ -25,11 +25,25 @@ const TableBody = React.forwardRef<HTMLTableSectionElement, React.HTMLAttributes
 TableBody.displayName = 'TableBody'
 
 // Dense 40px rows (design-system.md §4/§6) — not shadcn's default spacing.
-const TableRow = React.forwardRef<HTMLTableRowElement, React.HTMLAttributes<HTMLTableRowElement>>(
-  ({ className, ...props }, ref) => (
+interface TableRowProps extends React.HTMLAttributes<HTMLTableRowElement> {
+  /**
+   * Row acts as a link/button (row → detail). Adds cursor + a keyboard focus ring
+   * so clickable rows are reachable and visible for keyboard users. Callers still
+   * wire the navigation (onClick / a wrapping Link) and `tabIndex`/`role`.
+   */
+  interactive?: boolean
+}
+
+const TableRow = React.forwardRef<HTMLTableRowElement, TableRowProps>(
+  ({ className, interactive, ...props }, ref) => (
     <tr
       ref={ref}
-      className={cn('h-10 border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-primary/[0.06]', className)}
+      className={cn(
+        'h-10 border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-primary/[0.06]',
+        interactive &&
+          'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+        className,
+      )}
       {...props}
     />
   ),
@@ -37,11 +51,13 @@ const TableRow = React.forwardRef<HTMLTableRowElement, React.HTMLAttributes<HTML
 TableRow.displayName = 'TableRow'
 
 // 32px mono-label header cells. Numeric columns pass `text-right` + the `numeric`
-// class on their cells for right-aligned tabular figures.
+// class on their cells for right-aligned tabular figures. Defaults `scope="col"`
+// for screen-reader table semantics (override via the `scope` prop for row headers).
 const TableHead = React.forwardRef<HTMLTableCellElement, React.ThHTMLAttributes<HTMLTableCellElement>>(
-  ({ className, ...props }, ref) => (
+  ({ className, scope = 'col', ...props }, ref) => (
     <th
       ref={ref}
+      scope={scope}
       className={cn(
         'mono-label h-8 px-3 text-left align-middle text-muted-foreground [&:has([role=checkbox])]:pr-0',
         className,

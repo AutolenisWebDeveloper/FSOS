@@ -62,22 +62,28 @@ export function ForbiddenState({ description }: { description?: string }) {
   )
 }
 
-export function ListSkeleton({ rows = 6 }: { rows?: number }) {
+export function ListSkeleton({ rows = 6, label = 'Loading…' }: { rows?: number; label?: string }) {
   return (
-    <div className="space-y-2" aria-hidden>
-      {Array.from({ length: rows }).map((_, i) => (
-        <Skeleton key={i} className="h-11 w-full" />
-      ))}
+    <div role="status" aria-busy="true" aria-live="polite" className="space-y-2">
+      <span className="sr-only">{label}</span>
+      <div aria-hidden className="space-y-2">
+        {Array.from({ length: rows }).map((_, i) => (
+          <Skeleton key={i} className="h-11 w-full" />
+        ))}
+      </div>
     </div>
   )
 }
 
-export function CardsSkeleton({ count = 4 }: { count?: number }) {
+export function CardsSkeleton({ count = 4, label = 'Loading…' }: { count?: number; label?: string }) {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4" aria-hidden>
-      {Array.from({ length: count }).map((_, i) => (
-        <Skeleton key={i} className="h-28 w-full rounded-xl" />
-      ))}
+    <div role="status" aria-busy="true" aria-live="polite">
+      <span className="sr-only">{label}</span>
+      <div aria-hidden className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: count }).map((_, i) => (
+          <Skeleton key={i} className="h-28 w-full rounded-xl" />
+        ))}
+      </div>
     </div>
   )
 }

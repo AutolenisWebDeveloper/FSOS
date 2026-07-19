@@ -58,6 +58,42 @@ export function PageHeader({
   )
 }
 
+// ─── Section band (dashboard / page hierarchy) ────────────────────────────────
+
+/**
+ * A titled content band — the unit of hierarchy on dense operator screens. A mono
+ * eyebrow (the signature marker) + optional secondary text and a right-aligned
+ * action link, over its children. Use it to group a home screen or long page into
+ * scannable bands (Triage · Book · Pipeline · Commissions · Compliance) instead of
+ * one flat wall of tiles.
+ */
+export function Section({
+  title,
+  description,
+  action,
+  children,
+  className,
+}: {
+  title: string
+  description?: string
+  action?: React.ReactNode
+  children: React.ReactNode
+  className?: string
+}) {
+  return (
+    <section className={cn('space-y-3', className)}>
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div className="space-y-0.5">
+          <MonoLabel>{title}</MonoLabel>
+          {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
+        </div>
+        {action ? <div className="flex items-center gap-2">{action}</div> : null}
+      </div>
+      {children}
+    </section>
+  )
+}
+
 // ─── A1 Dashboard / Command Center ────────────────────────────────────────────
 
 export function DashboardShell({

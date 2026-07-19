@@ -96,6 +96,7 @@ the product a Fortune-500 bank, broker-dealer, or wealth firm would run internal
 Inspiration: Stripe Dashboard, Mercury, Ramp, Bloomberg Terminal, Linear, Notion,
 Vercel. Institutional, trustworthy, intelligent, efficient. Explicitly avoid
 glassmorphism, neumorphism, consumer styling, oversized radii, heavy shadows,
-decorative gradients, marketing aesthetics. The signature look is the **dark navy shell
-+ light content canvas, DM Sans/Mono, signature gold, visible securities firewall** —
-carried forward, sharpened, and applied uniformly.
+decorative gradients, marketing aesthetics. The signature look is the **Farmers-navy
+shell + cool light content canvas, Farmers blue accent, Farmers red for critical alerts,
+DM Sans/Mono, signature gold assumptions, visible purple securities firewall** — carried
+forward, sharpened, and applied uniformly.

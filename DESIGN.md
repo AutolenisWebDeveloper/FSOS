@@ -11,17 +11,23 @@
 
 ## 1. Design direction
 
-**Dark-first, dense, branded, financial-services.** An operator's cockpit, not airy
-SaaS. A **dark navy shell** (sidebar + topbar) wraps a **light content canvas** — that
-high-contrast chrome-vs-content split is the core visual move. Three signature markers
-carry identity and must never be lost:
+**Dark-first, dense, Farmers-branded, financial-services.** An operator's cockpit, not
+airy SaaS. A **deep Farmers-navy shell** (sidebar + topbar) wraps a **cool light content
+canvas** — that high-contrast chrome-vs-content split is the core visual move, driven by
+a confident **Farmers blue** and a restrained **Farmers red** for critical alerts. Three
+signature markers carry identity and must never be lost:
 
-1. **Dark navy shell** with light canvas.
+1. **Farmers-navy shell** with a cool light canvas (white cards read as elevated).
 2. **Uppercase DM Mono section labels** (11px, tracked) — the strongest character marker.
-3. **Identity lockup** — the "M / Markist / … COMMAND CENTER" block atop every sidebar.
+3. **Identity lockup** — the Farmers-branded `BrandMark` + "Markist / … COMMAND CENTER"
+   block atop every sidebar. (The mark is the FSA's own monogram, NOT the Farmers
+   trademark; drop the official logo at `public/brand/farmers-logo.svg` to add it.)
 
-Color strategy: **Restrained** (Product floor) — tinted neutrals + one indigo accent,
-with a disciplined semantic-status vocabulary and a single signature gold.
+Color strategy: **Restrained** (Product floor) — tinted neutrals + the Farmers
+brand system: a deep **Farmers navy** shell, a confident **Farmers blue** accent,
+and **Farmers red** reserved for destructive / critical alerts — over a disciplined
+semantic-status vocabulary and the two fixed compliance guardrail colors (signature
+**gold** = assumptions, **purple** = securities firewall).
 
 ---
 
@@ -50,10 +56,12 @@ All tokens are HSL CSS variables in `src/app/globals.css :root`, surfaced throug
 
 | Token | Tailwind | Role |
 |---|---|---|
-| `--primary` `231 62% 53%` (indigo) | `bg-primary` / `text-primary` | Primary actions, active nav, links |
-| `--primary-soft` `231 78% 92%` | `bg-primary-soft` | Soft brand wash |
-| `--accent` `231 74% 59%` | `bg-accent` / `text-accent` | Highlights, focus, active bars |
-| `--ring` `231 62% 53%` | `ring-ring` | Focus ring (halo: `--ring-halo`) |
+| `--primary` `214 88% 40%` (Farmers blue) | `bg-primary` / `text-primary` | Primary actions, active nav, links |
+| `--primary-soft` `213 92% 94%` | `bg-primary-soft` | Soft brand wash (KPI icon chips) |
+| `--primary-deep` `215 90% 30%` | `.brand-fill` floor | Pressed / gradient floor for primary fills |
+| `--accent` `209 92% 46%` | `bg-accent` / `text-accent` | Highlights, focus, active bars |
+| `--destructive` `350 78% 43%` (Farmers red) | `bg-destructive` | Destructive / critical / blocking only |
+| `--ring` `214 88% 42%` | `ring-ring` | Focus ring (halo: `--ring-halo`) |
 
 ### 2.3 Signature gold & semantics
 

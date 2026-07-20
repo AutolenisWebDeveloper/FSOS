@@ -5,6 +5,7 @@ import { readJson, configErrorResponse } from '@/lib/http'
 import { rateLimit, clientIp } from '@/lib/http/rate-limit'
 import { WorkshopRegisterSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
+import { provisionZoomForRegistration } from '@/lib/workshops/server'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -145,6 +146,17 @@ export async function POST(req: NextRequest) {
         entityId: reg.reg_id,
         diff: { source: 'workshop', channels, disclosure_version: disclosureVersion },
       })
+    }
+
+    // Best-effort per-registrant Zoom provisioning (spec §A). Never blocks registration:
+    // a virtual/hybrid-virtual registration gets a personalized join_url + registrant token
+    // when Zoom is configured; any failure (Zoom off, no meeting id, transient API error)
+    // leaves the registration intact for a later /provision-zoom retry — the link is never
+    // lost. No securities data is sent to Zoom.
+    try {
+      await provisionZoomForRegistration(db, reg.reg_id)
+    } catch (provErr) {
+      console.error('[workshop] zoom provisioning (non-fatal):', provErr)
     }
 
     return NextResponse.json({ ok: true, workshop: w.title, join_token: joinToken })

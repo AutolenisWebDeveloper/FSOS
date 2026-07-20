@@ -1,5 +1,6 @@
 {
   "framework": "nextjs",
+  "buildCommand": "rm -rf .next/cache && next build",
   "regions": ["iad1"],
   "crons": [
     { "path": "/api/cron/renewal-watch", "schedule": "0 9 * * *" },

@@ -4,7 +4,7 @@ import { PortalMockup } from './PortalMockup'
 import { Reveal } from './Reveal'
 
 const FEATURES = [
-  'Secure, access-controlled client portal',
+  'Secure, access-controlled systems',
   'Encrypted document uploads',
   'Appointment scheduling & reminders',
   'Digital forms & e-signatures',
@@ -34,8 +34,8 @@ export function TechExperience() {
             Technology that enhances your financial journey
           </h2>
           <p className="mt-4 max-w-xl text-[1.05rem] leading-relaxed text-shell-foreground/85">
-            A secure client portal and AI-assisted service keep everything organized, connected, and easy to access — so
-            your time with Markist is spent on decisions, not paperwork.
+            Secure, AI-assisted technology keeps our work together organized, connected, and easy to manage — so your
+            time with Markist is spent on decisions, not paperwork.
           </p>
 
           <ul className="mt-8 grid gap-x-6 gap-y-3 sm:grid-cols-2">

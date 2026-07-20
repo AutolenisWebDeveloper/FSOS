@@ -14,7 +14,7 @@ import { BUSINESS, CONTACT, siteUrl } from '@/lib/site'
 
 const TITLE = 'Markist Athelus — Farmers Financial Services Agent | Plano, TX'
 const DESCRIPTION =
-  'Personalized insurance and financial strategies for individuals, families, and business owners in Plano, Frisco, McKinney & surrounding areas. Life insurance, retirement, investments, and more — guided by a licensed professional and a secure client portal.'
+  'Personalized insurance and financial strategies for individuals, families, and business owners in Plano, Frisco, McKinney & surrounding areas. Life insurance, retirement, investments, and more — guided by a licensed professional and modern, secure technology.'
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl()),
@@ -103,7 +103,7 @@ function StructuredData() {
             name: 'What areas does Markist Athelus serve?',
             acceptedAnswer: {
               '@type': 'Answer',
-              text: 'Markist serves Plano, Frisco, McKinney, and surrounding North Texas communities, with a secure client portal for remote service.',
+              text: 'Markist serves Plano, Frisco, McKinney, and surrounding North Texas communities, with secure, technology-enabled service for remote convenience.',
             },
           },
           {

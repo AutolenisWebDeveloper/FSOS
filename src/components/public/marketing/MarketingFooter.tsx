@@ -2,7 +2,7 @@ import * as React from 'react'
 import Link from 'next/link'
 import { Phone, Mail, MapPin } from 'lucide-react'
 import { FarmersLockup } from './FarmersLockup'
-import { BUSINESS, CONTACT, DISCLOSURES, LICENSING, SOCIAL } from '@/lib/site'
+import { BUSINESS, CONTACT, DISCLOSURES, LICENSING, SOCIAL, loginUrl } from '@/lib/site'
 
 const COLS: { heading: string; links: { label: string; href: string }[] }[] = [
   {
@@ -24,7 +24,7 @@ const COLS: { heading: string; links: { label: string; href: string }[] }[] = [
       { label: 'Resources & FAQ', href: '/#resources' },
       { label: 'Workshops', href: '/events' },
       { label: 'Contact', href: '/#contact' },
-      { label: 'Client Login', href: '/login' },
+      { label: 'Login', href: loginUrl() },
     ],
   },
   {

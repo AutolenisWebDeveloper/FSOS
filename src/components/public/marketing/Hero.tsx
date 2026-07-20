@@ -1,14 +1,13 @@
 import * as React from 'react'
-import Link from 'next/link'
 import { CalendarCheck, ArrowRight, ShieldCheck, LockKeyhole, BadgeCheck, MapPin, Phone } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { PortalMockup } from './PortalMockup'
-import { bookingUrl, CONTACT } from '@/lib/site'
+import { bookingUrl, loginUrl, CONTACT } from '@/lib/site'
 
 const TRUST = [
   { icon: BadgeCheck, label: 'Licensed financial professional' },
   { icon: ShieldCheck, label: 'Insurance & financial solutions' },
-  { icon: LockKeyhole, label: 'Secure client portal' },
+  { icon: LockKeyhole, label: 'Secure, private technology' },
 ]
 
 export function Hero() {
@@ -79,13 +78,13 @@ export function Hero() {
 
           {/* Secondary quiet actions */}
           <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-            <Link
-              href="/login"
+            <a
+              href={loginUrl()}
               className="inline-flex items-center gap-1.5 font-medium text-white/85 underline-offset-4 hover:text-white hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent rounded"
             >
               <LockKeyhole className="h-4 w-4" aria-hidden />
-              Access client portal
-            </Link>
+              Login
+            </a>
             <a
               href={`tel:${CONTACT.phoneE164}`}
               className="inline-flex items-center gap-1.5 font-medium text-white/85 underline-offset-4 hover:text-white hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 rounded"

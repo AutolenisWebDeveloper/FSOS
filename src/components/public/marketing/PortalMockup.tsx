@@ -2,11 +2,12 @@ import * as React from 'react'
 import { cn } from '@/lib/utils'
 
 /**
- * A crafted, on-brand preview of the FSOS client portal — used as the hero and
- * technology-section imagery. This is custom UI "imagery" (not a hotlinked stock
- * photo and not a fake screenshot of unbuilt screens): it mirrors the real product
- * language — navy shell, light card canvas, DM Mono numerics — so the marketing
- * promise matches what a client actually gets. Purely decorative (aria-hidden).
+ * A crafted, on-brand preview of the practice's secure technology — used as the
+ * hero and technology-section imagery. This is custom UI "imagery" (not a hotlinked
+ * stock photo and not a fake screenshot): it mirrors the real product language —
+ * navy shell, light card canvas, DM Mono numerics — so the marketing promise matches
+ * the actual experience. It intentionally avoids any "client portal / login" framing.
+ * Purely decorative (aria-hidden).
  */
 export function PortalMockup({ className, withPhone = true }: { className?: string; withPhone?: boolean }) {
   return (
@@ -19,7 +20,7 @@ export function PortalMockup({ className, withPhone = true }: { className?: stri
           <span className="h-2.5 w-2.5 rounded-full bg-white/20" />
           <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
           <span className="mx-auto flex items-center gap-1.5 rounded-md bg-white/[0.06] px-3 py-1 text-[10px] font-medium text-shell-muted">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400/80" /> portal.markistfinancial.com
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400/80" /> markistfinancial.com
           </span>
         </div>
         <div className="flex">
@@ -27,7 +28,7 @@ export function PortalMockup({ className, withPhone = true }: { className?: stri
           <div className="hidden w-[132px] shrink-0 flex-col gap-1 bg-white/[0.02] p-3 sm:flex">
             <div className="mb-2 flex items-center gap-2">
               <span className="flex h-6 w-6 items-center justify-center rounded-md bg-primary text-[11px] font-bold text-white">M</span>
-              <span className="text-[11px] font-semibold text-white/90">Portal</span>
+              <span className="text-[11px] font-semibold text-white/90">Markist Financial</span>
             </div>
             {['Overview', 'Documents', 'Appointments', 'Messages', 'Reviews'].map((l, i) => (
               <div
@@ -96,7 +97,7 @@ export function PortalMockup({ className, withPhone = true }: { className?: stri
       {withPhone ? (
         <div className="absolute -bottom-6 -right-3 hidden w-[118px] rotate-[3deg] overflow-hidden rounded-[1.4rem] border-[5px] border-shell bg-shell shadow-elev-xl sm:block md:-right-6 md:w-[132px]">
           <div className="bg-background p-2.5">
-            <div className="text-[7px] font-medium uppercase tracking-widest text-primary">Client portal</div>
+            <div className="text-[7px] font-medium uppercase tracking-widest text-primary">Secure workspace</div>
             <div className="text-[11px] font-bold text-foreground">Hello, Jordan</div>
             <div className="mt-2 rounded-lg brand-fill p-2 text-white shadow-elev-sm">
               <div className="text-[7px] uppercase tracking-wide text-white/70">Total coverage</div>

@@ -6,7 +6,7 @@ import { Menu, X, ChevronDown, LogIn, CalendarCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { FarmersLockup } from './FarmersLockup'
-import { bookingUrl } from '@/lib/site'
+import { bookingUrl, loginUrl } from '@/lib/site'
 
 type NavItem = { label: string; href: string; children?: { label: string; href: string; desc: string }[] }
 
@@ -32,6 +32,7 @@ export function MarketingNav() {
   const [mobileOpen, setMobileOpen] = React.useState(false)
   const [openMenu, setOpenMenu] = React.useState<string | null>(null)
   const book = bookingUrl()
+  const login = loginUrl()
 
   React.useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8)
@@ -134,10 +135,10 @@ export function MarketingNav() {
         {/* Desktop actions */}
         <div className="hidden items-center gap-2 lg:flex">
           <Button asChild variant="outline" size="sm">
-            <Link href="/login">
+            <a href={login}>
               <LogIn className="h-4 w-4" aria-hidden />
               Login
-            </Link>
+            </a>
           </Button>
           <Button asChild variant="destructive" size="sm">
             <a href={book} target={book.startsWith('http') ? '_blank' : undefined} rel="noopener">
@@ -194,10 +195,10 @@ export function MarketingNav() {
             </ul>
             <div className="mt-4 grid grid-cols-1 gap-2">
               <Button asChild variant="outline" size="lg">
-                <Link href="/login" onClick={() => setMobileOpen(false)}>
+                <a href={login} onClick={() => setMobileOpen(false)}>
                   <LogIn className="h-4 w-4" aria-hidden />
-                  Login to Client Portal
-                </Link>
+                  Login
+                </a>
               </Button>
               <Button asChild variant="destructive" size="lg">
                 <a href={book} target={book.startsWith('http') ? '_blank' : undefined} rel="noopener" onClick={() => setMobileOpen(false)}>

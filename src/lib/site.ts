@@ -62,6 +62,27 @@ export const SMS_CONSENT = {
   label: `By checking this box, I agree to receive SMS messages from ${BUSINESS.agent} / ${BUSINESS.brand} regarding appointments, requested information, service updates, account servicing, and customer support. Message frequency varies. Message and data rates may apply. Reply STOP to opt out or HELP for assistance. Consent is not a condition of purchase.`,
 } as const
 
+/**
+ * Canonical FSA authentication host. The public marketing site is only an entry
+ * point to the FSA dashboard — there is NO separate client login/portal here.
+ * Every "Login" action routes to this single FSA auth flow, which lands the user
+ * on the FSA dashboard (`/app`) after sign-in. Overridable via NEXT_PUBLIC_AUTH_URL
+ * so the marketing surface can live on its own domain while auth stays canonical.
+ */
+export function authBaseUrl(): string {
+  return (process.env.NEXT_PUBLIC_AUTH_URL || 'https://fsos-seven.vercel.app').replace(/\/$/, '')
+}
+
+/** The FSA login URL. After sign-in the flow redirects to the FSA dashboard (`/app`). */
+export function loginUrl(): string {
+  return `${authBaseUrl()}/login?next=%2Fapp`
+}
+
+/** The FSA dashboard URL. */
+export function dashboardUrl(): string {
+  return `${authBaseUrl()}/app`
+}
+
 /** The booking URL. Falls back to the public workshops index when unset. */
 export function bookingUrl(): string {
   return process.env.NEXT_PUBLIC_CALENDLY_URL || '/events'

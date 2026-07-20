@@ -11,6 +11,7 @@ import {
   ClipboardCheck,
   Target,
   Repeat,
+  RotateCcw,
   ArrowLeftRight,
   Shuffle,
   Briefcase,
@@ -55,6 +56,14 @@ const NAV: NavItem[] = [
   { href: '/app/executive/briefing', label: 'Briefing', icon: Newspaper, group: 'Overview' },
   { href: '/app/notifications', label: 'Notifications', icon: Bell, group: 'Overview' },
 
+  // Production Operations — the highest-priority production workflows, each a
+  // command center built on the existing CRM (gaps, own-book policies, the
+  // win-back book). Routes and detail pages are unchanged; this section gives
+  // them a dedicated home.
+  { href: '/app/cross-sell', label: 'Cross-Sell', icon: Shuffle, group: 'Production Operations' },
+  { href: '/app/winback', label: 'Life Win-Back', icon: RotateCcw, group: 'Production Operations' },
+  { href: '/app/conversions', label: 'Life Conversion', icon: Repeat, group: 'Production Operations' },
+
   { href: '/app/agencies', label: 'Agencies', icon: Building2, group: 'Book' },
   { href: '/app/contacts', label: 'Contacts', icon: Contact, group: 'Book' },
   { href: '/app/referrals', label: 'Referrals', icon: UserPlus, group: 'Book' },
@@ -69,9 +78,7 @@ const NAV: NavItem[] = [
   { href: '/app/reviews', label: 'Reviews', icon: ClipboardCheck, group: 'Pipeline' },
   { href: '/app/fna', label: 'FNA Generator', icon: FileSignature, group: 'Pipeline' },
   { href: '/app/opportunities', label: 'Opportunities', icon: Target, group: 'Pipeline' },
-  { href: '/app/conversions', label: 'Term Conversion', icon: Repeat, group: 'Pipeline' },
   { href: '/app/opra', label: 'OPRA Transfers', icon: ArrowLeftRight, group: 'Pipeline' },
-  { href: '/app/cross-sell', label: 'Cross-Sell', icon: Shuffle, group: 'Pipeline' },
   { href: '/app/cases', label: 'Cases', icon: Briefcase, group: 'Pipeline' },
   { href: '/app/commissions', label: 'Commissions', icon: DollarSign, group: 'Pipeline' },
 

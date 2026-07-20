@@ -33,16 +33,19 @@ export function WorkshopStatusControl({ workshopId, status }: { workshopId: stri
       {busy ? <Loader2 className="h-4 w-4 animate-spin text-shell-muted" aria-hidden /> : null}
 
       {status === 'draft' ? (
-        <Button size="sm" onClick={() => setStatus('pending_review', 'Sent for compliance review.')} disabled={busy}>
-          Submit for compliance review
+        <Button size="sm" onClick={() => setStatus('pending_review', 'Submitted for your approval.')} disabled={busy}>
+          Submit for approval
         </Button>
       ) : null}
 
       {status === 'pending_review' ? (
         <>
-          <span className="inline-flex items-center gap-1.5 rounded-md border border-status-pending/30 bg-status-pending/10 px-2.5 py-1 text-xs font-medium text-status-pending">
-            <ShieldCheck className="h-3.5 w-3.5" aria-hidden /> Awaiting compliance approval
-          </span>
+          <a
+            href="/app/workshops/review"
+            className="inline-flex items-center gap-1.5 rounded-md border border-status-pending/30 bg-status-pending/10 px-2.5 py-1 text-xs font-medium text-status-pending hover:bg-status-pending/20"
+          >
+            <ShieldCheck className="h-3.5 w-3.5" aria-hidden /> Awaiting your approval
+          </a>
           <Button size="sm" variant="outline" onClick={() => setStatus('draft', 'Withdrawn to draft.')} disabled={busy}>
             Withdraw
           </Button>

@@ -3,7 +3,7 @@ import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
 import { MonoLabel } from '@/components/ui/typography'
 import { getDb } from '@/lib/supabase/client'
-import { WorkshopApprovalForm, type DisclosureOption } from '@/components/compliance/WorkshopApprovalForm'
+import { WorkshopApprovalForm, type DisclosureOption } from '@/components/app/WorkshopApprovalForm'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -20,11 +20,12 @@ interface PendingWorkshop {
   material_count: number
 }
 
-// Compliance review queue (spec §8). Registered-principal pre-approval of every workshop
-// before it can publish: presenters (incl. third-party/fund-family), materials, and the
-// disclosure version. Approving here is the ONLY way to open the publish gate.
-export default async function ComplianceWorkshopsPage() {
-  await requireRole('compliance', '/compliance/workshops')
+// Owner approval queue (spec §8). The FSA/owner is the approving principal: this is where
+// you review your own workshops (presenters incl. third-party/fund-family, materials, and
+// the disclosure version) and self-approve. Approving here is the ONLY way to open the
+// publish gate; the approval record is still written every time.
+export default async function WorkshopReviewPage() {
+  await requireRole('fsa', '/app/workshops/review')
 
   let workshops: PendingWorkshop[] = []
   let disclosures: DisclosureOption[] = []
@@ -68,14 +69,14 @@ export default async function ComplianceWorkshopsPage() {
 
   return (
     <ListShell
-      title="Workshop review"
-      description="Registered-principal pre-approval. No workshop can publish without an approval + an approved disclosure version."
-      breadcrumb={[{ label: 'Compliance', href: '/compliance' }, { label: 'Workshop review' }]}
+      title="Workshop approvals"
+      description="You are the approving principal. No workshop can publish without your approval + an approved disclosure version."
+      breadcrumb={[{ label: 'FSA', href: '/app' }, { label: 'Workshops', href: '/app/workshops' }, { label: 'Approvals' }]}
     >
       {loadError ? (
         <ErrorState description={loadError} />
       ) : workshops.length === 0 ? (
-        <EmptyState title="Nothing awaiting review" description="Workshops submitted for compliance review appear here." />
+        <EmptyState title="Nothing awaiting approval" description="Workshops you submit for review appear here for your sign-off." />
       ) : (
         <div className="space-y-6">
           {workshops.map((w) => (
@@ -113,7 +114,7 @@ export default async function ComplianceWorkshopsPage() {
               </div>
 
               <div className="mt-4">
-                <MonoLabel>Principal decision</MonoLabel>
+                <MonoLabel>Your decision</MonoLabel>
                 <div className="mt-2">
                   <WorkshopApprovalForm
                     workshopId={w.workshop_id}

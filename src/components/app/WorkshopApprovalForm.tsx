@@ -19,8 +19,10 @@ export interface DisclosureOption {
   is_assumption: boolean
 }
 
-// Registered-principal approval action (spec §8). Approving blesses the selected
-// disclosure version and opens the publish gate; the server refuses placeholder text.
+// Owner self-approval action (spec §8). The FSA/owner is the approving principal: they
+// approve their own workshops, and the approval record (name + CRD, captured here) is
+// still written. Approving blesses the selected disclosure version and opens the publish
+// gate; the server refuses placeholder text.
 export function WorkshopApprovalForm({
   workshopId,
   disclosures,
@@ -49,7 +51,7 @@ export function WorkshopApprovalForm({
 
   async function submit(decision: 'approved' | 'rejected') {
     if (!approverName.trim()) {
-      toast.error('Enter the approving principal’s name.')
+      toast.error('Enter your name as the approving principal.')
       return
     }
     setBusy(true)
@@ -66,7 +68,7 @@ export function WorkshopApprovalForm({
       toast.error(firstFieldError(res.error).message)
       return
     }
-    toast.success(decision === 'approved' ? 'Workshop approved.' : 'Workshop rejected — returned to draft.')
+    toast.success(decision === 'approved' ? 'Workshop approved — ready to publish.' : 'Workshop rejected — returned to draft.')
     router.refresh()
   }
 
@@ -74,16 +76,16 @@ export function WorkshopApprovalForm({
     <div className="space-y-4 rounded-lg border border-border bg-muted/40 p-4">
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
-          <Label htmlFor={`approver-${workshopId}`}>Approving principal</Label>
+          <Label htmlFor={`approver-${workshopId}`}>Approving principal (you)</Label>
           <Input
             id={`approver-${workshopId}`}
             value={approverName}
             onChange={(e) => setApproverName(e.target.value)}
-            placeholder="e.g. Ryan Anderson (FFS)"
+            placeholder="Your full name"
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor={`crd-${workshopId}`}>Principal CRD (optional)</Label>
+          <Label htmlFor={`crd-${workshopId}`}>Your CRD (optional)</Label>
           <Input id={`crd-${workshopId}`} value={approverCrd} onChange={(e) => setApproverCrd(e.target.value)} />
         </div>
       </div>

@@ -9,7 +9,6 @@ import {
   Gavel,
   ClipboardCheck,
   BookMarked,
-  Presentation,
 } from 'lucide-react'
 import { requireRole } from '@/lib/auth/session'
 import { PortalShell, type NavItem } from '@/components/portal/PortalShell'
@@ -23,7 +22,6 @@ const NAV: NavItem[] = [
   { href: '/compliance/consent', label: 'Consent', icon: FileCheck2, group: 'Monitoring' },
   { href: '/compliance/firewall', label: 'Firewall', icon: ShieldAlert, group: 'Monitoring' },
   { href: '/compliance/incidents', label: 'Incidents', icon: AlertTriangle, group: 'Monitoring' },
-  { href: '/compliance/workshops', label: 'Workshop review', icon: Presentation, group: 'Monitoring' },
   { href: '/compliance/licenses', label: 'Licenses', icon: BadgeCheck, group: 'Governance' },
   { href: '/compliance/legal-holds', label: 'Legal Holds', icon: Gavel, group: 'Governance' },
   { href: '/compliance/attestations', label: 'Attestations', icon: ClipboardCheck, group: 'Governance' },

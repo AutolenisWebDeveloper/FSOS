@@ -9,18 +9,20 @@ import { PLACEHOLDER_MARKER } from '@/lib/workshops/server'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-// POST /api/workshops/[id]/approve — registered-principal compliance decision (spec §8).
-// Writes the hard-gate record (workshop_approvals) with a snapshot of the exact material
-// versions + presenters + disclosure version. On 'approved' it also blesses the referenced
-// disclosure version (is_assumption -> false) and moves the workshop to 'compliance_approved'
-// so it becomes publishable. It REFUSES to approve a disclosure whose body is still a
-// placeholder (guardrail 3 — placeholder text can never reach a published page).
-// Roles: compliance, supervisor, super_admin.
+// POST /api/workshops/[id]/approve — the FSA/owner is the approving principal and
+// self-approves their own workshops (spec §8). Writes the hard-gate record
+// (workshop_approvals) with a snapshot of the exact material versions + presenters +
+// disclosure version, and captures the approver's name + CRD from the request (never
+// hardcoded). On 'approved' it also blesses the referenced disclosure version
+// (is_assumption -> false) and moves the workshop to 'compliance_approved' so it becomes
+// publishable. It REFUSES to approve a disclosure whose body is still a placeholder
+// (guardrail 3 — placeholder text can never reach a published page). The approval row is
+// always written; there is no publish path that bypasses it. Roles: fsa, super_admin.
 export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params
-  const auth = await requireApiRole('compliance')
+  const auth = await requireApiRole('fsa')
   if (!auth.ok) return auth.response
-  const denied = requirePermission(auth.session, ['compliance', 'supervisor', 'super_admin'])
+  const denied = requirePermission(auth.session, ['fsa', 'super_admin'])
   if (denied) return denied
 
   const parsed = await readJson(req)

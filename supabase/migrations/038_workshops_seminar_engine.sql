@@ -78,16 +78,16 @@ create index if not exists idx_disclosure_kind_approved on workshop_disclosure_c
 -- the UI has something to reference in draft, but the publish gate blocks them.
 insert into workshop_disclosure_configs (kind, version, body, is_assumption) values
   ('sms', 1,
-   '[PLACEHOLDER - REQUIRES RYAN ANDERSON (FFS) APPROVAL] SMS/A2P consent + opt-out disclosure text goes here. Do not publish with this placeholder.',
+   '[PLACEHOLDER - REQUIRES OWNER/PRINCIPAL APPROVAL] SMS/A2P consent + opt-out disclosure text goes here. Do not publish with this placeholder.',
    true),
   ('recording', 1,
-   '[PLACEHOLDER - REQUIRES RYAN ANDERSON (FFS) APPROVAL] Virtual-event recording-consent disclosure text goes here. Do not publish with this placeholder.',
+   '[PLACEHOLDER - REQUIRES OWNER/PRINCIPAL APPROVAL] Virtual-event recording-consent disclosure text goes here. Do not publish with this placeholder.',
    true),
   ('seminar_advertising', 1,
-   '[PLACEHOLDER - REQUIRES RYAN ANDERSON (FFS) + TX legal APPROVAL] TDI seminar-advertising / "insurance sales presentation" equal-prominence disclosure goes here. Do not publish with this placeholder.',
+   '[PLACEHOLDER - REQUIRES OWNER/PRINCIPAL APPROVAL] TDI seminar-advertising / "insurance sales presentation" equal-prominence disclosure goes here. Do not publish with this placeholder.',
    true),
   ('educational', 1,
-   '[PLACEHOLDER - REQUIRES RYAN ANDERSON (FFS) APPROVAL] Educational-only disclosure (no product recommendation) goes here. Do not publish with this placeholder.',
+   '[PLACEHOLDER - REQUIRES OWNER/PRINCIPAL APPROVAL] Educational-only disclosure (no product recommendation) goes here. Do not publish with this placeholder.',
    true)
   on conflict (kind, version) do nothing;
 
@@ -258,8 +258,8 @@ create index if not exists idx_wmaterials_workshop on workshop_materials(worksho
 create table if not exists workshop_approvals (
   id                uuid primary key default gen_random_uuid(),
   workshop_id       uuid not null references workshops(workshop_id) on delete cascade,
-  approver_name     text not null,                 -- e.g. Ryan Anderson (FFS)
-  approver_crd      text,                          -- registered principal CRD
+  approver_name     text not null,                 -- the FSA/owner (approving principal), captured at approval
+  approver_crd      text,                          -- approving principal's CRD
   decision          text not null check (decision in ('approved','rejected')),
   notes             text,
   material_versions jsonb,                         -- snapshot: materials + presenters + disclosure version

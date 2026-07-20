@@ -1,130 +1,141 @@
 import type { Metadata } from 'next'
-import Link from 'next/link'
-import PublicFooter from '@/components/PublicFooter'
-import { BUSINESS, CONTACT } from '@/lib/site'
+import { SiteShell } from '@/components/public/site/SiteShell'
+import { BUSINESS, CONTACT, SMS_CONSENT } from '@/lib/site'
 
 export const metadata: Metadata = {
-  title: 'SMS Terms & Conditions — Markist Financial Services',
+  title: 'SMS Terms & Conditions — Markist Athelus',
   description:
-    'SMS messaging terms for Markist Athelus / Markist Financial Services: program description, opt-in, message frequency, STOP/HELP, and rates.',
+    'Text messaging program terms for Markist Athelus, Farmers Insurance & Financial Services. Opt-in only. Reply STOP to opt out, HELP for help.',
   robots: { index: true, follow: true },
   alternates: { canonical: '/sms-terms' },
 }
 
-const LAST_UPDATED = 'July 20, 2026'
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="mt-8">
-      <h2 className="text-lg font-semibold text-foreground">{title}</h2>
-      <div className="mt-2 space-y-2 text-[15px] leading-7">{children}</div>
-    </section>
-  )
-}
+const TOC = [
+  ['program', 'Program'],
+  ['optin', 'How you opt in'],
+  ['freq', 'Frequency & cost'],
+  ['stop', 'Opting out'],
+  ['help', 'Help'],
+  ['carriers', 'Carriers & delivery'],
+  ['privacy', 'Privacy'],
+  ['eligibility', 'Eligibility'],
+  ['securities', 'Securities'],
+  ['contact', 'Changes & contact'],
+]
 
 export default function SmsTermsPage() {
   return (
-    <div className="flex min-h-screen flex-col bg-background">
-      <article className="mx-auto w-full max-w-3xl flex-1 px-6 py-12 text-foreground/80">
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">SMS Terms &amp; Conditions</h1>
-        <p className="mt-1.5 text-sm text-muted-foreground">Last updated {LAST_UPDATED}</p>
+    <SiteShell>
+      <main id="main" className="doc">
+        <div className="shell doc__grid">
+          <nav className="toc" aria-label="On this page">
+            <p className="toc__h">On this page</p>
+            <ol>
+              {TOC.map(([id, label]) => (
+                <li key={id}>
+                  <a href={`#${id}`}>{label}</a>
+                </li>
+              ))}
+            </ol>
+          </nav>
+          <article className="prose">
+            <h1>SMS Terms &amp; Conditions</h1>
+            <p className="stamp">Effective July 18, 2026 · Markist Athelus — Farmers Insurance</p>
+            <p>These SMS Terms govern text messages sent by or on behalf of Markist Athelus — Farmers Insurance.</p>
+            <div className="callout">
+              <p className="callout__h">Everything in one paragraph</p>
+              <p>
+                Program: <strong>{SMS_CONSENT.program}</strong>. Opt-in only.{' '}
+                <strong>Message frequency varies. Message and data rates may apply.</strong> Reply <strong>STOP</strong>{' '}
+                to opt out, <strong>HELP</strong> for help, or call{' '}
+                <a href={`tel:${CONTACT.phoneE164}`}>{CONTACT.phoneDisplay}</a>. Consent is not a condition of purchase.
+                Messages originate from {SMS_CONSENT.from}. See our <a href="/privacy">Privacy Policy</a>. No mobile
+                information will be shared with third parties or affiliates for marketing or promotional purposes.
+              </p>
+            </div>
 
-        <p className="mt-6 text-[15px] leading-7">
-          These SMS Terms &amp; Conditions govern the text-message program operated by {BUSINESS.agent} /{' '}
-          {BUSINESS.brand} (“we,” “us,” “our”). By providing your mobile number and checking the SMS consent box on our
-          website, you agree to these terms.
-        </p>
+            <h2 id="program">1. Program</h2>
+            <p>
+              A mixed messaging program: subscribers receive recurring SMS/MMS about appointment and policy updates,
+              account and customer-service messages, requested information, and marketing or promotional offers,
+              consistent with the consent provided.
+            </p>
 
-        <Section title="Program description">
-          <p>
-            When you opt in, we may send you text messages related to appointments, requested information, service
-            updates, account servicing, and customer support. These are conversational and account-servicing messages —
-            not a recurring marketing blast.
-          </p>
-        </Section>
+            <h2 id="optin">2. How you opt in</h2>
+            <p>
+              Check the optional, unchecked SMS box on our website form and submit it; or, where enabled, text START to
+              our registered number; or opt in verbally, after which we send a confirmation carrying the same
+              disclosures. Consent is not a condition of purchase. The SMS box is separate from email consent and from
+              accepting these terms.
+            </p>
 
-        <Section title="How you opt in">
-          <p>
-            Consent is collected through an <strong>affirmative, unchecked</strong> checkbox on our web forms. We do not
-            add you to text messaging simply because you provided a phone number. Consent is{' '}
-            <strong>not a condition</strong> of purchasing any product or service.
-          </p>
-          <p>The consent language you agree to reads:</p>
-          <blockquote className="mt-2 rounded-md border border-border bg-muted/40 p-4 text-sm leading-6 text-muted-foreground">
-            “By checking this box, I agree to receive SMS messages from {BUSINESS.agent} / {BUSINESS.brand} regarding
-            appointments, requested information, service updates, account servicing, and customer support. Message
-            frequency varies. Message and data rates may apply. Reply STOP to opt out or HELP for assistance. Consent is
-            not a condition of purchase.”
-          </blockquote>
-        </Section>
+            <h2 id="freq">3. Frequency and cost</h2>
+            <p>
+              Message frequency varies with your requests and account activity. Message and data rates may apply under
+              your carrier plan; we do not charge for the program.
+            </p>
 
-        <Section title="Message frequency">
-          <p>Message frequency varies based on your interactions with us and the services you request.</p>
-        </Section>
+            <h2 id="stop">4. Opting out</h2>
+            <p>Reply STOP, END, CANCEL, UNSUBSCRIBE, or QUIT at any time. You’ll get one confirmation, then no further messages:</p>
+            <p className="sample">
+              Markist Athelus — Farmers Insurance: You are unsubscribed and will receive no further texts. For help call{' '}
+              {CONTACT.phoneDisplay}.
+            </p>
+            <p>We also honor opt-outs made by phone or email, and process them promptly.</p>
 
-        <Section title="Message &amp; data rates">
-          <p>Message and data rates may apply, depending on your mobile carrier and plan. We do not charge for the messages themselves.</p>
-        </Section>
+            <h2 id="help">5. Help</h2>
+            <p>Reply HELP or INFO for assistance:</p>
+            <p className="sample">
+              Markist Athelus — Farmers Insurance: For help call {CONTACT.phoneDisplay} or email {CONTACT.email}. Msg
+              &amp; data rates may apply. Reply STOP to opt out.
+            </p>
 
-        <Section title="Opt out — reply STOP">
-          <p>
-            You can cancel the SMS service at any time by texting <strong>STOP</strong> to any message you receive. After
-            you send STOP, we will send a one-time confirmation and will not send further texts unless you opt in again.
-            You may also opt out via our{' '}
-            <Link href="/unsubscribe" className="font-medium text-primary underline-offset-2 hover:underline">
-              opt-out page
-            </Link>
-            .
-          </p>
-        </Section>
+            <h2 id="carriers">6. Carriers and delivery</h2>
+            <p>
+              Supported on major U.S. carriers. Delivery is not guaranteed and is subject to network conditions.{' '}
+              <strong>Carriers are not liable for delayed or undelivered messages.</strong> Don’t rely on a text for
+              anything time-critical — call the office.
+            </p>
 
-        <Section title="Help — reply HELP">
-          <p>
-            For help, reply <strong>HELP</strong> to any message, or contact us at{' '}
-            <a href={`tel:${CONTACT.phoneE164}`} className="font-medium text-primary underline-offset-2 hover:underline">
-              {CONTACT.phoneDisplay}
-            </a>{' '}
-            or{' '}
-            <a href={`mailto:${CONTACT.email}`} className="font-medium text-primary underline-offset-2 hover:underline">
-              {CONTACT.email}
-            </a>
-            .
-          </p>
-        </Section>
+            <h2 id="privacy">7. Privacy</h2>
+            <div className="callout">
+              <p className="callout__h">Non-sharing</p>
+              <p>
+                <strong>
+                  No mobile information will be shared with third parties or affiliates for marketing or promotional
+                  purposes. All other categories of data exclude text messaging originator opt-in data and consent; this
+                  information will not be shared with any third parties.
+                </strong>
+              </p>
+            </div>
+            <p>
+              Only the messaging platform and delivering carriers touch your mobile information, under contract. Full
+              detail in the <a href="/privacy">Privacy Policy</a>.
+            </p>
 
-        <Section title="Carriers &amp; delivery">
-          <p>
-            Carriers are not liable for delayed or undelivered messages. Supported carriers may change. Message delivery
-            is subject to effective transmission by your mobile carrier.
-          </p>
-        </Section>
+            <h2 id="eligibility">8. Eligibility</h2>
+            <p>You must be 18+ and the subscriber or authorized user of the mobile number provided.</p>
 
-        <Section title="Privacy">
-          <p>
-            Your mobile information will not be shared with third parties or affiliates for marketing or promotional
-            purposes. Information is shared only with subcontractors in support roles (such as our messaging provider),
-            and only to help us deliver the service. See our{' '}
-            <Link href="/privacy" className="font-medium text-primary underline-offset-2 hover:underline">
-              Privacy Policy
-            </Link>{' '}
-            for details.
-          </p>
-        </Section>
+            <h2 id="securities">9. Securities</h2>
+            <p>
+              Texts about securities offered through Farmers Financial Solutions, LLC (Member FINRA &amp; SIPC) are
+              supervised, retained, and archived per FINRA and SEC rules. Do not use text to place, change, or cancel a
+              transaction.
+            </p>
 
-        <Section title="Changes to these terms">
-          <p>We may update these SMS Terms from time to time. Continued participation after changes constitutes acceptance of the updated terms.</p>
-        </Section>
-
-        <p className="mt-10 text-xs leading-relaxed text-muted-foreground">
-          This program is not a securities communications channel. Securities activity is handled personally through the
-          appropriate licensed, supervised channel. See our{' '}
-          <Link href="/disclosures" className="underline hover:text-foreground">
-            disclosures
-          </Link>
-          .
-        </p>
-      </article>
-      <PublicFooter />
-    </div>
+            <h2 id="contact">10. Changes and contact</h2>
+            <p>
+              We may modify or end the program; updated terms post here. Markist Athelus, {CONTACT.address.line1},{' '}
+              {CONTACT.address.city}, {CONTACT.address.region} {CONTACT.address.postal} ·{' '}
+              <a href={`tel:${CONTACT.phoneE164}`}>{CONTACT.phoneDisplay}</a>.
+            </p>
+            <p style={{ fontSize: 12, color: 'var(--slate)' }}>
+              This program is a communications aid for {BUSINESS.agent}’s own practice and is not a securities order
+              channel.
+            </p>
+          </article>
+        </div>
+      </main>
+    </SiteShell>
   )
 }

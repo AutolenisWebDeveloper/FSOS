@@ -1,5 +1,7 @@
 {
   "framework": "nextjs",
+  "installCommand": "npm ci",
+  "buildCommand": "next build",
   "regions": ["iad1"],
   "crons": [
     { "path": "/api/cron/renewal-watch", "schedule": "0 9 * * *" },

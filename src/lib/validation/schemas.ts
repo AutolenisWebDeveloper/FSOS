@@ -973,16 +973,24 @@ export const ComplianceIngestSchema = z.object({
 export type ComplianceIngest = z.infer<typeof ComplianceIngestSchema>
 
 // Analyze a NIGO: parse → retrieve → classify → validate → explain → draft → cite.
-export const NigoAnalyzeSchema = z.object({
-  nigo_text: z.string().trim().min(5).max(50_000),
-  case_id: uuid.optional(),
-  work_item: z.string().trim().max(120).optional(),
-  client_ref: z.string().trim().max(120).optional(),
-  product: z.string().trim().max(40).optional(),
-  carrier: z.string().trim().max(120).optional(),
-  reviewer: z.string().trim().max(120).optional(),
-  state: z.string().trim().max(40).optional(),
-})
+// The NIGO text may be pasted (`nigo_text`) OR sourced from an already-extracted
+// upload (`upload_id`); at least one must be present (enforced by the refine).
+export const NigoAnalyzeSchema = z
+  .object({
+    nigo_text: z.string().trim().min(5).max(50_000).optional(),
+    upload_id: uuid.optional(),
+    case_id: uuid.optional(),
+    work_item: z.string().trim().max(120).optional(),
+    client_ref: z.string().trim().max(120).optional(),
+    product: z.string().trim().max(40).optional(),
+    carrier: z.string().trim().max(120).optional(),
+    reviewer: z.string().trim().max(120).optional(),
+    state: z.string().trim().max(40).optional(),
+  })
+  .refine((v) => Boolean(v.nigo_text) || Boolean(v.upload_id), {
+    message: 'Provide nigo_text or an upload_id.',
+    path: ['nigo_text'],
+  })
 export type NigoAnalyze = z.infer<typeof NigoAnalyzeSchema>
 
 // Record the outcome + lessons learned once a NIGO is resolved (the memory).
@@ -1015,11 +1023,63 @@ export const ComplianceChecklistSchema = z.object({
 })
 export type ComplianceChecklist = z.infer<typeof ComplianceChecklistSchema>
 
-// Ingest a RightBridge report (parsed text) + optional case link, for consistency.
-export const RightbridgeIngestSchema = z.object({
-  report_type: z.enum(['product_profiler', 'life_wizard', 'other']).optional().default('product_profiler'),
-  title: z.string().trim().max(200).optional(),
-  case_id: uuid.optional(),
-  report_text: z.string().trim().min(20).max(500_000),
-})
+// Ingest a RightBridge report + optional case link, for consistency + structuring.
+// The report body may be pasted (`report_text`) OR sourced from an extracted upload
+// (`upload_id`); at least one must be present. `structure` requests the version-aware
+// section→question→answer extraction (stored on rightbridge_reports.structured_report).
+export const RightbridgeIngestSchema = z
+  .object({
+    report_type: z.enum(['product_profiler', 'life_wizard', 'other']).optional().default('product_profiler'),
+    title: z.string().trim().max(200).optional(),
+    case_id: uuid.optional(),
+    upload_id: uuid.optional(),
+    report_text: z.string().trim().min(20).max(500_000).optional(),
+    structure: z.boolean().optional().default(true),
+  })
+  .refine((v) => Boolean(v.report_text) || Boolean(v.upload_id), {
+    message: 'Provide report_text or an upload_id.',
+    path: ['report_text'],
+  })
 export type RightbridgeIngest = z.infer<typeof RightbridgeIngestSchema>
+
+// ── Document upload pipeline (mig 037) ────────────────────────────────────────
+
+export const COMPLIANCE_UPLOAD_KINDS = [
+  'rightbridge',
+  'nigo',
+  'form',
+  'disclosure',
+  'statement',
+  'illustration',
+  'contract',
+  'supporting',
+  'other',
+] as const
+
+// Patch an upload record: (re)classify its kind, link/unlink a case, retry, or
+// re-run structuring. The file itself is immutable once secured (originals preserved).
+export const ComplianceUploadPatchSchema = z.object({
+  kind: z.enum(COMPLIANCE_UPLOAD_KINDS).optional(),
+  case_id: uuid.nullable().optional(),
+  action: z.enum(['reprocess', 'structure', 'classify']).optional(),
+})
+export type ComplianceUploadPatch = z.infer<typeof ComplianceUploadPatchSchema>
+
+// Update an issue in the resolution workspace (status machine + human review).
+export const NigoIssuePatchSchema = z.object({
+  status: z
+    .enum([
+      'new', 'analyzing', 'needs_documents', 'needs_client_info', 'needs_fsa_clarification',
+      'needs_agency_input', 'needs_carrier_clarification', 'needs_osj_clarification',
+      'correction_in_progress', 'ready_for_review', 'ready_to_respond', 'submitted',
+      'resolved', 'rejected', 'escalated', 'closed',
+    ])
+    .optional(),
+  severity: z.enum(['low', 'normal', 'high', 'critical']).optional(),
+  assigned_to: z.string().trim().max(120).nullable().optional(),
+  human_reviewed: z.boolean().optional(),
+  reviewer_notes: z.string().trim().max(10_000).nullable().optional(),
+  resolution: z.string().trim().max(10_000).nullable().optional(),
+  response_text: z.string().trim().max(20_000).nullable().optional(),
+})
+export type NigoIssuePatch = z.infer<typeof NigoIssuePatchSchema>

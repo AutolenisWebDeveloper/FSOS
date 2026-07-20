@@ -65,15 +65,34 @@ export async function POST(req: NextRequest) {
     const db = getDb()
     const actor = actorOf(auth.session)
 
+    // ── STEP 0: SOURCE — pasted NIGO text or an already-extracted upload ───────
+    let nigoText = (input.nigo_text ?? '').trim()
+    if (input.upload_id) {
+      const { data: pages } = await db
+        .from('compliance_upload_pages')
+        .select('text')
+        .eq('upload_id', input.upload_id)
+        .order('page_number', { ascending: true })
+      const extracted = (pages ?? []).map((p) => p.text).filter(Boolean).join('\n\n').trim()
+      // Prefer pasted text when both are present; otherwise use the extracted text.
+      if (!nigoText) nigoText = extracted
+    }
+    if (nigoText.length < 5) {
+      return NextResponse.json(
+        { error: 'No NIGO text available — paste the notice or upload/extract a NIGO document first.' },
+        { status: 400 },
+      )
+    }
+
     // ── STEP 1: PARSE — split the NIGO into discrete issues ────────────────────
     const parseSystem =
       'You split a NIGO ("Not In Good Order") notice into its discrete, individually-actionable issues. ' +
       'One NIGO often contains 3-5 separate requests. Do not analyze or judge them — only separate them. ' +
       'Output ONLY JSON: {"issues":[{"seq":1,"issue_text":"..."}]}. Preserve the reviewer\'s wording.'
-    const parseUser = `NIGO text:\n"""${input.nigo_text}"""`
+    const parseUser = `NIGO text:\n"""${nigoText}"""`
     const parseOut = await runJson<{ issues?: ParsedIssue[] }>(parseSystem, parseUser, 2000)
     let issues: ParsedIssue[] = Array.isArray(parseOut?.issues) ? parseOut!.issues! : []
-    if (!issues.length) issues = [{ seq: 1, issue_text: input.nigo_text.trim() }]
+    if (!issues.length) issues = [{ seq: 1, issue_text: nigoText }]
     issues = issues
       .map((it, i) => ({ seq: Number(it.seq) || i + 1, issue_text: String(it.issue_text || '').trim() }))
       .filter((it) => it.issue_text)
@@ -105,7 +124,8 @@ export async function POST(req: NextRequest) {
           carrier: input.carrier ?? null,
           reviewer: input.reviewer ?? null,
           state: input.state ?? null,
-          raw_nigo_text: input.nigo_text,
+          raw_nigo_text: nigoText,
+          source_upload_id: input.upload_id ?? null,
           created_by: actor,
           updated_by: actor,
         })

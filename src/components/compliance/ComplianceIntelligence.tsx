@@ -14,17 +14,64 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { DocumentUpload, type UploadedDoc } from './DocumentUpload'
+import { DocumentsTab } from './DocumentsTab'
 
-type TabKey = 'analyze' | 'note' | 'rightbridge' | 'checklist' | 'library' | 'history'
+type TabKey = 'analyze' | 'note' | 'rightbridge' | 'checklist' | 'documents' | 'library' | 'history'
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'analyze', label: 'Analyze NIGO' },
   { key: 'note', label: 'Harden a Note' },
   { key: 'rightbridge', label: 'RightBridge Check' },
   { key: 'checklist', label: 'Paperwork Checklist' },
+  { key: 'documents', label: 'Documents' },
   { key: 'library', label: 'Knowledge Library' },
   { key: 'history', label: 'NIGO History' },
 ]
+
+// Small notice reused across the AI-assisted surfaces (human-in-the-loop, §2.2).
+function AiNotice() {
+  return (
+    <p className="rounded-md border border-status-assumption/40 bg-status-assumption/10 px-3 py-2 text-xs text-status-assumption">
+      AI-assisted analysis. Verify all facts, citations, and requirements before use. Not a product recommendation or a
+      supervisory/suitability determination.
+    </p>
+  )
+}
+
+// A compact "source a document" panel: upload a PDF/notice and get its id back.
+function UploadSource({
+  kind,
+  label,
+  onExtracted,
+}: {
+  kind: string
+  label: string
+  onExtracted: (doc: UploadedDoc) => void
+}) {
+  const [doc, setDoc] = useState<UploadedDoc | null>(null)
+  return (
+    <div className="rounded-md border border-dashed p-3">
+      <div className="mb-2 text-xs font-medium text-muted-foreground">{label}</div>
+      <DocumentUpload
+        kind={kind}
+        multiple={false}
+        compact
+        onUploaded={(d) => {
+          setDoc(d)
+          onExtracted(d)
+        }}
+      />
+      {doc ? (
+        <p className="mt-2 text-xs text-muted-foreground">
+          Using <span className="font-medium">{doc.filename}</span> — {doc.page_count} page(s),{' '}
+          {doc.char_count.toLocaleString()} chars extracted
+          {doc.low_confidence ? ' (low confidence — review the text)' : ''}.
+        </p>
+      ) : null}
+    </div>
+  )
+}
 
 const AUTHORITY_TYPES = [
   'FINRA_RULE',
@@ -124,6 +171,66 @@ interface AnalyzeIssue {
   retrieved: { authority_type: string; section_ref: string | null; title: string | null; verbatim: boolean }[]
 }
 
+const ISSUE_STATUSES = [
+  'new', 'analyzing', 'needs_documents', 'needs_client_info', 'needs_fsa_clarification',
+  'needs_agency_input', 'needs_carrier_clarification', 'needs_osj_clarification',
+  'correction_in_progress', 'ready_for_review', 'ready_to_respond', 'submitted',
+  'resolved', 'rejected', 'escalated', 'closed',
+] as const
+
+// Human-in-the-loop control for one issue: move it through the status machine and
+// record the human review. The AI drafts; a licensed human confirms before use.
+function IssueControls({ issueId }: { issueId: string }) {
+  const [status, setStatus] = useState('new')
+  const [reviewed, setReviewed] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  async function save(patch: Record<string, unknown>) {
+    setSaving(true)
+    setMsg('')
+    const res = await postJson(`/api/compliance/issues/${issueId}`, patch)
+    setSaving(false)
+    setMsg(res.ok ? 'Saved' : res.error)
+    if (!res.ok) return
+    setTimeout(() => setMsg(''), 1500)
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-t pt-3 text-xs">
+      <label className="flex items-center gap-1">
+        <span className="text-muted-foreground">Status</span>
+        <select
+          value={status}
+          onChange={(e) => {
+            setStatus(e.target.value)
+            void save({ status: e.target.value })
+          }}
+          className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+        >
+          {ISSUE_STATUSES.map((s) => (
+            <option key={s} value={s}>
+              {s.replace(/_/g, ' ')}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="flex items-center gap-1">
+        <input
+          type="checkbox"
+          checked={reviewed}
+          onChange={(e) => {
+            setReviewed(e.target.checked)
+            void save({ human_reviewed: e.target.checked })
+          }}
+        />
+        <span className="text-muted-foreground">Human-reviewed</span>
+      </label>
+      {saving ? <span className="text-muted-foreground">Saving…</span> : msg ? <span className="text-muted-foreground">{msg}</span> : null}
+    </div>
+  )
+}
+
 function AnalyzeTab() {
   const [nigo, setNigo] = useState('')
   const [product, setProduct] = useState('')
@@ -131,17 +238,21 @@ function AnalyzeTab() {
   const [state, setState] = useState('')
   const [reviewer, setReviewer] = useState('')
   const [workItem, setWorkItem] = useState('')
+  const [uploadId, setUploadId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [caseId, setCaseId] = useState<string | null>(null)
   const [issues, setIssues] = useState<AnalyzeIssue[] | null>(null)
+
+  const canRun = nigo.trim().length >= 5 || Boolean(uploadId)
 
   async function run() {
     setLoading(true)
     setError('')
     setIssues(null)
     const res = await postJson<{ case_id: string; issues: AnalyzeIssue[] }>('/api/compliance/analyze', {
-      nigo_text: nigo,
+      nigo_text: nigo.trim() ? nigo : undefined,
+      upload_id: uploadId || undefined,
       product: product || undefined,
       carrier: carrier || undefined,
       state: state || undefined,
@@ -159,6 +270,11 @@ function AnalyzeTab() {
 
   return (
     <div className="space-y-4">
+      <UploadSource
+        kind="nigo"
+        label="Upload a NIGO PDF / notice (or paste the text below)"
+        onExtracted={(d) => setUploadId(d.id)}
+      />
       <div className="grid gap-3">
         <div>
           <Label htmlFor="nigo">Paste the NIGO</Label>
@@ -167,7 +283,7 @@ function AnalyzeTab() {
             rows={7}
             value={nigo}
             onChange={(e) => setNigo(e.target.value)}
-            placeholder="Paste the full NIGO email / notice here…"
+            placeholder="Paste the full NIGO email / notice here — or upload it above…"
           />
         </div>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
@@ -194,11 +310,13 @@ function AnalyzeTab() {
         </div>
       </div>
       <div className="flex items-center gap-3">
-        <Button onClick={run} disabled={loading || nigo.trim().length < 5}>
+        <Button onClick={run} disabled={loading || !canRun}>
           {loading ? 'Analyzing…' : 'Analyze NIGO'}
         </Button>
         {caseId ? <span className="text-xs text-muted-foreground">Case {caseId.slice(0, 8)}</span> : null}
       </div>
+
+      <AiNotice />
 
       {error ? <ErrorBanner message={error} /> : null}
 
@@ -264,6 +382,7 @@ function AnalyzeTab() {
                 Verify gate: {it.verify_note}
               </div>
             ) : null}
+            {it.id ? <IssueControls issueId={it.id} /> : null}
           </CardContent>
         </Card>
       ))}
@@ -393,26 +512,50 @@ function NoteTab() {
 
 // ── Tab: RightBridge Check ────────────────────────────────────────────────────
 
+interface StructuredQuestion {
+  number?: string | null
+  label: string
+  answer?: string | null
+  explanation?: string | null
+  page?: number | null
+  confidence?: number | null
+}
+interface StructuredSection {
+  name: string
+  page?: number | null
+  questions: StructuredQuestion[]
+}
+interface StructuredReport {
+  report_version?: string | null
+  sections: StructuredSection[]
+}
+
 function RightBridgeTab() {
   const [text, setText] = useState('')
   const [type, setType] = useState('product_profiler')
   const [caseId, setCaseId] = useState('')
+  const [uploadId, setUploadId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [result, setResult] = useState<{
     parsed_fields: Record<string, unknown>
     scoring_flags: Record<string, unknown>
     consistency_flags: { field: string; issue: string; citation?: string | null }[]
+    structured_report?: StructuredReport | null
   } | null>(null)
+
+  const canRun = text.trim().length >= 20 || Boolean(uploadId)
 
   async function run() {
     setLoading(true)
     setError('')
     setResult(null)
     const res = await postJson<NonNullable<typeof result>>('/api/compliance/rightbridge', {
-      report_text: text,
+      report_text: text.trim() ? text : undefined,
+      upload_id: uploadId || undefined,
       report_type: type,
       case_id: caseId || undefined,
+      structure: true,
     })
     setLoading(false)
     if (!res.ok) return setError(res.error)
@@ -421,6 +564,11 @@ function RightBridgeTab() {
 
   return (
     <div className="space-y-4">
+      <UploadSource
+        kind="rightbridge"
+        label="Upload the full RightBridge PDF (native or scanned) — or paste the text below"
+        onExtracted={(d) => setUploadId(d.id)}
+      />
       <div className="grid grid-cols-2 gap-3">
         <div>
           <Label htmlFor="rbtype">Report type</Label>
@@ -447,17 +595,60 @@ function RightBridgeTab() {
           rows={8}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Paste the extracted text of the RightBridge report (fields, answers, scoring)…"
+          placeholder="Paste the extracted text of the RightBridge report — or upload the PDF above…"
         />
       </div>
-      <Button onClick={run} disabled={loading || text.trim().length < 20}>
-        {loading ? 'Checking…' : 'Extract + consistency check'}
+      <Button onClick={run} disabled={loading || !canRun}>
+        {loading ? 'Checking…' : 'Extract + structure + consistency check'}
       </Button>
+
+      <AiNotice />
 
       {error ? <ErrorBanner message={error} /> : null}
 
       {result ? (
         <div className="space-y-3">
+          {result.structured_report && result.structured_report.sections?.length ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">
+                  Structured report
+                  {result.structured_report.report_version ? (
+                    <span className="ml-2 font-normal text-muted-foreground">{result.structured_report.report_version}</span>
+                  ) : null}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                {result.structured_report.sections.map((s, si) => (
+                  <div key={si}>
+                    <div className="mb-1 flex items-center gap-2 font-medium">
+                      {s.name}
+                      {s.page != null ? <Badge variant="outline">p.{s.page}</Badge> : null}
+                    </div>
+                    <div className="divide-y rounded border">
+                      {s.questions.map((q, qi) => (
+                        <div key={qi} className="grid grid-cols-[1fr_1fr] gap-2 p-2">
+                          <div className="text-muted-foreground">
+                            {q.number ? <span className="mr-1 font-mono text-xs">{q.number}</span> : null}
+                            {q.label}
+                            {q.page != null ? <span className="ml-1 text-xs text-muted-foreground">(p.{q.page})</span> : null}
+                          </div>
+                          <div>
+                            {q.answer ? (
+                              <span>{q.answer}</span>
+                            ) : (
+                              <Badge variant="assumption">blank</Badge>
+                            )}
+                            {q.explanation ? <p className="mt-1 text-xs text-muted-foreground">{q.explanation}</p> : null}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          ) : null}
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Consistency flags</CardTitle>
@@ -729,6 +920,32 @@ function LibraryTab() {
             Config default — verify
           </label>
         </div>
+        <div className="rounded-md border border-dashed p-3">
+          <div className="mb-2 text-xs font-medium text-muted-foreground">
+            Optional: extract text from a PDF / scan to pre-fill the document text below (then review before storing)
+          </div>
+          <DocumentUpload
+            kind="supporting"
+            multiple={false}
+            compact
+            onUploaded={async (d) => {
+              try {
+                const res = await fetch(`/api/compliance/upload/${d.id}`)
+                const json = await res.json().catch(() => ({}))
+                if (res.ok) {
+                  const joined = ((json.pages ?? []) as { text: string }[])
+                    .map((p) => p.text)
+                    .filter(Boolean)
+                    .join('\n\n')
+                  setBody((prev) => (prev.trim() ? prev : joined))
+                  if (!title) setTitle(d.filename.replace(/\.[^.]+$/, ''))
+                }
+              } catch {
+                /* leave the textarea for manual paste */
+              }
+            }}
+          />
+        </div>
         <div>
           <Label htmlFor="lb">Document text</Label>
           <Textarea id="lb" rows={8} value={body} onChange={(e) => setBody(e.target.value)} />
@@ -943,6 +1160,7 @@ export function ComplianceIntelligence() {
       {tab === 'note' ? <NoteTab /> : null}
       {tab === 'rightbridge' ? <RightBridgeTab /> : null}
       {tab === 'checklist' ? <ChecklistTab /> : null}
+      {tab === 'documents' ? <DocumentsTab /> : null}
       {tab === 'library' ? <LibraryTab /> : null}
       {tab === 'history' ? <HistoryTab /> : null}
     </div>

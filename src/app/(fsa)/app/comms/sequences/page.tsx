@@ -31,7 +31,7 @@ export default async function SequencesPage() {
       breadcrumb={[{ label: 'FSA', href: '/app' }, { label: 'Comms', href: '/app/comms' }, { label: 'Sequences' }]}
     >
       <div className="space-y-6">
-        <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+        <div className="rounded-lg border border-gold/40 bg-gold/10 p-4 text-sm text-gold-deep">
           <p className="font-medium">Sequences never bypass the comms gate.</p>
           <p className="mt-1">
             A sequence is a green-zone education/invitation drip. Every enrolled send still passes the 7-step comms dispatcher gate

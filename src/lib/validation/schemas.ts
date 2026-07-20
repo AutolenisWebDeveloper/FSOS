@@ -756,17 +756,43 @@ export type FormAttach = z.infer<typeof FormAttachSchema>
 
 // ─── Workshops (legacy-port §2.5) ──────────────────────────────────────────────
 export const WORKSHOP_TOPICS = ['retirement', 'life', 'business', 'general', 'education'] as const
-export const WORKSHOP_STATUS = ['draft', 'published', 'completed', 'cancelled'] as const
+// Widened additively for the seminar lead engine (spec §8). draft -> pending_review ->
+// compliance_approved -> published; completed/cancelled are terminal. Enforced by the
+// publish trigger (migration 038) + the /approve route, never a bare status flip.
+export const WORKSHOP_STATUS = [
+  'draft',
+  'pending_review',
+  'compliance_approved',
+  'published',
+  'completed',
+  'cancelled',
+] as const
+export const DELIVERY_MODES = ['in_person', 'virtual', 'hybrid'] as const
+export const PRESENTER_TYPES = ['internal', 'wholesaler', 'guest'] as const
+
+const localOrIsoDateTime = z.string().datetime({ message: 'Pick a date & time' }).or(
+  z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, 'Pick a date & time'),
+)
 
 export const WorkshopCreateSchema = z.object({
   title: z.string().trim().min(1, 'Title is required').max(200),
   topic: z.enum(WORKSHOP_TOPICS),
   description: z.string().trim().max(2000).optional(),
-  scheduled_at: z.string().datetime({ message: 'Pick a date & time' }).or(
-    z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, 'Pick a date & time'),
-  ),
+  agenda: z.string().trim().max(5000).optional(),
+  scheduled_at: localOrIsoDateTime,
+  // Delivery + session (workshop-has-many-sessions; the create route seeds a 1:1 session).
+  delivery_mode: z.enum(DELIVERY_MODES).default('in_person'),
+  host_name: z.string().trim().max(200).optional(),
+  timezone: z.string().trim().max(64).optional(),
+  venue_name: z.string().trim().max(200).optional(),
+  venue_address: z.string().trim().max(300).optional(),
   location: z.string().trim().max(300).optional(),
+  capacity_in_person: z.coerce.number().int().min(1).max(100000).optional(),
+  capacity_virtual: z.coerce.number().int().min(1).max(100000).optional(),
   max_attendees: z.coerce.number().int().min(1).max(100000).optional(),
+  hero_image_ref: z.string().trim().max(500).optional(),
+  // Reuse or attach existing presenters by id (presenter records are created via /api/presenters).
+  presenter_ids: z.array(uuid).max(20).optional(),
 })
 export type WorkshopCreate = z.infer<typeof WorkshopCreateSchema>
 
@@ -775,21 +801,71 @@ export const WorkshopPatchSchema = z
     status: z.enum(WORKSHOP_STATUS).optional(),
     title: z.string().trim().min(1).max(200).optional(),
     description: z.string().trim().max(2000).optional(),
+    agenda: z.string().trim().max(5000).optional(),
     location: z.string().trim().max(300).optional(),
+    host_name: z.string().trim().max(200).optional(),
+    delivery_mode: z.enum(DELIVERY_MODES).optional(),
+    hero_image_ref: z.string().trim().max(500).optional(),
+    // Selecting the approved disclosure version to publish under (must be approved; the
+    // publish trigger + route re-check). compliance_approval_ref is set by /approve, not here.
+    disclosure_config_id: uuid.optional(),
+    presenter_ids: z.array(uuid).max(20).optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'No changes provided' })
 export type WorkshopPatch = z.infer<typeof WorkshopPatchSchema>
 
-// Public workshop registration. Consent captured at registration (§2.5). No
-// securities data. Honeypot handled before Zod in the route.
-export const WorkshopRegisterSchema = z.object({
-  workshop_id: uuid,
-  name: z.string().trim().min(1, 'Your name is required').max(160),
-  email: z.string().trim().email('Enter a valid email').max(200),
-  phone: optionalPhone,
-  consent_email: z.boolean().optional().default(false),
-  consent_sms: z.boolean().optional().default(false),
+// Presenter (reusable across workshops — wholesaler / fund-family model). No securities
+// data. is_third_party / fund_family drive the workshop's is_security auto-flag.
+export const PresenterCreateSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(200),
+  title: z.string().trim().max(200).optional(),
+  firm: z.string().trim().max(200).optional(),
+  presenter_type: z.enum(PRESENTER_TYPES).default('internal'),
+  fund_family: z.string().trim().max(200).optional(),
+  is_third_party: z.boolean().optional().default(false),
+  bio: z.string().trim().max(5000).optional(),
+  headshot_ref: z.string().trim().max(500).optional(),
 })
+export type PresenterCreate = z.infer<typeof PresenterCreateSchema>
+
+// Compliance approval decision (registered principal). Writes the hard-gate record.
+export const WorkshopApproveSchema = z.object({
+  decision: z.enum(['approved', 'rejected']),
+  approver_name: z.string().trim().min(1, 'Approver name is required').max(200),
+  approver_crd: z.string().trim().max(40).optional(),
+  // Which disclosure version this workshop publishes under. Required to approve.
+  disclosure_config_id: uuid.optional(),
+  // Optional: the real, approved disclosure text. When present the route replaces the
+  // referenced config's body with it (so the principal can paste + approve in one step).
+  // The route refuses to approve a config whose body still contains the placeholder marker.
+  disclosure_body: z.string().trim().max(8000).optional(),
+  notes: z.string().trim().max(5000).optional(),
+})
+export type WorkshopApprove = z.infer<typeof WorkshopApproveSchema>
+
+// Public workshop registration. Consent captured at registration (§2.5). No securities
+// data. Honeypot handled before Zod in the route. Phone required only when SMS consent
+// is given (TCPA — registration itself is never conditioned on consent).
+export const WorkshopRegisterSchema = z
+  .object({
+    workshop_id: uuid,
+    session_id: uuid.optional(),
+    name: z.string().trim().min(1, 'Your name is required').max(160),
+    email: z.string().trim().email('Enter a valid email').max(200),
+    phone: optionalPhone,
+    chosen_delivery: z.enum(['in_person', 'virtual']).optional(),
+    consent_email: z.boolean().optional().default(false),
+    consent_sms: z.boolean().optional().default(false),
+  })
+  .superRefine((v, ctx) => {
+    if (v.consent_sms && !v.phone) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['phone'],
+        message: 'A phone number is required to receive SMS reminders.',
+      })
+    }
+  })
 export type WorkshopRegister = z.infer<typeof WorkshopRegisterSchema>
 
 // Internal registration update: mark attendance and/or convert to a referral.

@@ -13,6 +13,8 @@ export const runtime = 'nodejs'
 
 const STATUS_MAP: Record<string, StatusKey> = {
   draft: 'draft',
+  pending_review: 'pending',
+  compliance_approved: 'active',
   published: 'active',
   completed: 'won',
   cancelled: 'lost',
@@ -27,6 +29,10 @@ interface Workshop {
   scheduled_at: string | null
   location: string | null
   max_attendees: number | null
+  slug: string | null
+  is_security: boolean | null
+  delivery_mode: string | null
+  host_name: string | null
 }
 
 // Workshop detail (docs/legacy-port.md §2.5) — A3. Registrations, attendance, and
@@ -41,7 +47,7 @@ export default async function WorkshopDetailPage(props: { params: Promise<{ id: 
     const db = getDb()
     const { data: w } = await db
       .from('workshops')
-      .select('workshop_id, title, topic, status, description, scheduled_at, location, max_attendees')
+      .select('workshop_id, title, topic, status, description, scheduled_at, location, max_attendees, slug, is_security, delivery_mode, host_name')
       .eq('workshop_id', params.id)
       .maybeSingle()
     workshop = (w as Workshop) ?? null
@@ -74,7 +80,12 @@ export default async function WorkshopDetailPage(props: { params: Promise<{ id: 
         { label: 'Workshops', href: '/app/workshops' },
         { label: workshop.title },
       ]}
-      status={<StatusBadge status={STATUS_MAP[workshop.status] ?? 'draft'} label={workshop.status} />}
+      status={
+        <div className="flex items-center gap-2">
+          <StatusBadge status={STATUS_MAP[workshop.status] ?? 'draft'} label={workshop.status.replace('_', ' ')} />
+          {workshop.is_security ? <StatusBadge status="escalated" label="securities · FFS" /> : null}
+        </div>
+      }
       actions={<WorkshopStatusControl workshopId={workshop.workshop_id} status={workshop.status} />}
       rail={
         <div className="space-y-4">
@@ -87,21 +98,21 @@ export default async function WorkshopDetailPage(props: { params: Promise<{ id: 
               <Row label="Attended" value={String(attended)} />
             </dl>
           </section>
-          {workshop.status === 'published' ? (
+          {workshop.status === 'published' && workshop.slug ? (
             <section className="space-y-2">
               <MonoLabel>Public registration</MonoLabel>
               <a
-                href={`/events/${workshop.workshop_id}`}
+                href={`/workshops/${workshop.slug}`}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-1 text-xs text-accent hover:underline"
               >
-                <span className="numeric">/events/{workshop.workshop_id.slice(0, 8)}…</span>
+                <span className="numeric">/workshops/{workshop.slug}</span>
                 <ExternalLink className="h-3.5 w-3.5" aria-hidden />
               </a>
             </section>
           ) : (
-            <p className="text-xs text-muted-foreground">Publish this workshop to open public registration.</p>
+            <p className="text-xs text-muted-foreground">Publish this workshop (after compliance approval) to open public registration.</p>
           )}
         </div>
       }

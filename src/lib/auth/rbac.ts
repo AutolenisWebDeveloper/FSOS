@@ -80,6 +80,7 @@ const PUBLIC_EXACT = new Set<string>([
 const PUBLIC_PREFIXES = [
   '/education/',
   '/events/',
+  '/workshops/',
   '/reset-password/',
   '/invite/',
   '/verify/',

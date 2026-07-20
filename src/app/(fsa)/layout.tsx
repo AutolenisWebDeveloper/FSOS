@@ -88,6 +88,7 @@ const NAV: NavItem[] = [
   { href: '/app/contacts/upload', label: 'Contact Upload', icon: Upload, group: 'Engage' },
   { href: '/app/forms', label: 'Client Forms', icon: ClipboardList, group: 'Engage' },
   { href: '/app/workshops', label: 'Workshops', icon: GraduationCap, group: 'Engage' },
+  { href: '/app/workshops/review', label: 'Workshop Approvals', icon: ClipboardCheck, group: 'Engage' },
   { href: '/app/documents', label: 'Documents', icon: FolderOpen, group: 'Engage' },
   { href: '/app/workflows', label: 'Workflows', icon: Workflow, group: 'Engage' },
   { href: '/app/tasks', label: 'Tasks', icon: CheckSquare, group: 'Engage' },

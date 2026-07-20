@@ -8,7 +8,7 @@
 > - **Feature specs:** `docs/specs/*` (`p0-core.md`, `rbac-matrix.md`, `data-api-map.md`, `cases-commission.md`, `review-conversion-crosssell.md`, `comms-ai-compliance.md`, `workflows-core-spine.md`, `workflows-ops-compliance.md`, `portals-admin.md`, `acceptance-checklist.md`, `missing-requirement-analysis.md`).
 > - **Compliance Intelligence module (§3):** `docs/compliance/*`.
 > - **Design system:** root `DESIGN.md` (as-built token/component reference) + `docs/design-system.md` (narrative) + `docs/design-audit.md`; product register in root `PRODUCT.md`.
-> - **Integrations & ops:** `docs/ghl_integration.md`, `docs/make_scenarios.md`, `docs/go-live-plan.md`, `docs/legacy-port.md`, `docs/legacy-mapping.md`, `docs/plugin-install-runbook.md`.
+> - **Integrations & ops:** `docs/ghl_integration.md`, `docs/make_scenarios.md`, `docs/go-live-plan.md`, `docs/legacy-port.md`, `docs/legacy-mapping.md`, `docs/plugin-install-runbook.md`, `docs/twilio-mcp-install.md`.
 >
 > Last reviewed against the codebase: 2026-07-19 (see §10 for the current subsystem map).
 

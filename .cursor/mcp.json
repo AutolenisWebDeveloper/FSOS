@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "twilio": {
+      "url": "https://mcp.twilio.com/docs"
+    }
+  }
+}

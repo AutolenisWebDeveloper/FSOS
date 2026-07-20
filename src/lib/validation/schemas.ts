@@ -810,6 +810,10 @@ export const WorkshopPatchSchema = z
     // publish trigger + route re-check). compliance_approval_ref is set by /approve, not here.
     disclosure_config_id: uuid.optional(),
     presenter_ids: z.array(uuid).max(20).optional(),
+    // Optional FSA-entered event spend for cost-per-lead reporting (assumption-badged in
+    // the UI — a planning figure, never a Farmers-published number; guardrail 3).
+    budget_spend: z.coerce.number().min(0).max(10_000_000).optional(),
+    budget_spend_note: z.string().trim().max(500).optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'No changes provided' })
 export type WorkshopPatch = z.infer<typeof WorkshopPatchSchema>
@@ -868,14 +872,63 @@ export const WorkshopRegisterSchema = z
   })
 export type WorkshopRegister = z.infer<typeof WorkshopRegisterSchema>
 
-// Internal registration update: mark attendance and/or convert to a referral.
+// Internal registration update: mark attendance and/or convert to a lead/referral.
+// convert_to_referral keeps the legacy internal-only path; convert_to_lead (P1) routes
+// the attendee into the existing consult spine (referral + GHL Pipeline-A opportunity),
+// firewall-gated for is_security workshops (routed to FFS, never the automated engine).
 export const RegistrationPatchSchema = z
   .object({
     attended: z.boolean().optional(),
     convert_to_referral: z.boolean().optional(),
+    convert_to_lead: z.boolean().optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'No changes provided' })
 export type RegistrationPatch = z.infer<typeof RegistrationPatchSchema>
+
+// ─── Workshop attendance capture (P1) ──────────────────────────────────────────
+export const ATTENDANCE_STATUS = ['registered', 'attended', 'no_show', 'left_early'] as const
+
+// Kiosk check-in / walk-in add. Exactly one action: check in a known registrant by their
+// unique join_token, OR add a walk-in (creates a registration + attendance row). Consent
+// for a walk-in is captured the same way as public registration (optional, independent).
+export const WorkshopCheckInSchema = z
+  .object({
+    join_token: z.string().trim().min(1).max(200).optional(),
+    walk_in: z
+      .object({
+        name: z.string().trim().min(1, 'Name is required').max(160),
+        email: z.string().trim().email('Enter a valid email').max(200).optional().or(z.literal('')),
+        phone: optionalPhone,
+        chosen_delivery: z.enum(['in_person', 'virtual']).optional(),
+        consent_email: z.boolean().optional().default(false),
+        consent_sms: z.boolean().optional().default(false),
+        session_id: uuid.optional(),
+      })
+      .superRefine((v, ctx) => {
+        if (v.consent_sms && !v.phone) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['phone'], message: 'A phone number is required for SMS consent.' })
+        }
+      })
+      .optional(),
+  })
+  .refine((v) => !!v.join_token !== !!v.walk_in, { message: 'Provide either a join_token to check in, or a walk_in to add.' })
+export type WorkshopCheckIn = z.infer<typeof WorkshopCheckInSchema>
+
+// Attendance reconcile: bulk/typed manual marks (virtual + hybrid interim, or corrections
+// to an in-person roster). Idempotent — re-sending the same status is a no-op. Each entry
+// targets a registration; capture_method is forced to 'manual' server-side.
+export const AttendanceReconcileSchema = z.object({
+  entries: z
+    .array(
+      z.object({
+        registration_id: uuid,
+        status: z.enum(ATTENDANCE_STATUS),
+      }),
+    )
+    .min(1, 'At least one attendance entry is required')
+    .max(500),
+})
+export type AttendanceReconcile = z.infer<typeof AttendanceReconcileSchema>
 
 // ─── OPRA Transfer Center (App A → App B parity) ───────────────────────────────
 // One-policy households eligible for an OPRA transfer/review. Status toggles are

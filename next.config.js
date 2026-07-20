@@ -5,22 +5,32 @@ const nextConfig = {
   // external so Next doesn't bundle it into the serverless function.
   serverExternalPackages: ['pdf2json'],
   async headers() {
-    return [
+    // Security headers apply to EVERY response. Search-engine indexing is scoped:
+    // the public marketing surface (homepage, legal, disclosures) is indexable so
+    // it can generate leads; every authenticated portal + API stays noindex.
+    const securityHeaders = [
+      { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+      { key: 'X-Content-Type-Options', value: 'nosniff' },
+      { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
       {
-        // Security headers applied to every response. This is a private
-        // internal tool, so we also instruct crawlers not to index it.
-        source: '/(.*)',
-        headers: [
-          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
-          { key: 'X-Content-Type-Options', value: 'nosniff' },
-          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-          {
-            key: 'Strict-Transport-Security',
-            value: 'max-age=63072000; includeSubDomains; preload',
-          },
-          { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
-        ],
+        key: 'Strict-Transport-Security',
+        value: 'max-age=63072000; includeSubDomains; preload',
       },
+    ]
+    const noIndex = { key: 'X-Robots-Tag', value: 'noindex, nofollow' }
+    // Every authenticated / private prefix — never indexed.
+    const privatePrefixes = [
+      '/app/:path*',
+      '/admin/:path*',
+      '/compliance/:path*',
+      '/partner/:path*',
+      '/client/:path*',
+      '/super/:path*',
+      '/api/:path*',
+    ]
+    return [
+      { source: '/(.*)', headers: securityHeaders },
+      ...privatePrefixes.map((source) => ({ source, headers: [noIndex] })),
     ]
   },
 }

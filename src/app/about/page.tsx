@@ -5,7 +5,11 @@ import type { LucideIcon } from 'lucide-react'
 import PublicFooter from '@/components/PublicFooter'
 import { Button } from '@/components/ui/button'
 
-export const metadata: Metadata = { title: 'Markist Athelus — Farmers Financial Services' }
+export const metadata: Metadata = {
+  title: 'About Markist Athelus — Farmers Financial Services Agent',
+  robots: { index: true, follow: true },
+  alternates: { canonical: '/about' },
+}
 
 // Public landing / booking page. Booking button points at NEXT_PUBLIC_CALENDLY_URL
 // when configured, otherwise to the public workshops index.

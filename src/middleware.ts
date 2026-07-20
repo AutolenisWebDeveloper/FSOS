@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { evaluateAccess, toRoles, type Role, type SessionClaims } from '@/lib/auth/rbac'
 
-// Two responsibilities, in order:
-//  1. The legacy command center at "/" is RETIRED. "/" now redirects to the
-//     official dashboard at /app (which enforces the portal auth below). The
-//     old HTTP Basic gate is gone with it.
-//  2. The coarse portal gate (middleware-auth.md §4) for /app, /admin,
-//     /compliance, /partner, /client, /super — auth redirect + role + MFA. Fine-
-//     grained row authorization stays in RLS + layout guards (never here).
+// Responsibilities:
+//  - Serve the PUBLIC marketing homepage at "/" (the FSA's public digital HQ).
+//    "/" is on the public allowlist (rbac.isPublicPath), so it falls through the
+//    portal gate below to `allow`. The legacy command center that once lived here
+//    is retired; the official dashboard is /app (gated below).
+//  - The coarse portal gate (middleware-auth.md §4) for /app, /admin,
+//    /compliance, /partner, /client, /super — auth redirect + role + MFA. Fine-
+//    grained row authorization stays in RLS + layout guards (never here).
 
 export const config = {
   // Everything except Next internals, static assets, and API routes (which
@@ -31,13 +32,8 @@ function aalFromJwt(token: string | undefined): string | null {
 export async function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname
 
-  // (1) The legacy command center at "/" is retired — send everyone to the
-  // official /app dashboard, which then enforces the portal auth gate below.
-  if (path === '/') {
-    return NextResponse.redirect(new URL('/app', req.url))
-  }
-
-  // (2) Portal gate. Build a response we can attach refreshed auth cookies to.
+  // Portal gate. Build a response we can attach refreshed auth cookies to.
+  // "/" and the other public marketing routes resolve to `allow` below.
   const res = NextResponse.next()
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL

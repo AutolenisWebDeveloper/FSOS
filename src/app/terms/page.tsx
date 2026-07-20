@@ -2,7 +2,11 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import PublicFooter from '@/components/PublicFooter'
 
-export const metadata: Metadata = { title: 'Terms of Service — FSOS' }
+export const metadata: Metadata = {
+  title: 'Terms of Use — Markist Financial Services',
+  robots: { index: true, follow: true },
+  alternates: { canonical: '/terms' },
+}
 
 const LAST_UPDATED = 'July 9, 2026'
 

@@ -1,6 +1,10 @@
 import Link from 'next/link'
 
-export const metadata = { title: 'Disclosures — FSOS' }
+export const metadata = {
+  title: 'Disclosures — Markist Financial Services',
+  robots: { index: true, follow: true },
+  alternates: { canonical: '/disclosures' },
+}
 
 // Static public disclosures page. Professional, clearly-labeled, and free of any
 // invented Farmers/FFS legal registration numbers or figures (guardrail §2.3).

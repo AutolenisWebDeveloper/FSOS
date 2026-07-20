@@ -1,12 +1,14 @@
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ExternalLink } from 'lucide-react'
+import { ExternalLink, QrCode, BarChart3 } from 'lucide-react'
 import { requireRole } from '@/lib/auth/session'
 import { DetailShell, ErrorState, StatusBadge, type StatusKey } from '@/components/archetypes'
 import { MonoLabel } from '@/components/ui/typography'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { getDb } from '@/lib/supabase/client'
 import { WorkshopStatusControl } from '@/components/app/WorkshopStatusControl'
-import { WorkshopRegistrations, type Registration } from '@/components/app/WorkshopRegistrations'
+import { WorkshopRegistrations, type Registration, type AttendanceStatus } from '@/components/app/WorkshopRegistrations'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -54,10 +56,23 @@ export default async function WorkshopDetailPage(props: { params: Promise<{ id: 
     if (workshop) {
       const { data: regs } = await db
         .from('workshop_registrations')
-        .select('reg_id, name, email, phone, status, attended, referral_id, consent_channels')
+        .select('reg_id, name, email, phone, status, attended, referral_id, consent_channels, chosen_delivery, is_walk_in, ghl_opportunity_id, lead_source')
         .eq('workshop_id', params.id)
         .order('registered_at', { ascending: false, nullsFirst: false })
-      registrations = (regs as Registration[]) ?? []
+      const rows = (regs as Omit<Registration, 'attendance_status'>[]) ?? []
+      // Merge the P1 attendance store (workshop_attendance) into each registration.
+      const regIds = rows.map((r) => r.reg_id)
+      const attMap = new Map<string, AttendanceStatus>()
+      if (regIds.length > 0) {
+        const { data: att } = await db
+          .from('workshop_attendance')
+          .select('registration_id, status')
+          .in('registration_id', regIds)
+        for (const a of (att as { registration_id: string; status: AttendanceStatus }[]) ?? []) {
+          attMap.set(a.registration_id, a.status)
+        }
+      }
+      registrations = rows.map((r) => ({ ...r, attendance_status: attMap.get(r.reg_id) ?? 'registered' }))
     }
   } catch (e) {
     return (
@@ -69,7 +84,7 @@ export default async function WorkshopDetailPage(props: { params: Promise<{ id: 
   if (!workshop) notFound()
 
   const registered = registrations.length
-  const attended = registrations.filter((r) => r.attended).length
+  const attended = registrations.filter((r) => r.attendance_status === 'attended' || r.attendance_status === 'left_early').length
 
   return (
     <DetailShell
@@ -86,7 +101,21 @@ export default async function WorkshopDetailPage(props: { params: Promise<{ id: 
           {workshop.is_security ? <StatusBadge status="escalated" label="securities · FFS" /> : null}
         </div>
       }
-      actions={<WorkshopStatusControl workshopId={workshop.workshop_id} status={workshop.status} />}
+      actions={
+        <div className="flex flex-wrap items-center gap-2">
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/app/workshops/${workshop.workshop_id}/check-in`}>
+              <QrCode className="h-4 w-4" aria-hidden /> Check-in
+            </Link>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/app/workshops/${workshop.workshop_id}/report`}>
+              <BarChart3 className="h-4 w-4" aria-hidden /> Report
+            </Link>
+          </Button>
+          <WorkshopStatusControl workshopId={workshop.workshop_id} status={workshop.status} />
+        </div>
+      }
       rail={
         <div className="space-y-4">
           <section className="space-y-2">
@@ -123,7 +152,11 @@ export default async function WorkshopDetailPage(props: { params: Promise<{ id: 
           <CardTitle className="text-base">Registrations</CardTitle>
         </CardHeader>
         <CardContent>
-          <WorkshopRegistrations registrations={registrations} />
+          <WorkshopRegistrations
+            workshopId={workshop.workshop_id}
+            isSecurity={workshop.is_security ?? false}
+            registrations={registrations}
+          />
         </CardContent>
       </Card>
     </DetailShell>

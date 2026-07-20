@@ -129,3 +129,112 @@ interface RawPresenter {
   bio: string | null
   headshot_ref: string | null
 }
+
+// ── Hub list loader (/workshops) ────────────────────────────────────────────────
+
+export interface PublicWorkshopCard {
+  workshop_id: string
+  slug: string | null
+  title: string
+  topic: string
+  description: string | null
+  delivery_mode: 'in_person' | 'virtual' | 'hybrid'
+  host_name: string | null
+  /** Earliest upcoming session start (UTC ISO), or the workshop's scheduled_at fallback. */
+  starts_at: string | null
+  venue_city: string | null
+  location: string | null
+  /** Presenter labels for display + filtering (name, and firm/fund when present). */
+  presenters: { name: string; org: string | null }[]
+  seats_remaining: number | null
+  is_full: boolean
+}
+
+/**
+ * Load every PUBLISHED workshop for the public hub with the fields the cards + filters
+ * need — earliest session date/format, presenter labels, and seat availability. Published
+ * is the ONLY gate (the compliance publish gate is upstream); drafts never appear. Batched
+ * (no N+1): one query each for workshops, sessions, presenters, and registration counts.
+ */
+export async function loadPublicWorkshops(): Promise<PublicWorkshopCard[]> {
+  const db = getDb()
+  const { data: ws } = await db
+    .from('workshops')
+    .select('workshop_id, slug, title, topic, description, delivery_mode, host_name, scheduled_at, location, max_attendees')
+    .eq('status', 'published')
+  const workshops = (ws ?? []) as {
+    workshop_id: string
+    slug: string | null
+    title: string
+    topic: string
+    description: string | null
+    delivery_mode: string | null
+    host_name: string | null
+    scheduled_at: string | null
+    location: string | null
+    max_attendees: number | null
+  }[]
+  if (workshops.length === 0) return []
+  const ids = workshops.map((w) => w.workshop_id)
+
+  // Earliest session per workshop.
+  const { data: sessions } = await db
+    .from('workshop_sessions')
+    .select('workshop_id, starts_at, delivery_mode, venue_name, venue_address')
+    .in('workshop_id', ids)
+    .order('starts_at', { ascending: true })
+  const earliest = new Map<string, { starts_at: string; delivery_mode: string | null; venue_name: string | null; venue_address: string | null }>()
+  for (const s of (sessions ?? []) as { workshop_id: string; starts_at: string; delivery_mode: string | null; venue_name: string | null; venue_address: string | null }[]) {
+    if (!earliest.has(s.workshop_id)) earliest.set(s.workshop_id, s)
+  }
+
+  // Presenters per workshop (ordered).
+  const { data: wp } = await db
+    .from('workshop_presenters')
+    .select('workshop_id, display_order, presenters(name, firm, fund_family)')
+    .in('workshop_id', ids)
+    .order('display_order', { ascending: true })
+  const presByWorkshop = new Map<string, { name: string; org: string | null }[]>()
+  for (const row of (wp ?? []) as unknown as { workshop_id: string; presenters: { name: string; firm: string | null; fund_family: string | null } | null }[]) {
+    if (!row.presenters) continue
+    const list = presByWorkshop.get(row.workshop_id) ?? []
+    list.push({ name: row.presenters.name, org: row.presenters.fund_family || row.presenters.firm || null })
+    presByWorkshop.set(row.workshop_id, list)
+  }
+
+  // Registration counts per workshop (one row per registration; tally in JS).
+  const { data: regs } = await db.from('workshop_registrations').select('workshop_id').in('workshop_id', ids)
+  const regCount = new Map<string, number>()
+  for (const r of (regs ?? []) as { workshop_id: string }[]) {
+    regCount.set(r.workshop_id, (regCount.get(r.workshop_id) ?? 0) + 1)
+  }
+
+  const cards: PublicWorkshopCard[] = workshops.map((w) => {
+    const s = earliest.get(w.workshop_id)
+    const registered = regCount.get(w.workshop_id) ?? 0
+    const seatsRemaining = w.max_attendees ? Math.max(0, w.max_attendees - registered) : null
+    return {
+      workshop_id: w.workshop_id,
+      slug: w.slug,
+      title: w.title,
+      topic: w.topic,
+      description: w.description,
+      delivery_mode: (s?.delivery_mode ?? w.delivery_mode ?? 'in_person') as PublicWorkshopCard['delivery_mode'],
+      host_name: w.host_name,
+      starts_at: s?.starts_at ?? w.scheduled_at,
+      venue_city: s?.venue_name ?? null,
+      location: s?.venue_address ?? w.location,
+      presenters: presByWorkshop.get(w.workshop_id) ?? [],
+      seats_remaining: seatsRemaining,
+      is_full: !!w.max_attendees && registered >= w.max_attendees,
+    }
+  })
+
+  // Sort by soonest date; undated workshops sort last.
+  cards.sort((a, b) => {
+    const av = a.starts_at ? Date.parse(a.starts_at) : Infinity
+    const bv = b.starts_at ? Date.parse(b.starts_at) : Infinity
+    return av - bv
+  })
+  return cards
+}

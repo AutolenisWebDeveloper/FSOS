@@ -719,6 +719,108 @@ async function earliestSession(
   return data ?? null
 }
 
+// ─── Staff delivery panel summary (P3 ops UI) ───────────────────────────────────
+
+export interface DeliverySessionLite {
+  id: string
+  starts_at: string
+  delivery_mode: string | null
+  zoom_meeting_id: string | null
+  recording_url: string | null
+  recording_expires_at: string | null
+  status: string | null
+}
+
+export interface DeliverySummary {
+  sessions: DeliverySessionLite[]
+  hasVirtual: boolean
+  virtualRegs: number
+  provisioned: number
+  captureCounts: { webhook: number; checkin: number; manual: number }
+  feedback: { count: number; avgRating: number | null; consultRequested: number }
+  recordingConsentApproved: boolean
+  zoomEnabled: boolean
+}
+
+/**
+ * Aggregate the P3 delivery status for one workshop's staff detail panel: sessions +
+ * Zoom/recording pointers, per-registrant provisioning progress (virtual regs vs those with
+ * a join_url), attendance capture-method mix (webhook/checkin/manual), post-event feedback
+ * rollup, and whether an approved recording-consent disclosure exists (replay activation
+ * gate). Read-only; every figure comes from real rows (no placeholders).
+ */
+export async function loadDeliverySummary(db: Db, workshopId: string): Promise<DeliverySummary> {
+  const { data: sessionRows } = await db
+    .from('workshop_sessions')
+    .select('id, starts_at, delivery_mode, zoom_meeting_id, recording_url, recording_expires_at, status')
+    .eq('workshop_id', workshopId)
+    .order('starts_at', { ascending: true })
+  const sessions = (sessionRows ?? []) as DeliverySessionLite[]
+  const hasVirtual = sessions.some((s) => s.delivery_mode === 'virtual' || s.delivery_mode === 'hybrid')
+
+  const { count: virtualRegs } = await db
+    .from('workshop_registrations')
+    .select('*', { count: 'exact', head: true })
+    .eq('workshop_id', workshopId)
+    .eq('chosen_delivery', 'virtual')
+  const { count: provisioned } = await db
+    .from('workshop_registrations')
+    .select('*', { count: 'exact', head: true })
+    .eq('workshop_id', workshopId)
+    .not('join_url', 'is', null)
+
+  // Registration ids for this workshop scope the attendance + feedback rollups.
+  const { data: regRows } = await db
+    .from('workshop_registrations')
+    .select('reg_id')
+    .eq('workshop_id', workshopId)
+  const regIds = ((regRows ?? []) as { reg_id: string }[]).map((r) => r.reg_id)
+
+  const captureCounts = { webhook: 0, checkin: 0, manual: 0 }
+  const feedback = { count: 0, avgRating: null as number | null, consultRequested: 0 }
+  if (regIds.length > 0) {
+    const { data: att } = await db
+      .from('workshop_attendance')
+      .select('capture_method')
+      .in('registration_id', regIds)
+    for (const a of (att ?? []) as { capture_method: string | null }[]) {
+      if (a.capture_method === 'webhook') captureCounts.webhook++
+      else if (a.capture_method === 'checkin') captureCounts.checkin++
+      else if (a.capture_method === 'manual') captureCounts.manual++
+    }
+
+    const { data: fb } = await db
+      .from('workshop_feedback')
+      .select('rating, consult_requested')
+      .in('registration_id', regIds)
+    const rows = (fb ?? []) as { rating: number | null; consult_requested: boolean | null }[]
+    feedback.count = rows.length
+    feedback.consultRequested = rows.filter((r) => r.consult_requested).length
+    const rated = rows.map((r) => r.rating).filter((n): n is number => typeof n === 'number')
+    feedback.avgRating = rated.length ? rated.reduce((a, b) => a + b, 0) / rated.length : null
+  }
+
+  const { data: rec } = await db
+    .from('workshop_disclosure_configs')
+    .select('id')
+    .eq('kind', 'recording')
+    .eq('is_assumption', false)
+    .not('approved_by', 'is', null)
+    .limit(1)
+    .maybeSingle()
+
+  return {
+    sessions,
+    hasVirtual,
+    virtualRegs: virtualRegs ?? 0,
+    provisioned: provisioned ?? 0,
+    captureCounts,
+    feedback,
+    recordingConsentApproved: !!rec,
+    zoomEnabled: zoomEnabled(),
+  }
+}
+
 /**
  * Mint a short-lived signed URL for a private-bucket asset path (hero image / headshot).
  * Public landing pages call this at render time (force-dynamic) so images stay in the

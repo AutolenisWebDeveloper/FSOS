@@ -1,7 +1,7 @@
 import Link from 'next/link'
 
 export const metadata = {
-  title: 'Disclosures — Markist Financial Services',
+  title: 'Disclosures — Markist Athelus',
   robots: { index: true, follow: true },
   alternates: { canonical: '/disclosures' },
 }

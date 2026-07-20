@@ -48,7 +48,7 @@ export function PublicBrandLockup({ className }: { className?: string }) {
   return (
     <div className={cn('mb-6 flex items-center gap-3', className)}>
       <BrandMark size="sm" />
-      <span className="text-sm font-semibold text-foreground">Markist Financial Services</span>
+      <span className="text-sm font-semibold text-foreground">Markist Athelus</span>
     </div>
   )
 }

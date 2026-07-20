@@ -3,16 +3,8 @@
 // Single source of truth for the PUBLIC marketing surface (homepage, footer,
 // legal pages, SMS terms, structured data, and the contact API).
 //
-// Everything a compliance reviewer or the FSA might need to correct lives here —
-// the business name/address/phone (NAP), service area, disclosures, and the
-// exact A2P 10DLC SMS consent wording — so it is edited in ONE place and stays
-// identical across the site, the Privacy Policy, the SMS Terms, and the Twilio
-// campaign registration (a hard A2P requirement: the business identity must not
-// drift between surfaces).
-//
-// These are editable defaults, sourced from the FSA's provided design and the
-// repo's existing disclosure language. Verify against the registered Twilio
-// brand and current licensing before go-live (see the homepage report).
+// Values below come from the FSA's own authoritative content build. Verify
+// against the registered Twilio A2P brand and current licensing before go-live.
 // -----------------------------------------------------------------------------
 
 /** The one business identity that must match the Twilio A2P brand registration. */
@@ -20,55 +12,53 @@ export const BUSINESS = {
   /** Legal / display name of the FSA. */
   agent: 'Markist Athelus',
   /** Professional designation. */
-  title: 'Farmers Financial Services Agent',
-  /** DBA / brand identity used in SMS sender identity + consent language. */
-  brand: 'Markist Financial Services',
+  title: 'Financial Services Agent',
+  /** Carrier represented. */
+  carrier: 'Farmers Insurance',
+  /** Brand identity used in SMS sender identity + consent language. */
+  brand: 'Markist Athelus — Farmers Insurance',
   /** Short brand used in the nav lockup. */
   short: 'Markist Athelus',
 } as const
 
 /** Verified business contact — Name / Address / Phone (NAP). */
 export const CONTACT = {
-  phoneDisplay: '(469) 535-1111',
-  phoneE164: '+14695351111',
+  phoneDisplay: '361-717-4215',
+  phoneE164: '+13617174215',
   email: 'mathelus@farmersagent.com',
   address: {
-    line1: '6005 W Park Blvd, Ste 206',
-    city: 'Plano',
+    line1: '12800 Westridge Blvd, Ste 114',
+    city: 'Frisco',
     region: 'TX',
-    postal: '75093',
+    postal: '75035',
     country: 'US',
   },
   hoursDisplay: 'Mon–Fri, 9:00 AM – 6:00 PM · Sat by appointment',
-  serviceArea: 'Serving Plano, Frisco, McKinney & surrounding areas',
-  serviceAreaCities: ['Plano', 'Frisco', 'McKinney', 'Allen', 'Dallas'],
+  serviceArea: 'Plano, Frisco, McKinney & surrounding areas',
+  serviceAreaCities: ['Plano', 'Frisco', 'McKinney'],
 } as const
 
-/** License / registration designations shown in the footer. VERIFY before go-live. */
-export const LICENSING = 'TX License: Life & Health · Securities registrations Series 6, 26, 63'
+/** License / registration designations shown in the footer + about. */
+export const LICENSING = 'TX License 3081061 · Life, Health, Series 6, 26, 63'
 
-/** Social links — only render the ones that are real. */
+/** Social links — only render the ones that are real (placeholders hidden). */
 export const SOCIAL: { label: string; href: string }[] = [
-  // Add verified profile URLs here; the footer renders none if this is empty.
+  // Add verified profile URLs here; the footer renders social icons only when set.
 ]
 
 /**
- * A2P 10DLC consent copy. The `version` is stored with every captured consent so
- * we can prove exactly which wording a contact agreed to. Bump the version if the
- * text below changes.
+ * A2P 10DLC consent copy — a MIXED program (account/service + marketing). The
+ * `version` is stored with every captured consent so we can prove exactly which
+ * wording a contact agreed to. The sending number placeholder must be replaced
+ * with the registered A2P number before launch (NEXT_PUBLIC_SMS_FROM).
  */
 export const SMS_CONSENT = {
-  version: 'a2p-10dlc-2026-07',
-  label: `By checking this box, I agree to receive SMS messages from ${BUSINESS.agent} / ${BUSINESS.brand} regarding appointments, requested information, service updates, account servicing, and customer support. Message frequency varies. Message and data rates may apply. Reply STOP to opt out or HELP for assistance. Consent is not a condition of purchase.`,
+  version: 'a2p-10dlc-2026-07-frisco',
+  program: 'Markist Athelus — Farmers Insurance — Customer & Account Messaging',
+  from: process.env.NEXT_PUBLIC_SMS_FROM || '(XXX) XXX-XXXX',
 } as const
 
-/**
- * Canonical FSA authentication host. The public marketing site is only an entry
- * point to the FSA dashboard — there is NO separate client login/portal here.
- * Every "Login" action routes to this single FSA auth flow, which lands the user
- * on the FSA dashboard (`/app`) after sign-in. Overridable via NEXT_PUBLIC_AUTH_URL
- * so the marketing surface can live on its own domain while auth stays canonical.
- */
+/** Canonical FSA authentication host (see loginUrl). */
 export function authBaseUrl(): string {
   return (process.env.NEXT_PUBLIC_AUTH_URL || 'https://fsos-seven.vercel.app').replace(/\/$/, '')
 }
@@ -83,14 +73,9 @@ export function dashboardUrl(): string {
   return `${authBaseUrl()}/app`
 }
 
-/** The booking URL. Falls back to the public workshops index when unset. */
+/** The booking URL. Falls back to the on-page contact section when unset. */
 export function bookingUrl(): string {
-  return process.env.NEXT_PUBLIC_CALENDLY_URL || '/events'
-}
-
-/** True when a real Calendly URL is configured (vs. the /events fallback). */
-export function hasCalendly(): boolean {
-  return Boolean(process.env.NEXT_PUBLIC_CALENDLY_URL)
+  return process.env.NEXT_PUBLIC_CALENDLY_URL || '/#contact'
 }
 
 /** Canonical site origin for metadata / structured data. */
@@ -99,17 +84,16 @@ export function siteUrl(): string {
     process.env.NEXT_PUBLIC_SITE_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
     process.env.NEXT_PUBLIC_URL ||
-    'https://markistfinancial.com'
+    'https://www.markistathelus.com'
   )
 }
 
-/** Compliance disclosure lines — reused by the footer and the disclosures page. */
+/** Compliance disclosure lines — reused by the footer and legal pages. */
 export const DISCLOSURES = {
+  practice:
+    'Markist Athelus is a licensed Financial Services Agent representing Farmers Insurance and its affiliated companies. This website is for general information and to request contact with the agency; it is not an offer of insurance and does not amend or modify any policy. Coverage and financial products are subject to underwriting, eligibility, availability, and the terms of the issued policy or contract.',
   securities:
-    'Securities offered through Farmers Financial Solutions, LLC (FFS), 31051 Agoura Road, Westlake Village, CA 91361. Member FINRA & SIPC.',
-  life: 'Life insurance issued by Farmers New World Life Insurance Company (FNWL) and other carriers, subject to issuing-company rules and applicable state regulation.',
-  advice:
-    'Information on this site is general and educational only — not individualized investment, tax, legal, or insurance advice. Any recommendation is made personally by a licensed professional through the appropriate supervised channel. Products and services are not available in all states.',
-  notFarmers:
-    'This is the professional practice of an independent Farmers Financial Services Agent. The FSOS client platform is the practice’s own technology and is not owned or operated by Farmers.',
+    'Securities offered through Farmers Financial Solutions, LLC, 30700 Russell Ranch Road #214, Westlake Village, CA 91362. Member FINRA & SIPC. Investing involves risk, including the possible loss of principal. Life insurance issued by Farmers New World Life Insurance Company, 3120 139th Ave. SE, Ste. 300, Bellevue, WA 98005.',
+  mobile:
+    'No mobile information will be shared with third parties or affiliates for marketing or promotional purposes. All other categories of data exclude text messaging originator opt-in data and consent; this information will not be shared with any third parties.',
 } as const

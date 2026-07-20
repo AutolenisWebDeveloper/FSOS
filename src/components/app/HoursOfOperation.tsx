@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { AssumptionBadge } from '@/components/archetypes/states'
 import { toast } from 'sonner'
 
 export interface HoursPolicy {
@@ -73,7 +74,7 @@ export function HoursOfOperation({ initial }: { initial: HoursPolicy }) {
       <label className="flex items-center gap-2 text-sm font-medium">
         <input type="checkbox" checked={p.enabled} onChange={(e) => setP((s) => ({ ...s, enabled: e.target.checked }))} />
         Enforce hours of operation
-        {p.is_assumption ? <span className="text-xs text-amber-600 dark:text-amber-500">(config default — verify)</span> : null}
+        {p.is_assumption ? <AssumptionBadge /> : null}
       </label>
 
       <div className="flex flex-wrap items-end gap-4">

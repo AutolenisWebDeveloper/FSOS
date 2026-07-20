@@ -31,7 +31,7 @@ export default async function AudiencePage() {
       breadcrumb={[{ label: 'FSA', href: '/app' }, { label: 'Comms', href: '/app/comms' }, { label: 'Audience' }]}
     >
       <div className="space-y-6">
-        <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+        <div className="rounded-lg border border-gold/40 bg-gold/10 p-4 text-sm text-gold-deep">
           <p className="font-medium">An audience is a definition, not a send list.</p>
           <p className="mt-1">
             Estimated size is an approximate segment count. The actual dispatch re-checks the full comms gate — consent,

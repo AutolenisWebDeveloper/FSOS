@@ -4,18 +4,19 @@
 // public POST /api/consent/opt-out endpoint (writes to the consent ledger).
 
 import { useState } from 'react'
-import PublicFooter from '@/components/PublicFooter'
+import { CheckCircle2 } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { PublicPage, PublicCard, PublicAlert } from '@/components/public/PublicShell'
+import { Field } from '@/components/forms/Field'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
 
-const input: React.CSSProperties = {
-  width: '100%',
-  padding: '11px 12px',
-  border: '1px solid #d9e0e8',
-  borderRadius: 8,
-  fontSize: 14,
-  fontFamily: 'inherit',
-  marginBottom: 12,
-  boxSizing: 'border-box',
-}
+const CHANNELS = [
+  { value: 'all', label: 'All messages' },
+  { value: 'email', label: 'Email' },
+  { value: 'sms', label: 'SMS' },
+] as const
 
 export default function Unsubscribe() {
   const [contact, setContact] = useState('')
@@ -51,75 +52,76 @@ export default function Unsubscribe() {
   }
 
   return (
-    <div style={{ background: '#f4f6f9', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-        <div
-          style={{
-            background: '#fff',
-            borderRadius: 14,
-            boxShadow: '0 10px 40px rgba(15,30,54,.12)',
-            width: '100%',
-            maxWidth: 440,
-            padding: 28,
-            fontFamily: "'DM Sans', 'Segoe UI', sans-serif",
-          }}
-        >
-          <div style={{ fontSize: 22, fontWeight: 700, color: '#0f1e36', marginBottom: 6 }}>Unsubscribe / Opt-Out</div>
-          {!done ? (
-            <>
-              <div style={{ fontSize: 13, color: '#4a5568', marginBottom: 18, lineHeight: 1.6 }}>
-                Enter the email or phone number you&apos;d like us to stop contacting. This takes effect immediately for
-                marketing messages.
+    <PublicPage align="center">
+      <PublicCard subtitle="Manage your contact preferences">
+        {!done ? (
+          <>
+            <h1 className="text-xl font-semibold text-foreground">Unsubscribe / opt-out</h1>
+            <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+              Enter the email or phone number you&apos;d like us to stop contacting. This takes effect immediately for
+              marketing messages.
+            </p>
+
+            <div className="mt-5 space-y-4">
+              <Field id="contact" label="Email or phone number">
+                <Input
+                  value={contact}
+                  onChange={(e) => setContact(e.target.value)}
+                  placeholder="you@example.com or (555) 123-4567"
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submit() } }}
+                />
+              </Field>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="channel-group">Channels to opt out</Label>
+                <div id="channel-group" role="radiogroup" aria-label="Channels to opt out" className="grid grid-cols-3 gap-2">
+                  {CHANNELS.map((c) => {
+                    const active = channel === c.value
+                    return (
+                      <button
+                        key={c.value}
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
+                        onClick={() => setChannel(c.value)}
+                        className={cn(
+                          'rounded-md border px-2 py-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                          active
+                            ? 'border-primary bg-primary-soft text-primary'
+                            : 'border-input bg-card text-muted-foreground hover:border-ring/50 hover:text-foreground',
+                        )}
+                      >
+                        {c.label}
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
-              <input style={input} placeholder="Email or phone number" value={contact} onChange={(e) => setContact(e.target.value)} />
-              <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-                {(['all', 'email', 'sms'] as const).map((c) => (
-                  <button
-                    key={c}
-                    onClick={() => setChannel(c)}
-                    style={{
-                      flex: 1,
-                      padding: '8px 6px',
-                      borderRadius: 8,
-                      border: `1px solid ${channel === c ? '#2b6cb0' : '#d9e0e8'}`,
-                      background: channel === c ? '#ebf4ff' : '#fff',
-                      color: channel === c ? '#2b6cb0' : '#4a5568',
-                      fontWeight: 600,
-                      fontSize: 12,
-                      cursor: 'pointer',
-                      fontFamily: 'inherit',
-                      textTransform: 'capitalize',
-                    }}
-                  >
-                    {c === 'all' ? 'All messages' : c}
-                  </button>
-                ))}
-              </div>
-              {err && <div style={{ color: '#c53030', fontSize: 13, marginBottom: 10 }}>{err}</div>}
-              <button
-                onClick={submit}
-                disabled={submitting}
-                style={{ width: '100%', padding: 13, background: '#2b6cb0', color: '#fff', border: 'none', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: submitting ? 'default' : 'pointer', opacity: submitting ? 0.7 : 1 }}
-              >
+
+              {err && <PublicAlert>{err}</PublicAlert>}
+
+              <Button onClick={submit} loading={submitting} size="lg" className="w-full">
                 {submitting ? 'Processing…' : 'Opt me out'}
-              </button>
-              <div style={{ fontSize: 10, color: '#a0aec0', marginTop: 12, lineHeight: 1.5 }}>
+              </Button>
+
+              <p className="text-xs leading-relaxed text-muted-foreground">
                 Note: we may still send messages required to service policies you currently hold, as permitted by law.
-              </div>
-            </>
-          ) : (
-            <div style={{ textAlign: 'center', padding: '10px 0' }}>
-              <div style={{ fontSize: 40, marginBottom: 8 }}>✓</div>
-              <div style={{ fontSize: 17, fontWeight: 700, color: '#0f1e36', marginBottom: 6 }}>You&apos;re opted out</div>
-              <div style={{ fontSize: 13, color: '#4a5568', lineHeight: 1.6 }}>
-                We&apos;ve recorded your request. If you continue to receive marketing messages after a few days, please
-                contact us directly.
-              </div>
+              </p>
             </div>
-          )}
-        </div>
-      </div>
-      <PublicFooter />
-    </div>
+          </>
+        ) : (
+          <div className="py-4 text-center">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-status-won/10">
+              <CheckCircle2 className="h-6 w-6 text-status-won" aria-hidden />
+            </div>
+            <h1 className="mt-4 text-lg font-semibold text-foreground">You&apos;re opted out</h1>
+            <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">
+              We&apos;ve recorded your request. If you continue to receive marketing messages after a few days, please
+              contact us directly.
+            </p>
+          </div>
+        )}
+      </PublicCard>
+    </PublicPage>
   )
 }

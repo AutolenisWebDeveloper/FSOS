@@ -2,6 +2,14 @@
 
 import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
+import { CheckCircle2, Link2Off } from 'lucide-react'
+import { PublicPage, PublicCard, PublicAlert } from '@/components/public/PublicShell'
+import { Field } from '@/components/forms/Field'
+import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 
 // Public route — no auth required
 export const dynamic = 'force-dynamic'
@@ -13,6 +21,15 @@ interface Agency {
   city?: string
   slug?: string
 }
+
+const REFERRAL_TYPES = [
+  { value: 'general', label: 'General Review' },
+  { value: 'life', label: 'Life Insurance' },
+  { value: 'retirement', label: 'Retirement Planning' },
+  { value: 'conversion', label: 'Term Conversion' },
+  { value: 'opra', label: 'OPRA Opportunity' },
+  { value: 'business', label: 'Business Planning' },
+]
 
 export default function AgencyReferralPage() {
   const params = useParams()
@@ -76,138 +93,110 @@ export default function AgencyReferralPage() {
   }
 
   if (loading) return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f4f6f9', fontFamily: 'sans-serif' }}>
-      <div style={{ color: '#6b7a8d' }}>Loading…</div>
-    </div>
+    <PublicPage>
+      <PublicCard subtitle="Markist · Licensed FSA · McKinney, TX">
+        <div className="space-y-4" role="status" aria-busy>
+          <Skeleton className="h-6 w-40" />
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-3/4" />
+          <div className="space-y-4 pt-2">
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+          <span className="sr-only">Loading referral form…</span>
+        </div>
+      </PublicCard>
+    </PublicPage>
   )
 
   if (notFound) return (
-    <Page>
-      <div style={{ textAlign: 'center', padding: '40px 32px' }}>
-        <div style={{ fontSize: 44, marginBottom: 16 }}>🔗</div>
-        <h2 style={{ fontSize: 20, fontWeight: 700, color: '#1a2332', margin: '0 0 12px' }}>Referral link not active</h2>
-        <p style={{ fontSize: 14, color: '#6b7a8d', lineHeight: 1.7, margin: 0 }}>
-          This referral link is not active. Contact your agent for a new link.
-        </p>
-      </div>
-    </Page>
+    <PublicPage>
+      <PublicCard subtitle="Markist · Licensed FSA · McKinney, TX">
+        <div className="py-6 text-center">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+            <Link2Off className="h-6 w-6 text-muted-foreground" aria-hidden />
+          </div>
+          <h1 className="mt-4 text-lg font-semibold text-foreground">Referral link not active</h1>
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            This referral link is not active. Contact your agent for a new link.
+          </p>
+        </div>
+      </PublicCard>
+    </PublicPage>
   )
 
   if (submitted) return (
-    <Page>
-      <div style={{ textAlign: 'center', padding: '40px 32px' }}>
-        <div style={{ fontSize: 44, marginBottom: 16 }}>🎉</div>
-        <h2 style={{ fontSize: 22, fontWeight: 700, color: '#1a2332', margin: '0 0 12px' }}>Referral Submitted!</h2>
-        <p style={{ fontSize: 14, color: '#6b7a8d', lineHeight: 1.7, margin: 0 }}>
-          Thank you for the referral. Markist will reach out to your client shortly.
-          A questionnaire link will be sent to their email to prepare for the appointment.
-        </p>
-        <button
-          onClick={() => { setSubmitted(false); setForm({ client_name: '', client_email: '', client_phone: '', referral_type: 'general', notes: '' }) }}
-          style={{ marginTop: 24, padding: '10px 24px', background: '#2b6cb0', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-        >
-          Submit Another Referral
-        </button>
-      </div>
-    </Page>
+    <PublicPage>
+      <PublicCard subtitle="Markist · Licensed FSA · McKinney, TX">
+        <div className="py-6 text-center">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-status-won/10">
+            <CheckCircle2 className="h-6 w-6 text-status-won" aria-hidden />
+          </div>
+          <h1 className="mt-4 text-xl font-semibold text-foreground">Referral submitted</h1>
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            Thank you for the referral. Markist will reach out to your client shortly. A questionnaire link will be
+            sent to their email to prepare for the appointment.
+          </p>
+          <Button
+            variant="outline"
+            className="mt-6"
+            onClick={() => { setSubmitted(false); setForm({ client_name: '', client_email: '', client_phone: '', referral_type: 'general', notes: '' }) }}
+          >
+            Submit another referral
+          </Button>
+        </div>
+      </PublicCard>
+    </PublicPage>
   )
 
   return (
-    <Page>
-      <div style={{ padding: '24px 32px' }}>
-        <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1a2332', margin: '0 0 6px' }}>Refer a Client</h2>
+    <PublicPage>
+      <PublicCard subtitle="Markist · Licensed FSA · McKinney, TX">
+        <h1 className="text-lg font-semibold text-foreground">Refer a client</h1>
         {agency?.owner && (
-          <p style={{ fontSize: 13, color: '#2b6cb0', fontWeight: 600, margin: '0 0 6px' }}>
+          <p className="mt-1 text-sm font-medium text-primary">
             Referred by {agency.owner}{agency.name ? ` — ${agency.name}` : ''}
           </p>
         )}
-        <p style={{ fontSize: 13, color: '#6b7a8d', margin: '0 0 24px', lineHeight: 1.6 }}>
-          Submit a client referral to Markist. Your client will receive a secure questionnaire
-          to prepare for their financial review.
+        <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+          Submit a client referral to Markist. Your client will receive a secure questionnaire to prepare for their
+          financial review.
         </p>
 
-        <form onSubmit={handleSubmit}>
-          <Field label="Client Full Name *" value={form.client_name} onChange={v => setForm(f => ({ ...f, client_name: v }))} required placeholder="Jane Smith" />
-          <Field label="Client Email" value={form.client_email} onChange={v => setForm(f => ({ ...f, client_email: v }))} type="email" placeholder="jane@example.com" />
-          <Field label="Client Phone" value={form.client_phone} onChange={v => setForm(f => ({ ...f, client_phone: v }))} type="tel" placeholder="(555) 123-4567" />
-
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#3d4a5c', marginBottom: 5 }}>Referral Type</label>
-            <select
-              value={form.referral_type}
-              onChange={e => setForm(f => ({ ...f, referral_type: e.target.value }))}
-              style={{ width: '100%', padding: '10px 12px', border: '1px solid #d1d9e0', borderRadius: 6, fontSize: 14, color: '#1a2332', background: '#fff', boxSizing: 'border-box' }}
-            >
-              <option value="general">General Review</option>
-              <option value="life">Life Insurance</option>
-              <option value="retirement">Retirement Planning</option>
-              <option value="conversion">Term Conversion</option>
-              <option value="opra">OPRA Opportunity</option>
-              <option value="business">Business Planning</option>
-            </select>
+        <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate>
+          <Field id="client_name" label="Client full name" required>
+            <Input value={form.client_name} onChange={e => setForm(f => ({ ...f, client_name: e.target.value }))} placeholder="Jane Smith" autoComplete="name" />
+          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field id="client_email" label="Client email">
+              <Input type="email" value={form.client_email} onChange={e => setForm(f => ({ ...f, client_email: e.target.value }))} placeholder="jane@example.com" autoComplete="off" />
+            </Field>
+            <Field id="client_phone" label="Client phone">
+              <Input type="tel" value={form.client_phone} onChange={e => setForm(f => ({ ...f, client_phone: e.target.value }))} placeholder="(555) 123-4567" autoComplete="off" />
+            </Field>
           </div>
+          <Field id="referral_type" label="Referral type">
+            <Select value={form.referral_type} onChange={e => setForm(f => ({ ...f, referral_type: e.target.value }))}>
+              {REFERRAL_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </Select>
+          </Field>
+          <Field id="notes" label="Notes" hint="Optional — any context that would help Markist prepare.">
+            <Textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Any context that would help Markist prepare…" rows={3} />
+          </Field>
 
-          <Field label="Notes (optional)" value={form.notes} onChange={v => setForm(f => ({ ...f, notes: v }))} type="textarea" placeholder="Any context that would help Markist prepare…" />
+          {error && <PublicAlert>{error}</PublicAlert>}
 
-          {error && (
-            <div style={{ background: '#fff5f5', border: '1px solid #fed7d7', borderRadius: 6, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#e53e3e' }}>
-              {error}
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={submitting}
-            style={{
-              width: '100%', padding: 14, background: submitting ? '#a0aec0' : '#2b6cb0',
-              color: '#fff', border: 'none', borderRadius: 8, fontSize: 15, fontWeight: 600,
-              cursor: submitting ? 'not-allowed' : 'pointer',
-            }}
-          >
-            {submitting ? 'Submitting…' : 'Submit Referral'}
-          </button>
+          <Button type="submit" size="lg" className="w-full" loading={submitting}>
+            {submitting ? 'Submitting…' : 'Submit referral'}
+          </Button>
         </form>
 
-        <p style={{ fontSize: 11, color: '#a8b4c0', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>
+        <p className="mt-5 text-center text-xs leading-relaxed text-muted-foreground">
           Markist · Farmers Financial Solutions, LLC<br />
           Securities offered through Farmers Financial Solutions, LLC, Member FINRA &amp; SIPC
         </p>
-      </div>
-    </Page>
-  )
-}
-
-function Page({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{ minHeight: '100vh', background: '#f4f6f9', fontFamily: "'DM Sans', 'Segoe UI', sans-serif", display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '32px 16px' }}>
-      <div style={{ width: '100%', maxWidth: 520, background: '#fff', borderRadius: 12, overflow: 'hidden', border: '1px solid #e4e8ef', boxShadow: '0 2px 12px rgba(0,0,0,.06)' }}>
-        <div style={{ background: '#0f1e36', padding: '20px 32px' }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', letterSpacing: '.04em' }}>FARMERS FINANCIAL SOLUTIONS</div>
-          <div style={{ fontSize: 12, color: 'rgba(255,255,255,.55)', marginTop: 2 }}>Markist · Licensed FSA · McKinney, TX</div>
-        </div>
-        {children}
-      </div>
-    </div>
-  )
-}
-
-function Field({ label, value, onChange, required, type = 'text', placeholder }: {
-  label: string; value: string; onChange: (v: string) => void;
-  required?: boolean; type?: string; placeholder?: string
-}) {
-  const inputStyle: React.CSSProperties = {
-    width: '100%', padding: '10px 12px', border: '1px solid #d1d9e0', borderRadius: 6,
-    fontSize: 14, color: '#1a2332', background: '#fff', boxSizing: 'border-box', fontFamily: 'inherit',
-  }
-  const fieldId = 'f-' + label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-  return (
-    <div style={{ marginBottom: 16 }}>
-      <label htmlFor={fieldId} style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#3d4a5c', marginBottom: 5 }}>{label}</label>
-      {type === 'textarea' ? (
-        <textarea id={fieldId} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} rows={3} style={{ ...inputStyle, resize: 'vertical' }} />
-      ) : (
-        <input id={fieldId} type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} required={required} style={inputStyle} />
-      )}
-    </div>
+      </PublicCard>
+    </PublicPage>
   )
 }

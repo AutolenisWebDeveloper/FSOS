@@ -58,8 +58,20 @@ Worst-offending cluster (predates the token system): `app/[slug]/page.tsx`,
 - ~153 hardcoded hex, ~190 inline `style={{}}`, 59 raw palette classes, ~19 emoji icons.
 - **Fix:** migrate to tokens + `ui/*` primitives + lucide. Legacy Command Center files
   (`fsos_command_center.jsx`, `fsos_forms_system.jsx`, `CommandCenter.tsx`) are
-  intentionally inline-styled per CLAUDE.md §1.6 — **excluded**. Status: **backlog**
-  (large mechanical sweep; scheduled after foundation lands).
+  intentionally inline-styled per CLAUDE.md §1.6 — **excluded**. Status: **fixed**
+  (iteration 2). A shared `public/PublicShell` (`PublicPage` / `PublicCard` /
+  `PublicAlert` / `PublicBrandLockup`) now carries the token system onto the public
+  surface. Converted: `[slug]`, `upload/[slug]`, `about` (also removed a gold-as-CTA
+  guardrail misuse), `terms`, `privacy`, `events` (`EventsIndex`), `unsubscribe`,
+  `forms/[formId]`, `events/[id]`, `PublicForm`, `WorkshopRegisterForm`, `PublicFooter`,
+  and the `not-found` / `error` / `global-error` boundaries (navy/gold snapped to exact
+  tokens). Emoji replaced with lucide throughout; every `<input>` swapped to `ui/*`
+  primitives + the `Field` a11y wrapper. Dead pages `pages/ClientFormPortal.tsx` and
+  `pages/WorkshopRegister.tsx` (unreferenced; live routes use the `public/*` variants)
+  were left untouched.
+- **Also this iteration:** raw `amber-*` guardrail-color bypasses tokenized to the gold
+  system — `HoursOfOperation` + `WorkforceTargets` now use the shared `<AssumptionBadge>`;
+  the `comms/audience` + `comms/sequences` notice banners use `gold`/`gold-deep` tokens.
 
 ---
 

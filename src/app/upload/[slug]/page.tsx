@@ -2,9 +2,27 @@
 
 import { useState } from 'react'
 import { useParams } from 'next/navigation'
+import { CheckCircle2, UploadCloud, FileText } from 'lucide-react'
+import { PublicPage, PublicCard, PublicAlert } from '@/components/public/PublicShell'
+import { Field } from '@/components/forms/Field'
+import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
 
 // Public route — no auth required
 export const dynamic = 'force-dynamic'
+
+const DOCUMENT_TYPES = [
+  { value: 'client_application', label: 'Client Application' },
+  { value: 'id_document', label: 'ID / Drivers License' },
+  { value: 'existing_policy', label: 'Existing Policy' },
+  { value: 'financial_statement', label: 'Financial Statement' },
+  { value: 'beneficiary_form', label: 'Beneficiary Form' },
+  { value: 'change_request', label: 'Change Request' },
+  { value: 'other', label: 'Other' },
+]
 
 export default function AgencyUploadPage() {
   const params = useParams()
@@ -78,139 +96,95 @@ export default function AgencyUploadPage() {
   }
 
   if (submitted) return (
-    <Page>
-      <div style={{ textAlign: 'center', padding: '40px 32px' }}>
-        <div style={{ fontSize: 44, marginBottom: 16 }}>📁</div>
-        <h2 style={{ fontSize: 22, fontWeight: 700, color: '#1a2332', margin: '0 0 12px' }}>Upload Complete</h2>
-        <p style={{ fontSize: 14, color: '#6b7a8d', lineHeight: 1.7, margin: 0 }}>
-          The document has been received. Markist will review it shortly.
-        </p>
-        <button
-          onClick={() => { setSubmitted(false); setFile(null); setFileName(''); setForm({ customer_name: '', customer_email: '', document_type: 'client_application', notes: '' }) }}
-          style={{ marginTop: 24, padding: '10px 24px', background: '#2b6cb0', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-        >
-          Upload Another Document
-        </button>
-      </div>
-    </Page>
+    <PublicPage>
+      <PublicCard subtitle="Markist · Secure Document Upload">
+        <div className="py-6 text-center">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-status-won/10">
+            <CheckCircle2 className="h-6 w-6 text-status-won" aria-hidden />
+          </div>
+          <h1 className="mt-4 text-xl font-semibold text-foreground">Upload complete</h1>
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            The document has been received. Markist will review it shortly.
+          </p>
+          <Button
+            variant="outline"
+            className="mt-6"
+            onClick={() => { setSubmitted(false); setFile(null); setFileName(''); setForm({ customer_name: '', customer_email: '', document_type: 'client_application', notes: '' }) }}
+          >
+            Upload another document
+          </Button>
+        </div>
+      </PublicCard>
+    </PublicPage>
   )
 
   return (
-    <Page>
-      <div style={{ padding: '24px 32px' }}>
-        <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1a2332', margin: '0 0 6px' }}>Upload Client Document</h2>
-        <p style={{ fontSize: 13, color: '#6b7a8d', margin: '0 0 24px', lineHeight: 1.6 }}>
+    <PublicPage>
+      <PublicCard subtitle="Markist · Secure Document Upload">
+        <h1 className="text-lg font-semibold text-foreground">Upload client document</h1>
+        <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
           Securely send client documents to Markist for review.
         </p>
 
-        <form onSubmit={handleSubmit}>
-          <Field label="Client Full Name *" value={form.customer_name} onChange={v => setForm(f => ({ ...f, customer_name: v }))} required placeholder="Jane Smith" />
-          <Field label="Client Email" value={form.customer_email} onChange={v => setForm(f => ({ ...f, customer_email: v }))} type="email" placeholder="jane@example.com" />
+        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+          <Field id="customer_name" label="Client full name" required>
+            <Input value={form.customer_name} onChange={e => setForm(f => ({ ...f, customer_name: e.target.value }))} placeholder="Jane Smith" autoComplete="name" />
+          </Field>
+          <Field id="customer_email" label="Client email">
+            <Input type="email" value={form.customer_email} onChange={e => setForm(f => ({ ...f, customer_email: e.target.value }))} placeholder="jane@example.com" autoComplete="off" />
+          </Field>
+          <Field id="document_type" label="Document type">
+            <Select value={form.document_type} onChange={e => setForm(f => ({ ...f, document_type: e.target.value }))}>
+              {DOCUMENT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </Select>
+          </Field>
 
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#3d4a5c', marginBottom: 5 }}>Document Type</label>
-            <select
-              value={form.document_type}
-              onChange={e => setForm(f => ({ ...f, document_type: e.target.value }))}
-              style={{ width: '100%', padding: '10px 12px', border: '1px solid #d1d9e0', borderRadius: 6, fontSize: 14, color: '#1a2332', background: '#fff', boxSizing: 'border-box' }}
-            >
-              <option value="client_application">Client Application</option>
-              <option value="id_document">ID / Drivers License</option>
-              <option value="existing_policy">Existing Policy</option>
-              <option value="financial_statement">Financial Statement</option>
-              <option value="beneficiary_form">Beneficiary Form</option>
-              <option value="change_request">Change Request</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#3d4a5c', marginBottom: 5 }}>File *</label>
-            <div style={{ border: '2px dashed #d1d9e0', borderRadius: 8, padding: '20px', textAlign: 'center', background: '#fafbfc', cursor: 'pointer', position: 'relative' }}>
+          <div className="space-y-1.5">
+            <Label htmlFor="file-upload">
+              File<span className="ml-0.5 text-destructive" aria-hidden> *</span>
+            </Label>
+            <div className="relative rounded-lg border-2 border-dashed border-input bg-muted/40 px-4 py-6 text-center transition-colors hover:border-ring/60 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/25">
               <input
+                id="file-upload"
                 type="file"
-                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                accept=".pdf,.jpg,.jpeg,.png,.webp,.csv,.xlsx,.xls,.doc,.docx"
                 onChange={handleFileChange}
                 required
-                style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%', height: '100%' }}
+                aria-describedby="file-hint"
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
               />
               {fileName ? (
-                <div>
-                  <div style={{ fontSize: 20, marginBottom: 4 }}>📎</div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#1a2332' }}>{fileName}</div>
-                  <div style={{ fontSize: 11, color: '#6b7a8d', marginTop: 2 }}>Click to change</div>
+                <div className="flex flex-col items-center gap-1">
+                  <FileText className="h-6 w-6 text-primary" aria-hidden />
+                  <span className="text-sm font-medium text-foreground">{fileName}</span>
+                  <span className="text-xs text-muted-foreground">Click to change</span>
                 </div>
               ) : (
-                <div>
-                  <div style={{ fontSize: 24, marginBottom: 6 }}>📂</div>
-                  <div style={{ fontSize: 13, color: '#6b7a8d' }}>Click to select a file</div>
-                  <div style={{ fontSize: 11, color: '#a8b4c0', marginTop: 2 }}>PDF, JPG, PNG, DOC — Max 10MB</div>
+                <div className="flex flex-col items-center gap-1.5">
+                  <UploadCloud className="h-7 w-7 text-muted-foreground" aria-hidden />
+                  <span className="text-sm text-muted-foreground">Click to select a file</span>
+                  <span id="file-hint" className="text-xs text-muted-foreground">PDF, JPG, PNG, DOC — Max 10MB</span>
                 </div>
               )}
             </div>
           </div>
 
-          <Field label="Notes (optional)" value={form.notes} onChange={v => setForm(f => ({ ...f, notes: v }))} type="textarea" placeholder="Any context for Markist…" />
+          <Field id="notes" label="Notes" hint="Optional — any context for Markist.">
+            <Textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Any context for Markist…" rows={3} />
+          </Field>
 
-          {error && (
-            <div style={{ background: '#fff5f5', border: '1px solid #fed7d7', borderRadius: 6, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#e53e3e' }}>
-              {error}
-            </div>
-          )}
+          {error && <PublicAlert>{error}</PublicAlert>}
 
-          <button
-            type="submit"
-            disabled={submitting}
-            style={{
-              width: '100%', padding: 14, background: submitting ? '#a0aec0' : '#2b6cb0',
-              color: '#fff', border: 'none', borderRadius: 8, fontSize: 15, fontWeight: 600,
-              cursor: submitting ? 'not-allowed' : 'pointer',
-            }}
-          >
-            {submitting ? 'Uploading…' : 'Upload Document'}
-          </button>
+          <Button type="submit" size="lg" className="w-full" loading={submitting}>
+            {submitting ? 'Uploading…' : 'Upload document'}
+          </Button>
         </form>
 
-        <p style={{ fontSize: 11, color: '#a8b4c0', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>
+        <p className="mt-5 text-center text-xs leading-relaxed text-muted-foreground">
           Markist · Farmers Financial Solutions, LLC<br />
           Securities offered through Farmers Financial Solutions, LLC, Member FINRA &amp; SIPC
         </p>
-      </div>
-    </Page>
-  )
-}
-
-function Page({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{ minHeight: '100vh', background: '#f4f6f9', fontFamily: "'DM Sans', 'Segoe UI', sans-serif", display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '32px 16px' }}>
-      <div style={{ width: '100%', maxWidth: 520, background: '#fff', borderRadius: 12, overflow: 'hidden', border: '1px solid #e4e8ef', boxShadow: '0 2px 12px rgba(0,0,0,.06)' }}>
-        <div style={{ background: '#0f1e36', padding: '20px 32px' }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', letterSpacing: '.04em' }}>FARMERS FINANCIAL SOLUTIONS</div>
-          <div style={{ fontSize: 12, color: 'rgba(255,255,255,.55)', marginTop: 2 }}>Markist · Secure Document Upload</div>
-        </div>
-        {children}
-      </div>
-    </div>
-  )
-}
-
-function Field({ label, value, onChange, required, type = 'text', placeholder }: {
-  label: string; value: string; onChange: (v: string) => void;
-  required?: boolean; type?: string; placeholder?: string
-}) {
-  const inputStyle: React.CSSProperties = {
-    width: '100%', padding: '10px 12px', border: '1px solid #d1d9e0', borderRadius: 6,
-    fontSize: 14, color: '#1a2332', background: '#fff', boxSizing: 'border-box', fontFamily: 'inherit',
-  }
-  const fieldId = 'f-' + label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-  return (
-    <div style={{ marginBottom: 16 }}>
-      <label htmlFor={fieldId} style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#3d4a5c', marginBottom: 5 }}>{label}</label>
-      {type === 'textarea' ? (
-        <textarea id={fieldId} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} rows={3} style={{ ...inputStyle, resize: 'vertical' }} />
-      ) : (
-        <input id={fieldId} type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} required={required} style={inputStyle} />
-      )}
-    </div>
+      </PublicCard>
+    </PublicPage>
   )
 }

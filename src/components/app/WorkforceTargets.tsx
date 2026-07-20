@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { AssumptionBadge } from '@/components/archetypes/states'
 import { toast } from 'sonner'
 
 export interface TargetRow {
@@ -73,9 +74,9 @@ export function WorkforceTargets({ initial }: { initial: TargetRow[] }) {
           <div className="min-w-[10rem]">
             <div className="text-sm font-medium">{LABEL[row.agent_key] ?? row.agent_key}</div>
             {row.is_assumption ? (
-              <div className="text-xs text-amber-600 dark:text-amber-500">config default — verify</div>
+              <div className="mt-1"><AssumptionBadge /></div>
             ) : (
-              <div className="text-xs text-muted-foreground">verified</div>
+              <div className="mt-1 text-xs text-muted-foreground">verified</div>
             )}
           </div>
 

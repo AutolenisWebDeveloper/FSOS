@@ -1,8 +1,12 @@
 'use client'
 
 import * as React from 'react'
-import { CheckCircle2, Loader2, ShieldCheck } from 'lucide-react'
+import { CheckCircle2, ShieldCheck } from 'lucide-react'
 import { postJson, firstFieldError } from '@/lib/client/api'
+import { Field } from '@/components/forms/Field'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Button } from '@/components/ui/button'
 
 export interface PublicFormField {
   key: string
@@ -83,10 +87,12 @@ export function PublicForm({ template, token }: { template: PublicFormTemplate; 
 
   if (done) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-        <CheckCircle2 className="mx-auto h-10 w-10 text-emerald-600" aria-hidden />
-        <h2 className="mt-3 text-lg font-semibold text-slate-900">Thank you</h2>
-        <p className="mt-1 text-sm text-slate-600">
+      <div className="rounded-xl border border-border bg-card p-8 text-center shadow-elev-xs">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-status-won/10">
+          <CheckCircle2 className="h-6 w-6 text-status-won" aria-hidden />
+        </div>
+        <h2 className="mt-3 text-lg font-semibold text-foreground">Thank you</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
           Your response has been received. A licensed specialist will follow up with you.
         </p>
       </div>
@@ -94,39 +100,30 @@ export function PublicForm({ template, token }: { template: PublicFormTemplate; 
   }
 
   return (
-    <form onSubmit={onSubmit} className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-      <h1 className="text-xl font-semibold text-slate-900">{template.name}</h1>
-      {template.description ? <p className="mt-1 text-sm text-slate-600">{template.description}</p> : null}
+    <form onSubmit={onSubmit} className="rounded-xl border border-border bg-card p-6 shadow-elev-xs sm:p-8">
+      <h1 className="text-xl font-semibold text-foreground">{template.name}</h1>
+      {template.description ? <p className="mt-1 text-sm text-muted-foreground">{template.description}</p> : null}
 
       <div className="mt-6 space-y-4">
         {template.fields.map((f) => (
-          <div key={f.key} className="space-y-1.5">
-            <label htmlFor={`f-${f.key}`} className="block text-sm font-medium text-slate-800">
-              {f.label}
-              {f.required ? <span className="text-red-600"> *</span> : null}
-            </label>
+          <Field key={f.key} id={`f-${f.key}`} label={f.label} required={f.required} hint={f.help}>
             {f.type === 'textarea' ? (
-              <textarea
-                id={`f-${f.key}`}
+              <Textarea
                 required={f.required}
                 rows={3}
                 value={values[f.key] ?? ''}
                 onChange={(e) => set(f.key, e.target.value)}
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             ) : (
-              <input
-                id={`f-${f.key}`}
+              <Input
                 type={f.type === 'number' ? 'number' : f.type === 'email' ? 'email' : f.type === 'tel' ? 'tel' : 'text'}
                 required={f.required}
                 value={values[f.key] ?? ''}
                 onChange={(e) => set(f.key, e.target.value)}
                 autoComplete={EMAIL_KEYS.includes(f.key) ? 'email' : 'off'}
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             )}
-            {f.help ? <p className="text-xs text-slate-500">{f.help}</p> : null}
-          </div>
+          </Field>
         ))}
       </div>
 
@@ -144,23 +141,23 @@ export function PublicForm({ template, token }: { template: PublicFormTemplate; 
       </div>
 
       {template.captures_consent ? (
-        <fieldset className="mt-6 space-y-2 rounded-md border border-slate-200 bg-slate-50 p-4">
-          <legend className="px-1 text-sm font-medium text-slate-800">Contact permission</legend>
-          <label className="flex items-start gap-2 text-sm text-slate-700">
+        <fieldset className="mt-6 space-y-2 rounded-md border border-border bg-muted/50 p-4">
+          <legend className="px-1 text-sm font-medium text-foreground">Contact permission</legend>
+          <label className="flex items-start gap-2 text-sm text-foreground/80">
             <input
               type="checkbox"
               checked={consentEmail}
               onChange={(e) => setConsentEmail(e.target.checked)}
-              className="mt-0.5"
+              className="mt-0.5 h-4 w-4 accent-primary"
             />
             <span>I agree to be contacted by email about my financial review.</span>
           </label>
-          <label className="flex items-start gap-2 text-sm text-slate-700">
+          <label className="flex items-start gap-2 text-sm text-foreground/80">
             <input
               type="checkbox"
               checked={consentSms}
               onChange={(e) => setConsentSms(e.target.checked)}
-              className="mt-0.5"
+              className="mt-0.5 h-4 w-4 accent-primary"
             />
             <span>I agree to be contacted by text message (SMS). Message &amp; data rates may apply.</span>
           </label>
@@ -168,26 +165,16 @@ export function PublicForm({ template, token }: { template: PublicFormTemplate; 
       ) : null}
 
       {error ? (
-        <p role="alert" className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
         </p>
       ) : null}
 
-      <button
-        type="submit"
-        disabled={busy}
-        className="mt-6 inline-flex items-center gap-2 rounded-md bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-60"
-      >
-        {busy ? (
-          <>
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Submitting…
-          </>
-        ) : (
-          'Submit'
-        )}
-      </button>
+      <Button type="submit" loading={busy} className="mt-6">
+        {busy ? 'Submitting…' : 'Submit'}
+      </Button>
 
-      <p className="mt-4 flex items-start gap-1.5 text-xs text-slate-500">
+      <p className="mt-4 flex items-start gap-1.5 text-xs text-muted-foreground">
         <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
         Your information is used only to prepare your financial review. We never collect securities account details on
         this form.

@@ -6,6 +6,8 @@ import { writeAudit } from '@/lib/audit/log'
 import { RightbridgeIngestSchema } from '@/lib/validation/schemas'
 import { GatewayDisabledError } from '@/lib/ai/gateway'
 import { GROUNDING_SYSTEM, renderChunks, retrieveChunks, runJson } from '@/lib/compliance/intelligence'
+import { PARSER_VERSION } from '@/lib/compliance/extract'
+import { PIPELINE_MODEL, structureRightBridge } from '@/lib/compliance/pipeline'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -45,6 +47,32 @@ export async function POST(req: NextRequest) {
     const db = getDb()
     const actor = actorOf(auth.session)
 
+    // Source the report body: pasted text, or the extracted text of an upload.
+    let reportText = (d.report_text ?? '').trim()
+    let uploadPages: { page_number: number; text: string }[] = []
+    if (d.upload_id) {
+      const { data: pages } = await db
+        .from('compliance_upload_pages')
+        .select('page_number, text')
+        .eq('upload_id', d.upload_id)
+        .order('page_number', { ascending: true })
+      uploadPages = (pages ?? []) as { page_number: number; text: string }[]
+      if (!reportText) reportText = uploadPages.map((p) => p.text).filter(Boolean).join('\n\n').trim()
+    }
+    if (reportText.length < 20) {
+      return NextResponse.json(
+        { error: 'No report text available — paste the report or upload/extract a RightBridge PDF first.' },
+        { status: 400 },
+      )
+    }
+
+    // Version-aware structured extraction (sections → questions → answers + pages).
+    let structured = null
+    if (d.structure) {
+      const pagesForStructure = uploadPages.length ? uploadPages : [{ page_number: 1, text: reportText }]
+      structured = await structureRightBridge(pagesForStructure)
+    }
+
     // Prior context on the same case (notes + other reports) for consistency.
     let caseContext = ''
     if (d.case_id) {
@@ -70,7 +98,7 @@ export async function POST(req: NextRequest) {
       `REPORT TYPE: ${d.report_type}`,
       '',
       'REPORT TEXT:',
-      `"""${d.report_text}"""`,
+      `"""${reportText.slice(0, 200_000)}"""`,
       caseContext ? `\nOTHER DOCUMENTS ON THIS CASE (check the report against these):\n${caseContext}` : '',
       '',
       'GOVERNING PASSAGES (cite these on consistency flags; do not invent rule numbers):',
@@ -102,14 +130,23 @@ export async function POST(req: NextRequest) {
         parsed_fields,
         scoring_flags,
         consistency_flags,
-        raw_text: d.report_text.slice(0, 200_000),
+        structured_report: structured ?? {},
+        raw_text: reportText.slice(0, 200_000),
         source: 'upload',
+        upload_id: d.upload_id ?? null,
+        parser_version: PARSER_VERSION,
+        model_version: PIPELINE_MODEL,
         created_by: actor,
       })
       .select('id')
       .single()
     if (insErr || !report) {
       return NextResponse.json({ error: insErr?.message ?? 'Insert failed' }, { status: 500 })
+    }
+
+    // Link the upload back to the report it produced (self-contained module).
+    if (d.upload_id) {
+      await db.from('compliance_uploads').update({ report_id: report.id, status: 'analyzed' }).eq('id', d.upload_id)
     }
 
     await writeAudit({
@@ -125,6 +162,7 @@ export async function POST(req: NextRequest) {
       parsed_fields,
       scoring_flags,
       consistency_flags,
+      structured_report: structured,
     })
   } catch (e) {
     if (e instanceof GatewayDisabledError) {

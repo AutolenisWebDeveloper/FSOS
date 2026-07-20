@@ -15,6 +15,18 @@ export interface GatewayMessage {
   content: string
 }
 
+/**
+ * A binary document attached to the FIRST user message so the model can read it
+ * natively — a PDF (Claude reads text AND scanned pages, i.e. the OCR path) or an
+ * image. Claude-only; other providers ignore attachments (the caller degrades to a
+ * text path). `data` is base64 (no data: prefix).
+ */
+export interface GatewayAttachment {
+  kind: 'pdf' | 'image'
+  media_type: string
+  data: string
+}
+
 export interface GatewayRequest {
   system?: string
   messages: GatewayMessage[]
@@ -25,6 +37,8 @@ export interface GatewayRequest {
   fallback?: string[]
   /** Agent key for the kill switch + run attribution (e.g. "pipeline"). */
   agentKey?: string
+  /** Binary documents (PDF/image) attached to the first user turn (Claude native). */
+  attachments?: GatewayAttachment[]
 }
 
 export interface GatewayUsage {
@@ -109,13 +123,41 @@ export async function assertKillSwitch(agentKey?: string): Promise<void> {
 
 // ─── Providers (lazy; never called at module load) ────────────────────────────
 
+// Build a Claude content block for one attachment. PDFs use a `document` block
+// (native text + vision, incl. scanned pages); images use an `image` block. Typed
+// loosely because the pinned SDK's message types predate document blocks.
+function attachmentBlock(a: GatewayAttachment): unknown {
+  if (a.kind === 'pdf') {
+    return { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: a.data } }
+  }
+  return { type: 'image', source: { type: 'base64', media_type: a.media_type, data: a.data } }
+}
+
 async function callClaude(req: GatewayRequest, model: string): Promise<GatewayResult> {
   const client = getAnthropic()
+  const attachments = req.attachments ?? []
+
+  // Attach binaries to the FIRST user message as document/image blocks + the text.
+  let attached = false
+  const messages = req.messages.map((m) => {
+    if (!attached && m.role === 'user' && attachments.length) {
+      attached = true
+      const blocks = [
+        ...attachments.map(attachmentBlock),
+        { type: 'text', text: m.content },
+      ]
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return { role: m.role, content: blocks as any }
+    }
+    return { role: m.role, content: m.content }
+  })
+
   const res = await client.messages.create({
     model,
     max_tokens: req.maxTokens ?? 2048,
     system: req.system,
-    messages: req.messages.map((m) => ({ role: m.role, content: m.content })),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    messages: messages as any,
   })
   const text = res.content
     .filter((b): b is { type: 'text'; text: string } => b.type === 'text')

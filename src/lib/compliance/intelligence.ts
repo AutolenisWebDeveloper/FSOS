@@ -13,7 +13,7 @@
 //     unsupported — that reclassification is the FSA's core leverage.
 
 import { getDb } from '@/lib/supabase/client'
-import { runGateway } from '@/lib/ai/gateway'
+import { runGateway, type GatewayAttachment } from '@/lib/ai/gateway'
 
 // ─── Authority hierarchy (blueprint §2.1) ─────────────────────────────────────
 
@@ -256,11 +256,18 @@ function extractJson<T>(text: string): T | null {
  * the result. One retry with a stricter reminder on parse failure. Returns null
  * if the model never produces valid JSON (callers surface a clean error).
  */
-export async function runJson<T>(system: string, user: string, maxTokens = 3000): Promise<T | null> {
+export async function runJson<T>(
+  system: string,
+  user: string,
+  maxTokens = 3000,
+  opts: { attachments?: GatewayAttachment[] } = {},
+): Promise<T | null> {
+  const attachments = opts.attachments
   const first = await runGateway({
     system,
     messages: [{ role: 'user', content: user }],
     maxTokens,
+    attachments,
   })
   const parsed = extractJson<T>(first.text)
   if (parsed !== null) return parsed
@@ -273,6 +280,7 @@ export async function runJson<T>(system: string, user: string, maxTokens = 3000)
       { role: 'user', content: 'That was not valid JSON. Reply with ONLY the JSON object, nothing else.' },
     ],
     maxTokens,
+    attachments,
   })
   return extractJson<T>(retry.text)
 }

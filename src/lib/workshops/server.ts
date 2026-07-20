@@ -449,6 +449,10 @@ export async function convertRegistrationToLead(
   reg: RegForConvert,
   ctx: WorkshopLeadContext,
   actor: string,
+  // Additive: extra GHL tags to attach alongside the base src-event / wshop-<slug> tags.
+  // Used by the P2 post-event nurture pass to add a per-segment tag (wshop-attended /
+  // wshop-noshow / wshop-registered) so the manual GHL workflows pick the contact up.
+  extraTags: string[] = [],
 ): Promise<ConvertLeadOutcome> {
   // ── Securities firewall: route to FFS, never the automated engine. ──
   if (ctx.is_security === true) {
@@ -484,7 +488,9 @@ export async function convertRegistrationToLead(
   const [firstName, ...restName] = (reg.name ?? 'Workshop attendee').trim().split(/\s+/)
   const lastName = restName.join(' ') || undefined
   const slug = (ctx.slug ?? 'workshop').slice(0, 60)
-  const tags = ['src-event', `wshop-${slug}`]
+  const baseTags = ['src-event', `wshop-${slug}`]
+  // De-dupe + drop empties so a repeated/blank extra tag never double-writes.
+  const tags = [...new Set([...baseTags, ...extraTags.filter((t) => t && t.trim())])]
 
   const contactRes = await upsertContactWithRetry({
     firstName,

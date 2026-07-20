@@ -33,6 +33,17 @@ export interface SendContext {
   actor: string
   /** The member this send targets (for consent lookup). */
   memberId?: string | null
+  /**
+   * Explicit, additive consent signal for a domain that owns its OWN durable per-channel
+   * consent-evidence store rather than the member-keyed `consents` table — specifically the
+   * workshop engine, whose registrants have no household member until conversion but DO
+   * carry durable granted consent in `workshop_consent_events`. When the caller sets this
+   * true, it is OR'd into gate step 1 (never reduces restrictiveness for existing callers,
+   * who leave it undefined). The caller MUST have verified a durable `granted` (not later
+   * `revoked`) row for this exact channel. DNC (step 3, incl. STOP opt-outs), quiet-hours
+   * (2), recommendation (5), and securities (6) are STILL enforced independently.
+   */
+  durableConsentGranted?: boolean
   householdId?: string | null
   agencyId?: string | null
   policyId?: string | null
@@ -191,12 +202,16 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
   // Compute the gate context FRESH (send-time re-check — WF-9 invariant). Step 4
   // is satisfied by an approved template OR, for AI-authored replies with no
   // template, an approved AI policy (both AI kill switches on).
-  const [consent, dnc, templateApproved, hoursPolicy] = await Promise.all([
+  const [memberConsent, dnc, templateApproved, hoursPolicy] = await Promise.all([
     hasConsent(convMemberId, ctx.channel),
     onDNC(to, ctx.channel),
     isTemplateApproved(ctx.templateId),
     loadHoursPolicy(),
   ])
+  // Gate step 1: member-keyed consent OR a domain-owned durable per-channel grant
+  // (workshops). The OR can only ADD consent an existing caller never asserted; it never
+  // removes it. DNC/quiet-hours/recommendation/securities remain enforced below.
+  const consent = memberConsent || ctx.durableConsentGranted === true
   // Operator hours of operation (business-local). A human-typed 1:1 reply from the
   // FSA inbox is NOT gated by business hours — the licensed operator is present and
   // choosing to send. Automated/AI/bulk sends ARE gated (held outside hours).

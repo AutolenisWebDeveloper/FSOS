@@ -9,6 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { getDb } from '@/lib/supabase/client'
 import { WorkshopStatusControl } from '@/components/app/WorkshopStatusControl'
 import { WorkshopRegistrations, type Registration, type AttendanceStatus } from '@/components/app/WorkshopRegistrations'
+import { WorkshopDeliveryPanel } from '@/components/app/WorkshopDeliveryPanel'
+import { loadDeliverySummary, type DeliverySummary } from '@/lib/workshops/server'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -45,6 +47,7 @@ export default async function WorkshopDetailPage(props: { params: Promise<{ id: 
 
   let workshop: Workshop | null = null
   let registrations: Registration[] = []
+  let delivery: DeliverySummary | null = null
   try {
     const db = getDb()
     const { data: w } = await db
@@ -73,6 +76,7 @@ export default async function WorkshopDetailPage(props: { params: Promise<{ id: 
         }
       }
       registrations = rows.map((r) => ({ ...r, attendance_status: attMap.get(r.reg_id) ?? 'registered' }))
+      delivery = await loadDeliverySummary(db, params.id)
     }
   } catch (e) {
     return (
@@ -147,6 +151,16 @@ export default async function WorkshopDetailPage(props: { params: Promise<{ id: 
       }
     >
       {workshop.description ? <p className="text-sm text-muted-foreground">{workshop.description}</p> : null}
+      {delivery && (delivery.hasVirtual || delivery.feedback.count > 0) ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Delivery</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <WorkshopDeliveryPanel workshopId={workshop.workshop_id} slug={workshop.slug} summary={delivery} />
+          </CardContent>
+        </Card>
+      ) : null}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Registrations</CardTitle>

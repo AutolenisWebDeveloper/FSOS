@@ -723,6 +723,33 @@ export const FormPublicSubmitSchema = z.object({
 })
 export type FormPublicSubmit = z.infer<typeof FormPublicSubmitSchema>
 
+// Public homepage contact / consultation-request intake. A general lead capture
+// (distinct from the tokened client-form flow). No securities data is accepted
+// (guardrail §2.1). SMS consent is affirmative + independent; providing a phone
+// number never implies SMS opt-in (Twilio A2P 10DLC requirement).
+export const CONTACT_METHODS = ['no_preference', 'email', 'phone', 'sms'] as const
+export const ContactLeadSchema = z
+  .object({
+    full_name: z.string().trim().min(2, 'Your name is required').max(200),
+    email: z.string().trim().email('Enter a valid email').max(200),
+    phone: optionalPhone,
+    preferred_contact: z.enum(CONTACT_METHODS).default('no_preference'),
+    interest: z.string().trim().max(120).optional().default(''),
+    message: z.string().trim().min(5, 'Tell us how we can help').max(5000),
+    appointment_pref: z.string().trim().max(500).optional(),
+    consent_sms: z.boolean().optional().default(false),
+    consent_version: z.string().trim().max(64).optional(),
+    source_page: z.string().trim().max(300).optional().default('/'),
+    form_name: z.string().trim().max(120).optional().default('homepage_contact'),
+    utm: z.record(z.string().max(40), z.string().max(200)).optional().default({}),
+  })
+  // A contact who checks the SMS box must supply a phone number to text.
+  .refine((d) => !d.consent_sms || (d.phone && d.phone.replace(/\D/g, '').length >= 10), {
+    message: 'A valid phone number is required to receive SMS messages',
+    path: ['phone'],
+  })
+export type ContactLead = z.infer<typeof ContactLeadSchema>
+
 // Attach a submitted response to a household (internal, licensed staff).
 export const FormAttachSchema = z.object({ household_id: uuid })
 export type FormAttach = z.infer<typeof FormAttachSchema>

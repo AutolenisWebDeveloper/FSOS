@@ -6,8 +6,11 @@ import Link from 'next/link'
 
 const LINKS = [
   { href: '/privacy', label: 'Privacy Policy' },
-  { href: '/terms', label: 'Terms of Service' },
-  { href: '/unsubscribe', label: 'Unsubscribe / Opt-Out' },
+  { href: '/terms', label: 'Terms of Use' },
+  { href: '/sms-terms', label: 'SMS Terms' },
+  { href: '/accessibility', label: 'Accessibility' },
+  { href: '/disclosures', label: 'Disclosures' },
+  { href: '/unsubscribe', label: 'Opt-Out' },
 ]
 
 export default function PublicFooter() {
@@ -27,8 +30,11 @@ export default function PublicFooter() {
         ))}
       </nav>
       <p className="mx-auto mt-2 max-w-xl">
-        © {new Date().getFullYear()} Markist Athelus · Farmers Financial Services. Educational information only — not
-        investment, tax, or legal advice.
+        © {new Date().getFullYear()} Markist Athelus · Farmers Financial Services Agent. Educational information only —
+        not investment, tax, or legal advice.
+      </p>
+      <p className="mx-auto mt-1 max-w-xl">
+        Securities offered through Farmers Financial Solutions, LLC · Member FINRA &amp; SIPC.
       </p>
     </footer>
   )

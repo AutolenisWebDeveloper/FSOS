@@ -6,6 +6,8 @@
 import { randomUUID } from 'node:crypto'
 import { deriveIsSecurity } from './logic'
 import { resolveCheckIn, type AttendanceStatus } from './attendance'
+import { deriveWebhookAttendance, type ParsedParticipantEvent } from './delivery'
+import { addZoomRegistrant, zoomEnabled } from '@/lib/zoom/client'
 import {
   upsertContactWithRetry,
   createOpportunity,
@@ -519,6 +521,202 @@ export async function convertRegistrationToLead(
   const opportunityId = oppRes.data?.opportunity?.id ?? null
 
   return { ok: true, routed: 'ghl', ghl_contact_id: contactId, ghl_opportunity_id: opportunityId, skipped: false }
+}
+
+// ─── Virtual delivery: Zoom attendance webhook + provisioning (P3) ──────────────
+
+/** Read the config-default left_early threshold (assumption-badged) from the singleton. */
+export async function getLeftEarlyThresholdMinutes(db: Db): Promise<number> {
+  const { data } = await db
+    .from('workshop_comms_config')
+    .select('left_early_threshold_minutes')
+    .eq('id', 'global')
+    .maybeSingle()
+  const v = data?.left_early_threshold_minutes
+  return typeof v === 'number' && v >= 0 ? v : 10
+}
+
+export interface WebhookTarget {
+  registrationId: string
+  sessionId: string
+  workshopId: string
+}
+
+/**
+ * Correlate a verified Zoom participant event to a (registration, session) by the stored
+ * registrant TOKEN — never by display name (§5). Resolution order:
+ *   1. session by workshop_sessions.zoom_meeting_id = event.meetingId,
+ *   2. registration by zoom_registrant_id (primary) within that workshop,
+ *   3. fallback: exact email match scoped to that workshop (still not a name match).
+ * Returns null when it cannot be correlated (the route logs + ignores — no orphan writes).
+ */
+export async function resolveWebhookTarget(
+  db: Db,
+  event: ParsedParticipantEvent,
+): Promise<WebhookTarget | null> {
+  if (!event.meetingId) return null
+  const { data: session } = await db
+    .from('workshop_sessions')
+    .select('id, workshop_id')
+    .eq('zoom_meeting_id', event.meetingId)
+    .maybeSingle()
+  if (!session) return null
+
+  let reg: { reg_id: string; session_id: string | null } | null = null
+  if (event.registrantId) {
+    const { data } = await db
+      .from('workshop_registrations')
+      .select('reg_id, session_id')
+      .eq('workshop_id', session.workshop_id)
+      .eq('zoom_registrant_id', event.registrantId)
+      .maybeSingle()
+    reg = data ?? null
+  }
+  if (!reg && event.email) {
+    const { data } = await db
+      .from('workshop_registrations')
+      .select('reg_id, session_id')
+      .eq('workshop_id', session.workshop_id)
+      .eq('email', event.email)
+      .maybeSingle()
+    reg = data ?? null
+  }
+  if (!reg) return null
+
+  return {
+    registrationId: reg.reg_id,
+    sessionId: reg.session_id ?? session.id,
+    workshopId: session.workshop_id,
+  }
+}
+
+export type WebhookAttendanceOutcome =
+  | { action: 'skip'; reason: 'manual_precedence' | 'no_change' }
+  | { action: 'write'; status: AttendanceStatus }
+
+/**
+ * Apply a Zoom participant event to the single attendance row for (registration, session).
+ * Idempotent + manual-precedence-aware (deriveWebhookAttendance): duplicate/reconnect events
+ * collapse to one correct row; a staff manual mark is NEVER clobbered by a late webhook
+ * event. Writes capture_method='webhook' with merged join/leave/duration. The route audits.
+ */
+export async function applyWebhookAttendance(
+  db: Db,
+  target: WebhookTarget,
+  event: ParsedParticipantEvent,
+  thresholdMin: number,
+): Promise<WebhookAttendanceOutcome> {
+  const { data: existing } = await db
+    .from('workshop_attendance')
+    .select('status, capture_method, join_time, leave_time, duration_min')
+    .eq('registration_id', target.registrationId)
+    .eq('session_id', target.sessionId)
+    .maybeSingle()
+
+  const decision = deriveWebhookAttendance(
+    existing
+      ? {
+          status: existing.status,
+          capture_method: existing.capture_method,
+          join_time: existing.join_time,
+          leave_time: existing.leave_time,
+          duration_min: existing.duration_min,
+        }
+      : null,
+    { joinTime: event.joinTime, leaveTime: event.leaveTime },
+    thresholdMin,
+  )
+
+  if (decision.action === 'skip') return decision
+
+  await db.from('workshop_attendance').upsert(
+    {
+      registration_id: target.registrationId,
+      session_id: target.sessionId,
+      status: decision.row.status,
+      capture_method: 'webhook',
+      join_time: decision.row.join_time,
+      leave_time: decision.row.leave_time,
+      duration_min: decision.row.duration_min,
+    },
+    { onConflict: 'registration_id,session_id' },
+  )
+  // Keep the legacy registration.attended flag in sync for back-compat readers.
+  await db
+    .from('workshop_registrations')
+    .update({ attended: decision.row.status === 'attended' || decision.row.status === 'left_early' })
+    .eq('reg_id', target.registrationId)
+
+  return { action: 'write', status: decision.row.status }
+}
+
+export type ProvisionOutcome =
+  | { ok: true; joinUrl: string | null; skipped: boolean; reason?: string }
+  | { ok: false; reason: string }
+
+/**
+ * Provision a per-registrant Zoom join link for a virtual/hybrid-virtual registration and
+ * store the join_url + zoom_registrant_id (webhook correlation key). Best-effort + idempotent:
+ *   - skips (ok:true) when the registration is not virtual, already provisioned, Zoom is
+ *     disabled, or the session has no zoom_meeting_id — the registration is never blocked;
+ *   - returns ok:false with a reason on a transient Zoom API failure so a retry can re-run
+ *     later (the join_url is provisioned on retry, never lost).
+ */
+export async function provisionZoomForRegistration(db: Db, regId: string): Promise<ProvisionOutcome> {
+  const { data: reg } = await db
+    .from('workshop_registrations')
+    .select('reg_id, name, email, session_id, chosen_delivery, join_url, zoom_registrant_id, workshop_id')
+    .eq('reg_id', regId)
+    .maybeSingle()
+  if (!reg) return { ok: false, reason: 'registration_not_found' }
+  if (reg.join_url && reg.zoom_registrant_id) return { ok: true, joinUrl: reg.join_url, skipped: true, reason: 'already_provisioned' }
+  if (!reg.email) return { ok: true, joinUrl: null, skipped: true, reason: 'no_email' }
+
+  const { data: session } = await db
+    .from('workshop_sessions')
+    .select('id, delivery_mode, zoom_meeting_id')
+    .eq('id', reg.session_id ?? '')
+    .maybeSingle()
+  const sess = session ?? (await earliestSession(db, reg.workshop_id))
+  if (!sess) return { ok: true, joinUrl: null, skipped: true, reason: 'no_session' }
+
+  const isVirtual =
+    sess.delivery_mode === 'virtual' || (sess.delivery_mode === 'hybrid' && reg.chosen_delivery === 'virtual')
+  if (!isVirtual) return { ok: true, joinUrl: null, skipped: true, reason: 'not_virtual' }
+  if (!zoomEnabled()) return { ok: true, joinUrl: null, skipped: true, reason: 'zoom_disabled' }
+  if (!sess.zoom_meeting_id) return { ok: true, joinUrl: null, skipped: true, reason: 'no_meeting_id' }
+
+  const [firstName, ...rest] = (reg.name ?? 'Guest').trim().split(/\s+/)
+  const res = await addZoomRegistrant({
+    // The session stores a Zoom meeting id; webinar provisioning would need a session-level
+    // webinar flag (not modelled today) — default to the meeting registrants endpoint.
+    meetingId: sess.zoom_meeting_id,
+    kind: 'meeting',
+    email: reg.email,
+    firstName: firstName || 'Guest',
+    lastName: rest.join(' ') || null,
+  })
+  if (!res.ok) return { ok: false, reason: res.error ?? 'provision_failed' }
+
+  await db
+    .from('workshop_registrations')
+    .update({ join_url: res.joinUrl ?? null, zoom_registrant_id: res.registrantId ?? null })
+    .eq('reg_id', reg.reg_id)
+  return { ok: true, joinUrl: res.joinUrl ?? null, skipped: false }
+}
+
+async function earliestSession(
+  db: Db,
+  workshopId: string,
+): Promise<{ id: string; delivery_mode: string | null; zoom_meeting_id: string | null } | null> {
+  const { data } = await db
+    .from('workshop_sessions')
+    .select('id, delivery_mode, zoom_meeting_id')
+    .eq('workshop_id', workshopId)
+    .order('starts_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+  return data ?? null
 }
 
 /**

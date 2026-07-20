@@ -930,6 +930,19 @@ export const AttendanceReconcileSchema = z.object({
 })
 export type AttendanceReconcile = z.infer<typeof AttendanceReconcileSchema>
 
+// ─── Workshop feedback survey (P3, spec §D) ────────────────────────────────────
+// Public post-event survey reached from the replay page via the registrant's join_token
+// (personalized link — never a name/email lookup). consult_requested=true routes into the
+// EXISTING consult spine (GHL Pipeline-A for non-securities; the FFS-supervised path for
+// is_security workshops — never the automated sequence). Honeypot handled before Zod.
+export const WorkshopFeedbackSchema = z.object({
+  join_token: z.string().trim().min(1, 'Missing your personal link token').max(200),
+  rating: z.coerce.number().int().min(1).max(5).optional(),
+  most_useful: z.string().trim().max(2000).optional(),
+  consult_requested: z.boolean().optional().default(false),
+})
+export type WorkshopFeedback = z.infer<typeof WorkshopFeedbackSchema>
+
 // ─── OPRA Transfer Center (App A → App B parity) ───────────────────────────────
 // One-policy households eligible for an OPRA transfer/review. Status toggles are
 // manual FSA actions (mark contacted / appointment / review / transferred) — not

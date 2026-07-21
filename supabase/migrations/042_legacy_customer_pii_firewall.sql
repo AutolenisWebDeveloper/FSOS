@@ -69,16 +69,19 @@ begin
 end $r$;
 
 -- 3. Backfill: encrypt existing plaintext dob → dob_enc, and derive age + birth parts.
---    REQUIRES the app.dob_key GUC (scripts/migrate.mjs passes DOB_ENCRYPTION_KEY). Fail
---    loudly rather than ever dropping un-encrypted plaintext. Guarded on the column
---    still existing so the migration is safely re-runnable.
+--    The key (app.dob_key GUC, passed by scripts/migrate.mjs from DOB_ENCRYPTION_KEY)
+--    is REQUIRED only when there is actually plaintext to encrypt — so this never drops
+--    un-encrypted plaintext, yet a keyless environment with no plaintext rows (e.g. a
+--    fresh Supabase preview branch) proceeds cleanly. Guarded on the column still
+--    existing so the migration is safely re-runnable.
 do $mig$
 declare k text := current_setting('app.dob_key', true);
 begin
-  if k is null or k = '' then
-    raise exception 'Migration 042 requires the DOB encryption key. Run `npm run migrate` with DOB_ENCRYPTION_KEY set (passed as the app.dob_key GUC).';
-  end if;
-  if exists (select 1 from information_schema.columns where table_name = 'customers' and column_name = 'dob') then
+  if exists (select 1 from information_schema.columns where table_name = 'customers' and column_name = 'dob')
+     and exists (select 1 from customers where dob is not null) then
+    if k is null or k = '' then
+      raise exception 'Migration 042: customers.dob has plaintext rows but no DOB encryption key. Run `npm run migrate` with DOB_ENCRYPTION_KEY set (the app.dob_key GUC) so DOB is encrypted before the column is dropped.';
+    end if;
     update customers
        set dob_enc     = encrypt_dob(dob, k),
            age         = date_part('year', age(dob))::integer,

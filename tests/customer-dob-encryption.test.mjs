@@ -138,6 +138,27 @@ try {
     const def = q(`select pg_get_functiondef('run_nightly_scoring()'::regprocedure)`)
     assert.ok(!/age\(dob\)/.test(def), 'run_nightly_scoring must not reference age(dob) after the column is dropped')
   })
+
+  // Keyless-with-no-plaintext path (reproduces the Supabase preview branch: a fresh
+  // DB where 001 created the dob column but there is no data and no DOB key). The
+  // migration must PROCEED (drop the column) without raising — it only requires the key
+  // when there is actual plaintext to encrypt.
+  sh(`runuser -u postgres -- ${PGBIN}/createdb -h ${H} -p ${P} -U postgres fsos_test2`)
+  const fixture2 = `${L}/fixture2.sql`
+  writeFileSync(fixture2, `
+    create extension if not exists pgcrypto;
+    create table customers (customer_id uuid primary key default gen_random_uuid(), first_name text, dob date, age integer);
+    create or replace function encrypt_dob(d date, key text) returns bytea language sql volatile as $$ select pgp_sym_encrypt(d::text, key); $$;
+    create or replace function decrypt_dob(e bytea, key text) returns date language sql stable as $$ select nullif(pgp_sym_decrypt(e, key), '')::date; $$;
+    -- No rows inserted: column present, zero plaintext.
+  `)
+  sh(`runuser -u postgres -- psql -h ${H} -p ${P} -U postgres -d fsos_test2 -v ON_ERROR_STOP=1 -q -f ${fixture2}`)
+  check('keyless migration on a DB with the dob column but no plaintext rows succeeds (Supabase-preview path)', () => {
+    // No PGOPTIONS → no app.dob_key. Must NOT raise (nothing to encrypt).
+    sh(`runuser -u postgres -- psql -h ${H} -p ${P} -U postgres -d fsos_test2 -v ON_ERROR_STOP=1 -q -f supabase/migrations/042_legacy_customer_pii_firewall.sql`)
+    const n = sh(`runuser -u postgres -- psql -h ${H} -p ${P} -U postgres -d fsos_test2 -t -A -c "select count(*) from information_schema.columns where table_name='customers' and column_name='dob'"`).trim().split('\n').pop()
+    assert.equal(n, '0', 'dob column must be dropped even without a key when there is no plaintext')
+  })
 } finally {
   try { sh(`runuser -u postgres -- ${PGBIN}/pg_ctl -D ${D} stop -m immediate > /dev/null 2>&1`) } catch { /* ignore */ }
 }

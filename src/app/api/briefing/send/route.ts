@@ -11,7 +11,7 @@ export const runtime = 'nodejs'
 // POST /api/briefing/send  (internal)  body: { to? }
 // Assembles today's operational snapshot (overdue/today tasks, week's renewals,
 // top opportunities), has Claude write a short morning briefing, and emails it
-// via Resend. Can be called by a scheduler (Make.com / cron) each morning.
+// via Resend. Can be called by a scheduler (Vercel Cron) each morning.
 function todayISO() {
   return new Date().toISOString().slice(0, 10)
 }

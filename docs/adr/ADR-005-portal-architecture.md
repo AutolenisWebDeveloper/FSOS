@@ -29,4 +29,4 @@ FSOS is **one Next.js backend with six portals** implemented as App Router route
 
 ## Related Documents
 - CLAUDE.md §9, §13.8
-- docs/rbac-matrix.md, docs/middleware-auth.md, docs/adr/ADR-006-authentication-architecture.md, docs/adr/ADR-010-data-ownership-and-rls.md
+- docs/specs/rbac-matrix.md, docs/middleware-auth.md, docs/adr/ADR-006-authentication-architecture.md, docs/adr/ADR-010-data-ownership-and-rls.md

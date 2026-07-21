@@ -30,4 +30,4 @@ Every outbound automated communication routes through **one dispatcher** that en
 
 ## Related Documents
 - CLAUDE.md §12, §4.1, §4.2, §16
-- docs/comms-ai-compliance.md; `.claude/skills/twilio-a2p-compliance`
+- docs/specs/comms-ai-compliance.md; `.claude/skills/twilio-a2p-compliance`

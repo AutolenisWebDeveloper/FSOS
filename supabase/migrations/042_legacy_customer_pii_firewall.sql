@@ -15,15 +15,32 @@
 --   • `age` is maintained at write time by the RPC (the old dob-reading trigger + the
 --     pg_cron age-from-dob refresh are removed — pg_cron cannot decrypt, the key is
 --     app-side only).
--- The plaintext `dob` column is then dropped. The backfill REQUIRES the key (passed as
--- the `app.dob_key` GUC by scripts/migrate.mjs); if it is absent the migration RAISES —
--- it never drops plaintext that has not been encrypted.
+-- The plaintext `dob` column is then dropped.
+--
+-- FAIL CLOSED (step 0, runs BEFORE any DDL): if the plaintext `dob` column is present
+-- and no encryption key is available, this migration RAISES and makes NO change — the
+-- plaintext column is never created, altered, or dropped without the key present, and an
+-- empty table is NOT a license to skip encryption (an empty preview DB can be seeded
+-- later). The key is the `app.dob_key` GUC, set by scripts/migrate.mjs from
+-- DOB_ENCRYPTION_KEY. Re-runs after the column is already dropped need no key (nothing
+-- to encrypt).
 --
 -- C-1 — Add `customers.is_security` (default false), the DB source the campaign runner
 -- reads at the send boundary so an is_security customer is excluded by the gate firewall
 -- (never a caller literal). Mirrors the spine's `is_security boolean not null default
 -- false`. A conservative backfill flags customers who have an OPRA/FFS securities case.
 -- ─────────────────────────────────────────────────────────
+
+-- 0. FAIL CLOSED — must be the FIRST statement so a keyless run changes nothing.
+do $guard$
+declare k text := current_setting('app.dob_key', true);
+begin
+  if exists (select 1 from information_schema.columns where table_name = 'customers' and column_name = 'dob')
+     and (k is null or k = '') then
+    raise exception
+      'Migration 042 fails closed: customers.dob (plaintext PII) is present but the DOB encryption key is not set. Provide DOB_ENCRYPTION_KEY as the app.dob_key GUC before running (scripts/migrate.mjs does this for `npm run migrate`; for the Supabase preview branch set it at the DB level, e.g. `ALTER DATABASE postgres SET app.dob_key = ''<preview-key>''`). An empty table is not a license to skip encryption.';
+  end if;
+end $guard$;
 
 -- 1. Additive columns on the legacy customers table.
 alter table customers add column if not exists dob_enc     bytea;
@@ -68,20 +85,13 @@ begin
   end if;
 end $r$;
 
--- 3. Backfill: encrypt existing plaintext dob → dob_enc, and derive age + birth parts.
---    The key (app.dob_key GUC, passed by scripts/migrate.mjs from DOB_ENCRYPTION_KEY)
---    is REQUIRED only when there is actually plaintext to encrypt — so this never drops
---    un-encrypted plaintext, yet a keyless environment with no plaintext rows (e.g. a
---    fresh Supabase preview branch) proceeds cleanly. Guarded on the column still
---    existing so the migration is safely re-runnable.
+-- 3. Backfill: encrypt existing plaintext dob → dob_enc, derive age + birth parts. The
+--    key is guaranteed present here (step 0 raised otherwise). Guarded on the column
+--    still existing so the migration is safely re-runnable after the drop.
 do $mig$
 declare k text := current_setting('app.dob_key', true);
 begin
-  if exists (select 1 from information_schema.columns where table_name = 'customers' and column_name = 'dob')
-     and exists (select 1 from customers where dob is not null) then
-    if k is null or k = '' then
-      raise exception 'Migration 042: customers.dob has plaintext rows but no DOB encryption key. Run `npm run migrate` with DOB_ENCRYPTION_KEY set (the app.dob_key GUC) so DOB is encrypted before the column is dropped.';
-    end if;
+  if exists (select 1 from information_schema.columns where table_name = 'customers' and column_name = 'dob') then
     update customers
        set dob_enc     = encrypt_dob(dob, k),
            age         = date_part('year', age(dob))::integer,
@@ -141,8 +151,8 @@ begin
   end if;
 end $fix$;
 
--- 6. Drop the plaintext DOB column. All existing data was encrypted into dob_enc above
---    (or the migration already raised). Idempotent.
+-- 6. Drop the plaintext DOB column. Reached only when step 0 confirmed the key is present
+--    (or the column was already gone). All rows were encrypted into dob_enc above.
 alter table customers drop column if exists dob;
 
 create index if not exists idx_customers_is_security on customers(is_security) where is_security = true;

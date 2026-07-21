@@ -139,10 +139,9 @@ try {
     assert.ok(!/age\(dob\)/.test(def), 'run_nightly_scoring must not reference age(dob) after the column is dropped')
   })
 
-  // Keyless-with-no-plaintext path (reproduces the Supabase preview branch: a fresh
-  // DB where 001 created the dob column but there is no data and no DOB key). The
-  // migration must PROCEED (drop the column) without raising — it only requires the key
-  // when there is actual plaintext to encrypt.
+  // FAIL-CLOSED proof. A fresh DB where the plaintext dob column exists but there is NO
+  // key must FAIL and change nothing — even with an EMPTY table (an empty preview branch
+  // can be seeded later; emptiness is not a license to skip encryption setup).
   sh(`runuser -u postgres -- ${PGBIN}/createdb -h ${H} -p ${P} -U postgres fsos_test2`)
   const fixture2 = `${L}/fixture2.sql`
   writeFileSync(fixture2, `
@@ -150,14 +149,28 @@ try {
     create table customers (customer_id uuid primary key default gen_random_uuid(), first_name text, dob date, age integer);
     create or replace function encrypt_dob(d date, key text) returns bytea language sql volatile as $$ select pgp_sym_encrypt(d::text, key); $$;
     create or replace function decrypt_dob(e bytea, key text) returns date language sql stable as $$ select nullif(pgp_sym_decrypt(e, key), '')::date; $$;
-    -- No rows inserted: column present, zero plaintext.
+    -- Zero rows: the dob column is present but EMPTY.
   `)
   sh(`runuser -u postgres -- psql -h ${H} -p ${P} -U postgres -d fsos_test2 -v ON_ERROR_STOP=1 -q -f ${fixture2}`)
-  check('keyless migration on a DB with the dob column but no plaintext rows succeeds (Supabase-preview path)', () => {
-    // No PGOPTIONS → no app.dob_key. Must NOT raise (nothing to encrypt).
-    sh(`runuser -u postgres -- psql -h ${H} -p ${P} -U postgres -d fsos_test2 -v ON_ERROR_STOP=1 -q -f supabase/migrations/042_legacy_customer_pii_firewall.sql`)
-    const n = sh(`runuser -u postgres -- psql -h ${H} -p ${P} -U postgres -d fsos_test2 -t -A -c "select count(*) from information_schema.columns where table_name='customers' and column_name='dob'"`).trim().split('\n').pop()
-    assert.equal(n, '0', 'dob column must be dropped even without a key when there is no plaintext')
+  const q2 = (sql) => sh(`runuser -u postgres -- psql -h ${H} -p ${P} -U postgres -d fsos_test2 -t -A -c ${JSON.stringify(sql)}`).trim().split('\n').pop()
+  const colCount2 = (col) => q2(`select count(*) from information_schema.columns where table_name='customers' and column_name='${col}'`)
+
+  check('keyless run with the plaintext dob column present (even EMPTY table) FAILS closed and changes nothing', () => {
+    let failed = false
+    try {
+      // No PGOPTIONS → no app.dob_key. Must RAISE.
+      sh(`runuser -u postgres -- psql -h ${H} -p ${P} -U postgres -d fsos_test2 -v ON_ERROR_STOP=1 -q -f supabase/migrations/042_legacy_customer_pii_firewall.sql`)
+    } catch { failed = true }
+    assert.ok(failed, 'migration must RAISE without the key when the plaintext dob column exists')
+    // Atomic: guard is the first statement, so NO columns were created or dropped.
+    assert.equal(colCount2('dob'), '1', 'plaintext dob column must be untouched (not dropped)')
+    assert.equal(colCount2('dob_enc'), '0', 'no dob_enc column may be created on a failed keyless run')
+  })
+
+  check('the SAME schema migrates cleanly WITH the key (no key → fail, key → succeed)', () => {
+    sh(`runuser -u postgres -- env PGOPTIONS="-c app.dob_key=${KEY}" psql -h ${H} -p ${P} -U postgres -d fsos_test2 -v ON_ERROR_STOP=1 -q -f supabase/migrations/042_legacy_customer_pii_firewall.sql`)
+    assert.equal(colCount2('dob'), '0', 'dob dropped when the key is present')
+    assert.equal(colCount2('dob_enc'), '1', 'dob_enc created when the key is present')
   })
 } finally {
   try { sh(`runuser -u postgres -- ${PGBIN}/pg_ctl -D ${D} stop -m immediate > /dev/null 2>&1`) } catch { /* ignore */ }

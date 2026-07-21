@@ -1,33 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
-import { requireInternalAuth, readJson, escapeHtml } from '@/lib/http'
-import { sendEmail, sendSms } from '@/lib/messaging'
-import { TRAIGA_SMS_FOOTER } from '@/lib/compliance'
+import { requireInternalAuth, readJson } from '@/lib/http'
+import { sendThroughGate } from '@/lib/comms/send'
+import { buildCampaignSend } from '@/lib/comms/campaign-run'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 // POST /api/campaigns/run  (internal)  body: { campaign_id?, limit? }
-// Processes due enrollments (next_send_at <= now, status active): sends the
-// current step via the campaign's channel (consent-respecting), then advances
-// the enrollment or completes it. Call from a scheduler (cron / Make) or the UI.
+// Processes due enrollments (next_send_at <= now, status active): sends the current
+// step through the FULL compliance gate (sendThroughGate — consent, quiet-hours, DNC,
+// approved-template, recommendation, is_security), then advances or completes the
+// enrollment. There is NO raw send path: this route no longer calls sendEmail/sendSms
+// directly (C-1). The dispatcher appends the required TRAIGA/Reply-STOP SMS footer.
 const Schema = z.object({
   campaign_id: z.string().uuid().optional(),
   limit: z.number().int().min(1).max(200).optional(),
 })
 
-function fill(tpl: string, c: { first_name?: string; last_name?: string }): string {
-  return (tpl || '')
-    .replace(/\{first_name\}/gi, c.first_name || 'there')
-    .replace(/\{last_name\}/gi, c.last_name || '')
-    .trim()
-}
 function addDays(base: Date, days: number): string {
   const d = new Date(base)
   d.setUTCDate(d.getUTCDate() + days)
   return d.toISOString()
 }
+
+// A gate block on a hard compliance reason (no consent, DNC, securities firewall,
+// recommendation language, or unapproved content) is terminal for the enrollment —
+// stop it (visible, escalated) rather than silently advancing past the content or
+// re-blocking forever. A deferral (quiet-hours / business-hours) is retried later.
+const HARD_BLOCKS = new Set(['consent', 'dnc', 'is_security', 'recommendation', 'approved_template'])
 
 export async function POST(req: NextRequest) {
   const unauthorized = requireInternalAuth(req)
@@ -44,7 +46,7 @@ export async function POST(req: NextRequest) {
 
   let q = supabase
     .from('campaign_enrollments')
-    .select('*, campaigns(campaign_id, channel, status, steps), customers(first_name, last_name, email, phone, cell_phone, consent_email, consent_sms)')
+    .select('*, campaigns(campaign_id, channel, status, steps, template_id), customers(first_name, last_name, email, phone, cell_phone, consent_email, consent_sms, is_security)')
     .eq('status', 'active')
     .lte('next_send_at', nowISO)
     .order('next_send_at', { ascending: true })
@@ -54,7 +56,7 @@ export async function POST(req: NextRequest) {
   const { data: due, error } = await q
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  const counts = { processed: 0, sent: 0, skipped: 0, failed: 0, completed: 0 }
+  const counts = { processed: 0, sent: 0, skipped: 0, blocked: 0, deferred: 0, failed: 0, completed: 0 }
 
   for (const e of due || []) {
     counts.processed++
@@ -79,47 +81,52 @@ export async function POST(req: NextRequest) {
       continue
     }
 
-    // Attempt the send, respecting consent + available contact channel.
-    let result: { ok: boolean; error?: string; skipped?: boolean }
-    if (campaign.channel === 'email') {
-      if (!cust.email || !cust.consent_email) result = { ok: false, skipped: true }
-      else {
-        const body = fill(step.body, cust)
-        result = await sendEmail(
-          cust.email,
-          fill(step.subject || 'A note from your Farmers agent', cust),
-          `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;white-space:pre-wrap">${escapeHtml(body)}</div>`,
-          body,
-        )
-      }
-    } else {
-      const to = cust.phone || cust.cell_phone
-      if (!to || !cust.consent_sms) result = { ok: false, skipped: true }
-      // TRAIGA 2026: every automated message must carry an AI-disclosure. The
-      // one-off form sender already appends this; the drip runner must too.
-      else result = await sendSms(to, `${fill(step.body, cust)}\n\n${TRAIGA_SMS_FOOTER}`)
-    }
-
-    // Provider error (not a consent skip) → retry tomorrow, don't advance.
-    if (!result.ok && !result.skipped) {
-      counts.failed++
-      await supabase.from('campaign_enrollments').update({ next_send_at: addDays(new Date(), 1) }).eq('enrollment_id', e.enrollment_id)
+    // Derive the row-level send context; skip if there is no contact method.
+    const cs = buildCampaignSend(campaign, cust, step)
+    if (!cs) {
+      counts.skipped++
+      // No usable channel — advance so the enrollment isn't stuck on this step forever.
+      const nextIdx = e.current_step + 1
+      const done = !steps[nextIdx]
+      await supabase.from('campaign_enrollments').update({
+        current_step: nextIdx,
+        ...(done ? { status: 'completed', completed_at: nowISO } : { next_send_at: addDays(new Date(), steps[nextIdx].delay_days) }),
+      }).eq('enrollment_id', e.enrollment_id)
+      if (done) counts.completed++
       continue
     }
 
-    if (result.ok) {
-      counts.sent++
-      await supabase.from('activity').insert({
-        customer_id: e.customer_id,
-        type: campaign.channel,
-        direction: 'outbound',
-        channel: campaign.channel,
-        subject: `Campaign: ${campaign.channel === 'email' ? fill(step.subject || '', cust) : 'SMS step ' + (e.current_step + 1)}`,
-        ai_agent: 'drip_campaign',
-      })
-    } else {
-      counts.skipped++ // no consent / no contact — advance anyway
+    // Send through the full 7-step gate (consent/quiet-hours/DNC/template/recommendation/securities).
+    const outcome = await sendThroughGate({
+      channel: cs.channel,
+      to: cs.to,
+      subject: cs.subject,
+      body: cs.body,
+      actor: 'campaign:drip',
+      durableConsentGranted: cs.durableConsentGranted,
+      isSecurity: cs.isSecurity,
+      templateId: cs.templateId,
+      campaignId: campaign.campaign_id,
+      sequenceStep: e.current_step,
+      entity: { type: 'customer', id: e.customer_id },
+    })
+
+    if (!outcome.sent) {
+      const step_ = outcome.gate?.blockedStep ?? null
+      if (step_ && HARD_BLOCKS.has(step_)) {
+        // Terminal compliance block (already escalated by the dispatcher) — stop the
+        // enrollment instead of silently advancing or re-blocking daily.
+        counts.blocked++
+        await supabase.from('campaign_enrollments').update({ status: 'stopped', completed_at: nowISO }).eq('enrollment_id', e.enrollment_id)
+      } else {
+        // Deferral (quiet-hours / business-hours) or provider error → retry tomorrow.
+        counts.deferred++
+        await supabase.from('campaign_enrollments').update({ next_send_at: addDays(new Date(), 1) }).eq('enrollment_id', e.enrollment_id)
+      }
+      continue
     }
+
+    counts.sent++
 
     // Advance to the next step (or complete).
     const nextIdx = e.current_step + 1
@@ -127,12 +134,12 @@ export async function POST(req: NextRequest) {
     if (nextStep) {
       await supabase
         .from('campaign_enrollments')
-        .update({ current_step: nextIdx, last_sent_at: result.ok ? nowISO : e.last_sent_at, next_send_at: addDays(new Date(), nextStep.delay_days) })
+        .update({ current_step: nextIdx, last_sent_at: nowISO, next_send_at: addDays(new Date(), nextStep.delay_days) })
         .eq('enrollment_id', e.enrollment_id)
     } else {
       await supabase
         .from('campaign_enrollments')
-        .update({ current_step: nextIdx, last_sent_at: result.ok ? nowISO : e.last_sent_at, status: 'completed', completed_at: nowISO })
+        .update({ current_step: nextIdx, last_sent_at: nowISO, status: 'completed', completed_at: nowISO })
         .eq('enrollment_id', e.enrollment_id)
       counts.completed++
     }

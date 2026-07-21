@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next'
+import Image from 'next/image'
 import { SiteShell } from '@/components/public/site/SiteShell'
 import { SiteContactForm } from '@/components/public/site/SiteContactForm'
 import { Icon } from '@/components/public/site/icons'
@@ -126,12 +127,18 @@ export default function HomePage() {
               </div>
             </div>
             <div className="hero__art">
-              {/* Slot kept intentionally so no unlicensed stock image ships. Drop an
-                  approved lifestyle photo at public/brand/hero.jpg to replace it. */}
-              <div className="hero__slot">
-                <Icon name="user" />
-                <span>A licensed lifestyle photo (agent with clients) can be placed here.</span>
-              </div>
+              {/* Live-text hero (Option A): the text-free portrait is the visual;
+                  the name/title live in the nav + <h1>, the locator chip below is
+                  live HTML — nothing is baked into the image. */}
+              <Image
+                className="hero__img"
+                src="/images/markist-hero.jpg"
+                alt="Markist Athelus, Financial Services Agent with Farmers Insurance, serving Plano, Frisco, and Greater DFW."
+                fill
+                priority
+                sizes="(max-width: 900px) 100vw, 46vw"
+                style={{ objectPosition: '42% 24%' }}
+              />
               <div className="locator">
                 <Icon name="pin" />
                 <span>
@@ -255,9 +262,14 @@ export default function HomePage() {
         <section className="sec" id="about">
           <div className="shell bio">
             <div className="bio__photo reveal">
-              {/* Drop an approved headshot at public/brand/markist.jpg to replace this slot. */}
-              <Icon name="user" />
-              <span>{BUSINESS.agent} — professional headshot.</span>
+              <Image
+                className="bio__img"
+                src="/images/markist-about.jpg"
+                alt="Markist Athelus, Financial Services Agent with Farmers Insurance."
+                width={1500}
+                height={1500}
+                sizes="(max-width: 960px) 100vw, 32vw"
+              />
             </div>
             <div className="reveal">
               <p className="eyebrow">About · Markist Athelus</p>

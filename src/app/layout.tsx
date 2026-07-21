@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { DM_Sans, DM_Mono } from 'next/font/google'
 import './globals.css'
 import { Toaster } from '@/components/ui/sonner'
+import { siteUrl } from '@/lib/site'
 
 // FSOS Design System typography (docs/design-system.md §2). DM Sans for body/UI,
 // DM Mono for the signature labels + every numeric (money, policy #, dates, IDs).
@@ -21,6 +22,10 @@ const dmMono = DM_Mono({
 })
 
 export const metadata: Metadata = {
+  // Absolute base for every resolved canonical / OG URL. Without this, pages that
+  // only set a relative canonical (e.g. /privacy) fall back to Vercel's default
+  // origin (fsos-seven.vercel.app) in production; pin it to the public domain.
+  metadataBase: new URL(siteUrl()),
   title: 'FSOS — FSA Command Center',
   description: 'Farmers FSA Operating System — Markist',
   robots: 'noindex, nofollow', // Private internal tool

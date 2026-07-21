@@ -13,8 +13,13 @@ import { evaluateAccess, toRoles, type Role, type SessionClaims } from '@/lib/au
 
 export const config = {
   // Everything except Next internals, static assets, and API routes (which
-  // enforce their own auth / cron secrets).
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|robots.txt|icon.svg|api/).*)'],
+  // enforce their own auth / cron secrets). Files served from /public (images,
+  // fonts, css/js) are matched by extension and skipped so the portal gate never
+  // redirects a public asset to /login — otherwise next/image's internal fetch of
+  // a local source (e.g. /images/markist-hero.jpg) 307s and the optimizer 400s.
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|robots.txt|icon.svg|api/|.*\\.(?:png|jpg|jpeg|gif|webp|avif|svg|ico|css|js|woff2?|ttf|otf|map)$).*)',
+  ],
 }
 
 /** Decode the `aal` claim from a Supabase access-token JWT without a network call. */

@@ -109,7 +109,8 @@ Commission splits, FNWL term-conversion windows, product availability, carrier r
 
 ## 5. Scope exclusions (do not build)
 
-- **NIGO** ("Not In Good Order" defect-prevention) is a **separate project, OUT OF SCOPE.** Create no NIGO module, agent, report, category, import, score, or cross-link. The legitimate application-tracking work lives in **Case Management OS** (`/app/cases`): applications, submission tracking, underwriting, carrier requirements, documents, status/issue tracking, service requests, case timelines — with **no** NIGO functionality.
+- **NIGO defect-prevention** ("Not In Good Order" prediction/scoring) is a **separate project, OUT OF SCOPE.** Create no NIGO defect-prevention module, agent, report, category, import, or score, and do not cross-link such a system into the aggregate-root case spine. The legitimate application-tracking work lives in **Case Management OS** (`/app/cases`): applications, submission tracking, underwriting, carrier requirements, documents, status/issue tracking, service requests, case timelines — with **no** NIGO defect-prevention functionality (`cases` stays NIGO-free).
+  - **Authorized exception — Compliance Intelligence (NIGO-*resolution*).** The owner-authorized (2026-07-19), **isolated** Compliance Intelligence module — a retrieval-grounded drafting/analysis aid at `/app/compliance/intelligence` (`/api/compliance/*`) that helps the FSA *resolve* not-in-good-order correspondence, harden case notes to the objective standard, and check RightBridge paperwork — is **in scope and permitted**. It lives on its **own** `compliance_*` / `nigo_cases` / `nigo_issues` tables with **no FK into the aggregate-root case spine**, stays inside the securities firewall (§4.1), and grounds every output in the authority-tagged corpus (never invents a rule — §4.3, `finra-rule-ingestion`). This is NIGO *resolution*, not NIGO *defect-prevention*; the exclusion above still bars any prediction/scoring system and any cross-link into the case spine. Skill: `fsos-nigo-intelligence`; blueprint: `docs/compliance/`.
 - **Billing/subscription** (`/super/billing`) is a P3 placeholder only — build nothing unless FSOS is later commercialized as multi-tenant SaaS.
 
 ---
@@ -182,7 +183,7 @@ domain skill*        subagent-driven-    executing-plans      requesting-code-re
 | Skill | Invoke when |
 |---|---|
 | `fsos-crm-workflows` | CRM spine, agents, GHL/Cron automations, pipeline logic. |
-| `fsos-nigo-intelligence` | **Separate NIGO project only** — never inside FSOS scope (§5). |
+| `fsos-nigo-intelligence` | The owner-authorized, isolated **Compliance Intelligence** module (NIGO-*resolution*) at `/app/compliance/intelligence` — §5 authorized exception. **Never** for NIGO defect-prevention/scoring or case-spine cross-links. |
 | `fsos-security-audit` | RLS, guardrails, PII, audit-log security review — run on any data-touching change. |
 | `farmers-brand-website` | Public marketing surface / Farmers branding work (§17). |
 | `finra-rule-ingestion` | Ingesting authority-tagged rule docs into the corpus. |
@@ -194,7 +195,7 @@ domain skill*        subagent-driven-    executing-plans      requesting-code-re
 |---|---|
 | `skill-creator` / `writing-skills` | Creating, editing, optimizing, or verifying a project skill. |
 
-> Note: `fsos-nigo-intelligence` exists in the repo for the *separate* NIGO project. It must never be used to introduce NIGO functionality into FSOS. Presence of the skill is not authorization to violate §5.
+> Note: `fsos-nigo-intelligence` drives the owner-authorized, isolated **Compliance Intelligence** module (NIGO-*resolution*; §5 authorized exception) — retrieval-grounded, firewall-bound (§4.1), no FK into the aggregate-root case spine. It must **never** be used to introduce NIGO *defect-prevention/scoring* into FSOS, nor to cross-link the compliance tables into the case spine (§5).
 
 ---
 

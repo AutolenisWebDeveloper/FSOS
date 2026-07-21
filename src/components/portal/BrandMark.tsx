@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils'
  * or recolored) instead of the monogram. This is the SAME flag + asset path used
  * by the public marketing `BrandLogo`, so a single drop-in switches the mark
  * consistently across the marketing site, the auth pages, and the /app chrome.
- * See `public/images/BRANDING.md` for the drop-in contract and the trademark
+ * See `docs/branding-farmers-logo.md` for the drop-in contract and the trademark
  * usage constraints (guardrail: no invented/altered Farmers data).
  *
  * Sizing is token-free on purpose so the same mark reads correctly in the

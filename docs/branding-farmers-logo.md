@@ -25,7 +25,7 @@ Requirements for the file you drop in:
 | Background | **Transparent** — it renders on both the light marketing header and the dark footer/sidebar |
 | Color | The official colors, unmodified — **do not** recolor, add effects, or convert to mono |
 | Content | The official mark exactly as supplied — **do not** stretch, crop, rotate, or redraw it |
-| Path | `public/images/farmers-logo.svg` (this folder). Keep the filename exactly. |
+| Path | `public/images/farmers-logo.svg` (the repo's `public/images/` folder). Keep the filename exactly. |
 
 If Farmers supplies separate lockups (a full horizontal wordmark vs. a compact
 emblem), the horizontal wordmark reads best in the marketing header; the same file

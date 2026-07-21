@@ -135,8 +135,29 @@ export function Icon({
   )
 }
 
-/** The FSA's own brand monogram tile (shield + check keyline). Not the Farmers trademark. */
+// Gate the Farmers Insurance trademark swap behind an env flag that defaults OFF,
+// so the approved logo only appears after Farmers brand + FINRA principal sign-off.
+// Enable by setting NEXT_PUBLIC_USE_FARMERS_LOGO=1 AND dropping the approved,
+// transparent asset at public/images/farmers-logo.svg (SVG preferred; a high-res
+// transparent PNG works too). Until both are true, the FSA's own shield renders.
+const USE_FARMERS_LOGO = process.env.NEXT_PUBLIC_USE_FARMERS_LOGO === '1'
+
+/**
+ * Header/footer brand mark. Renders the FSA's own shield monogram by default; when
+ * the gated Farmers logo is enabled, renders the approved Farmers trademark instead.
+ * Same 46px footprint in both states so the lockup never shifts.
+ */
 export function BrandLogo() {
+  if (USE_FARMERS_LOGO) {
+    return (
+      <span className="brand__logo brand__logo--farmers">
+        {/* Plain <img> keeps a transparent SVG/PNG crisp on both the light header
+            and the dark footer without next/image's SVG optimizer caveats. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/images/farmers-logo.svg" alt="Farmers Insurance" width={46} height={46} />
+      </span>
+    )
+  }
   return (
     <span className="brand__logo">
       <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">

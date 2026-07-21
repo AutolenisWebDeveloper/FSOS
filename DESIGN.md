@@ -7,92 +7,122 @@
 > **[AS-BUILT]** (documents what exists) or **[STANDARD]** (a target the implementation must satisfy).
 > **Register: Product** — design serves the task: dense, familiar, consistent.
 >
-> **Governing contract:** `CLAUDE.md` is authoritative for the whole stack. This file is the design
-> surface of `CLAUDE.md §11 (Fortune 500 fintech quality)` and `§12 (Farmers brand standard)`. Where
-> they touch, `CLAUDE.md` wins. **Never hardcode a color, space, radius, or font — resolve through a
-> token.** Frontend work runs `frontend-design` → `impeccable` (§19–20).
+> **Governing contract:** `CLAUDE.md` is authoritative for the whole stack; this file is authoritative
+> for all design decisions (§1). Where the two touch, `CLAUDE.md` wins. **Never hardcode a color, space,
+> radius, or font — resolve through a token.** Frontend work runs `frontend-design` → `impeccable`.
 
 ---
 
 ## 0. Design ambition [STANDARD]
 
-FSOS is expected to meet the design quality of modern Fortune 500 financial-technology platforms —
-the class of Stripe, Mercury, Ramp, and Plaid, and the internal enterprise software of Fidelity,
-Charles Schwab, Vanguard, Morgan Stanley, and JPMorgan Chase. **The objective is not to imitate any
-specific product**, but to reach the same level of professionalism, usability, consistency,
-accessibility, operational efficiency, and visual refinement — while remaining unmistakably consistent
-with the approved Farmers Insurance brand identity. This single ambition governs every UI decision:
-when a choice is unclear, pick the option a regulated, enterprise-grade financial platform would ship.
+FSOS is expected to meet the design quality of modern Fortune 500 financial-technology platforms — the
+class of Stripe, Mercury, Ramp, and Plaid, and the internal enterprise software of Fidelity, Charles
+Schwab, Vanguard, Morgan Stanley, and JPMorgan Chase. **The objective is not to imitate any specific
+product**, but to reach the same level of professionalism, usability, consistency, accessibility,
+operational efficiency, and visual refinement — while remaining unmistakably consistent with the
+approved Farmers Insurance brand identity. When a choice is unclear, pick the option a regulated,
+enterprise-grade financial platform would ship.
 
 ---
 
-## 1. Design philosophy [STANDARD]
+## 1. Design governance [STANDARD]
 
-FSOS is **enterprise financial software**, not consumer SaaS. It is an operator's cockpit for a
-licensed FSA and their partners. The philosophy:
+`DESIGN.md` is the **authoritative source** for: design tokens · color system · typography · spacing ·
+layout · components · responsive behavior · accessibility · motion · branding · interaction patterns.
+
+- **No component, page, or feature may introduce a new design pattern, token, or component variant
+  without updating this document in the same change.** New patterns are added here first, then built.
+- **Conflict order:** `CLAUDE.md` → `DESIGN.md` → existing implementation.
+- Design decisions never drift into `CLAUDE.md`; that contract references this file.
+
+This single rule prevents design drift across the app's surfaces over time.
+
+---
+
+## 2. Design philosophy [STANDARD]
+
+FSOS is **enterprise financial software**, not consumer SaaS — an operator's cockpit for a licensed FSA
+and their partners.
 
 - **Enterprise financial software** — built for repeated, high-stakes daily operation.
 - **Executive dashboards** — surface what needs attention, not raw data dumps.
-- **Operational efficiency** — fast task completion; minimize clicks, waits, and context loss.
-- **High information density** — dense but legible; never sacrifice clarity for whitespace fashion.
-- **Trust-first UI** — the interface signals security, stability, and competence before it markets.
+- **Operational efficiency** — fast task completion; minimize clicks, waits, context loss.
+- **High information density** — dense but legible; never trade clarity for whitespace fashion.
+- **Trust-first UI** — signal security, stability, and competence before marketing.
 - **Professional visual hierarchy** — the eye lands on the right thing first, every time.
-- **Minimal cognitive load** — consistent patterns so users learn one screen and know them all.
+- **Minimal cognitive load** — learn one screen, know them all.
 - **Fast task completion** — the shortest credible path from intent to done.
-- **Consistent interaction patterns** — the same action behaves the same way everywhere.
+- **Consistent interaction patterns** — the same action behaves the same everywhere.
 
-The signature visual move is preserved: a **deep Farmers-navy shell** (sidebar + topbar) wrapping a
-**cool light content canvas**, with **Farmers blue** for action and **Farmers red** reserved for
-critical alerts, plus two fixed guardrail colors — **gold** (assumption) and **purple** (securities
-firewall).
+Signature visual move (preserved): a **deep Farmers-navy shell** wrapping a **cool light content
+canvas**; **Farmers blue** for action, **Farmers red** for critical alerts only, plus two fixed guardrail
+colors — **gold** (assumption) and **purple** (securities firewall).
 
 ---
 
-## 2. Design principles [STANDARD]
+## 3. Design principles [STANDARD]
 
-Applied in priority order when principles tension against each other:
+Applied in priority order when they tension against each other:
 
-1. **Consistency over creativity** — reuse the established pattern; novelty is a cost, not a feature.
+1. **Consistency over creativity** — reuse the established pattern; novelty is a cost.
 2. **Function over decoration** — every pixel earns its place; no ornamental gradients or glass.
-3. **Trust before marketing** — credibility and clarity precede persuasion on every screen.
+3. **Trust before marketing** — credibility and clarity precede persuasion.
 4. **Information hierarchy** — structure, weight, and space guide attention deliberately.
-5. **Accessibility first** — WCAG 2.2 AA is a floor, designed in, never retrofitted (§14).
-6. **Mobile-first responsiveness** — the FSA works in the field; every surface works on a phone (§9).
-7. **Progressive disclosure** — show the essential; reveal depth on demand (drawers, detail, expand).
+5. **Accessibility first** — WCAG 2.2 AA is a floor, designed in (§22).
+6. **Mobile-first responsiveness** — the FSA works in the field; every surface works on a phone (§14).
+7. **Progressive disclosure** — show the essential; reveal depth on demand.
 8. **Minimal friction** — remove steps, pre-fill known data, prevent avoidable errors.
 9. **Clear workflows** — every screen has a purpose and a next action; no dead ends.
 
 ---
 
-## 3. Farmers brand system [STANDARD]
+## 4. UX decision framework [STANDARD]
 
-The Farmers logo and brand assets are **trademarked**. As an authorized agent, use the **approved
-assets stored in the repo** — never download from third-party sites, recreate, redraw, recolor, or
-substitute. Specific Farmers spec values below marked *(config default — verify)* must be confirmed
-against official Farmers brand guidelines before treating them as authoritative (`CLAUDE.md §3.3`).
+When two layouts or interactions are both defensible, resolve in this order — the earlier factor wins:
 
-### 3.1 Logo usage
+```
+clarity  →  speed  →  consistency  →  density  →  visual elegance
+```
+
+- **Clarity** — the user instantly understands what they're seeing and can do.
+- **Speed** — the option that completes the task in fewer steps / less waiting.
+- **Consistency** — the option that matches an existing FSOS pattern.
+- **Density** — the option that surfaces more useful information without clutter.
+- **Visual elegance** — the more refined option, all else equal.
+
+Never sacrifice a higher factor for a lower one (e.g., don't add visual flair that reduces clarity, or
+density that hurts speed).
+
+---
+
+## 5. Farmers brand system [STANDARD]
+
+The Farmers logo and brand assets are **trademarked**. As an authorized agent, use the **approved assets
+stored in the repo** — never download from third-party sites, recreate, redraw, recolor, or substitute.
+Values marked *(config default — verify)* must be confirmed against official Farmers brand guidelines
+before treating them as authoritative (`CLAUDE.md` No-Invented-Farmers-Data guardrail).
+
+### 5.1 Logo usage
 | Path | Asset |
 |---|---|
 | `public/brand/farmers-logo.svg` | Primary color lockup (vector, preferred everywhere) |
 | `public/brand/farmers-logo-alt.svg` | Alternate approved lockup |
 | `public/brand/farmers-logo.png` / `.jpeg` | Raster fallbacks |
 
-- **Clear space:** maintain a protected margin around the logo of at least the height of the logo's
-  primary mark on all sides *(config default — verify)*. Nothing crowds it — no text, icon, or edge.
-- **Minimum size:** do not render the lockup below a legible floor *(config default — verify; suggested
-  ≥ 120px wide for the horizontal lockup, ≥ 24px for the mark)*. Below that, use the mark-only variant.
-- **Approved variants:** primary color lockup (default), alternate lockup, mark-only for compact
-  contexts (favicon/app icon). Prefer the SVG; use raster only as a fallback.
+- **Clear space:** protected margin around the logo of at least the height of its primary mark on all
+  sides *(config default — verify)*. Nothing crowds it.
+- **Minimum size:** do not render below a legible floor *(config default — verify; suggested ≥120px wide
+  for the horizontal lockup, ≥24px for the mark)*. Below that, use the mark-only variant.
+- **Approved variants:** primary color lockup (default), alternate lockup, mark-only for compact contexts.
+  Prefer SVG; raster is fallback only.
 - **When NOT to use the Farmers logo:** internal operator chrome uses the FSA's own `BrandMark`
-  monogram, **not** the trademark. Do not place the Farmers logo on speculative, non-approved, or
-  client-advice surfaces where it could imply Farmers endorsement of individualized advice. The
-  securities firewall (`CLAUDE.md §3.1`) applies to brand presentation as well as data.
+  monogram, **not** the trademark. Never place the Farmers logo where it could imply Farmers endorsement
+  of individualized advice (the securities firewall applies to presentation, not just data).
 - **Never:** stretch, distort, crop, rotate, recolor, redraw, recreate, add effects, place on
-  low-contrast backgrounds, or use low-resolution/placeholder marks. If an approved asset is missing,
-  **document the gap** — never substitute an unofficial version.
+  low-contrast backgrounds, or use low-res/placeholder marks. Missing approved asset → **document the
+  gap**, never substitute.
 
-### 3.2 Brand colors — official palette (source of truth)
+### 5.2 Brand colors — official palette (source of truth)
 Extracted from the approved brand SVG (`public/brand/farmers-logo.svg`), not a third-party site.
 
 | Role | Official | Approx HSL | Implemented as |
@@ -104,40 +134,26 @@ Extracted from the approved brand SVG (`public/brand/farmers-logo.svg`), not a t
 | Neutral gray | `#666666` | `0 0% 40%` | neutral ink/dividers only |
 | White | `#FFFFFF` | `0 0% 100%` | canvas / card |
 
-The official palette is the **source of truth**; the `§5` HSL tokens are the **implementation**. Any
-divergence exists only to meet WCAG 2.2 AA contrast and is documented here. Never inline hex to "match
-the brand" — add a named token if a full-saturation surface is genuinely required.
+Official palette is the **source of truth**; the §6 tokens are the **implementation**. Divergences exist
+only to meet WCAG 2.2 AA and are documented here. Never inline hex to "match the brand" — add a named
+token if a full-saturation surface is genuinely required.
 
-### 3.3 Typography hierarchy
-DM Sans (body/UI) + DM Mono (labels, numerics), via `next/font` → `font-sans` / `font-mono`. Fixed rem
-scale (Product register), full scale in §5.4. **Every money value, policy #, date, ID, and % renders in
-`.numeric` (DM Mono, tabular-nums).** Uppercase DM Mono section labels (`.mono-label`, 11px, tracked)
-are a signature character marker and must not be lost.
-
-### 3.4 Iconography [STANDARD]
-- One icon library across the app (the project's chosen set); do not mix families.
-- Consistent stroke weight and optical size; icons sit on the 24px grid, 16–20px in dense UI.
-- Every icon has an accessible label or is `aria-hidden` when paired with visible text.
-- Icons clarify, never decorate; no unexplained glyphs. Status icons pair with color, never replace it.
-
-### 3.5 Illustration & photography [STANDARD]
-- **Illustration:** restrained, geometric, brand-aligned; used for empty states and onboarding only,
-  never as decorative filler on operational screens.
-- **Photography:** professional, financial-services-appropriate, high resolution; people and settings
-  read as credible and trustworthy. No stock clichés, no low-res imagery. Public/marketing surfaces
-  only — never inside operator dashboards.
+### 5.3 Typography, iconography, imagery
+- **Type:** DM Sans (body/UI) + DM Mono (labels/numerics), via `next/font`. Scale in §6.4. Uppercase DM
+  Mono section labels (`.mono-label`) are a signature marker. Every money/policy #/date/ID/% in `.numeric`.
+- **Iconography:** one icon library; consistent stroke/optical size; 16–20px in dense UI; every icon
+  labeled or `aria-hidden`; icons clarify, never decorate; status icons pair with color, never replace it.
+- **Illustration:** restrained, geometric, brand-aligned; empty states and onboarding only.
+- **Photography:** professional, financial-services-appropriate, high-res; public/marketing surfaces only,
+  never inside operator dashboards. No stock clichés, no low-res imagery.
 
 ---
 
-## 4. — reserved — (brand direction folds into §1 and §3)
-
----
-
-## 5. Design tokens [AS-BUILT]
+## 6. Design tokens [AS-BUILT]
 
 All tokens are HSL CSS variables in `src/app/globals.css :root`, surfaced through `tailwind.config.ts`.
 
-### 5.1 Surfaces & ink
+### 6.1 Surfaces & ink
 | Token | Tailwind | Role |
 |---|---|---|
 | `--shell` `226 44% 12%` | `bg-shell` | Sidebar, topbar, dense dark panels |
@@ -152,7 +168,7 @@ All tokens are HSL CSS variables in `src/app/globals.css :root`, surfaced throug
 | `--muted-foreground` `224 14% 42%` | `text-muted-foreground` | Secondary ink (AA on canvas) |
 | `--border` / `--input` | `border-border` / `border-input` | Hairlines, control borders |
 
-### 5.2 Brand & accent
+### 6.2 Brand & accent
 | Token | Tailwind | Role |
 |---|---|---|
 | `--primary` `214 88% 40%` (Farmers blue) | `bg-primary` / `text-primary` | Primary actions, active nav, links |
@@ -162,29 +178,25 @@ All tokens are HSL CSS variables in `src/app/globals.css :root`, surfaced throug
 | `--destructive` `350 78% 43%` (Farmers red) | `bg-destructive` | Destructive / critical / blocking only |
 | `--ring` `214 88% 42%` | `ring-ring` | Focus ring (halo: `--ring-halo`) |
 
-### 5.3 Signature gold & semantics
+### 6.3 Signature gold & semantics
 - **Gold** (`--gold`, `--gold-deep` `38 76% 34%` text-grade) = attention + **assumption** only. Never success.
-- **Purple** (`--status-security` / `--status-escalated` `262 47% 42%`) = securities / FFS-managed / escalated. Makes the firewall visible.
+- **Purple** (`--status-security` / `--status-escalated` `262 47% 42%`) = securities / FFS-managed / escalated.
 - **Green** (`--status-won` `152 55% 39%`) = won / placed / active only.
-- **Red** (`--status-lost` `0 72% 51%`) = lost / blocked / error only. *(Distinct from `--destructive`, which is action-grade Farmers red.)*
+- **Red** (`--status-lost` `0 72% 51%`) = lost / blocked / error only. *(Distinct from action-grade `--destructive`.)*
 
-Status ramp: `--status-{draft,active,pending,won,lost,blocked,escalated,assumption,security}`, surfaced
-as `bg-status-*` / `text-status-*`, consumed by `<Badge>`.
+Status ramp: `--status-{draft,active,pending,won,lost,blocked,escalated,assumption,security}` →
+`bg-status-*` / `text-status-*`, consumed by `<Badge>`.
 
-### 5.4 Type, space, radius, elevation
-- **Type scale:** display 30/36 · h1 24/32 · h2 18/26 · h3 15/22 · body 14/21 · small 13/18 ·
-  label 11/16 (`.mono-label`) · numeric (`.numeric`, tabular-nums).
+### 6.4 Type, space, radius, elevation, density
+- **Type scale:** display 30/36 · h1 24/32 · h2 18/26 · h3 15/22 · body 14/21 · small 13/18 · label 11/16 (`.mono-label`) · numeric (`.numeric`, tabular-nums).
 - **Spacing:** 4 / 8 / 12 / 16 / 24 / 32 / 48. Section gap 24, card padding 16.
 - **Radius:** `--radius: 0.625rem` → `rounded-sm/md/lg/xl`. No oversized radii.
-- **Elevation:** navy-tinted `--shadow-xs…xl` → `shadow-elev-*`. Cards flush (`shadow-elev-xs`), lift on
-  interaction, overlays float on `xl`. No heavy gray drops.
+- **Elevation:** navy-tinted `--shadow-xs…xl` → `shadow-elev-*`. Cards flush, lift on interaction, overlays float on `xl`.
 - **Density:** table rows 40px, header 32px. Sidebar 260px, topbar 56px, content max-width 1400px.
-
-### 5.5 Brand assets — see §3.1 for paths and trademark rules (binding).
 
 ---
 
-## 6. Core components [AS-BUILT] (`src/components/ui`)
+## 7. Core components [AS-BUILT] (`src/components/ui`)
 
 | Component | API surface | States |
 |---|---|---|
@@ -200,235 +212,109 @@ as `bg-status-*` / `text-status-*`, consumed by `<Badge>`.
 
 ---
 
-## 7. Enterprise component standards [STANDARD]
+## 8. Enterprise component standards [STANDARD]
 
-Extends the core set. Every pattern below resolves color through tokens, ships all states (§17), is
-keyboard-operable, and is responsive (§9).
+Extends the core set. Every pattern resolves color through tokens, ships all states (§27), is
+keyboard-operable, and is responsive (§14).
 
-- **Tables:** mono header (32px), 40px rows, hover `bg-muted`, zebra optional. Sortable columns show
-  direction; sticky header on scroll; column alignment by type (text left, numeric right in `.numeric`).
-  Row actions in a trailing cell or overflow menu. Bulk-select with a contextual command bar. Pagination
-  or virtualized scroll past ~100 rows. Empty, loading (`ListSkeleton`), and error states mandatory.
-- **Charts:** series colors from tokens only; positive/negative use `--status-won` / `--status-lost`
-  (never `--destructive`); axes and gridlines use `--border`/`--muted-foreground`. Always labeled, with
-  legend, units, and an accessible summary. Loading skeleton, empty state, and "no data" distinct from
-  "zero value." (§10.)
-- **KPI cards** (`StatTile`): mono eyebrow label, large `.numeric` value, trend indicator (§10.2), links
-  to its source. Hover raises with accent. Never a number with no context or drill-in.
-- **Filters:** grouped, labeled, with clear active-filter chips and a one-click "clear all." State
-  reflected in the URL for shareable/bookmarkable views. Applied filters visibly change results.
-- **Search:** debounced, scoped, with typeahead where useful; empty-query and no-results states differ;
-  results keyboard-navigable. The topbar global search is real (multi-entity), never a stub.
-- **Command bar:** appears on bulk selection — count + scoped actions + clear selection; destructive
-  actions confirm.
-- **Command palette:** keyboard-first (`⌘K`/`Ctrl-K`), fuzzy nav + actions, grouped, fully keyboard
-  operable, respects permissions (never surfaces forbidden actions).
-- **Empty states** (`EmptyState`): explain what would appear here and offer the next action — never a
-  blank panel.
-- **Error pages/states** (`ErrorState`): isolated to the failed region, plain-language cause, a retry,
-  and a safe fallback path. Never a raw stack trace.
-- **Loading screens:** skeletons that mirror final layout (`ListSkeleton`/`CardsSkeleton`), never a bare
-  centered spinner; `.shimmer` sheen; progressive reveal as data arrives.
-- **Toasts** (Sonner): bottom-right, one concern each, auto-dismiss for success, persistent + actionable
-  for errors. Not used for anything that needs a durable record.
-- **Notifications:** bell → panel with unread state, grouping, and deep links to the source record;
-  read/unread persisted.
-- **Timeline / activity feed:** reverse-chronological, typed entries (call/text/email/AI action/system),
-  each attributable and timestamped, filterable, linking to the record. AI and automated entries are
-  visibly marked; audit-linked (`CLAUDE.md §11.9`).
-- **Drawers / side panels:** for progressive disclosure and quick edits without losing context; focus
-  trap, escape to close, non-destructive dismiss preserves entered data.
+- **KPI cards** (`StatTile`): mono eyebrow label, large `.numeric` value, trend indicator (§15.2), drill-in link. Never a bare number.
+- **Filters:** grouped, labeled, active-filter chips + one-click "clear all"; state reflected in the URL (§12).
+- **Search:** debounced, scoped, typeahead where useful; distinct empty-query vs no-results; keyboard-navigable. Global search is real (multi-entity), never a stub.
+- **Command bar:** appears on bulk selection — count + scoped actions + clear; destructive actions confirm.
+- **Command palette:** `⌘K`/`Ctrl-K`, fuzzy nav + actions, grouped, fully keyboard-driven, permission-aware.
+- **Toasts** (Sonner): bottom-right, one concern each; success auto-dismisses, errors persist + are actionable. Not for anything needing a durable record.
+- **Notifications:** bell → panel with unread state, grouping, deep links to source; read/unread persisted.
+- **Timeline / activity feed:** reverse-chron, typed entries (call/text/email/AI/system), each attributable + timestamped, filterable, record-linked; AI/automated entries visibly marked; audit-linked.
+- **Drawers / side panels:** progressive disclosure and quick edits without losing context; focus trap, escape to close, non-destructive dismiss preserves entered data.
+- **Empty / error / loading:** see §17 (empty), §8-tables (loading/error), §27 checklist.
 
 ---
 
-## 8. Archetype shells [AS-BUILT] (`src/components/archetypes`)
+## 9. Enterprise table standards [STANDARD]
+
+Tables are central to FSOS; they must behave like an enterprise data grid.
+
+- **Structure:** mono header (32px), 40px rows, hover `bg-muted`, optional zebra; column alignment by type (text left; numeric right in `.numeric`).
+- **Sticky columns & header:** header sticks on vertical scroll; the identifying first column sticks on horizontal scroll.
+- **Sorting:** single- and **multi-column** sort with visible direction indicators and sort order.
+- **Column visibility & density:** user can show/hide columns and toggle comfortable/compact density.
+- **Saved views:** named filter + sort + column configurations, persisted and shareable via URL (§12).
+- **Export:** export current view (respecting filters/columns) to CSV; large exports run as a background job (§24), not a blocking request.
+- **Selection & bulk:** row select → contextual command bar (§8); destructive bulk actions confirm.
+- **Pagination / virtualization:** paginate or virtualize past ~100 rows; never render thousands of DOM rows.
+- **Keyboard navigation:** arrow-key row/cell movement, Enter to open, selection via keyboard.
+- **States:** `ListSkeleton` loading, `EmptyState` (§17), isolated retryable error. "No data" is distinct from "no results for filter."
+
+---
+
+## 10. Archetype shells [AS-BUILT] (`src/components/archetypes`)
 
 Reusable, Server-Component-safe page skeletons. **Compose pages from these — do not hand-roll chrome.**
 
 - **Chrome:** `PageHeader` (title + description + breadcrumb + actions), `Breadcrumb`.
 - **A1 Dashboard:** `DashboardShell`, `StatTile`. **A2 List:** `ListShell` (+ toolbar).
 - **A3 Detail:** `DetailShell` (navy header band, status chips, related-records rail).
-- **A4 Board:** `BoardShell`, `BoardColumn` (mono header + count + value total).
-- **A5 Form:** `FormShell` (max-w-2xl, sticky footer). **A6 Wizard:** `WizardShell`.
-- **A10 Settings:** `SettingsShell`, `SettingsSection`. **A11 Report:** `ReportShell`.
-- **A12 Integration:** `IntegrationShell` (fallback note). **A13 Auth:** `AuthShell` (branded navy backdrop + identity lockup).
-- **States (every page ships all):** `EmptyState`, `ForbiddenState`, `ListSkeleton`, `CardsSkeleton`,
-  `ErrorState`, `StatusBadge`, `AssumptionBadge`.
+- **A4 Board:** `BoardShell`, `BoardColumn`. **A5 Form:** `FormShell` (max-w-2xl, sticky footer). **A6 Wizard:** `WizardShell`.
+- **A10 Settings:** `SettingsShell`, `SettingsSection`. **A11 Report:** `ReportShell`. **A12 Integration:** `IntegrationShell`. **A13 Auth:** `AuthShell`.
+- **States (every page ships all):** `EmptyState`, `ForbiddenState`, `ListSkeleton`, `CardsSkeleton`, `ErrorState`, `StatusBadge`, `AssumptionBadge`.
 
 ---
 
-## 9. Enterprise layout system [STANDARD]
+## 11. Enterprise layout system [STANDARD]
 
-Each surface maps to an archetype; layouts stay consistent so users transfer knowledge between screens.
+Each surface maps to an archetype so users transfer knowledge between screens.
 
 | Surface | Layout | Archetype |
 |---|---|---|
-| Public website | Full-width marketing sections, approved Farmers branding, clear CTAs, trust signals | `(public)` templates |
-| Login / Forgot Password | Centered card on branded navy backdrop, identity lockup, minimal fields | `A13 AuthShell` (§12) |
-| Dashboard | KPI row → priority/attention modules → activity; role-scoped | `A1 DashboardShell` |
-| Settings | Left section nav + right form sections; grouped, autosave or explicit save | `A10 SettingsShell` |
+| Public website | Full-width marketing sections, approved branding, clear CTAs, trust signals | `(public)` |
+| Login / Forgot Password | Centered card, branded navy backdrop, identity lockup, minimal fields | `A13 AuthShell` (§20) |
+| Dashboard | KPI row → attention modules → activity; role-scoped (§13) | `A1 DashboardShell` |
+| Settings | Left section nav + right form sections; grouped save/autosave | `A10 SettingsShell` |
 | Reports | Filter bar → summary KPIs → tables/charts → export | `A11 ReportShell` |
-| Tables (list) | Toolbar (search/filter/sort/bulk) → dense table → pagination | `A2 ListShell` |
-| Detail pages | Navy header band + status chips → tabbed content + related-records rail | `A3 DetailShell` |
-| Forms | Single-column, grouped, sticky action footer, inline validation | `A5 FormShell` (§11) |
-| Wizards | Stepper + per-step validation + save/resume | `A6 WizardShell` (§11.4) |
+| Tables (list) | Toolbar (search/filter/sort/bulk) → dense grid → pagination | `A2 ListShell` (§9) |
+| Detail pages | Navy header band + status chips → tabbed content + related rail | `A3 DetailShell` |
+| Forms | Single-column, grouped, sticky footer, inline validation | `A5 FormShell` (§16) |
+| Wizards | Stepper + per-step validation + save/resume | `A6 WizardShell` (§16) |
 | Analytics | KPI grid + charts + drill-down; time-range + segment controls | `A1`/`A11` composed |
-| Admin pages | List/detail/settings composition, elevated permissions, heavy audit visibility | `A2/A3/A10` |
+| Admin | List/detail/settings composition, elevated perms, heavy audit visibility | `A2/A3/A10` |
 
 Global chrome: sidebar 260px, topbar 56px, content max-width 1400px, centered. One `PortalShell` powers
-all six portals (§13).
+all six portals (§21).
 
 ---
 
-## 10. Data visualization standards [STANDARD]
+## 12. Navigation standards [STANDARD]
 
-Financial data must be unambiguous, accessible, and consistently formatted.
+Navigation is core to enterprise usability. It must be predictable, persistent, and deep-linkable.
 
-**10.1 Charts.** Token-driven series colors; never color-only encoding (pair with labels, patterns, or
-direct values). Always: title, axis labels, units, legend, and a text/`aria` summary. Distinguish
-"no data" from "zero." Truncate/aggregate large series; never render an unreadable spaghetti chart.
-Loading skeleton and empty state required. Use the project's chosen charting library; do not introduce
-a new dependency without updating `CLAUDE.md`.
-
-**10.2 Trend & positive/negative.** Gains/up = `--status-won` green with an up indicator; losses/down =
-`--status-lost` red with a down indicator; neutral = `--muted-foreground`. The +/− sign and arrow icon
-carry meaning independent of color (colorblind-safe). `--destructive` is **not** used for financial
-negatives — it is reserved for destructive/critical actions.
-
-**10.3 Formatting (all in `.numeric`, tabular-nums).**
-- **Currency:** grouped thousands, 2 decimals for exact figures, abbreviated (`$1.2M`, `$14.5K`) in
-  dense KPIs; currency symbol always shown; negative as `-$1,200` (context may add red).
-- **Percentages:** one decimal by default (`12.4%`); show the sign for deltas (`+3.1%`).
-- **Dates:** unambiguous format (`Jul 21, 2026`), never locale-ambiguous numerics; relative time
-  (`3d ago`) allowed in feeds with an absolute tooltip.
-- **Time series:** consistent interval labeling; align axis zero; annotate gaps.
-- **Dashboard KPIs:** value + label + trend + drill-in link; comparison baseline stated (vs. prior
-  period / target).
+- **Breadcrumbs:** every non-top-level page shows a breadcrumb reflecting real hierarchy; each crumb is a working link; the current page is the last, non-linked crumb.
+- **Sidebar behavior:** 260px, grouped by OS cluster under mono labels; collapses to `MobileTabBar` on mobile (§14); scroll-independent of content.
+- **Active navigation:** the active `NavLink` is unmistakable (raised + 2px accent bar + weight bump); active state derives from the URL, not local state.
+- **Global search:** real, multi-entity, in the topbar; results deep-link to records.
+- **Deep links & URL persistence:** every meaningful view state (selected record, tab, filters, sort, saved view, search query, pagination) lives in the URL — bookmarkable, shareable, reloadable without loss.
+- **Browser back:** the back button navigates as expected and never exits the app or resets to a default screen. (Legacy `useState`-based navigation is a known debt, §30 / `CLAUDE.md` build reality.)
+- **Command palette:** `⌘K` for keyboard-first navigation and actions across the app (§8).
 
 ---
 
-## 11. Form UX standards [STANDARD]
+## 13. Enterprise dashboard rules [STANDARD]
 
-Forms are operational workflows, not input piles (`CLAUDE.md §11.3`). Every FSOS write is Zod-validated
-end-to-end (`CLAUDE.md §2.1`).
+Every dashboard is an executive decision surface, not a metrics wall. Each dashboard must let its user
+answer, at a glance:
 
-- **Validation:** inline, near the affected field, on blur and on submit; an accessible error summary at
-  the top for long forms; block submit until valid but never trap the user.
-- **Error placement:** directly beneath the field, in plain language, with how to fix it.
-- **Required fields:** clearly marked; optional fields labeled when the default expectation is required.
-- **Loading:** disable submit and show progress during async submit; prevent duplicate submission.
-- **Autosave:** for long/settings forms where safe; show save state ("Saved 12:04"); never autosave
-  destructive or compliance-sensitive actions silently.
-- **Confirmation:** explicit success state; destructive/irreversible actions require a confirm step.
-- **Recovery:** on a recoverable error, preserve all entered data — never clear the form.
-- **Keyboard navigation:** logical tab order, Enter submits where appropriate, Escape cancels dialogs,
-  all controls reachable and operable.
-- **Multi-step (wizards):** visible stepper, per-step validation, back without data loss, save/resume,
-  final review before commit. Consent/disclosure language rendered where applicable.
+1. **What needs my attention?** — the top-priority items surfaced first.
+2. **What's overdue?** — deadlines passed, SLAs breached.
+3. **What's new?** — since last visit.
+4. **What's blocked?** — escalations, compliance holds, `is_security` items awaiting human/FFS.
+5. **What's performing well?** — positive signal and momentum.
+6. **What should I do next?** — a clear next action from the dashboard itself.
+
+Every KPI links to its source; every "attention" item links to the record and its next action. Content
+is role-scoped (§11). No dead-end tiles.
 
 ---
 
-## 12. Authentication design standards [STANDARD]
-
-Auth is a P0 regulatory blocker (`CLAUDE.md §13`) and the first trust impression. All auth screens use
-`A13 AuthShell` — centered card on branded navy backdrop with the identity lockup.
-
-- **Login:** minimal fields (email + password or magic link), visible focus, inline error, no user
-  enumeration in error copy, "forgot password" link, clear submit.
-- **Forgot Password:** single field, neutral confirmation regardless of account existence (no
-  enumeration), clear next-step guidance.
-- **Session timeout:** warn before expiry with an extend option; on expiry, preserve intended
-  destination and return the user there after re-auth; never dump unsaved work silently.
-- **MFA:** clean code entry (auto-advance, paste-friendly), resend with cooldown, recovery path, clear
-  error on invalid/expired code.
-- **Locked account:** explain the lock, the reason category, and the recovery path; never reveal
-  security internals.
-- **States:** loading (submitting), success (redirect with confirmation), error (specific but
-  non-enumerating). All auth states are branded, accessible, and responsive.
-
----
-
-## 13. The branded shell [AS-BUILT] (`src/components/portal`)
-
-One `PortalShell` powers all six authenticated portals (`portalLabel`, `nav`, `banner`, `panels`, topbar
-wiring). Topbar: sticky 56px navy — global search, AI, bell, `ProfileMenu`. Sidebar: 260px
-`shell-gradient`, `IdentityLockup`, nav grouped by OS cluster under mono labels, optional character
-panels (FSA: AI Live Status, GDC Tier, FFS Contacts). Mobile: `MobileTabBar`. Nav via `NavLink` (36px,
-active = raised + 2px accent bar + weight bump).
-
----
-
-## 14. Accessibility standards [STANDARD] — WCAG 2.2 AA (floor)
-
-- **Contrast:** text and meaningful UI meet AA on **both** shell and canvas (tokens are pre-tuned; the
-  `--*-deep` variants are ≥4.5:1 text-grade). Never rely on color alone to convey state.
-- **Focus:** every interactive element has a visible focus indicator (`--ring`/`--ring-halo`); focus is
-  never removed, only restyled; focus order matches visual order; focus is not obscured (WCAG 2.2 2.4.11).
-- **Keyboard:** full operability without a mouse; no keyboard traps; dialogs/drawers trap and restore
-  focus; `⌘K` palette fully keyboard-driven; skip-to-content link on long pages.
-- **Screen readers:** semantic HTML; correct roles/labels/`aria`; live regions for async updates and
-  toasts; icon-only controls carry accessible names; tables use proper headers.
-- **Motion reduction:** honor `prefers-reduced-motion` globally (reset in place); no essential
-  information conveyed by motion alone.
-- **Target sizes:** interactive targets meet WCAG 2.2 2.5.8 (≥24×24px minimum); touch targets aim for
-  ≥44×44px on mobile.
-- **Forms:** programmatic labels, error text associated to fields, error summaries linkable, no
-  time-only or color-only error signaling.
-
-Accessibility is verified as part of the Definition of Done (§17, `CLAUDE.md §14`), not bolted on.
-
----
-
-## 15. Motion system [STANDARD]
-
-- **Durations:** 150–250ms for UI transitions; ≤400ms for larger overlays; instant (<100ms) for hover.
-- **Easings:** ease-out for entrances, ease-in for exits; no bounce/elastic in Product register.
-- **Loading / skeletons:** `.shimmer` sheen on skeletons that mirror final layout; never a bare spinner
-  as the primary loader.
-- **Hover:** subtle elevation/accent shift; cards lift, `NavLink` raises with a 2px accent bar.
-- **Focus:** ring appears instantly (no delay); halo on `--ring-halo` for emphasis.
-- **Transitions:** `fade-in-up`, `shimmer`, accordion keyframes only; motion conveys state change and
-  spatial relationship, never decoration. All motion respects `prefers-reduced-motion` (§14).
-
----
-
-## 16. Definition of Done — design surface [STANDARD]
-
-The design view of `CLAUDE.md §14`; both must be satisfied. Every page:
-
-Wired real data · Zod-validated inputs · enforced permissions (403 via `ForbiddenState`) · empty /
-loading (skeleton, never bare spinner) / error (isolated, retryable) / success states · responsive
-desktop→tablet→mobile · WCAG 2.2 AA · audit events written · gold assumption badge on every config
-default · purple firewall marker on every `is_security` row · approved brand assets only (§3.1) · no
-dead ends.
-
----
-
-## 17. Impeccable design checklist [STANDARD]
-
-Run `impeccable` after implementation. **Every page must pass all of the following before it ships:**
-
-- ✓ Visual consistency (tokens, no ad-hoc values)
-- ✓ Proper spacing (4/8/12/16/24/32/48 scale)
-- ✓ Proper typography (scale + `.numeric` on all money/IDs/dates/%)
-- ✓ Responsive (mobile → tablet → laptop → desktop → ultra-wide, §9)
-- ✓ Accessibility (WCAG 2.2 AA — focus, keyboard, screen readers, contrast, targets, §14)
-- ✓ Loading states (skeletons mirror layout)
-- ✓ Empty states (explain + next action)
-- ✓ Error states (isolated, plain-language, retryable)
-- ✓ Success states (explicit confirmation)
-- ✓ Keyboard (full operability, logical order, no traps)
-- ✓ Mobile (usable one-handed, `MobileTabBar`, targets ≥44px)
-- ✓ Trust signals (branding, security cues, clarity)
-- ✓ Enterprise polish (alignment, density, microcopy, interaction quality)
-- ✓ Brand compliance (approved assets, palette via tokens, §3)
-- ✓ Guardrail markers (gold assumption, purple securities firewall)
-
-Do not stop when the page merely works — continue until every box is checked.
-
----
-
-## 18. Responsive standards [STANDARD]
+## 14. Responsive standards [STANDARD]
 
 Mobile-first. Breakpoints follow the Tailwind scale; behavior is specified per surface.
 
@@ -438,27 +324,251 @@ Mobile-first. Breakpoints follow the Tailwind scale; behavior is specified per s
 | Tablet | 640–1023px (`sm`/`md`) | Collapsible sidebar; 1–2 column grids; tables scroll with sticky header; side panels overlay |
 | Laptop | 1024–1279px (`lg`) | Persistent 260px sidebar; multi-column dashboards; full tables |
 | Desktop | 1280–1535px (`xl`) | Full layout; content max-width 1400px, centered |
-| Ultra-wide | ≥ 1536px (`2xl`) | Content stays capped at 1400px centered; extra space is margin, not stretched content; optional secondary rails |
+| Ultra-wide | ≥ 1536px (`2xl`) | Content capped at 1400px centered; extra space is margin, not stretched content; optional secondary rails |
 
-Rules: content never exceeds 1400px; no horizontal scroll except intentional table overflow; touch
-targets and spacing scale up on small screens; every archetype and component defines its own collapse
-behavior and is verified at all five tiers as part of §17.
-
----
-
-## 19. Frontend Design skill standard [STANDARD]
-
-**Whenever frontend work is requested, use `frontend-design` first, then `impeccable`.** During the
-work, explicitly review: UX, information hierarchy, layout, spacing, consistency, branding,
-responsiveness, accessibility, interaction quality, conversion paths (public surfaces), and enterprise
-polish. `frontend-design` shapes the experience during build; `impeccable` is the final QA gate (§17).
-Neither is optional for user-facing surfaces (`CLAUDE.md §5–§6`).
+Rules: content never exceeds 1400px; no horizontal scroll except intentional table overflow; targets and
+spacing scale up on small screens; every archetype and component defines its own collapse behavior and is
+verified at all five tiers (§27).
 
 ---
 
-## 20. Known consistency debts (audit backlog) [AS-BUILT]
+## 15. Data visualization standards [STANDARD]
+
+Financial data must be unambiguous, accessible, and consistently formatted.
+
+**15.1 Charts.** Token-driven series colors; never color-only encoding (pair with labels/patterns/values).
+Always: title, axis labels, units, legend, and a text/`aria` summary. Distinguish "no data" from "zero."
+Aggregate large series; never an unreadable chart. Loading skeleton + empty state required. Use the
+project's chosen charting library; do not add a new dependency without updating `CLAUDE.md`.
+
+**15.2 Trend & positive/negative.** Gains/up = `--status-won` green + up indicator; losses/down =
+`--status-lost` red + down indicator; neutral = `--muted-foreground`. Sign and arrow carry meaning
+independent of color (colorblind-safe). `--destructive` is **not** used for financial negatives.
+
+**15.3 Formatting (all `.numeric`, tabular-nums).**
+- **Currency:** grouped thousands; 2 decimals for exact figures; abbreviated (`$1.2M`, `$14.5K`) in dense KPIs; symbol always shown; negatives `-$1,200`.
+- **Percentages:** one decimal by default (`12.4%`); signed for deltas (`+3.1%`).
+- **Dates:** unambiguous (`Jul 21, 2026`), never locale-ambiguous numerics; relative time in feeds with absolute tooltip.
+- **Time series:** consistent intervals; align axis zero; annotate gaps.
+- **KPIs:** value + label + trend + drill-in; comparison baseline stated (vs. prior period / target).
+
+---
+
+## 16. Form UX standards [STANDARD]
+
+Forms are operational workflows (`CLAUDE.md §13.3`). Every FSOS write is Zod-validated end-to-end.
+
+- **Validation:** inline, near the field, on blur and submit; accessible error summary atop long forms.
+- **Error placement:** beneath the field, plain language, with the fix.
+- **Required fields:** clearly marked; optional labeled when the default expectation is "required."
+- **Loading:** disable submit + show progress on async submit; prevent duplicate submission.
+- **Autosave:** for long/settings forms where safe; show save state ("Saved 12:04"); never autosave destructive or compliance-sensitive actions silently.
+- **Confirmation:** explicit success; destructive/irreversible actions confirm first.
+- **Recovery:** preserve all entered data on recoverable error — never clear the form.
+- **Keyboard:** logical tab order; Enter submits where appropriate; Escape cancels dialogs; all controls reachable.
+- **Multi-step:** visible stepper, per-step validation, back without loss, save/resume, final review; consent/disclosure rendered where applicable.
+
+---
+
+## 17. Empty state standards [STANDARD]
+
+An empty state is a first-run teaching moment, never a blank panel (`EmptyState`). Every empty state
+explains, in this order:
+
+1. **Why it's empty** — nothing exists yet, or no results match the current filter (distinguish the two).
+2. **What belongs here** — a one-line description of the content this surface holds.
+3. **How to populate it** — the concrete step(s) to create the first record or clear the filter.
+4. **Primary CTA** — the single best next action, as a button.
+5. **Optional documentation** — a link to relevant help/guide where useful.
+
+Filtered-empty offers "clear filters"; truly-empty offers the create action. Never show a raw "No data."
+
+---
+
+## 18. Microcopy standards [STANDARD]
+
+Consistent language is part of trust. Write for a licensed professional operating a regulated system.
+
+- **Plain English:** clear, direct, jargon only where it's the user's own vocabulary. Sentence case for UI text; Title Case only for proper labels.
+- **Buttons:** action + object, imperative (`Save review`, `Send form`, `Add household`), not vague (`Submit`, `OK`). Destructive buttons name the consequence (`Delete case`).
+- **Errors:** state what happened, why (plainly), and the fix; never blame the user; never expose internals or stack traces.
+- **Confirmations:** name the action and its scope (`Delete this case? This can't be undone.`); the confirm button repeats the verb (`Delete case`).
+- **Financial terminology:** consistent, correct terms (FNA, GDC, FNWL, FFS, household, opportunity, case); currency/percent/date formatting per §15.3.
+- **Regulatory terminology:** use approved, precise language. Render the mandatory disclosures verbatim:
+  - FNA/educational footer: *"For educational and informational purposes only. Not a product recommendation or suitability determination. Requires licensed FSA review per FINRA Reg BI."*
+  - Automated messages carry the required **AI disclosure** (TRAIGA 2026) and honor consent/quiet-hours copy.
+- **Never** use marketing hype or advice/recommendation phrasing in AI-generated or automated client-facing copy (securities red-line, `CLAUDE.md §4.2`).
+
+---
+
+## 19. Trust signals [STANDARD]
+
+Regulated financial software earns confidence through visible, consistent trust cues. Surface, where
+relevant:
+
+- **Audit timestamps** — "Created / Last updated" with time and, where relevant, timezone.
+- **User attribution** — who performed an action (and whether it was **automated vs. human**).
+- **Secure-connection & session cues** — clear signed-in identity, session state, secure context.
+- **Permissions visibility** — show role/scope context; forbidden actions are absent, not broken.
+- **Compliance indicators** — gold **assumption** badge on config defaults; purple **securities-firewall**
+  marker on `is_security`; consent status on contactable records.
+- **Version / change history** — where records evolve (reviews, documents, rate tables), expose history.
+- **Document status** — draft / pending / signed / on-file, with clear state chips.
+- **Approval status** — pending review / approved / blocked / escalated, especially on AI-assisted output.
+- **AI disclosure** — AI-generated or AI-assisted content is visibly marked (§25) and, for client-facing
+  automated messages, carries the required disclosure (§18).
+
+---
+
+## 20. Authentication design standards [STANDARD]
+
+Auth is a P0 regulatory blocker (`CLAUDE.md §20`) and the first trust impression. All auth screens use
+`A13 AuthShell` — centered card on a branded navy backdrop with the identity lockup.
+
+- **Login:** minimal fields, visible focus, inline error, **no user enumeration** in errors, forgot-password link.
+- **Forgot Password:** single field; neutral confirmation regardless of account existence; clear next step.
+- **Session timeout:** warn before expiry with an extend option; on expiry preserve intended destination and return there after re-auth; never drop unsaved work silently.
+- **MFA:** clean code entry (auto-advance, paste-friendly), resend with cooldown, recovery path, clear invalid/expired error.
+- **Locked account:** explain the lock, the reason category, and the recovery path; reveal no security internals.
+- **States:** loading (submitting) / success (redirect + confirmation) / error (specific but non-enumerating). All branded, accessible, responsive.
+
+---
+
+## 21. The branded shell [AS-BUILT] (`src/components/portal`)
+
+One `PortalShell` powers all six authenticated portals (`portalLabel`, `nav`, `banner`, `panels`, topbar
+wiring). Topbar: sticky 56px navy — global search, AI, bell, `ProfileMenu`. Sidebar: 260px
+`shell-gradient`, `IdentityLockup`, nav grouped by OS cluster under mono labels, optional character panels
+(FSA: AI Live Status, GDC Tier, FFS Contacts). Mobile: `MobileTabBar`. Nav via `NavLink` (36px, active =
+raised + 2px accent bar + weight bump).
+
+---
+
+## 22. Accessibility standards [STANDARD] — WCAG 2.2 AA (floor)
+
+- **Contrast:** text and meaningful UI meet AA on **both** shell and canvas (tokens pre-tuned; `--*-deep` variants are ≥4.5:1). Never color-only.
+- **Focus:** visible indicator on every interactive element (`--ring`/`--ring-halo`); focus never removed, only restyled; focus order matches visual order; focus not obscured (WCAG 2.2 2.4.11).
+- **Keyboard:** full operability without a mouse; no traps; dialogs/drawers trap + restore focus; `⌘K` fully keyboard-driven; skip-to-content on long pages.
+- **Screen readers:** semantic HTML; correct roles/labels/`aria`; live regions for async updates + toasts; icon-only controls named; tables use proper headers.
+- **Motion reduction:** honor `prefers-reduced-motion` globally; no essential info by motion alone.
+- **Target sizes:** ≥24×24px (WCAG 2.2 2.5.8); touch targets aim ≥44×44px on mobile.
+- **Forms:** programmatic labels, error text associated to fields, linkable error summaries, no time-only or color-only signaling.
+
+Accessibility is verified in the Definition of Done (§27, `CLAUDE.md §21`), not bolted on.
+
+---
+
+## 23. Motion system [STANDARD]
+
+- **Durations:** 150–250ms UI transitions; ≤400ms larger overlays; <100ms hover.
+- **Easings:** ease-out entrances, ease-in exits; no bounce/elastic in Product register.
+- **Loading/skeletons:** `.shimmer` on skeletons mirroring final layout; never a bare spinner as primary loader.
+- **Hover:** subtle elevation/accent; cards lift, `NavLink` raises with a 2px accent bar.
+- **Focus:** ring appears instantly; `--ring-halo` for emphasis.
+- **Transitions:** `fade-in-up`, `shimmer`, accordion keyframes only; motion conveys state/spatial relationship, never decoration. All motion respects `prefers-reduced-motion`.
+
+---
+
+## 24. Performance UX [STANDARD]
+
+Loading behavior is standardized by expected duration so it feels consistent everywhere. This is the UX
+side of `CLAUDE.md §14 (performance budget)`.
+
+| Expected wait | Pattern |
+|---|---|
+| ≤ 100ms | **Instant** — no loading indicator; just render. |
+| ~100–500ms | **Skeleton** — layout-mirroring skeleton (`.shimmer`), never a bare spinner. |
+| ~500ms–2s | **Progress** — skeleton + explicit progress/step indicator for longer waits. |
+| > ~2–10s | **Progress + reassurance** — determinate progress where possible; keep the UI responsive. |
+| > ~10s | **Background job** — hand off to the job system; show a queued/processing state and notify on completion (large exports, batch AI, bulk operations). |
+
+Never block the UI on long work; never leave the user staring at an unexplained spinner.
+
+---
+
+## 25. AI UX standards [STANDARD]
+
+AI is central to FSOS and must be transparent, governed, and always human-supervisable. This is the UX
+surface of `CLAUDE.md §11.1 (AI governance)`.
+
+- **AI badges:** AI-generated or AI-assisted content is clearly marked as such wherever it appears.
+- **AI confidence:** surface confidence where it informs the user; low-confidence output is visibly flagged and routed to human review, never presented as settled.
+- **AI attribution:** activity/timeline entries distinguish AI actions from human actions; the model/agent is identified.
+- **Human approval:** client-facing or regulated AI output shows an explicit **pending review → approved** state; nothing dispatches without passing the guardrail and (where required) human sign-off.
+- **Generated content:** clearly labeled as a draft; the mandatory disclosures (§18) are attached to FNA/educational output.
+- **Editable outputs:** AI drafts are editable by the FSA before use; edits are captured.
+- **AI history:** prior AI runs/versions for a record are viewable (prompt version, model, outcome), consistent with the audit trail.
+
+AI never silently takes a regulated client-facing action; the red-line (`CLAUDE.md §4.2`) governs all AI
+copy and behavior.
+
+---
+
+## 26. Definition of Done — design surface [STANDARD]
+
+The design view of `CLAUDE.md §21`; both must be satisfied. Every page:
+
+Wired real data · Zod-validated inputs · enforced permissions (403 via `ForbiddenState`) · empty /
+loading (skeleton) / error (isolated, retryable) / success states · responsive across all five tiers (§14)
+· WCAG 2.2 AA (§22) · audit events written · gold assumption badge on every config default · purple
+firewall marker on every `is_security` row · approved brand assets only (§5) · AI content marked and
+governed (§25) · trust signals present (§19) · no dead ends · `DESIGN.md` updated if any pattern changed (§1).
+
+---
+
+## 27. Impeccable design checklist [STANDARD]
+
+Run `impeccable` after implementation. **Every page must pass all of the following before it ships:**
+
+- ✓ Visual consistency (tokens, no ad-hoc values)
+- ✓ Proper spacing (4/8/12/16/24/32/48)
+- ✓ Proper typography (scale + `.numeric` on all money/IDs/dates/%)
+- ✓ Responsive (mobile → tablet → laptop → desktop → ultra-wide, §14)
+- ✓ Accessibility (WCAG 2.2 AA — focus, keyboard, screen readers, contrast, targets, §22)
+- ✓ Loading states (skeletons mirror layout; correct duration pattern, §24)
+- ✓ Empty states (why / what / how / CTA, §17)
+- ✓ Error states (isolated, plain-language, retryable)
+- ✓ Success states (explicit confirmation)
+- ✓ Keyboard (full operability, logical order, no traps)
+- ✓ Mobile (usable one-handed, `MobileTabBar`, targets ≥44px)
+- ✓ Trust signals (§19)
+- ✓ Enterprise polish (alignment, density, microcopy §18, interaction quality)
+- ✓ Brand compliance (approved assets, palette via tokens, §5)
+- ✓ Guardrail markers (gold assumption, purple securities firewall)
+- ✓ AI UX (badges, confidence, approval state, §25)
+
+Do not stop when the page merely works — continue until every box is checked.
+
+---
+
+## 28. Design review workflow [STANDARD]
+
+Review every UI change in this order — earlier layers gate later ones (a broken structure isn't saved by
+polish):
+
+```
+Structure → Hierarchy → Navigation → Spacing → Typography → Accessibility →
+States → Responsiveness → Branding → Interactions → Performance → Polish
+```
+
+`frontend-design` drives the first passes (structure through branding); `impeccable` drives the final
+passes (states, interactions, performance, polish) and runs the §27 checklist.
+
+---
+
+## 29. Frontend Design skill standard [STANDARD]
+
+**Whenever frontend work is requested, use `frontend-design` first, then `impeccable`.** During the work,
+explicitly review: UX, information hierarchy, layout, spacing, consistency, branding, responsiveness,
+accessibility, interaction quality, conversion paths (public surfaces), and enterprise polish. Neither
+skill is optional for user-facing surfaces (`CLAUDE.md §7`).
+
+---
+
+## 30. Known consistency debts (audit backlog) [AS-BUILT]
 
 Tracked in `docs/design-audit.md` (Impeccable audit). Highest-leverage items — fixing them once
-propagates across all pages — are addressed at the shared-foundation layer (tokens, `ui/*`,
-`PortalShell`, archetypes) before any per-page work. Re-run `impeccable` after foundation changes and
-reconcile this backlog.
+propagates across all pages — are addressed at the shared-foundation layer (tokens, `ui/*`, `PortalShell`,
+archetypes) before any per-page work. Re-run `impeccable` after foundation changes and reconcile this
+backlog. Current known debt includes legacy `useState`-based navigation (no deep links / broken back
+button, §12) pending the routing migration in `CLAUDE.md §20`.

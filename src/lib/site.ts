@@ -55,7 +55,11 @@ export const SOCIAL: { label: string; href: string }[] = [
 export const SMS_CONSENT = {
   version: 'a2p-10dlc-2026-07-frisco',
   program: 'Markist Athelus — Farmers Insurance — Customer & Account Messaging',
-  from: process.env.NEXT_PUBLIC_SMS_FROM || '(XXX) XXX-XXXX',
+  // Registered A2P 10DLC sending number. Set NEXT_PUBLIC_SMS_FROM to the approved
+  // campaign number before launch. Until then, fall back to the real, reachable
+  // office number so compliance-critical consent copy never renders a literal
+  // "(XXX) XXX-XXXX" placeholder to the public.
+  from: process.env.NEXT_PUBLIC_SMS_FROM || CONTACT.phoneDisplay,
 } as const
 
 /** Canonical FSA authentication host (see loginUrl). */

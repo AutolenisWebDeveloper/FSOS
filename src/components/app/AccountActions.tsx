@@ -26,8 +26,10 @@ export function AccountActions({ email }: { email: string | null }) {
     setResetting(true)
     try {
       const supabase = getBrowserClient()
+      // Land on the set-new-password page so the recovery link completes the flow
+      // end-to-end (matches the public /forgot-password flow).
       const redirectTo =
-        typeof window !== 'undefined' ? `${window.location.origin}/login` : undefined
+        typeof window !== 'undefined' ? `${window.location.origin}/reset-password/continue` : undefined
       const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo })
       if (error) throw error
       toast.success(`Password reset link sent to ${email}.`)

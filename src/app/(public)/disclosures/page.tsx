@@ -1,75 +1,88 @@
-import Link from 'next/link'
+import type { Metadata } from 'next'
+import { SiteShell } from '@/components/public/site/SiteShell'
 
-export const metadata = {
+export const metadata: Metadata = {
   title: 'Disclosures — Markist Athelus',
+  description:
+    'Important disclosures for Markist Athelus, Financial Services Agent with Farmers Insurance — securities through Farmers Financial Solutions, life insurance through Farmers New World Life, and our no-advice policy.',
   robots: { index: true, follow: true },
   alternates: { canonical: '/disclosures' },
 }
 
-// Static public disclosures page. Professional, clearly-labeled, and free of any
-// invented Farmers/FFS legal registration numbers or figures (guardrail §2.3).
+const TOC = [
+  ['overview', 'Overview'],
+  ['securities', 'Securities'],
+  ['life', 'Life insurance'],
+  ['advice', 'No advice or recommendations'],
+  ['more', 'Related policies'],
+]
+
+// Public disclosures page. Wrapped in the marketing SiteShell so it carries the
+// same header/footer/brand chrome as the other legal pages (privacy, terms,
+// sms-terms, accessibility) instead of rendering as an unbranded orphan.
+// Professional, clearly-labeled, and free of any invented Farmers/FFS legal
+// registration numbers or figures (guardrail §2.3).
 export default function DisclosuresPage() {
   return (
-    <main className="mx-auto max-w-2xl p-8 space-y-4">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Disclosures</h1>
-        <p className="text-sm text-muted-foreground">Important information about this site and how we work.</p>
-      </header>
+    <SiteShell>
+      <main id="main" className="doc">
+        <div className="shell doc__grid">
+          <nav className="toc" aria-label="On this page">
+            <p className="toc__h">On this page</p>
+            <ol>
+              {TOC.map(([id, label]) => (
+                <li key={id}>
+                  <a href={`#${id}`}>{label}</a>
+                </li>
+              ))}
+            </ol>
+          </nav>
+          <article className="prose">
+            <h1>Disclosures</h1>
+            <p className="stamp">Important information about this site and how we work.</p>
 
-      <section className="space-y-2 text-sm leading-relaxed">
-        <p>
-          This site is a tool used by a Farmers Financial Services Agent (FSA). The FSA is a life- and
-          securities-licensed specialist who partners with Farmers agency owners to make life insurance and financial
-          services available to their existing clients.
-        </p>
-      </section>
+            <h2 id="overview">1. Overview</h2>
+            <p>
+              This site is a tool used by a Farmers Financial Services Agent (FSA). The FSA is a life- and
+              securities-licensed specialist who partners with Farmers agency owners to make life insurance and financial
+              services available to their existing clients.
+            </p>
 
-      <section className="space-y-2">
-        <h2 className="text-lg font-medium">Securities</h2>
-        <p className="text-sm leading-relaxed">
-          Securities products and services are offered through Farmers Financial Solutions, LLC (FFS). Any securities
-          activity is conducted and supervised through FFS. This site is <strong>not</strong> a broker-dealer system of
-          record, does not hold securities accounts, and does not accept or process securities orders. No securities
-          account numbers, order details, or suitability determinations are collected here.
-        </p>
-        <p className="text-sm leading-relaxed">
-          For information about the nature of the brokerage relationship and services, please refer to the FFS Form CRS
-          (Client Relationship Summary), which is available from the FFS-supervised channel. This site does not
-          reproduce or replace that document.
-        </p>
-      </section>
+            <h2 id="securities">2. Securities</h2>
+            <p>
+              Securities products and services are offered through Farmers Financial Solutions, LLC (FFS). Any securities
+              activity is conducted and supervised through FFS. This site is <strong>not</strong> a broker-dealer system of
+              record, does not hold securities accounts, and does not accept or process securities orders. No securities
+              account numbers, order details, or suitability determinations are collected here.
+            </p>
+            <p>
+              For information about the nature of the brokerage relationship and services, please refer to the FFS Form CRS
+              (Client Relationship Summary), which is available from the FFS-supervised channel. This site does not
+              reproduce or replace that document.
+            </p>
 
-      <section className="space-y-2">
-        <h2 className="text-lg font-medium">Life insurance</h2>
-        <p className="text-sm leading-relaxed">
-          Life insurance products are offered through Farmers New World Life Insurance Company (FNWL). Product
-          availability, features, and terms are subject to the issuing company&apos;s rules and applicable state
-          regulation.
-        </p>
-      </section>
+            <h2 id="life">3. Life insurance</h2>
+            <p>
+              Life insurance products are offered through Farmers New World Life Insurance Company (FNWL). Product
+              availability, features, and terms are subject to the issuing company&apos;s rules and applicable state
+              regulation.
+            </p>
 
-      <section className="space-y-2">
-        <h2 className="text-lg font-medium">No advice or recommendations</h2>
-        <p className="text-sm leading-relaxed">
-          No individualized investment, product, or insurance advice or recommendation is provided through this site.
-          Information presented here is general and educational. Any recommendation or transaction is handled personally
-          by a licensed professional through the appropriate supervised channel.
-        </p>
-      </section>
+            <h2 id="advice">4. No advice or recommendations</h2>
+            <p>
+              No individualized investment, product, or insurance advice or recommendation is provided through this site.
+              Information presented here is general and educational. Any recommendation or transaction is handled personally
+              by a licensed professional through the appropriate supervised channel.
+            </p>
 
-      <section className="space-y-2 border-t pt-4 text-sm">
-        <p>
-          See also our{' '}
-          <Link href="/privacy" className="underline hover:text-foreground">
-            privacy notice
-          </Link>{' '}
-          and{' '}
-          <Link href="/terms" className="underline hover:text-foreground">
-            terms of use
-          </Link>
-          .
-        </p>
-      </section>
-    </main>
+            <h2 id="more">5. Related policies</h2>
+            <p>
+              See also our <a href="/privacy">Privacy Policy</a>, <a href="/terms">Terms of Use</a>, and{' '}
+              <a href="/sms-terms">SMS Terms &amp; Conditions</a>.
+            </p>
+          </article>
+        </div>
+      </main>
+    </SiteShell>
   )
 }

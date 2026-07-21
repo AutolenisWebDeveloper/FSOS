@@ -5,7 +5,7 @@ import { BUSINESS, CONTACT, DISCLOSURES, LICENSING, SOCIAL, loginUrl } from '@/l
 const SOLUTIONS = ['Life Insurance', 'Retirement Planning', 'College Planning', 'Investments', 'Annuities', 'Business Protection']
 
 export function SiteFooter() {
-  const year = 2026
+  const year = new Date().getFullYear()
   return (
     <footer className="foot">
       <div className="shell">

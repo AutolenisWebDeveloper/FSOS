@@ -4,7 +4,7 @@ import { ComplianceIntelligence } from '@/components/compliance/ComplianceIntell
 export const dynamic = 'force-dynamic'
 
 // Compliance Intelligence — the NIGO-resolution / RightBridge / note-authoring
-// workspace (owner-authorized; CLAUDE.md §3 authorized-exception + docs/compliance/).
+// workspace (owner-authorized; CLAUDE.md §5 authorized exception + docs/adr/ADR-012 + docs/compliance/).
 // An internal, retrieval-grounded drafting & analysis aid for the licensed FSA:
 // analyze a NIGO against the actual applicable authority, harden case notes to the
 // objective standard, check a RightBridge report for contradictions, build a

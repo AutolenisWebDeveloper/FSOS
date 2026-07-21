@@ -1,6 +1,6 @@
 // src/lib/compliance/intelligence.ts
 // Core library for the Compliance Intelligence module (owner-authorized; see
-// CLAUDE.md §3 authorized-exception + docs/compliance/). Retrieval-grounded
+// CLAUDE.md §5 authorized exception + docs/adr/ADR-012 + docs/compliance/). Retrieval-grounded
 // primitives shared by the /api/compliance/{analyze,note,checklist,rightbridge}
 // routes: authority-tier hierarchy, FTS retrieval over compliance_chunks, the
 // no-invention citation VERIFY GATE, and a JSON-constrained gateway helper.

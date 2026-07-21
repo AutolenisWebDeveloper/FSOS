@@ -1,6 +1,6 @@
 // src/lib/compliance/pipeline.ts
 // Orchestration for the Compliance Intelligence document pipeline (owner-authorized
-// module; CLAUDE.md §3). This is the layer that MAY call the AI gateway: it chooses
+// module; CLAUDE.md §5 authorized exception + docs/adr/ADR-012). This is the layer that MAY call the AI gateway: it chooses
 // the extraction path (native PDF text → model-vision OCR fallback for scanned/low-
 // text PDFs and images) and builds the version-aware structured RightBridge report.
 // Pure byte→text helpers live in ./extract; DB + storage stay in the route handlers.

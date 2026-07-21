@@ -7,6 +7,7 @@
 
 import { getAnthropic } from '@/lib/anthropic'
 import { getDb } from '@/lib/supabase/client'
+import { gatewayEnabledFrom } from './kill-switch'
 
 export type Provider = 'claude' | 'openai' | 'gemini'
 
@@ -94,16 +95,16 @@ export function estimateCostUsd(model: string, usage: GatewayUsage): number {
 async function isGatewayEnabled(): Promise<boolean> {
   if (process.env.AI_GATEWAY_DISABLED === '1') return false
   try {
-    const { data } = await getDb()
+    const { data, error } = await getDb()
       .from('ai_policies')
       .select('gateway_enabled')
       .eq('id', 'global')
       .maybeSingle()
-    // Default enabled when unconfigured (fail-open only for the GLOBAL flag; the
-    // per-agent check below fails safe to enabled=false when a row is missing).
-    return data?.gateway_enabled !== false
+    // Fail CLOSED on a DB error — an unverifiable kill switch must not run (M-4). A
+    // missing config row (no error) stays the intentional default-enabled state.
+    return gatewayEnabledFrom(false, error ? null : data, Boolean(error))
   } catch {
-    return true
+    return gatewayEnabledFrom(false, null, true) // read threw → cannot verify → disabled
   }
 }
 

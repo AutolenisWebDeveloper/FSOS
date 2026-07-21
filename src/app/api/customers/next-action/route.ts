@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireInternalAuth, readJson } from '@/lib/http'
 import { loadCustomerProfile, type CustomerProfile } from '@/lib/customerProfile'
-import { getAnthropic, FNA_MODEL } from '@/lib/anthropic'
+import { FNA_MODEL } from '@/lib/anthropic'
+import { runGateway } from '@/lib/ai/gateway'
 import { FINRA_DISCLAIMER } from '@/lib/compliance'
 
 export const dynamic = 'force-dynamic'
@@ -102,16 +103,12 @@ export async function POST(req: NextRequest) {
   ].join('\n')
 
   try {
-    const client = getAnthropic()
-    const res = await client.messages.create({
+    const { text: rawText } = await runGateway({
       model: FNA_MODEL,
-      max_tokens: ANALYSIS_MAX_TOKENS,
+      maxTokens: ANALYSIS_MAX_TOKENS,
       messages: [{ role: 'user', content: prompt }],
     })
-    const text = res.content
-      .map((b) => (b.type === 'text' ? b.text : ''))
-      .join('')
-      .trim()
+    const text = rawText.trim()
 
     const start = text.indexOf('{')
     const end = text.lastIndexOf('}')

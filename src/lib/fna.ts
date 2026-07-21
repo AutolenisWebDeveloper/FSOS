@@ -4,7 +4,8 @@
 // so the compliance prompt, FINRA disclaimer, model, and storage stay identical.
 
 import { getDb } from '@/lib/supabase/client'
-import { getAnthropic, FNA_MODEL, FNA_MAX_TOKENS } from '@/lib/anthropic'
+import { FNA_MODEL, FNA_MAX_TOKENS } from '@/lib/anthropic'
+import { runGateway } from '@/lib/ai/gateway'
 import { FINRA_DISCLAIMER } from '@/lib/compliance'
 
 export type FnaResult =
@@ -105,13 +106,12 @@ Generate a complete FNA. Return ONLY valid JSON (no markdown fences, no preamble
 
   let text: string
   try {
-    const message = await getAnthropic().messages.create({
+    const res = await runGateway({
       model: FNA_MODEL,
-      max_tokens: FNA_MAX_TOKENS,
+      maxTokens: FNA_MAX_TOKENS,
       messages: [{ role: 'user', content: prompt }],
     })
-    const block = message.content[0]
-    text = block && block.type === 'text' ? block.text : ''
+    text = res.text
   } catch (err) {
     console.error('[fna] model call failed:', err)
     return { ok: false, status: 502, error: 'AI generation failed' }

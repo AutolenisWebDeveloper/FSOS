@@ -27,7 +27,7 @@ export async function generateFNAReport(
     .select(`
       submission_id, customer_id, response_data, fna_report,
       customers (
-        first_name, last_name, age, email, phone,
+        first_name, last_name, dob, age, email, phone,
         marital_status, dependents, employer, has_life, has_auto, has_home,
         city, state
       )

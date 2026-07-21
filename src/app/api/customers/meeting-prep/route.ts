@@ -72,8 +72,7 @@ export async function POST(req: NextRequest) {
     const client = getAnthropic()
     const res = await client.messages.create({ model: FNA_MODEL, max_tokens: 1200, messages: [{ role: 'user', content: prompt }] })
     const text = res.content
-      .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
-      .map((b) => b.text)
+      .map((b) => (b.type === 'text' ? b.text : ''))
       .join('')
       .trim()
     const start = text.indexOf('{')

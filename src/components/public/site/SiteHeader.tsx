@@ -13,7 +13,7 @@ const SOLUTIONS = [
   'Business Protection',
 ]
 
-export function SiteHeader({ active = 'home' }: { active?: 'home' | 'contact' | 'none' }) {
+export function SiteHeader({ active = 'home' }: { active?: 'home' | 'contact' | 'workshops' | 'none' }) {
   const [open, setOpen] = React.useState(false)
   const book = bookingUrl()
   const login = loginUrl()
@@ -85,6 +85,11 @@ export function SiteHeader({ active = 'home' }: { active?: 'home' | 'contact' | 
                     </a>
                   ))}
                 </div>
+              </li>
+              <li>
+                <a href="/workshops" aria-current={active === 'workshops' ? 'page' : undefined}>
+                  Workshops
+                </a>
               </li>
               <li>
                 <a href="/#about">About</a>

@@ -61,7 +61,7 @@ export default async function WorkshopLandingPage(props: { params: Promise<{ slu
   const ctaLabel = w.is_full ? 'Join the waitlist' : 'Reserve your seat'
 
   return (
-    <SiteShell>
+    <SiteShell active="workshops">
       <main id="main">
         {/* Hero */}
         <section className="whero">

@@ -26,7 +26,7 @@ export default async function WorkshopsHubPage() {
   }
 
   return (
-    <SiteShell>
+    <SiteShell active="workshops">
       <main id="main">
         {/* Intro band */}
         <section className="wintro">

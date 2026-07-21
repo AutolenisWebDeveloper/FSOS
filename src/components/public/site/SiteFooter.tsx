@@ -50,6 +50,7 @@ export function SiteFooter() {
           <div>
             <p className="foot__h">Resources</p>
             <ul className="foot__list">
+              <li><a href="/workshops">Workshops</a></li>
               <li><a href="/#process">How It Works</a></li>
               <li><a href="/#reviews">Client Reviews</a></li>
               <li><a href="/#about">About Markist</a></li>

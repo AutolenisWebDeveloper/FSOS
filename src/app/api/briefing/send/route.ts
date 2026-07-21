@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { getDb } from '@/lib/supabase/client'
 import { requireInternalAuth, readJson, escapeHtml } from '@/lib/http'
-import { getAnthropic, FNA_MODEL } from '@/lib/anthropic'
+import { FNA_MODEL } from '@/lib/anthropic'
+import { runGateway } from '@/lib/ai/gateway'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -90,16 +91,12 @@ export async function POST(req: NextRequest) {
 
   let body: string
   try {
-    const client = getAnthropic()
-    const res = await client.messages.create({
+    const { text } = await runGateway({
       model: FNA_MODEL,
-      max_tokens: 900,
+      maxTokens: 900,
       messages: [{ role: 'user', content: prompt }],
     })
-    body = res.content
-      .map((b) => (b.type === 'text' ? b.text : ''))
-      .join('')
-      .trim()
+    body = text.trim()
     if (!body) throw new Error('empty briefing')
   } catch (err) {
     console.error('[briefing] AI failed:', err instanceof Error ? err.message : err)

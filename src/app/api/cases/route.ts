@@ -4,6 +4,7 @@ import { readJson, configErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf, hasSecuritiesScope } from '@/lib/auth/api'
 import { CaseCreateSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
+import { assertNotSecuritiesSystemOfRecord, FirewallError } from '@/lib/compliance/firewall'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -37,6 +38,16 @@ export async function POST(req: NextRequest) {
   if ('error' in parsed) return parsed.error
   const v = CaseCreateSchema.safeParse(parsed.data)
   if (!v.success) return NextResponse.json({ error: 'Invalid case', details: v.error.flatten() }, { status: 400 })
+
+  // Securities firewall: FSOS never stores securities account numbers / order details /
+  // suitability determinations on the case spine — only the non-substantive ffs_case_ref
+  // pointer (CLAUDE.md §2.1). Scan the write payload (H-4).
+  try {
+    assertNotSecuritiesSystemOfRecord(v.data)
+  } catch (e) {
+    if (e instanceof FirewallError) return NextResponse.json({ error: e.message, reason: 'firewall' }, { status: 422 })
+    throw e
+  }
 
   try {
     const db = getDb()

@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireInternalAuth, readJson } from '@/lib/http'
 import { loadCustomerProfile, type CustomerProfile } from '@/lib/customerProfile'
-import { getAnthropic, FNA_MODEL } from '@/lib/anthropic'
+import { FNA_MODEL } from '@/lib/anthropic'
+import { runGateway } from '@/lib/ai/gateway'
 import { FINRA_DISCLAIMER } from '@/lib/compliance'
 
 export const dynamic = 'force-dynamic'
@@ -69,12 +70,8 @@ export async function POST(req: NextRequest) {
   ].join('\n')
 
   try {
-    const client = getAnthropic()
-    const res = await client.messages.create({ model: FNA_MODEL, max_tokens: 1200, messages: [{ role: 'user', content: prompt }] })
-    const text = res.content
-      .map((b) => (b.type === 'text' ? b.text : ''))
-      .join('')
-      .trim()
+    const { text: rawText } = await runGateway({ model: FNA_MODEL, maxTokens: 1200, messages: [{ role: 'user', content: prompt }] })
+    const text = rawText.trim()
     const start = text.indexOf('{')
     const end = text.lastIndexOf('}')
     if (start === -1 || end === -1) return NextResponse.json({ error: 'AI returned an unparseable response' }, { status: 502 })

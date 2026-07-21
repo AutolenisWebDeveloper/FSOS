@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireInternalAuth, readJson } from '@/lib/http'
-import { getAnthropic, FNA_MODEL } from '@/lib/anthropic'
+import { FNA_MODEL } from '@/lib/anthropic'
+import { runGateway } from '@/lib/ai/gateway'
 import { FINRA_DISCLAIMER, AI_PROHIBITED_ACTIONS } from '@/lib/compliance'
 
 export const dynamic = 'force-dynamic'
@@ -38,14 +39,12 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const message = await getAnthropic().messages.create({
+    const { text: reply } = await runGateway({
       model: FNA_MODEL,
-      max_tokens: 1024,
+      maxTokens: 1024,
       system: SYSTEM_PROMPT,
       messages,
     })
-    const block = message.content[0]
-    const reply = block && block.type === 'text' ? block.text : ''
     return NextResponse.json({ reply })
   } catch (err) {
     console.error('[assistant] model call failed:', err)

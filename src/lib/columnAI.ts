@@ -11,7 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { z } from 'zod'
-import { getAnthropic } from './anthropic'
+import { runGateway } from './ai/gateway'
 import { CANONICAL_FIELDS, type CanonicalField } from './ghlContacts'
 
 // A fast, cheap model is plenty for a bounded classification task.
@@ -90,17 +90,13 @@ export async function aiDetectColumns(
   ].join('\n')
 
   try {
-    const client = getAnthropic()
-    const res = await client.messages.create({
+    const { text: rawText } = await runGateway({
       model: COLUMN_MODEL,
-      max_tokens: 1024,
+      maxTokens: 1024,
       messages: [{ role: 'user', content: prompt }],
     })
 
-    const text = res.content
-      .map((b) => (b.type === 'text' ? b.text : ''))
-      .join('')
-      .trim()
+    const text = rawText.trim()
 
     // Extract the JSON object even if the model wraps it in prose / fences.
     const start = text.indexOf('{')

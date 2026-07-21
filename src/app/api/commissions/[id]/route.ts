@@ -4,6 +4,7 @@ import { readJson, configErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { CommissionReceiptSchema, CommissionAdjustmentSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
+import { assertNotSecuritiesSystemOfRecord, FirewallError } from '@/lib/compliance/firewall'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -44,6 +45,10 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     if (op === 'receipt') {
       const v = CommissionReceiptSchema.safeParse({ ...parsed.data, commission_id: params.id })
       if (!v.success) return NextResponse.json({ error: 'Invalid receipt', details: v.error.flatten() }, { status: 400 })
+      // Securities firewall (H-4): no securities-substantive field may be written here.
+      try { assertNotSecuritiesSystemOfRecord(v.data) } catch (e) {
+        if (e instanceof FirewallError) return NextResponse.json({ error: e.message, reason: 'firewall' }, { status: 422 }); throw e
+      }
       // Dedupe on commission/period/amount (WF-7): idempotent receipt recording.
       const dedupe = `${params.id}:${v.data.period ?? ''}:${v.data.amount}`
       const { data: existing } = await db.from('commission_receipts').select('id').eq('dedupe_key', dedupe).maybeSingle()
@@ -59,6 +64,10 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     if (op === 'adjustment') {
       const v = CommissionAdjustmentSchema.safeParse({ ...parsed.data, commission_id: params.id })
       if (!v.success) return NextResponse.json({ error: 'Invalid adjustment', details: v.error.flatten() }, { status: 400 })
+      // Securities firewall (H-4): no securities-substantive field may be written here.
+      try { assertNotSecuritiesSystemOfRecord(v.data) } catch (e) {
+        if (e instanceof FirewallError) return NextResponse.json({ error: e.message, reason: 'firewall' }, { status: 422 }); throw e
+      }
       await db.from('commission_adjustments').insert({ commission_id: params.id, amount: v.data.amount, kind: v.data.kind, reason: v.data.reason, actor })
       const newTotal = Number(commission.total_commission ?? 0) + v.data.amount
       await db.from('commissions').update({ total_commission: newTotal, updated_at: new Date().toISOString() }).eq('id', params.id)

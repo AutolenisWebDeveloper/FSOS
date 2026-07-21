@@ -52,7 +52,7 @@ export default async function WorkshopRegisterPage(props: { params: Promise<{ sl
         : w.venue_address ?? w.location ?? 'Location shared after you register'
 
   return (
-    <SiteShell>
+    <SiteShell active="workshops">
       <main id="main">
         <div className="shell wreg">
           {/* Event summary rail */}

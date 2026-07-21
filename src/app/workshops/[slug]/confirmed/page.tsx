@@ -28,7 +28,7 @@ export default async function WorkshopConfirmedPage(props: { params: Promise<{ s
         : w.venue_address ?? w.location ?? 'Location details to follow by email'
 
   return (
-    <SiteShell>
+    <SiteShell active="workshops">
       <main id="main">
         <div className="shell wconfirm">
           <div className="wconfirm__badge reveal">

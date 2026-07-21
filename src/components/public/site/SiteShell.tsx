@@ -15,7 +15,7 @@ export function SiteShell({
   active = 'none',
 }: {
   children: React.ReactNode
-  active?: 'home' | 'contact' | 'none'
+  active?: 'home' | 'contact' | 'workshops' | 'none'
 }) {
   return (
     <div className={`msite ${marketingFontVars}`}>

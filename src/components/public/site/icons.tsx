@@ -136,8 +136,8 @@ export function Icon({
 }
 
 /**
- * Header/footer brand mark — the official Farmers Insurance emblem (CLAUDE.md §10.1
- * approved asset pack at /public/brand/farmers/). Rendered unaltered (object-contain,
+ * Header/footer brand mark — the official Farmers Insurance emblem (CLAUDE.md §17.1
+ * approved asset pack at /public/brand/). Rendered unaltered (object-contain,
  * official proportions preserved) on a white "chip" so the full-color mark reads on
  * both the light header and the dark footer without ever recoloring the logo. The
  * full FARMERS INSURANCE wordmark lockup — illegible at this 46px footprint — is
@@ -148,7 +148,7 @@ export function BrandLogo() {
     <span className="brand__logo brand__logo--farmers">
       {/* Plain <img> keeps the vector emblem crisp without next/image's SVG caveats. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/brand/farmers/farmers-emblem.svg" alt="Farmers Insurance" />
+      <img src="/brand/farmers-emblem.svg" alt="Farmers Insurance" />
     </span>
   )
 }

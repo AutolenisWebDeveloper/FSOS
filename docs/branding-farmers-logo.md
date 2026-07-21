@@ -1,40 +1,40 @@
 # Farmers Insurance brand assets
 
-## Status: official assets are in the repo, at `public/brand/farmers/`.
+Governed by **CLAUDE.md §17** and **DESIGN.md**. This note records the as-shipped
+asset mapping; §17 / DESIGN.md are authoritative if they diverge.
 
-Per CLAUDE.md §10.1 the Farmers marks are trademarked and must be used **unaltered**
-(never stretched, cropped, rotated, recolored, redrawn, or substituted). These assets
-are applied faithfully — contained (`object-contain`), official proportions preserved,
-on a white "chip"/card where the surface is dark so the full-color mark stays legible
-without recoloring.
-
-## Assets
+## Assets (`public/brand/`, per §17.1)
 
 | File | What it is | Used for |
 |---|---|---|
-| `farmers-logo.svg` / `.png` | Full lockup: emblem + **FARMERS INSURANCE** wordmark | Footer carrier badge (room for the wordmark) |
-| `farmers-emblem.svg` / `.png` | Emblem only (fan + shield) | Header, `/app` sidebar/topbar, auth screens, favicon — the tight chrome slots where the stacked wordmark would be illegible |
+| `farmers-logo.svg` | Official full color lockup (emblem + FARMERS INSURANCE wordmark) | Footer carrier badge (has room for the wordmark) |
+| `farmers-logo.png` / `farmers-logo.jpeg` | Raster fallbacks of the lockup | Non-SVG contexts |
+| `farmers-emblem.svg` / `.png` | Official emblem (fan + shield) | Public marketing header/footer mark, favicon — tight slots where the stacked wordmark is illegible |
 
-Both SVGs are clean vector (no embedded raster). Their fills are exactly the §10.2
-palette: Blue `#1C428B`, Red `#E11631`, Light Blue `#A6C3E9`, Maroon `#A20F30`,
-Gray `#666666`, White — i.e. the palette tokens are sourced from these assets.
+All rendered **unaltered**: contained (`object-contain`), official proportions
+preserved, never stretched/cropped/recolored; on a white chip/card where the surface
+is dark so the full-color mark stays legible.
 
-## Where the logo renders
+## Where each mark renders
 
-- Public **header** + **footer** → `BrandLogo` (`src/components/public/site/icons.tsx`): emblem on a white chip; footer also shows the full lockup (`.foot__carrier`).
-- **Login / Forgot / Reset password** and other auth screens → `AuthShell` → `BrandMark`.
-- **/app** dashboard sidebar + topbar, portal chrome → `PortalShell`, `CharacterPanels` → `BrandMark`.
-- Public FSOS-styled pages → `PublicShell` → `BrandMark`.
-- **Favicon / app icon** → `src/app/icon.svg` (emblem centered on a white rounded square).
+- **Public marketing header + footer** → `BrandLogo` (`icons.tsx`): official emblem on a white chip; footer also shows the full official lockup (`.foot__carrier`).
+- **Favicon / app icon** → `src/app/icon.svg`: emblem centered on a white rounded square.
+- **`/app` sidebar + topbar, auth screens, portal chrome** → `BrandMark`: the **FSA's OWN monogram** ("M"), NOT the Farmers trademark — a deliberate distinction per **§17.1** ("do not conflate the two"). The Farmers trademark is used only on the public brand surfaces above.
 
-## Provenance & confirmation (action for the owner)
+## Palette
 
-> These files were supplied by the account owner (an authorized Farmers agent) and
-> originate from a **Brandfetch** export of `farmers.com`. Before public launch,
-> **confirm them against the current official Farmers agent brand kit** — the vetted
-> agent-portal logo pack — and swap in the official-kit files here if they differ.
-> The color tokens are the single point of change (`globals.css` / `marketing.css`),
-> so a palette correction is a one-place edit.
+Per §17.2, the as-built `globals.css` app tokens (`--primary 214 88% 40%`,
+`--destructive 350 78% 43%`) are the sanctioned AA-tuned rendering of the official
+Farmers palette — left unchanged. The public marketing (`.msite`) surface uses the
+exact §17.2 hexes (Farmers Blue `#1C428B`, Red `#E11631`) as its own token layer.
 
-If an approved asset is ever missing, **document the gap** — do not substitute an
-unofficial or low-resolution version (§10.1).
+## Provenance (owner action before public launch)
+
+> The asset pack was supplied by the account owner (an authorized Farmers agent),
+> originating from a Brandfetch export of farmers.com. Its fills exactly match the
+> §17.2 official palette. Before public launch, confirm against the official Farmers
+> **agent** brand kit and swap if it differs.
+
+Gap: `public/brand/farmers-logo-alt.svg` (an alternate/reversed lockup named in §17.1)
+is **not** in the supplied pack — document the gap; do not substitute an unofficial
+version (§4.3 / §17.1).

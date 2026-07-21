@@ -37,8 +37,14 @@ function psql(sql) {
     encoding: 'utf8',
   })
 }
+// The legacy-DOB migration (042) encrypts customers.dob with the app-held key, which
+// must never live in the DB. Pass it to psql as the `app.dob_key` session GUC (via
+// PGOPTIONS) so that migration's backfill can read it; every other migration ignores
+// it. Absent key → migration 042 raises rather than dropping un-encrypted plaintext.
+const dobKey = process.env.DOB_ENCRYPTION_KEY || ''
 function psqlFile(path) {
-  execFileSync('psql', [dbUrl, '-v', 'ON_ERROR_STOP=1', '-f', path], { stdio: 'inherit' })
+  const env = dobKey ? { ...process.env, PGOPTIONS: `${process.env.PGOPTIONS ? process.env.PGOPTIONS + ' ' : ''}-c app.dob_key=${dobKey}` } : process.env
+  execFileSync('psql', [dbUrl, '-v', 'ON_ERROR_STOP=1', '-f', path], { stdio: 'inherit', env })
 }
 
 try {

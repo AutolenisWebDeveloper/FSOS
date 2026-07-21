@@ -69,8 +69,10 @@ export async function GET(req: NextRequest) {
       .limit(MAX_SCAN),
     supabase
       .from('customers')
-      .select('customer_id, first_name, last_name, dob, phone, email')
-      .not('dob', 'is', null)
+      // DOB is encrypted at rest (mig 042); the birthday feature uses the non-PII
+      // month/day parts (no year → not age/identity), never the plaintext date.
+      .select('customer_id, first_name, last_name, birth_month, birth_day, phone, email')
+      .not('birth_month', 'is', null)
       .limit(MAX_SCAN),
   ])
 
@@ -123,7 +125,12 @@ export async function GET(req: NextRequest) {
   }
 
   for (const c of customersRes.data || []) {
-    const bday = c.dob ? nextAnniversary(c.dob, today) : null
+    // Build a year-agnostic source date from the non-PII birthday parts.
+    const md =
+      c.birth_month != null && c.birth_day != null
+        ? `2000-${String(c.birth_month).padStart(2, '0')}-${String(c.birth_day).padStart(2, '0')}`
+        : null
+    const bday = md ? nextAnniversary(md, today) : null
     if (within(bday)) {
       events.push({
         type: 'birthday',

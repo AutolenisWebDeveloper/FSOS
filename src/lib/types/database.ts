@@ -168,8 +168,12 @@ export interface Customer {
   email: string | null
   phone: string | null
   cell_phone: string | null
-  dob: string | null
-  age: number | null                 // maintained from dob by trigger
+  // dob is encrypted at rest as dob_enc (mig 042); read via the customer_dob_get RPC,
+  // never selected as a column. birth_month/day are non-PII parts for the birthday feature.
+  age: number | null                 // maintained at write time by customer_dob_set (mig 042)
+  birth_month: number | null
+  birth_day: number | null
+  is_security: boolean               // securities firewall flag (mig 042)
   address: string | null
   city: string | null
   state: string

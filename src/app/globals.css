@@ -46,11 +46,11 @@
     --muted:            214 30% 93.5%;
     --muted-foreground: 214 15% 40%;   /* AA (≥4.5:1) secondary ink on canvas */
 
-    /* ---- Brand (Farmers Blue — official §10.2) ---- */
-    --primary:            219 66% 33%;   /* #1C428B — official Farmers Blue */
+    /* ---- Brand (Farmers blue) ---- */
+    --primary:            214 88% 40%;   /* #0b5fcc — confident Farmers blue */
     --primary-foreground: 0 0% 100%;
-    --primary-soft:       216 68% 93%;   /* soft Farmers-blue wash */
-    --primary-deep:       219 68% 26%;   /* pressed / gradient floor */
+    --primary-soft:       213 92% 94%;   /* soft blue wash */
+    --primary-deep:       215 90% 30%;   /* pressed / gradient floor */
 
     --secondary:          214 30% 93%;
     --secondary-foreground: 214 42% 22%;
@@ -63,23 +63,23 @@
     --gold-deep:       38 76% 34%;       /* #996915 — text-grade gold: ≥4.5:1 on light */
     --gold-foreground: 215 40% 12%;
 
-    /* ---- Farmers Red (official §10.2) — destructive / critical / blocking ---- */
-    --destructive:        352 82% 48%;   /* #E11631 — official Farmers Red */
+    /* ---- Farmers red — destructive / critical / blocking ---- */
+    --destructive:        350 78% 43%;   /* #c31838 — Farmers red */
     --destructive-foreground: 0 0% 100%;
 
     --border:           214 24% 87%;
     --input:            214 22% 83%;
-    --ring:             219 66% 42%;     /* Farmers Blue focus ring */
+    --ring:             214 88% 42%;
 
     --radius: 0.625rem;
 
     /* ---- Status ---- */
     --status-draft:      214 12% 50%;
-    --status-active:     219 66% 40%;    /* Farmers Blue — follows brand */
+    --status-active:     214 88% 42%;    /* Farmers blue — follows brand */
     --status-pending:    38 92% 45%;
     --status-won:        152 58% 37%;    /* #26996a — placed / active / success only */
-    --status-lost:       352 82% 48%;    /* Farmers Red — lost / error only */
-    --status-blocked:    352 82% 40%;    /* deeper Farmers Red — blocked */
+    --status-lost:       350 78% 45%;    /* Farmers red — lost / error only */
+    --status-blocked:    350 80% 38%;    /* deeper Farmers red — blocked */
     --status-escalated:  262 47% 44%;    /* GUARDRAIL purple — escalated → human/FFS */
     --status-assumption: 38 72% 42%;     /* GUARDRAIL gold — "config default — verify" */
     --status-security:   262 47% 44%;    /* GUARDRAIL purple — is_security / FFS-managed */

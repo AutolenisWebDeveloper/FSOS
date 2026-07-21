@@ -1,6 +1,6 @@
 // src/lib/compliance/extract.ts
 // Server-side document extraction for the Compliance Intelligence pipeline
-// (owner-authorized module; CLAUDE.md §3). Turns an uploaded file's BYTES into
+// (owner-authorized module; CLAUDE.md §5 authorized exception + docs/adr/ADR-012). Turns an uploaded file's BYTES into
 // per-page UTF-8 text so the NIGO / RightBridge engines no longer require the user
 // to copy-and-paste. Nothing here calls a model or the DB — pure, testable
 // functions. The model-vision fallback (scanned PDFs) is driven by the route via

@@ -1,6 +1,6 @@
 // src/lib/compliance/uploads.ts
 // DB + storage helpers for the Compliance Intelligence document pipeline (owner-
-// authorized module; CLAUDE.md §3). Keeps the storage bucket path, signed-URL flow,
+// authorized module; CLAUDE.md §5 authorized exception + docs/adr/ADR-012). Keeps the storage bucket path, signed-URL flow,
 // and the extraction→persist state machine in one place so the POST route and the
 // per-upload reprocess route share exactly one implementation.
 

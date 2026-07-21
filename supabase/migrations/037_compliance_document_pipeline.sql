@@ -1,7 +1,7 @@
 -- 037_compliance_document_pipeline.sql
 -- Compliance Intelligence — server-side document ingestion & processing pipeline
--- (extends the owner-authorized module from migration 036; see CLAUDE.md §3
---  authorized-exception + §2.1 firewall constraints, and docs/compliance/).
+-- (extends the owner-authorized module from migration 036; see CLAUDE.md §5
+--  authorized exception (docs/adr/ADR-012) + §4.1 firewall constraints, and docs/compliance/).
 --
 -- WHY: until now the module could only accept ALREADY-EXTRACTED text pasted into a
 -- textarea. There was no way to upload a complete RightBridge PDF (or a NIGO notice,

@@ -3,8 +3,8 @@
 --  035_comm_hours.sql. Supabase keys migrations by the numeric prefix, so two 035
 --  files caused a duplicate schema_migrations version. This migration is fully
 --  idempotent, so re-applying it under version 036 is safe.)
--- Compliance Intelligence module (owner-authorized 2026-07-19; see CLAUDE.md §3
--- authorized-exception note + §2.1 firewall constraints, and docs/compliance/).
+-- Compliance Intelligence module (owner-authorized 2026-07-19; see CLAUDE.md §5
+-- authorized exception (docs/adr/ADR-012) + §4.1 firewall constraints, and docs/compliance/).
 --
 -- A retrieval-grounded drafting/analysis aid that helps the FSA resolve NIGOs,
 -- prepare RightBridge/paperwork, and strengthen case notes — grounded in an

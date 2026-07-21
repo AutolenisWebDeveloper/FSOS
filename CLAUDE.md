@@ -73,7 +73,7 @@ Approach FSOS as a principal engineer accountable for a regulated production sys
    ```
 3. **Public routes stay auth-guard-free:** `/[slug]` (agency referral), `/upload/[slug]`, `/forms/[formId]`, and the P-0 public surface in `docs/sitemap.md`. Everything else is session-guarded (§9, `docs/middleware-auth.md`).
 4. **Read before write:** open and read the existing file before creating or editing. Never recreate a file that already exists — extend or fix it.
-5. **Build discipline:** after any change, run `npm run build` and fix **every** error before stopping. `npm run typecheck` and `npm run lint` must also pass. Never weaken a type, guardrail test, or lint rule to force a green build.
+5. **Build discipline:** after any change, run `npm run build` and fix **every** error before stopping. `npm run type-check` and `npm run lint` must also pass. Never weaken a type, guardrail test, or lint rule to force a green build.
 6. **Styling:** Tailwind + shadcn/ui for all new UI. Never hardcode a color, spacing, or font — resolve through a token (`DESIGN.md`).
 7. **Validation:** every form and every API input is validated with **Zod**; derive TS types via `z.infer`. No unvalidated writes reach the database.
 8. **Thin route handlers:** business logic lives in `src/lib/services/*` (or `src/server/*`), not in route files or components. Routes parse → authorize → call a service → shape a typed response.
@@ -216,7 +216,7 @@ domain skill*        subagent-driven-    executing-plans      requesting-code-re
 
 ## 9. Portals (six + public surface)
 
-See `docs/sitemap.md` (every page), `docs/routes.md` (file-path map), `docs/rbac-matrix.md` (permissions), `docs/middleware-auth.md` (session guards). One backend, one design system, one permission model. Rationale: `docs/adr/ADR-005-portal-architecture.md`.
+See `docs/sitemap.md` (every page), `docs/routes.md` (file-path map), `docs/specs/rbac-matrix.md` (permissions), `docs/middleware-auth.md` (session guards). One backend, one design system, one permission model. Rationale: `docs/adr/ADR-005-portal-architecture.md`.
 
 | Portal | Route group | Users |
 |---|---|---|
@@ -434,15 +434,20 @@ New architectural decisions get a new ADR using `docs/adr/ADR-000-template.md`. 
 
 ## 20. Current build reality (as of last audit)
 
-FSOS is a **high-fidelity shell missing its spine**: the legacy command center renders from mock arrays, not Supabase; there is no URL routing on legacy screens; and **authentication is not yet in place** — a blocking regulatory gap for a system holding client PII. Standing priority order until closed, ahead of net-new pages:
-1. **Authentication + session guard** on every non-public route (Supabase Auth) — regulatory blocker (ADR-006).
-2. **Data layer** — wire real Supabase reads/writes; retire mock arrays.
-3. **URL routing** — real routes/deep links replacing `useState`-based navigation.
-4. **Household/Customer 360 + Book of Business** — the missing window into the data.
-5. **Consent & opt-out ledger** — TCPA defense record.
-6. Move any browser-side AI calls **server-side** (`/api/forms/fna`); never expose keys.
+> **Reconcile before relying on this section.** It is a point-in-time audit note, not live truth (§1 places the live repo above it). Verify against the code before planning P0 work — several original blockers have advanced.
 
-Do not add new feature pages while a P0 blocker above is open, unless a task explicitly directs otherwise.
+FSOS began as a high-fidelity shell missing its spine. Two of the original P0 blockers are now substantially closed in the repo:
+
+- **Authentication + RBAC — implemented (verify coverage, don't rebuild).** `src/middleware.ts` runs a **server-side** Supabase Auth portal gate on every non-public route (role/scope via `evaluateAccess`, MFA/`aal2` step-up, forbidden → `/403`), backed by RLS and the `fail-closed-auth` / `auth-matrix` guardrail tests (ADR-006). The original **P0-1 auth plan is therefore partly satisfied** — reconcile that plan against the implemented guard before any further auth work rather than re-building it.
+- **Server-side AI — in place.** All model access is server-side through the AI gateway (`src/lib/ai/gateway.ts`); no browser-side provider calls and no `NEXT_PUBLIC_*` AI keys remain (ADR-002).
+
+Remaining priorities to confirm against the code, ahead of net-new pages:
+1. **Data layer** — real Supabase reads/writes are wired across much of the API surface (route handlers via `getDb()`); confirm any legacy command-center screens still rendering from mock arrays are retired.
+2. **URL routing** — replace remaining `useState`-based navigation on legacy screens with real routes/deep links (`DESIGN.md` §12/§30).
+3. **Household/Customer 360 + Book of Business** — the window into the data.
+4. **Consent & opt-out ledger** — TCPA defense record.
+
+Do not add new feature pages while a genuine P0 blocker above remains open, unless a task explicitly directs otherwise.
 
 ---
 
@@ -460,7 +465,7 @@ Do not add new feature pages while a P0 blocker above is open, unless a task exp
 - Triggered notifications/automations wired; communications compliance (§12) enforced.
 - Production-ready per §15 (logging, recovery, degradation, security + a11y review, upgrade safety).
 - Tests pass (incl. authz/RLS/guardrail/state-transition/failure-path); **no legitimate guardrail test weakened or skipped.**
-- `npm run build`, `typecheck`, and `lint` all clean.
+- `npm run build`, `type-check`, and `lint` all clean.
 - No dead-end pages; no placeholders left in scope; `DESIGN.md` updated if any design pattern changed (§18); relevant ADR updated if any architecture changed (§19).
 - All changed files listed; assumptions and known limitations disclosed.
 
@@ -489,4 +494,4 @@ The result must be demonstrably more secure, usable, reliable, maintainable, and
 - **Tier 3:** $55k+ → **80%**
 
 ## Appendix C — Companion docs
-`docs/sitemap.md` · `docs/routes.md` · `docs/middleware-auth.md` · `docs/rbac-matrix.md` · `docs/build-order.md` · `docs/archetypes.md` · `docs/data-guardrails.md` · `docs/design-system.md` · `docs/adr/` · `DESIGN.md` · `docs/comms-ai-compliance.md` · `docs/review-conversion-crosssell.md`
+`docs/sitemap.md` · `docs/routes.md` · `docs/middleware-auth.md` · `docs/specs/rbac-matrix.md` · `docs/build-order.md` · `docs/archetypes.md` · `docs/data-guardrails.md` · `docs/design-system.md` · `docs/adr/` · `DESIGN.md` · `docs/specs/comms-ai-compliance.md` · `docs/specs/review-conversion-crosssell.md`

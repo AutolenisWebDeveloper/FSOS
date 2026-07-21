@@ -5,7 +5,7 @@ import { requireInternalAuth, readJson } from '@/lib/http'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-// Make.com Scenario 1 target — receives one row from the APEX CSV export
+// APEX CSV-export webhook target — receives one row from the APEX export
 // and upserts it into customers (and policies when a policy_type is present).
 
 interface UpsertBody {
@@ -215,8 +215,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, customer_id, action })
   } catch (err) {
-    // Genuine server faults return 500 so Make.com retries rather than dropping
-    // the row. Intentional bad-row rejections above return 400.
+    // Genuine server faults return 500 so the calling webhook retries rather than
+    // dropping the row. Intentional bad-row rejections above return 400.
     console.error('[customers/upsert] unexpected error:', err)
     return NextResponse.json(
       { success: false, error: 'Internal server error' },
@@ -225,7 +225,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Health check for Make.com
+// Health check for the import webhook caller
 export async function GET() {
   return NextResponse.json({ ok: true, tables: ['customers', 'policies'] })
 }

@@ -84,7 +84,7 @@ export function siteUrl(): string {
     process.env.NEXT_PUBLIC_SITE_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
     process.env.NEXT_PUBLIC_URL ||
-    'https://www.markistathelus.com'
+    'https://www.markistfsa.com'
   )
 }
 

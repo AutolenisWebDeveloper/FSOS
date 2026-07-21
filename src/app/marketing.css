@@ -67,6 +67,12 @@
 .msite .brand{display:flex;align-items:center;gap:13px;text-decoration:none}
 .msite .brand__logo{width:46px;height:46px;flex:0 0 auto;border-radius:9px;background:linear-gradient(150deg,var(--navy),var(--navy3));display:grid;place-items:center;box-shadow:var(--sh-sm)}
 .msite .brand__logo svg{width:27px;height:27px}
+/* Gated Farmers-logo variant (icons.tsx BrandLogo): drop the navy tile so the
+   approved transparent trademark reads on both the light header and dark footer.
+   Same 46px height so the lockup footprint never shifts; width tracks the asset's
+   aspect ratio (capped so a wide wordmark can't blow out the header). */
+.msite .brand__logo--farmers{width:auto;background:none;box-shadow:none;border-radius:0}
+.msite .brand__logo--farmers img{display:block;height:100%;width:auto;max-width:190px;object-fit:contain}
 .msite .brand__txt strong{display:block;font-family:var(--disp);font-weight:700;font-size:17px;color:var(--navy);line-height:1.1}
 .msite .brand__txt span{display:block;font-size:11.5px;color:var(--slate);letter-spacing:.02em}
 .msite .nav{display:flex;align-items:center;gap:26px}

@@ -2,14 +2,14 @@ import * as React from 'react'
 import { cn } from '@/lib/utils'
 
 /*
- * BrandMark — the FSOS identity monogram, Farmers-branded.
+ * BrandMark — the FSA's OWN command-center monogram (CLAUDE.md §17.1).
  *
  * A deep Farmers-navy tile carrying the "M" (Markist) monogram in brand blue,
- * finished with a Farmers-red accent keyline along the base. This is the FSA's
- * OWN command-center mark; it is deliberately NOT the Farmers Insurance
- * trademark. When the official Farmers logo asset is added to the repo (drop an
- * SVG/PNG at `public/brand/farmers-logo.svg` and pass its src), render it in the
- * lockup beside this mark instead of approximating the trademark here.
+ * finished with a Farmers-red base keyline. This is deliberately the FSA's own
+ * identity mark for the app/auth/portal chrome — it is NOT the Farmers Insurance
+ * trademark, and the two must not be conflated (§17.1). The official Farmers logo
+ * lives on the public brand surfaces (marketing header/footer, favicon) via
+ * `BrandLogo`, sourced from the approved asset pack in `public/brand/`.
  *
  * Sizing is token-free on purpose so the same mark reads correctly in the
  * sidebar lockup (md), the topbar (sm), and the auth screen (lg).

@@ -5,7 +5,7 @@ import { BUSINESS, CONTACT, DISCLOSURES, LICENSING, SOCIAL, loginUrl } from '@/l
 const SOLUTIONS = ['Life Insurance', 'Retirement Planning', 'College Planning', 'Investments', 'Annuities', 'Business Protection']
 
 export function SiteFooter() {
-  const year = 2026
+  const year = new Date().getFullYear()
   return (
     <footer className="foot">
       <div className="shell">
@@ -25,6 +25,12 @@ export function SiteFooter() {
               <br />
               Consent-based, transparent client communications.
             </p>
+            {/* Official Farmers Insurance logo (full lockup) — §17.1 approved asset,
+                rendered unaltered on a white card so it reads on the navy footer. */}
+            <span className="foot__carrier">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/brand/farmers-logo.svg" alt="Farmers Insurance" />
+            </span>
             {SOCIAL.length > 0 ? (
               <div className="foot__soc">
                 {SOCIAL.map((s) => (

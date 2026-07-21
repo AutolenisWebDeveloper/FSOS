@@ -3,17 +3,7 @@
   "regions": ["iad1"],
   "crons": [
     { "path": "/api/cron/renewal-watch", "schedule": "0 9 * * *" },
-    { "path": "/api/cron/conversion-watch", "schedule": "0 9 * * *" },
-    { "path": "/api/cron/xdate-watch", "schedule": "0 9 * * *" },
-    { "path": "/api/cron/referral-sla", "schedule": "0 * * * *" },
-    { "path": "/api/cron/agency-dormancy", "schedule": "0 10 * * *" },
-    { "path": "/api/cron/cross-sell-scan", "schedule": "30 9 * * *" },
-    { "path": "/api/cron/commission-reconcile", "schedule": "0 11 * * *" },
-    { "path": "/api/cron/campaign-dispatch", "schedule": "*/30 * * * *" },
-    { "path": "/api/cron/workforce-orchestrator", "schedule": "0 15 * * *" },
-    { "path": "/api/cron/data-quality", "schedule": "0 6 * * *" },
-    { "path": "/api/cron/backup-verify", "schedule": "0 3 * * *" },
-    { "path": "/api/cron/workshop-reminders", "schedule": "*/15 * * * *" }
+    { "path": "/api/cron/campaign-dispatch", "schedule": "0 12 * * *" }
   ],
   "functions": {
     "src/app/api/forms/fna/route.ts": { "maxDuration": 60 },

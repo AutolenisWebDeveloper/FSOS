@@ -135,36 +135,20 @@ export function Icon({
   )
 }
 
-// Gate the Farmers Insurance trademark swap behind an env flag that defaults OFF,
-// so the approved logo only appears after Farmers brand + FINRA principal sign-off.
-// Enable by setting NEXT_PUBLIC_USE_FARMERS_LOGO=1 AND dropping the approved,
-// transparent asset at public/images/farmers-logo.svg (SVG preferred; a high-res
-// transparent PNG works too). Until both are true, the FSA's own shield renders.
-const USE_FARMERS_LOGO = process.env.NEXT_PUBLIC_USE_FARMERS_LOGO === '1'
-
 /**
- * Header/footer brand mark. Renders the FSA's own shield monogram by default; when
- * the gated Farmers logo is enabled, renders the approved Farmers trademark instead.
- * Same 46px footprint in both states so the lockup never shifts.
+ * Header/footer brand mark — the official Farmers Insurance emblem (CLAUDE.md §17.1
+ * approved asset pack at /public/brand/). Rendered unaltered (object-contain,
+ * official proportions preserved) on a white "chip" so the full-color mark reads on
+ * both the light header and the dark footer without ever recoloring the logo. The
+ * full FARMERS INSURANCE wordmark lockup — illegible at this 46px footprint — is
+ * shown separately in the footer brand column where it has room.
  */
 export function BrandLogo() {
-  if (USE_FARMERS_LOGO) {
-    return (
-      <span className="brand__logo brand__logo--farmers">
-        {/* Plain <img> keeps a transparent SVG/PNG crisp on both the light header
-            and the dark footer without next/image's SVG optimizer caveats. */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/images/farmers-logo.svg" alt="Farmers Insurance" width={46} height={46} />
-      </span>
-    )
-  }
   return (
-    <span className="brand__logo">
-      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z" fill="#fff" opacity=".16" />
-        <path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z" stroke="#fff" strokeWidth="1.5" />
-        <path d="M9 11.5l2 2 4-4.5" stroke="#E11B22" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
+    <span className="brand__logo brand__logo--farmers">
+      {/* Plain <img> keeps the vector emblem crisp without next/image's SVG caveats. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/brand/farmers-emblem.svg" alt="Farmers Insurance" />
     </span>
   )
 }

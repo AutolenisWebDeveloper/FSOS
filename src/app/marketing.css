@@ -7,8 +7,12 @@
    ============================================================================ */
 
 .msite{
+  /* Deep Farmers navy for large dark surfaces (hero/footer) — a dark brand shade. */
   --navy:#0E2350; --navy2:#16305F; --navy3:#1B3A72;
-  --red:#E11B22; --red2:#B71419;
+  /* Official Farmers palette (§10.2). Blue for links/accents; Red for CTAs; Maroon
+     as the pressed/deep-accent; light blue for subtle accents. */
+  --blue:#1C428B; --blue-l:#A6C3E9;
+  --red:#E11631; --red2:#A20F30;
   --paper:#FFFFFF; --mist:#F4F7FC; --cloud:#EAF0F9; --line:#DCE4F1;
   --ink:#172033; --slate:#5A6577; --gold:#F5A623;
   --disp:var(--font-poppins),-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
@@ -24,7 +28,7 @@
 }
 .msite *,.msite *::before,.msite *::after{box-sizing:border-box}
 .msite img{max-width:100%;display:block}
-.msite a{color:var(--navy2);text-underline-offset:2px}
+.msite a{color:var(--blue);text-underline-offset:2px}
 .msite a:hover{color:var(--red)}
 .msite :focus-visible{outline:3px solid var(--red);outline-offset:2px;border-radius:3px}
 .msite .shell{width:100%;max-width:var(--shell);margin:0 auto;padding:0 var(--gut)}
@@ -67,12 +71,12 @@
 .msite .brand{display:flex;align-items:center;gap:13px;text-decoration:none}
 .msite .brand__logo{width:46px;height:46px;flex:0 0 auto;border-radius:9px;background:linear-gradient(150deg,var(--navy),var(--navy3));display:grid;place-items:center;box-shadow:var(--sh-sm)}
 .msite .brand__logo svg{width:27px;height:27px}
-/* Gated Farmers-logo variant (icons.tsx BrandLogo): drop the navy tile so the
-   approved transparent trademark reads on both the light header and dark footer.
-   Same 46px height so the lockup footprint never shifts; width tracks the asset's
-   aspect ratio (capped so a wide wordmark can't blow out the header). */
-.msite .brand__logo--farmers{width:auto;background:none;box-shadow:none;border-radius:0}
-.msite .brand__logo--farmers img{display:block;height:100%;width:auto;max-width:190px;object-fit:contain}
+/* Official Farmers emblem (icons.tsx BrandLogo) on a white chip, so the full-color
+   mark reads on both the light header and the dark navy footer without ever
+   recoloring the trademark. Same 46px footprint; the emblem is contained with
+   clear space (never stretched or cropped). */
+.msite .brand__logo--farmers{width:46px;height:46px;background:#fff;border-radius:10px;box-shadow:var(--sh-sm);border:1px solid var(--line);padding:5px}
+.msite .brand__logo--farmers img{display:block;width:100%;height:100%;object-fit:contain}
 .msite .brand__txt strong{display:block;font-family:var(--disp);font-weight:700;font-size:17px;color:var(--navy);line-height:1.1}
 .msite .brand__txt span{display:block;font-size:11.5px;color:var(--slate);letter-spacing:.02em}
 .msite .nav{display:flex;align-items:center;gap:26px}
@@ -105,7 +109,10 @@
 /* Hero */
 .msite .hero{position:relative;background:radial-gradient(1100px 500px at 82% -8%,rgba(29,74,114,.55),transparent 60%),linear-gradient(135deg,var(--navy) 0%,var(--navy2) 55%,#0B1D45 100%);color:#fff;overflow:hidden}
 .msite .hero::after{content:"";position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(rgba(255,255,255,.05) 1px,transparent 1px);background-size:100% 46px;-webkit-mask-image:linear-gradient(transparent,rgba(0,0,0,.5) 60%,transparent);mask-image:linear-gradient(transparent,rgba(0,0,0,.5) 60%,transparent)}
-.msite .hero__in{position:relative;z-index:2;display:grid;grid-template-columns:1.05fr .95fr;gap:48px;align-items:center;padding:clamp(48px,7vw,88px) 0}
+/* padding-block only, so the shared `.shell` horizontal gutter survives (a
+   `padding: … 0` shorthand here would zero it and push the hero flush to the
+   viewport edge on mobile + misalign it from every other section on desktop). */
+.msite .hero__in{position:relative;z-index:2;display:grid;grid-template-columns:1.05fr .95fr;gap:48px;align-items:center;padding-block:clamp(48px,7vw,88px)}
 .msite .hero h1{color:#fff;font-size:clamp(38px,5.4vw,62px);line-height:1.04;letter-spacing:-.025em}
 .msite .hero__lead{color:#C9D8F0;font-size:clamp(16px,1.5vw,19px);max-width:46ch;margin:20px 0 30px}
 .msite .hero__acts{display:flex;gap:13px;flex-wrap:wrap;margin-bottom:34px}
@@ -140,7 +147,7 @@
 .msite .card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:26px 24px;box-shadow:var(--sh-sm);transition:transform .18s var(--ease),box-shadow .18s,border-color .18s}
 .msite .card:hover{transform:translateY(-4px);box-shadow:var(--sh);border-color:var(--cloud)}
 .msite .card__ic{width:52px;height:52px;border-radius:12px;background:var(--cloud);display:grid;place-items:center;margin-bottom:16px}
-.msite .card__ic svg{width:27px;height:27px;color:var(--navy2)}
+.msite .card__ic svg{width:27px;height:27px;color:var(--blue)}
 .msite .card h3{font-size:19px;margin-bottom:8px}
 .msite .card p{color:var(--slate);font-size:14.5px;margin:0 0 16px}
 .msite .card__more{font-size:14px;font-weight:600;color:var(--red);text-decoration:none;display:inline-flex;align-items:center;gap:6px}
@@ -251,6 +258,8 @@
 @media(max-width:420px){.msite .foot__top{grid-template-columns:1fr}}
 .msite .foot__brand .brand__txt strong{color:#fff}
 .msite .foot__brand p{margin:14px 0 0;font-size:13px;color:#9DB6DE;line-height:1.6}
+.msite .foot__carrier{display:inline-flex;align-items:center;margin-top:16px;background:#fff;border-radius:10px;padding:11px 15px;box-shadow:var(--sh-sm)}
+.msite .foot__carrier img{display:block;height:42px;width:auto}
 .msite .foot__h{font-family:var(--disp);font-size:13px;font-weight:700;color:#fff;letter-spacing:.02em;margin:0 0 14px}
 .msite .foot__list{list-style:none;margin:0;padding:0}
 .msite .foot__list li{margin-bottom:9px}
@@ -317,7 +326,7 @@
 /* ── Hub intro band ─────────────────────────────────────────────────────── */
 .msite .wintro{background:radial-gradient(1000px 440px at 84% -20%,rgba(29,74,114,.5),transparent 60%),linear-gradient(135deg,var(--navy) 0%,var(--navy2) 60%,#0B1D45 100%);color:#fff;position:relative;overflow:hidden}
 .msite .wintro::after{content:"";position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(rgba(255,255,255,.05) 1px,transparent 1px);background-size:100% 46px;-webkit-mask-image:linear-gradient(transparent,rgba(0,0,0,.5) 55%,transparent);mask-image:linear-gradient(transparent,rgba(0,0,0,.5) 55%,transparent)}
-.msite .wintro__in{position:relative;z-index:2;padding:clamp(44px,6vw,72px) 0 clamp(30px,4vw,44px);max-width:760px}
+.msite .wintro__in{position:relative;z-index:2;padding-block:clamp(44px,6vw,72px) clamp(30px,4vw,44px);max-width:760px}
 .msite .wintro h1{color:#fff;font-size:clamp(32px,4.6vw,50px);line-height:1.06;letter-spacing:-.022em;text-wrap:balance}
 .msite .wintro p{color:#C9D8F0;font-size:clamp(15px,1.4vw,18px);max-width:54ch;margin:16px 0 0}
 .msite .wintro__meta{display:flex;flex-wrap:wrap;gap:10px 20px;margin-top:22px;font-size:14px;color:#B9C9E6}
@@ -362,7 +371,7 @@
 /* ── Landing hero ───────────────────────────────────────────────────────── */
 .msite .whero{background:radial-gradient(1000px 460px at 88% -12%,rgba(29,74,114,.5),transparent 60%),linear-gradient(135deg,var(--navy) 0%,var(--navy2) 58%,#0B1D45 100%);color:#fff;position:relative;overflow:hidden}
 .msite .whero::after{content:"";position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(rgba(255,255,255,.05) 1px,transparent 1px);background-size:100% 46px;-webkit-mask-image:linear-gradient(transparent,rgba(0,0,0,.5) 60%,transparent);mask-image:linear-gradient(transparent,rgba(0,0,0,.5) 60%,transparent)}
-.msite .whero__in{position:relative;z-index:2;display:grid;grid-template-columns:1.1fr .9fr;gap:44px;align-items:center;padding:clamp(40px,6vw,72px) 0}
+.msite .whero__in{position:relative;z-index:2;display:grid;grid-template-columns:1.1fr .9fr;gap:44px;align-items:center;padding-block:clamp(40px,6vw,72px)}
 @media(max-width:900px){.msite .whero__in{grid-template-columns:1fr;gap:28px}}
 .msite .whero h1{color:#fff;font-size:clamp(30px,4.4vw,52px);line-height:1.06;letter-spacing:-.022em;margin:14px 0 0;text-wrap:balance}
 .msite .whero__lead{color:#C9D8F0;font-size:clamp(15px,1.4vw,18px);max-width:48ch;margin:16px 0 0}
@@ -413,7 +422,7 @@
 }
 
 /* ── Register + confirmed layout ────────────────────────────────────────── */
-.msite .wreg{display:grid;grid-template-columns:.85fr 1.15fr;gap:clamp(24px,4vw,44px);align-items:start;padding:clamp(30px,4.5vw,56px) 0}
+.msite .wreg{display:grid;grid-template-columns:.85fr 1.15fr;gap:clamp(24px,4vw,44px);align-items:start;padding-block:clamp(30px,4.5vw,56px)}
 @media(max-width:860px){.msite .wreg{grid-template-columns:1fr}}
 .msite .wsummary{background:linear-gradient(135deg,var(--navy),#0B1D45);color:#fff;border-radius:18px;padding:clamp(24px,3vw,32px);box-shadow:var(--sh);position:sticky;top:96px}
 @media(max-width:860px){.msite .wsummary{position:static}}

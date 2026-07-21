@@ -80,12 +80,21 @@ export function bookingUrl(): string {
 
 /** Canonical site origin for metadata / structured data. */
 export function siteUrl(): string {
-  return (
+  const fallback = 'https://www.markistfsa.com'
+  const configured =
     process.env.NEXT_PUBLIC_SITE_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
     process.env.NEXT_PUBLIC_URL ||
-    'https://www.markistfsa.com'
-  )
+    fallback
+  // Never return a value `new URL()` can't parse: `metadataBase` (root layout)
+  // and the structured-data builder both wrap this in `new URL(...)`, so a
+  // schemeless / malformed env value (e.g. "fsos-seven.vercel.app") would throw
+  // at build time and fail every route. Validate, normalize, and fall back.
+  try {
+    return new URL(configured).toString().replace(/\/$/, '')
+  } catch {
+    return fallback
+  }
 }
 
 /** Compliance disclosure lines — reused by the footer and legal pages. */

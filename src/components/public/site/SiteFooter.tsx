@@ -25,6 +25,12 @@ export function SiteFooter() {
               <br />
               Consent-based, transparent client communications.
             </p>
+            {/* Official Farmers Insurance logo (full lockup) — §10.1 approved asset,
+                rendered unaltered on a white card so it reads on the navy footer. */}
+            <span className="foot__carrier">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/brand/farmers/farmers-logo.svg" alt="Farmers Insurance" />
+            </span>
             {SOCIAL.length > 0 ? (
               <div className="foot__soc">
                 {SOCIAL.map((s) => (

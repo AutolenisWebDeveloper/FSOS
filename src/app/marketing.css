@@ -7,8 +7,12 @@
    ============================================================================ */
 
 .msite{
+  /* Deep Farmers navy for large dark surfaces (hero/footer) — a dark brand shade. */
   --navy:#0E2350; --navy2:#16305F; --navy3:#1B3A72;
-  --red:#E11B22; --red2:#B71419;
+  /* Official Farmers palette (§10.2). Blue for links/accents; Red for CTAs; Maroon
+     as the pressed/deep-accent; light blue for subtle accents. */
+  --blue:#1C428B; --blue-l:#A6C3E9;
+  --red:#E11631; --red2:#A20F30;
   --paper:#FFFFFF; --mist:#F4F7FC; --cloud:#EAF0F9; --line:#DCE4F1;
   --ink:#172033; --slate:#5A6577; --gold:#F5A623;
   --disp:var(--font-poppins),-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
@@ -24,7 +28,7 @@
 }
 .msite *,.msite *::before,.msite *::after{box-sizing:border-box}
 .msite img{max-width:100%;display:block}
-.msite a{color:var(--navy2);text-underline-offset:2px}
+.msite a{color:var(--blue);text-underline-offset:2px}
 .msite a:hover{color:var(--red)}
 .msite :focus-visible{outline:3px solid var(--red);outline-offset:2px;border-radius:3px}
 .msite .shell{width:100%;max-width:var(--shell);margin:0 auto;padding:0 var(--gut)}
@@ -67,12 +71,12 @@
 .msite .brand{display:flex;align-items:center;gap:13px;text-decoration:none}
 .msite .brand__logo{width:46px;height:46px;flex:0 0 auto;border-radius:9px;background:linear-gradient(150deg,var(--navy),var(--navy3));display:grid;place-items:center;box-shadow:var(--sh-sm)}
 .msite .brand__logo svg{width:27px;height:27px}
-/* Gated Farmers-logo variant (icons.tsx BrandLogo): drop the navy tile so the
-   approved transparent trademark reads on both the light header and dark footer.
-   Same 46px height so the lockup footprint never shifts; width tracks the asset's
-   aspect ratio (capped so a wide wordmark can't blow out the header). */
-.msite .brand__logo--farmers{width:auto;background:none;box-shadow:none;border-radius:0}
-.msite .brand__logo--farmers img{display:block;height:100%;width:auto;max-width:190px;object-fit:contain}
+/* Official Farmers emblem (icons.tsx BrandLogo) on a white chip, so the full-color
+   mark reads on both the light header and the dark navy footer without ever
+   recoloring the trademark. Same 46px footprint; the emblem is contained with
+   clear space (never stretched or cropped). */
+.msite .brand__logo--farmers{width:46px;height:46px;background:#fff;border-radius:10px;box-shadow:var(--sh-sm);border:1px solid var(--line);padding:5px}
+.msite .brand__logo--farmers img{display:block;width:100%;height:100%;object-fit:contain}
 .msite .brand__txt strong{display:block;font-family:var(--disp);font-weight:700;font-size:17px;color:var(--navy);line-height:1.1}
 .msite .brand__txt span{display:block;font-size:11.5px;color:var(--slate);letter-spacing:.02em}
 .msite .nav{display:flex;align-items:center;gap:26px}
@@ -143,7 +147,7 @@
 .msite .card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:26px 24px;box-shadow:var(--sh-sm);transition:transform .18s var(--ease),box-shadow .18s,border-color .18s}
 .msite .card:hover{transform:translateY(-4px);box-shadow:var(--sh);border-color:var(--cloud)}
 .msite .card__ic{width:52px;height:52px;border-radius:12px;background:var(--cloud);display:grid;place-items:center;margin-bottom:16px}
-.msite .card__ic svg{width:27px;height:27px;color:var(--navy2)}
+.msite .card__ic svg{width:27px;height:27px;color:var(--blue)}
 .msite .card h3{font-size:19px;margin-bottom:8px}
 .msite .card p{color:var(--slate);font-size:14.5px;margin:0 0 16px}
 .msite .card__more{font-size:14px;font-weight:600;color:var(--red);text-decoration:none;display:inline-flex;align-items:center;gap:6px}
@@ -254,6 +258,8 @@
 @media(max-width:420px){.msite .foot__top{grid-template-columns:1fr}}
 .msite .foot__brand .brand__txt strong{color:#fff}
 .msite .foot__brand p{margin:14px 0 0;font-size:13px;color:#9DB6DE;line-height:1.6}
+.msite .foot__carrier{display:inline-flex;align-items:center;margin-top:16px;background:#fff;border-radius:10px;padding:11px 15px;box-shadow:var(--sh-sm)}
+.msite .foot__carrier img{display:block;height:42px;width:auto}
 .msite .foot__h{font-family:var(--disp);font-size:13px;font-weight:700;color:#fff;letter-spacing:.02em;margin:0 0 14px}
 .msite .foot__list{list-style:none;margin:0;padding:0}
 .msite .foot__list li{margin-bottom:9px}

@@ -1,68 +1,40 @@
-# Brand assets — Farmers Insurance logo drop-in
+# Farmers Insurance brand assets
 
-## Status: the official Farmers Insurance logo is NOT in this repository.
+## Status: official assets are in the repo, at `public/brand/farmers/`.
 
-Until an approved asset is supplied, every brand surface renders the FSA's **own**
-mark — a shield/monogram lockup with the text "Markist Athelus · Financial Services
-Agent · Farmers Insurance". This is deliberate and compliant: the Farmers Insurance
-name and trademark are **not publicly redistributable**, and the project guardrail
-(`CLAUDE.md` §2.3) forbids inventing, redrawing, recoloring, or downloading an
-unofficial version of it. A text lockup naming Farmers is the correct interim
-treatment.
+Per CLAUDE.md §10.1 the Farmers marks are trademarked and must be used **unaltered**
+(never stretched, cropped, rotated, recolored, redrawn, or substituted). These assets
+are applied faithfully — contained (`object-contain`), official proportions preserved,
+on a white "chip"/card where the surface is dark so the full-color mark stays legible
+without recoloring.
 
-## What asset is required
+## Assets
 
-The **official Farmers Insurance logo**, obtained from an authorized source only:
+| File | What it is | Used for |
+|---|---|---|
+| `farmers-logo.svg` / `.png` | Full lockup: emblem + **FARMERS INSURANCE** wordmark | Footer carrier badge (room for the wordmark) |
+| `farmers-emblem.svg` / `.png` | Emblem only (fan + shield) | Header, `/app` sidebar/topbar, auth screens, favicon — the tight chrome slots where the stacked wordmark would be illegible |
 
-- the Farmers agent/brand resource center, or Farmers corporate marketing/brand team;
-- provided to a licensed Farmers agent under the applicable brand-usage guidelines.
+Both SVGs are clean vector (no embedded raster). Their fills are exactly the §10.2
+palette: Blue `#1C428B`, Red `#E11631`, Light Blue `#A6C3E9`, Maroon `#A20F30`,
+Gray `#666666`, White — i.e. the palette tokens are sourced from these assets.
 
-Requirements for the file you drop in:
+## Where the logo renders
 
-| Property | Requirement |
-|---|---|
-| Format | **SVG preferred** (crisp at every size); a high-resolution transparent **PNG** also works |
-| Background | **Transparent** — it renders on both the light marketing header and the dark footer/sidebar |
-| Color | The official colors, unmodified — **do not** recolor, add effects, or convert to mono |
-| Content | The official mark exactly as supplied — **do not** stretch, crop, rotate, or redraw it |
-| Path | `public/images/farmers-logo.svg` (the repo's `public/images/` folder). Keep the filename exactly. |
+- Public **header** + **footer** → `BrandLogo` (`src/components/public/site/icons.tsx`): emblem on a white chip; footer also shows the full lockup (`.foot__carrier`).
+- **Login / Forgot / Reset password** and other auth screens → `AuthShell` → `BrandMark`.
+- **/app** dashboard sidebar + topbar, portal chrome → `PortalShell`, `CharacterPanels` → `BrandMark`.
+- Public FSOS-styled pages → `PublicShell` → `BrandMark`.
+- **Favicon / app icon** → `src/app/icon.svg` (emblem centered on a white rounded square).
 
-If Farmers supplies separate lockups (a full horizontal wordmark vs. a compact
-emblem), the horizontal wordmark reads best in the marketing header; the same file
-is used in the square `/app`/auth tiles with `object-contain` (padded, never
-cropped). If a compact emblem is preferred for the square tiles, coordinate a
-second asset and we can point `BrandMark` at it.
+## Provenance & confirmation (action for the owner)
 
-## How to activate (once the approved asset is in place)
+> These files were supplied by the account owner (an authorized Farmers agent) and
+> originate from a **Brandfetch** export of `farmers.com`. Before public launch,
+> **confirm them against the current official Farmers agent brand kit** — the vetted
+> agent-portal logo pack — and swap in the official-kit files here if they differ.
+> The color tokens are the single point of change (`globals.css` / `marketing.css`),
+> so a palette correction is a one-place edit.
 
-1. Drop the approved file at `public/images/farmers-logo.svg`.
-2. Set the environment variable **`NEXT_PUBLIC_USE_FARMERS_LOGO=1`** (Vercel project
-   env for every environment where it should appear).
-3. Redeploy.
-
-That single flag + asset switches the logo **consistently everywhere it is wired**:
-
-- Public marketing **header** and **footer** (`BrandLogo` in `src/components/public/site/icons.tsx`)
-- **Login**, **Forgot password**, **Reset password**, and every other auth screen
-  (`AuthShell` → `BrandMark`)
-- The **/app dashboard** sidebar + topbar and other portal chrome
-  (`PortalShell`, `CharacterPanels` → `BrandMark`)
-- The public FSOS-styled pages (`PublicShell` → `BrandMark`)
-
-No code change is needed to switch it on — only the asset + the flag.
-
-## Not switched by this flag (intentionally)
-
-- **Favicon / app icon** (`src/app/icon.svg`): stays the FSA's own shield mark.
-  Placing the Farmers trademark in a favicon is a distinct trademark use that
-  needs its own sign-off, and a full logo does not read at 16–32px. Revisit
-  separately if Farmers approves a favicon-safe emblem.
-- **Backend-generated emails / server templates**: out of frontend scope; update
-  those through their own channel.
-
-## Sign-off checklist before enabling
-
-- [ ] Asset obtained from an authorized Farmers source (not scraped/redrawn)
-- [ ] Usage cleared under Farmers brand guidelines + FINRA principal review
-- [ ] Transparent, correct-color, unaltered file placed at the path above
-- [ ] `NEXT_PUBLIC_USE_FARMERS_LOGO=1` set for the intended environments
+If an approved asset is ever missing, **document the gap** — do not substitute an
+unofficial or low-resolution version (§10.1).

@@ -32,6 +32,11 @@ import {
 } from '@/components/dashboards'
 import { money, timeAgo, humanize } from '@/lib/dashboards/format'
 import { loadWinbackDashboard } from '@/lib/dashboards/winback'
+import { load } from '@/lib/data/query'
+import { OriginateWinBackButton } from '@/components/app/OriginateWinBackButton'
+
+// Open (non-terminal) opportunity stages — a win-back opportunity is "live" here.
+const OPEN_OPP_STAGES = ['prospect', 'fact_find', 'quoted_proposed', 'application', 'underwriting_suitability']
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -42,13 +47,29 @@ export const runtime = 'nodejs'
 // are honored, premium-at-risk is an assumption-based estimate (§2.3), and every
 // figure is live CRM data. Nothing here is a securities record.
 export default async function WinbackPage() {
-  const res = await loadWinbackDashboard()
+  const [res, oppRes] = await Promise.all([
+    loadWinbackDashboard(),
+    // Open win-back opportunities originated from former-life contacts (mig 046).
+    load<{ id: string }[]>(
+      (db) =>
+        db
+          .from('opportunities')
+          .select('id')
+          .eq('source', 'win_back')
+          .is('deleted_at', null)
+          .in('stage', OPEN_OPP_STAGES)
+          .limit(1000),
+      [],
+    ),
+  ])
+  const openOpportunities = oppRes.ok ? oppRes.data.length : 0
 
   const actions = (
     <div className="hidden flex-wrap gap-2 sm:flex">
       <Button asChild variant="outline" size="sm"><Link href="/app/contacts?source=winback_life">All contacts</Link></Button>
       <Button asChild variant="outline" size="sm"><Link href="/app/comms">Outreach</Link></Button>
-      <Button asChild size="sm"><Link href="/app/winback/import">Import list</Link></Button>
+      <Button asChild variant="outline" size="sm"><Link href="/app/winback/import">Import list</Link></Button>
+      <OriginateWinBackButton />
     </div>
   )
 
@@ -126,6 +147,7 @@ export default async function WinbackPage() {
         <MetricCard label="Contactable" value={kpis.reachable.toLocaleString()} href="/app/comms" icon={PhoneCall} tone="positive" hint="Phone or email, not suppressed" />
         <MetricCard label="Suppressed" value={kpis.suppressed.toLocaleString()} icon={ShieldOff} tone="attention" hint="DNC or unsubscribed" />
         <MetricCard label="Agencies covered" value={kpis.linkedAgencies.toLocaleString()} href="/app/agencies" icon={Building2} tone="neutral" hint="Books with lapsed life" />
+        <MetricCard label="Win-back opportunities" value={openOpportunities.toLocaleString()} href="/app/opportunities" icon={Layers} tone="brand" hint="Open in the pipeline" />
         <MetricCard
           label="Est. premium at risk"
           value={money(kpis.estPremiumAtRisk)}

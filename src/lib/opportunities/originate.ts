@@ -1,15 +1,17 @@
 // src/lib/opportunities/originate.ts
-// Impure service that turns detected coverage gaps into tracked cross-sell
-// opportunities. It reads v_cross_sell_gaps + existing cross-sell opportunities,
-// delegates the eligibility/dedup/firewall decision to the PURE planner
-// (lib/opportunities/crosssell.ts), persists the drafts on the existing
-// `opportunities` table (reusing its columns + the additive `source` tag, mig 045),
-// and writes an audit row per opportunity. No parallel table, no new pipeline.
+// Impure services that turn detected signals into tracked opportunities:
+//   • originateCrossSellOpportunities — coverage gaps (v_cross_sell_gaps) → source='cross_sell'
+//   • originateWinBackOpportunities  — imported former-life contacts   → source='win_back'
+// Each reads the signal + existing same-source opportunities, delegates the
+// eligibility/dedup/firewall decision to a PURE planner (lib/opportunities/{crosssell,
+// winback}.ts), persists the drafts on the existing `opportunities` table (reusing its
+// columns + the additive `source` (mig 045) / `contact_id` (mig 046) tags), and writes
+// an audit row per opportunity. No parallel table, no new pipeline.
 //
 // Green-zone: originating an internal opportunity record is data assembly, not a
 // client-facing action — it sends nothing (outreach still flows through the workforce
-// + the 7-step gate). is_security is a literal false (cross-sell is never securities),
-// and no commission/premium is invented (§4.3) — the FSA prices the opportunity.
+// + the 7-step gate). is_security is a literal false (these are never securities), and
+// no commission/premium is invented (§4.3) — the FSA prices the opportunity.
 
 import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
@@ -19,6 +21,14 @@ import {
   type CrossSellGap,
   type ExistingOpp,
 } from './crosssell'
+import {
+  planWinbackOpportunities,
+  WIN_BACK_SOURCE,
+  LIFE_WINBACK_TAG,
+  WORKED_STATUS,
+  type WinbackContact,
+  type ExistingWinbackOpp,
+} from './winback'
 
 // Non-terminal stages — the only ones that block re-origination (dedup). Terminal
 // (placed_issued / lost) opportunities do not, so we exclude them at the DB level to
@@ -129,5 +139,107 @@ export async function originateCrossSellOpportunities(
     skippedIneligible,
     createdIds: inserted.map((o) => o.id),
     note: `${inserted.length} cross-sell opportunit${inserted.length === 1 ? 'y' : 'ies'} created.`,
+  }
+}
+
+/**
+ * Originate Life Win-Back opportunities from imported former-life contacts
+ * (contacts.source='winback_life', tagged 'life-winback'). Deduplicated against
+ * contacts that already hold an open win_back opportunity. Attributed to the contact
+ * (mig 046) and, when known, the household + referring agency. Returns counts.
+ */
+export async function originateWinBackOpportunities(
+  actor: string,
+  opts: { limit?: number } = {},
+): Promise<OriginateResult | { error: string }> {
+  const limit = Math.min(Math.max(1, opts.limit ?? DEFAULT_LIMIT), MAX_LIMIT)
+  const db = getDb()
+
+  // 1. Imported former-life contacts (the win-back list). Only life-winback, un-worked.
+  const contactsRes = await db
+    .from('contacts')
+    .select('id, full_name, tags, lines_of_business, agency_partnership_id, household_id, status')
+    .eq('source', 'winback_life')
+    .is('deleted_at', null)
+    .contains('tags', [LIFE_WINBACK_TAG])
+    .neq('status', WORKED_STATUS)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+  if (contactsRes.error) return { error: contactsRes.error.message }
+  const contacts = (contactsRes.data ?? []) as WinbackContact[]
+  if (contacts.length === 0) {
+    return { created: 0, skippedDuplicate: 0, skippedIneligible: 0, createdIds: [], note: 'No win-back contacts to originate.' }
+  }
+
+  // 2. Existing OPEN win_back opportunities (for per-contact dedup).
+  const existingRes = await db
+    .from('opportunities')
+    .select('contact_id, source, stage')
+    .eq('source', WIN_BACK_SOURCE)
+    .is('deleted_at', null)
+    .in('stage', OPEN_STAGES)
+  if (existingRes.error) return { error: existingRes.error.message }
+  const existing = (existingRes.data ?? []) as ExistingWinbackOpp[]
+
+  // 3. Pure decision: eligibility + dedup + firewall (is_security=false).
+  const { drafts, skipped } = planWinbackOpportunities(contacts, existing)
+  const skippedDuplicate = skipped.filter((s) => s.reason === 'duplicate_open').length
+  const skippedIneligible = skipped.filter((s) => s.reason === 'not_eligible').length
+
+  if (drafts.length === 0) {
+    return {
+      created: 0,
+      skippedDuplicate,
+      skippedIneligible,
+      createdIds: [],
+      note: `No new opportunities — ${skippedDuplicate} already open, ${skippedIneligible} ineligible.`,
+    }
+  }
+
+  // 4. Persist on the existing opportunities table (additive contact_id, mig 046).
+  const now = new Date().toISOString()
+  const rows = drafts.map((d) => ({
+    contact_id: d.contact_id,
+    household_id: d.household_id,
+    referring_agency_id: d.referring_agency_id,
+    product_id: null as string | null,
+    engagement: d.engagement,
+    stage: 'prospect' as const,
+    is_security: false,
+    source: d.source,
+    stage_history: [{ stage: 'prospect', at: now, actor, note: d.reason }],
+    owner_scope: actor,
+  }))
+
+  const insertRes = await db.from('opportunities').insert(rows).select('id, contact_id')
+  if (insertRes.error) return { error: insertRes.error.message }
+  const inserted = (insertRes.data ?? []) as { id: string; contact_id: string }[]
+
+  // 5. Audit each origination (best-effort; the write is non-throwing).
+  await Promise.all(
+    inserted.map((opp) => {
+      const draft = drafts.find((d) => d.contact_id === opp.contact_id)
+      return writeAudit({
+        actor,
+        action: 'entity.created',
+        entity: 'opportunity',
+        entityId: opp.id,
+        diff: { source: WIN_BACK_SOURCE, contact_id: opp.contact_id, stage: 'prospect', reason: draft?.reason },
+      })
+    }),
+  )
+  await writeAudit({
+    actor,
+    action: 'ai.action',
+    entity: 'win_back_origination',
+    diff: { created: inserted.length, skippedDuplicate, skippedIneligible },
+  })
+
+  return {
+    created: inserted.length,
+    skippedDuplicate,
+    skippedIneligible,
+    createdIds: inserted.map((o) => o.id),
+    note: `${inserted.length} win-back opportunit${inserted.length === 1 ? 'y' : 'ies'} created.`,
   }
 }

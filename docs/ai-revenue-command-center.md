@@ -40,8 +40,8 @@ Win-Back, Term Conversion, Appointment, Revenue Center) build on top of that coc
 |---|---|---|
 | 1 | AI Command Center composed view + compliance-spine proof | **Delivered** (PR #90, merged) |
 | 2 | Cross-Sell revenue workflow (end-to-end) | **Delivered** (PR #91, merged) |
-| 3 | Life Win-Back revenue workflow | **Delivered** |
-| 4 | Term Conversion revenue workflow | Planned |
+| 3 | Life Win-Back revenue workflow | **Delivered** (PR #92, merged) |
+| 4 | Term Conversion revenue workflow | **Delivered** |
 | 5 | Appointment Generation & Recovery | Planned |
 | 6 | Revenue Center (composed view) + Executive Dashboard enrichment | Planned |
 
@@ -166,3 +166,47 @@ the win-back importer and dashboard are unchanged.
 remains pending config as before — this slice originates opportunities only, not sends.
 No policy/carrier/lapse-date is captured or invented (§4.3); premium-at-risk remains an
 assumption-badged aggregate on the dashboard.
+
+## Slice 4 — Term Conversion revenue workflow (delivered)
+
+**What.** Closed the §13.3 gap, the third in the origination pattern: `v_conversions_due`
+(keyed on **policy**, with a stored `conversion_deadline`) feeds detection/outreach, but
+**no term-conversion opportunity was ever originated**. This slice originates
+deadline-grounded, deduplicated `term_conversion` opportunities, reusing the
+`opportunities` table.
+
+**Completes the attribution trio.** `opportunities` had no policy linkage, so this adds
+an additive `opportunities.policy_id` — the third additive origination key after `source`
+(045) and `contact_id` (046). Aggregate root unchanged (ADR-001).
+
+**Changes.**
+- `supabase/migrations/047_opportunity_policy.sql` — **additive** nullable
+  `opportunities.policy_id` FK (`→ household_policies on delete set null`) + partial
+  index. Per-policy attribution + dedup key.
+- `src/lib/opportunities/termconversion.ts` — new **pure** planner (`urgencyWindow`,
+  `isEligibleConversion`, `conversionReason`, `planTermConversionOpportunities`).
+  **Securities-flagged policies are EXCLUDED (firewall §4.1) — checked first, routed to
+  FFS, never originated**; every draft is `is_security: false`. The deadline/urgency come
+  from the **stored** `conversion_deadline` (nothing invented, §4.3); the reason is
+  educational, never a conversion/product recommendation. Deduplicated to **one open
+  `term_conversion` opportunity per policy**; finer urgency windows (7/14/30/60/90/180/365)
+  derived from `days_remaining`.
+- `src/lib/opportunities/originate.ts` — extended with
+  `originateTermConversionOpportunities` (reads `v_conversions_due` with `is_security=false`
+  + actionable tiers, plans, inserts with `policy_id` + product + household, audits;
+  securities exclusions surfaced in the result note).
+- `src/app/api/app/conversions/originate/route.ts` — `POST` (fsa + permission, Zod).
+  Green-zone data assembly — sends nothing.
+- `src/components/app/OriginateTermConversionButton.tsx` + the conversions page — a
+  "Create opportunities" action and a "Conversion opportunities" KPI.
+- `tests/termconversion-originate.test.mjs` — proves urgency windows, eligibility, the
+  **securities-exclusion firewall**, and dedup. Wired into `npm test`.
+
+**Verification.** `build`, `type-check`, `lint` clean; full `npm test` green (new suite:
+14 assertions; `firewall-write-scan` still passes). Migration is additive + forward-only;
+the conversion importer, dashboard, and per-policy action route are unchanged.
+
+**Known limitations.** Term-conversion **outreach** already exists (workforce
+`termConversionCandidates`); this slice adds the missing **opportunity origination** and
+does not change the outreach path. No commission is invented (§4.3). Wiring origination
+into the `conversion-watch` cron is a controlled follow-up.

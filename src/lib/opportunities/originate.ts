@@ -1,12 +1,14 @@
 // src/lib/opportunities/originate.ts
 // Impure services that turn detected signals into tracked opportunities:
-//   • originateCrossSellOpportunities — coverage gaps (v_cross_sell_gaps) → source='cross_sell'
-//   • originateWinBackOpportunities  — imported former-life contacts   → source='win_back'
+//   • originateCrossSellOpportunities     — coverage gaps (v_cross_sell_gaps) → source='cross_sell'
+//   • originateWinBackOpportunities        — imported former-life contacts    → source='win_back'
+//   • originateTermConversionOpportunities — due conversion windows (v_conversions_due) → source='term_conversion'
 // Each reads the signal + existing same-source opportunities, delegates the
 // eligibility/dedup/firewall decision to a PURE planner (lib/opportunities/{crosssell,
-// winback}.ts), persists the drafts on the existing `opportunities` table (reusing its
-// columns + the additive `source` (mig 045) / `contact_id` (mig 046) tags), and writes
-// an audit row per opportunity. No parallel table, no new pipeline.
+// winback,termconversion}.ts), persists the drafts on the existing `opportunities`
+// table (reusing its columns + the additive `source` (mig 045) / `contact_id` (mig 046)
+// / `policy_id` (mig 047) tags), and writes an audit row per opportunity. No parallel
+// table, no new pipeline.
 //
 // Green-zone: originating an internal opportunity record is data assembly, not a
 // client-facing action — it sends nothing (outreach still flows through the workforce
@@ -29,6 +31,12 @@ import {
   type WinbackContact,
   type ExistingWinbackOpp,
 } from './winback'
+import {
+  planTermConversionOpportunities,
+  TERM_CONVERSION_SOURCE,
+  type ConversionRow,
+  type ExistingConversionOpp,
+} from './termconversion'
 
 // Non-terminal stages — the only ones that block re-origination (dedup). Terminal
 // (placed_issued / lost) opportunities do not, so we exclude them at the DB level to
@@ -241,5 +249,106 @@ export async function originateWinBackOpportunities(
     skippedIneligible,
     createdIds: inserted.map((o) => o.id),
     note: `${inserted.length} win-back opportunit${inserted.length === 1 ? 'y' : 'ies'} created.`,
+  }
+}
+
+/**
+ * Originate Term Conversion opportunities from policies with a due conversion window
+ * (v_conversions_due). Securities-flagged policies are EXCLUDED (routed to FFS, never
+ * originated). Deduplicated per policy; attributed to the policy (mig 047) + product +
+ * household. Returns counts (securities exclusions are surfaced in the note).
+ */
+export async function originateTermConversionOpportunities(
+  actor: string,
+  opts: { limit?: number } = {},
+): Promise<OriginateResult | { error: string }> {
+  const limit = Math.min(Math.max(1, opts.limit ?? DEFAULT_LIMIT), MAX_LIMIT)
+  const db = getDb()
+
+  // 1. Due conversion windows. Firewall at the query (is_security=false) AND in the
+  //    planner (defensive). Scope to actionable windows (tier != 'beyond').
+  const rowsRes = await db
+    .from('v_conversions_due')
+    .select('policy_id, household_id, product_id, policy_number, conversion_deadline, is_security, days_remaining, urgency_tier')
+    .eq('is_security', false)
+    .neq('urgency_tier', 'beyond')
+    .order('days_remaining', { ascending: true })
+    .limit(limit)
+  if (rowsRes.error) return { error: rowsRes.error.message }
+  const rows = (rowsRes.data ?? []) as ConversionRow[]
+  if (rows.length === 0) {
+    return { created: 0, skippedDuplicate: 0, skippedIneligible: 0, createdIds: [], note: 'No conversion windows to originate.' }
+  }
+
+  // 2. Existing OPEN term_conversion opportunities (for per-policy dedup).
+  const existingRes = await db
+    .from('opportunities')
+    .select('policy_id, source, stage')
+    .eq('source', TERM_CONVERSION_SOURCE)
+    .is('deleted_at', null)
+    .in('stage', OPEN_STAGES)
+  if (existingRes.error) return { error: existingRes.error.message }
+  const existing = (existingRes.data ?? []) as ExistingConversionOpp[]
+
+  // 3. Pure decision: firewall (securities excluded) + eligibility + dedup.
+  const { drafts, skipped } = planTermConversionOpportunities(rows, existing)
+  const skippedDuplicate = skipped.filter((s) => s.reason === 'duplicate_open').length
+  const skippedSecurities = skipped.filter((s) => s.reason === 'securities_excluded').length
+  const skippedIneligible = skipped.filter((s) => s.reason === 'not_actionable').length
+
+  if (drafts.length === 0) {
+    return {
+      created: 0,
+      skippedDuplicate,
+      skippedIneligible,
+      createdIds: [],
+      note: `No new opportunities — ${skippedDuplicate} already open, ${skippedIneligible} not actionable${skippedSecurities ? `, ${skippedSecurities} securities excluded` : ''}.`,
+    }
+  }
+
+  // 4. Persist on the existing opportunities table (additive policy_id, mig 047).
+  const now = new Date().toISOString()
+  const rowsToInsert = drafts.map((d) => ({
+    policy_id: d.policy_id,
+    household_id: d.household_id,
+    product_id: d.product_id,
+    engagement: d.engagement,
+    stage: 'prospect' as const,
+    is_security: false,
+    source: d.source,
+    stage_history: [{ stage: 'prospect', at: now, actor, note: d.reason }],
+    owner_scope: actor,
+  }))
+
+  const insertRes = await db.from('opportunities').insert(rowsToInsert).select('id, policy_id')
+  if (insertRes.error) return { error: insertRes.error.message }
+  const inserted = (insertRes.data ?? []) as { id: string; policy_id: string }[]
+
+  // 5. Audit each origination (best-effort; the write is non-throwing).
+  await Promise.all(
+    inserted.map((opp) => {
+      const draft = drafts.find((d) => d.policy_id === opp.policy_id)
+      return writeAudit({
+        actor,
+        action: 'entity.created',
+        entity: 'opportunity',
+        entityId: opp.id,
+        diff: { source: TERM_CONVERSION_SOURCE, policy_id: opp.policy_id, window: draft?.window, stage: 'prospect', reason: draft?.reason },
+      })
+    }),
+  )
+  await writeAudit({
+    actor,
+    action: 'ai.action',
+    entity: 'term_conversion_origination',
+    diff: { created: inserted.length, skippedDuplicate, skippedIneligible, skippedSecurities },
+  })
+
+  return {
+    created: inserted.length,
+    skippedDuplicate,
+    skippedIneligible,
+    createdIds: inserted.map((o) => o.id),
+    note: `${inserted.length} term-conversion opportunit${inserted.length === 1 ? 'y' : 'ies'} created${skippedSecurities ? ` · ${skippedSecurities} securities routed to FFS` : ''}.`,
   }
 }

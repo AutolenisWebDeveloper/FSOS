@@ -194,6 +194,32 @@ Status ramp: `--status-{draft,active,pending,won,lost,blocked,escalated,assumpti
 - **Elevation:** navy-tinted `--shadow-xs…xl` → `shadow-elev-*`. Cards flush, lift on interaction, overlays float on `xl`.
 - **Density:** table rows 40px, header 32px. Sidebar 260px, topbar 56px, content max-width 1400px.
 
+### 6.5 Public marketing surface (`.msite`) — sanctioned separate palette [AS-BUILT]
+
+The public marketing pages (`src/app/page.tsx`, legal pages, workshops hub) render
+inside a `.msite` theme scope with their **own palette in `src/app/marketing.css`**,
+distinct from the app token layer above. This is **intentional and sanctioned**, not
+drift: the marketing surface is a separate design world (`farmers-brand-website`)
+tuned for a warm, high-trust public site, while the token layer above drives the
+dense authenticated app. The two must not be merged.
+
+The `.msite` palette is the single source of truth for public-marketing color;
+resolve every marketing color through these CSS variables (in `marketing.css :root`),
+never a fresh inline hex in a component:
+
+| Var | Value | Role |
+|---|---|---|
+| `--navy` / `--navy2` / `--navy3` | `#0E2350` / `#16305F` / `#1B3A72` | Marketing navy shell + gradient stops |
+| `--blue` / `--blue-l` | `#1C428B` / `#A6C3E9` | Farmers blue + light-blue accent |
+| `--red` | Farmers red | Primary CTA / critical accent |
+| `--paper` / `--mist` / `--cloud` / `--line` | `#FFFFFF` / `#F4F7FC` / `#EAF0F9` / `#DCE4F1` | Surfaces + hairlines |
+| `--ink` / `--slate` | `#172033` / `#5A6577` | Marketing ink + muted ink |
+| `--gold` | `#F5A623` | Marketing attention accent |
+
+**Rule:** marketing components resolve color through a `.msite` class or var — no
+new inline `style={{ color: '#…' }}` hexes in a component. When the marketing
+surface needs a new color, add a `.msite` var/class here and reference it.
+
 ---
 
 ## 7. Core components [AS-BUILT] (`src/components/ui`)

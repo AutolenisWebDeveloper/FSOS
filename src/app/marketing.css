@@ -79,6 +79,8 @@
 .msite .brand__logo--farmers img{display:block;width:100%;height:100%;object-fit:contain}
 .msite .brand__txt strong{display:block;font-family:var(--disp);font-weight:700;font-size:17px;color:var(--navy);line-height:1.1}
 .msite .brand__txt span{display:block;font-size:11.5px;color:var(--slate);letter-spacing:.02em}
+/* Brand subtitle on the navy footer — light-blue ink (overrides the slate above). */
+.msite .brand__txt span.brand__sub{color:#9DB6DE}
 .msite .nav{display:flex;align-items:center;gap:26px}
 .msite .nav__links{display:flex;align-items:center;gap:22px;list-style:none;margin:0;padding:0}
 .msite .nav__links>li{position:relative}
@@ -245,6 +247,8 @@
 .msite .consent__note{font-size:11.5px;color:var(--slate);line-height:1.5;margin:10px 0 0 31px}
 .msite .consent a{color:var(--navy2);font-weight:600}
 .msite .microcopy{font-size:11.5px;color:var(--slate);margin:12px 0 0}
+/* Microcopy on a navy band — light-blue ink + a little more top spacing. */
+.msite .microcopy--onnavy{color:#B9C9E6;margin-top:18px}
 .msite .formstatus{margin-top:13px;padding:12px 14px;border-radius:9px;background:#E7F5EE;color:#12693F;font-size:13.5px;font-weight:600;border:1px solid #BFE4D0}
 .msite .err{color:var(--red);font-size:12.5px;margin:0 0 10px}
 

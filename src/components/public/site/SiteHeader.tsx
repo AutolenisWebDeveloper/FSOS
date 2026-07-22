@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import { Icon, BrandLogo } from './icons'
 import { BUSINESS, CONTACT, bookingUrl, loginUrl } from '@/lib/site'
 
@@ -48,7 +49,7 @@ export function SiteHeader({ active = 'home' }: { active?: 'home' | 'contact' | 
       {/* Header / nav */}
       <header className="head">
         <div className="shell head__in">
-          <a className="brand" href="/" aria-label={`${BUSINESS.agent} — home`}>
+          <Link className="brand" href="/" aria-label={`${BUSINESS.agent} — home`}>
             <BrandLogo />
             <span className="brand__txt">
               <strong>{BUSINESS.agent}</strong>
@@ -56,7 +57,7 @@ export function SiteHeader({ active = 'home' }: { active?: 'home' | 'contact' | 
                 {BUSINESS.title} · {BUSINESS.carrier}
               </span>
             </span>
-          </a>
+          </Link>
           <nav className={`nav${open ? ' open' : ''}`} aria-label="Main">
             <button
               className="burger"
@@ -69,49 +70,49 @@ export function SiteHeader({ active = 'home' }: { active?: 'home' | 'contact' | 
             </button>
             <ul className="nav__links" id="site-navlinks">
               <li>
-                <a href="/" aria-current={active === 'home' ? 'page' : undefined}>
+                <Link href="/" aria-current={active === 'home' ? 'page' : undefined}>
                   Home
-                </a>
+                </Link>
               </li>
               <li>
-                <a href="/#solutions">
+                <Link href="/#solutions">
                   Solutions
                   <Icon name="caret" className="caret" />
-                </a>
+                </Link>
                 <div className="menu">
                   {SOLUTIONS.map((s) => (
-                    <a key={s} href="/#solutions" onClick={() => setOpen(false)}>
+                    <Link key={s} href="/#solutions" onClick={() => setOpen(false)}>
                       {s}
-                    </a>
+                    </Link>
                   ))}
                 </div>
               </li>
               <li>
-                <a href="/workshops" aria-current={active === 'workshops' ? 'page' : undefined}>
+                <Link href="/workshops" aria-current={active === 'workshops' ? 'page' : undefined}>
                   Workshops
-                </a>
+                </Link>
               </li>
               <li>
-                <a href="/#about">About</a>
+                <Link href="/#about">About</Link>
               </li>
               <li>
-                <a href="/#process">
+                <Link href="/#process">
                   Resources
                   <Icon name="caret" className="caret" />
-                </a>
+                </Link>
                 <div className="menu">
-                  <a href="/#process" onClick={() => setOpen(false)}>
+                  <Link href="/#process" onClick={() => setOpen(false)}>
                     How It Works
-                  </a>
-                  <a href="/#reviews" onClick={() => setOpen(false)}>
+                  </Link>
+                  <Link href="/#reviews" onClick={() => setOpen(false)}>
                     Client Reviews
-                  </a>
+                  </Link>
                 </div>
               </li>
               <li>
-                <a href="/#contact" aria-current={active === 'contact' ? 'page' : undefined}>
+                <Link href="/#contact" aria-current={active === 'contact' ? 'page' : undefined}>
                   Contact
-                </a>
+                </Link>
               </li>
             </ul>
             <div className="nav__cta">

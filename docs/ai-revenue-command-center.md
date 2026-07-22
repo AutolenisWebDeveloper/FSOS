@@ -39,8 +39,8 @@ Win-Back, Term Conversion, Appointment, Revenue Center) build on top of that coc
 | # | Slice | Status |
 |---|---|---|
 | 1 | AI Command Center composed view + compliance-spine proof | **Delivered** (PR #90, merged) |
-| 2 | Cross-Sell revenue workflow (end-to-end) | **Delivered** |
-| 3 | Life Win-Back revenue workflow | Planned |
+| 2 | Cross-Sell revenue workflow (end-to-end) | **Delivered** (PR #91, merged) |
+| 3 | Life Win-Back revenue workflow | **Delivered** |
 | 4 | Term Conversion revenue workflow | Planned |
 | 5 | Appointment Generation & Recovery | Planned |
 | 6 | Revenue Center (composed view) + Executive Dashboard enrichment | Planned |
@@ -123,3 +123,46 @@ aggregate cross-sell revenue estimate remains assumption-badged on the dashboard
 Origination is a human-triggered action (button) / callable service — wiring it into the
 `cross-sell-scan` cron is a controlled follow-up so a production job's behavior isn't
 changed inside this slice.
+
+## Slice 3 — Life Win-Back revenue workflow (delivered)
+
+**What.** Closed the §13.2 gap, exactly parallel to cross-sell: former-life clients are
+imported into `contacts` (`source='winback_life'`, tagged `life-winback`) and a dashboard
+reads them, but **nothing ever originated a tracked win-back opportunity**. This slice
+originates deduplicated `win_back` opportunities from those contacts, reusing the
+`opportunities` table.
+
+**Key difference from cross-sell.** Win-back attributes to a **contact** (many imported
+former-life prospects have no household yet), and `opportunities` had no contact linkage
+— so this slice adds an additive `opportunities.contact_id` (mirroring how slice 2 added
+`source`). The aggregate root stays the agency partnership (ADR-001); `contact_id` is a
+supporting link, not a new root.
+
+**Changes.**
+- `supabase/migrations/046_opportunity_contact.sql` — **additive** nullable
+  `opportunities.contact_id` FK (`→ contacts on delete set null`) + partial index. The
+  attribution key when no household is resolved yet, and the win-back dedup key.
+- `src/lib/opportunities/winback.ts` — new **pure** planner (`hadLife`,
+  `isEligibleWinback`, `engagementForContact`, `winbackReason`,
+  `planWinbackOpportunities`). Every draft is `is_security: false`; the reason is
+  grounded in the imported list and **never claims a current/active policy or carrier**
+  (§13.2 / §4.3); deduplicated to **one open win_back opportunity per contact**.
+- `src/lib/opportunities/originate.ts` — extended with `originateWinBackOpportunities`
+  (reads `contacts` where `source='winback_life'` + tag `life-winback` + un-worked, plus
+  open win_back opportunities; plans; inserts with `contact_id` + attribution; audits).
+- `src/app/api/app/winback/originate/route.ts` — `POST` (fsa + permission, Zod).
+  Green-zone data assembly — sends nothing.
+- `src/components/app/OriginateWinBackButton.tsx` + the win-back page — a "Create
+  opportunities" action and a "Win-back opportunities" KPI.
+- `tests/winback-originate.test.mjs` — proves eligibility (life-winback required), dedup
+  (per contact, batch, terminal, other-source), and the firewall invariant. Wired into
+  `npm test`.
+
+**Verification.** `build`, `type-check`, `lint` clean; full `npm test` green (new suite:
+15 assertions; `firewall-write-scan` still passes). Migration is additive + forward-only;
+the win-back importer and dashboard are unchanged.
+
+**Known limitations.** Win-back **outreach** (a `win_back` workforce candidate generator)
+remains pending config as before — this slice originates opportunities only, not sends.
+No policy/carrier/lapse-date is captured or invented (§4.3); premium-at-risk remains an
+assumption-badged aggregate on the dashboard.

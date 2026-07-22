@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
 import { SiteShell } from '@/components/public/site/SiteShell'
 import { CONTACT } from '@/lib/site'
 
@@ -66,8 +67,8 @@ export default function TermsPage() {
 
             <h2 id="sms">4. Text messaging</h2>
             <p>
-              The optional SMS program is governed by our <a href="/sms-terms">SMS Terms &amp; Conditions</a> and{' '}
-              <a href="/privacy">Privacy Policy</a>, incorporated by reference. Consent is not a condition of purchase.
+              The optional SMS program is governed by our <Link href="/sms-terms">SMS Terms &amp; Conditions</Link> and{' '}
+              <Link href="/privacy">Privacy Policy</Link>, incorporated by reference. Consent is not a condition of purchase.
               Message frequency varies. Message and data rates may apply. Reply STOP to opt out, HELP for help. No mobile
               information will be shared with third parties or affiliates for marketing or promotional purposes.
             </p>

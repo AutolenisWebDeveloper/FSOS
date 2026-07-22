@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
 import { SiteShell } from '@/components/public/site/SiteShell'
 import { BUSINESS, CONTACT, SMS_CONSENT } from '@/lib/site'
 
@@ -49,7 +50,7 @@ export default function SmsTermsPage() {
                 <strong>Message frequency varies. Message and data rates may apply.</strong> Reply <strong>STOP</strong>{' '}
                 to opt out, <strong>HELP</strong> for help, or call{' '}
                 <a href={`tel:${CONTACT.phoneE164}`}>{CONTACT.phoneDisplay}</a>. Consent is not a condition of purchase.
-                Messages originate from {SMS_CONSENT.from}. See our <a href="/privacy">Privacy Policy</a>. No mobile
+                Messages originate from {SMS_CONSENT.from}. See our <Link href="/privacy">Privacy Policy</Link>. No mobile
                 information will be shared with third parties or affiliates for marketing or promotional purposes.
               </p>
             </div>
@@ -110,7 +111,7 @@ export default function SmsTermsPage() {
             </div>
             <p>
               Only the messaging platform and delivering carriers touch your mobile information, under contract. Full
-              detail in the <a href="/privacy">Privacy Policy</a>.
+              detail in the <Link href="/privacy">Privacy Policy</Link>.
             </p>
 
             <h2 id="eligibility">8. Eligibility</h2>

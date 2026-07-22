@@ -156,16 +156,16 @@ All tokens are HSL CSS variables in `src/app/globals.css :root`, surfaced throug
 ### 6.1 Surfaces & ink
 | Token | Tailwind | Role |
 |---|---|---|
-| `--shell` `226 44% 12%` | `bg-shell` | Sidebar, topbar, dense dark panels |
-| `--shell-raised` `225 34% 17%` | `bg-shell-raised` | Panels inside the shell |
-| `--shell-foreground` `220 24% 96%` | `text-shell-foreground` | Text on the shell |
-| `--shell-muted` `222 18% 64%` | `text-shell-muted` | Secondary text on the shell |
-| `--shell-border` `224 28% 24%` | `border-shell-border` | Dividers on the shell |
-| `--background` `225 24% 98%` | `bg-background` | Light content canvas |
-| `--foreground` `226 42% 12%` | `text-foreground` | Primary ink |
+| `--shell` `214 56% 12%` | `bg-shell` | Sidebar, topbar, dense dark panels |
+| `--shell-raised` `213 40% 18%` | `bg-shell-raised` | Panels inside the shell |
+| `--shell-foreground` `210 32% 96%` | `text-shell-foreground` | Text on the shell |
+| `--shell-muted` `211 24% 67%` | `text-shell-muted` | Secondary text on the shell |
+| `--shell-border` `213 32% 24%` | `border-shell-border` | Dividers on the shell |
+| `--background` `214 34% 96%` | `bg-background` | Light content canvas |
+| `--foreground` `214 46% 12%` | `text-foreground` | Primary ink |
 | `--card` `0 0% 100%` | `bg-card` | Card / panel surface |
-| `--muted` `224 30% 95%` | `bg-muted` | Table header, subtle fills |
-| `--muted-foreground` `224 14% 42%` | `text-muted-foreground` | Secondary ink (AA on canvas) |
+| `--muted` `214 30% 93.5%` | `bg-muted` | Table header, subtle fills |
+| `--muted-foreground` `214 15% 40%` | `text-muted-foreground` | Secondary ink (AA on canvas) |
 | `--border` / `--input` | `border-border` / `border-input` | Hairlines, control borders |
 
 ### 6.2 Brand & accent
@@ -180,9 +180,9 @@ All tokens are HSL CSS variables in `src/app/globals.css :root`, surfaced throug
 
 ### 6.3 Signature gold & semantics
 - **Gold** (`--gold`, `--gold-deep` `38 76% 34%` text-grade) = attention + **assumption** only. Never success.
-- **Purple** (`--status-security` / `--status-escalated` `262 47% 42%`) = securities / FFS-managed / escalated.
-- **Green** (`--status-won` `152 55% 39%`) = won / placed / active only.
-- **Red** (`--status-lost` `0 72% 51%`) = lost / blocked / error only. *(Distinct from action-grade `--destructive`.)*
+- **Purple** (`--status-security` / `--status-escalated` `262 47% 44%`) = securities / FFS-managed / escalated.
+- **Green** (`--status-won` `152 58% 37%`) = won / placed / active only.
+- **Red** (`--status-lost` `350 78% 45%`, Farmers-red hue) = lost / blocked / error only. *(Semantic loss-red; distinct in role from action-grade `--destructive` `350 78% 43%`, which is reserved for destructive/blocking actions.)*
 
 Status ramp: `--status-{draft,active,pending,won,lost,blocked,escalated,assumption,security}` →
 `bg-status-*` / `text-status-*`, consumed by `<Badge>`.

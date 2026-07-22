@@ -1,6 +1,6 @@
 import * as React from 'react'
 import Link from 'next/link'
-import { ChevronRight, ArrowUpRight } from 'lucide-react'
+import { ChevronRight, ArrowUpRight, Check } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -379,23 +379,43 @@ export function WizardShell({
     <div className="mx-auto max-w-2xl space-y-4">
       <PageHeader title={title} />
       <ol className="flex flex-wrap gap-2" aria-label="Progress">
-        {steps.map((s, i) => (
-          <li
-            key={s}
-            aria-current={i === current ? 'step' : undefined}
-            className={cn(
-              'flex items-center gap-2 rounded-full border px-3 py-1 text-xs',
-              i === current
-                ? 'border-primary bg-primary/10 text-primary'
-                : i < current
-                  ? 'border-status-won/40 text-status-won'
-                  : 'text-muted-foreground',
-            )}
-          >
-            <span className="font-medium">{i + 1}</span>
-            {s}
-          </li>
-        ))}
+        {steps.map((s, i) => {
+          const done = i < current
+          const currentStep = i === current
+          // State is carried by an icon + sr-only word, not color alone (WCAG 2.2
+          // AA · SC 1.4.1): completed steps show a check, the current step a filled
+          // number chip, upcoming steps an outline number.
+          return (
+            <li
+              key={s}
+              aria-current={currentStep ? 'step' : undefined}
+              className={cn(
+                'flex items-center gap-2 rounded-full border px-3 py-1 text-xs',
+                currentStep
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : done
+                    ? 'border-status-won/40 text-status-won'
+                    : 'text-muted-foreground',
+              )}
+            >
+              <span
+                aria-hidden
+                className={cn(
+                  'flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold',
+                  currentStep
+                    ? 'bg-primary text-primary-foreground'
+                    : done
+                      ? 'bg-status-won text-white'
+                      : 'border border-current',
+                )}
+              >
+                {done ? <Check className="h-3 w-3" strokeWidth={3} /> : i + 1}
+              </span>
+              <span className="sr-only">{done ? 'Completed: ' : currentStep ? 'Current step: ' : 'Upcoming: '}</span>
+              {s}
+            </li>
+          )
+        })}
       </ol>
       <Card>
         <CardContent className="space-y-4 pt-6">{children}</CardContent>

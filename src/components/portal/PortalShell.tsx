@@ -75,6 +75,15 @@ export function PortalShell({
   const homeHref = nav[0]?.href ?? '/'
   return (
     <div className="min-h-screen bg-background text-foreground">
+      {/* Skip-to-content — first tab stop for keyboard/AT users, so they can
+          bypass the grouped sidebar nav on every authenticated page (WCAG 2.2
+          AA · design-system.md §22). Visually hidden until focused. */}
+      <a
+        href="#content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-3 focus:z-50 focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground focus:shadow-elev-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      >
+        Skip to main content
+      </a>
       {/* ── Topbar (56px, dark Farmers-navy shell) ───────────────────────── */}
       <header className="shell-gradient shell-hairline sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-shell-border px-4 text-shell-foreground shadow-elev-md backdrop-blur-md supports-[backdrop-filter]:bg-shell/85">
         <div className="flex items-center gap-2 md:hidden">
@@ -161,7 +170,9 @@ export function PortalShell({
         {/* ── Content canvas (light) ─────────────────────────────────────── */}
         <div className="min-w-0 flex-1">
           {banner}
-          <main className="mx-auto w-full max-w-[1400px] px-4 pb-20 pt-6 md:px-6 md:pb-8">{children}</main>
+          <main id="content" tabIndex={-1} className="mx-auto w-full max-w-[1400px] px-4 pb-20 pt-6 md:px-6 md:pb-8 focus:outline-none">
+            {children}
+          </main>
         </div>
       </div>
 

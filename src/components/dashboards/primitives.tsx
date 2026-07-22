@@ -138,7 +138,10 @@ export function DeltaPill({
   const down = value < -neutralThreshold
   const good = up ? positiveIsGood : down ? !positiveIsGood : null
   const Icon = up ? TrendingUp : down ? TrendingDown : Minus
-  const cls = good === null ? 'text-muted-foreground bg-muted' : good ? 'text-status-won bg-status-won/10' : 'text-destructive bg-destructive/10'
+  // Financial negatives use the loss-red status token, not action-grade
+  // `--destructive` (DESIGN.md §15.2 — destructive is reserved for
+  // destructive/blocking actions, never a metric going down).
+  const cls = good === null ? 'text-muted-foreground bg-muted' : good ? 'text-status-won bg-status-won/10' : 'text-status-lost bg-status-lost/10'
   return (
     <span className={cn('inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-medium', cls)}>
       <Icon className="h-3 w-3" strokeWidth={2} aria-hidden />

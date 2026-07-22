@@ -1,4 +1,5 @@
 import * as React from 'react'
+import Link from 'next/link'
 import { Icon, BrandLogo } from './icons'
 import { BUSINESS, CONTACT, DISCLOSURES, LICENSING, SOCIAL, loginUrl } from '@/lib/site'
 
@@ -11,13 +12,13 @@ export function SiteFooter() {
       <div className="shell">
         <div className="foot__top">
           <div className="foot__brand">
-            <a className="brand" href="/">
+            <Link className="brand" href="/">
               <BrandLogo />
               <span className="brand__txt">
                 <strong>{BUSINESS.agent}</strong>
-                <span style={{ color: '#9DB6DE' }}>{BUSINESS.title}</span>
+                <span className="brand__sub">{BUSINESS.title}</span>
               </span>
-            </a>
+            </Link>
             <p>
               {BUSINESS.title}, {BUSINESS.carrier}.
               <br />
@@ -47,7 +48,7 @@ export function SiteFooter() {
             <ul className="foot__list">
               {SOLUTIONS.map((s) => (
                 <li key={s}>
-                  <a href="/#solutions">{s}</a>
+                  <Link href="/#solutions">{s}</Link>
                 </li>
               ))}
             </ul>
@@ -56,19 +57,19 @@ export function SiteFooter() {
           <div>
             <p className="foot__h">Resources</p>
             <ul className="foot__list">
-              <li><a href="/workshops">Workshops</a></li>
-              <li><a href="/#process">How It Works</a></li>
-              <li><a href="/#reviews">Client Reviews</a></li>
-              <li><a href="/#about">About Markist</a></li>
-              <li><a href="/#contact">Contact</a></li>
+              <li><Link href="/workshops">Workshops</Link></li>
+              <li><Link href="/#process">How It Works</Link></li>
+              <li><Link href="/#reviews">Client Reviews</Link></li>
+              <li><Link href="/#about">About Markist</Link></li>
+              <li><Link href="/#contact">Contact</Link></li>
             </ul>
           </div>
 
           <div>
             <p className="foot__h">Company</p>
             <ul className="foot__list">
-              <li><a href="/#about">About</a></li>
-              <li><a href="/#contact">Contact</a></li>
+              <li><Link href="/#about">About</Link></li>
+              <li><Link href="/#contact">Contact</Link></li>
               <li><a href="https://brokercheck.finra.org/" target="_blank" rel="noopener">FINRA BrokerCheck</a></li>
               <li><a href="https://www.investor.gov/CRS" target="_blank" rel="noopener">Investor.gov/CRS</a></li>
               <li><a href={loginUrl()}>Login</a></li>
@@ -118,10 +119,10 @@ export function SiteFooter() {
         <div className="foot__bar">
           <span>© {year} {BUSINESS.agent}. All rights reserved.</span>
           <nav aria-label="Legal">
-            <a href="/privacy">Privacy Policy</a>
-            <a href="/terms">Terms of Use</a>
-            <a href="/sms-terms">SMS Terms &amp; Conditions</a>
-            <a href="/accessibility">Accessibility</a>
+            <Link href="/privacy">Privacy Policy</Link>
+            <Link href="/terms">Terms of Use</Link>
+            <Link href="/sms-terms">SMS Terms &amp; Conditions</Link>
+            <Link href="/accessibility">Accessibility</Link>
           </nav>
         </div>
       </div>

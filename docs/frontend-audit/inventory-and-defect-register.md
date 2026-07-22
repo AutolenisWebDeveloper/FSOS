@@ -46,9 +46,9 @@ Severity = user/business impact. **Status:** `FIXED` (this session, Slice 0), `S
 | H2 | `dashboards/primitives.tsx` `DeltaPill` | Guardrail / token | Financial negatives rendered with `--destructive` — explicitly banned by DESIGN.md §15.2 (must use `--status-lost`). Shared across all dashboards. | **FIXED** |
 | H3 | `dashboards/charts.tsx` `DONUT_TONES`/`HeatGrid` | Guardrail / token | Reserved gold (assumption) + red (loss) used as generic categorical chart fills — leaks guardrail color semantics. | **SLICE 0-b** (chart palette pass, needs visual review) |
 | H4 | `StatTile` / `MetricCard` / `DashboardGrid` tile | Component forking | **Three** near-duplicate executive KPI tiles with divergent tone vocabularies (3 vs 6) and grid systems (`sm:2/lg:4` vs `2/md:3/xl:5`). Foundation-layer debt that propagates. | **SLICE 2** (consolidation, broad blast radius → review) |
-| H5 | `marketing.css` `.msite` | Token / divergence | Fully parallel hardcoded-hex brand palette (`--navy:#0E2350`, `--blue:#1C428B`…) diverging from `--shell`/`--primary` — two brand blues ship in one app. | **SLICE 1** (derive from tokens **or** formally sanction in DESIGN.md) |
+| H5 | `marketing.css` `.msite` | Token / divergence | Fully parallel hardcoded-hex brand palette (`--navy:#0E2350`, `--blue:#1C428B`…) diverging from `--shell`/`--primary` — two brand blues ship in one app. | **FIXED** (Slice 1 pt2: formally sanctioned as a separate marketing token layer — DESIGN.md §6.5, with a "no inline hex" rule) |
 | H6 | `workshops/page.tsx` | SEO | Lead-gen hub sets no `robots`, inherits root `noindex` → primary funnel page silently de-indexed; also absent from `sitemap.ts`. | **FIXED** (Slice 1: `robots:index` + sitemap now lists canonical `/workshops`) |
-| H7 | `page.tsx` (home) + assets | SEO / social | Declares OG/Twitter cards but **no OG image** exists; no `opengraph-image`/apple-touch icon. | **FIXED (OG)** (Slice 1: branded `opengraph-image.tsx` via `next/og`; apple-touch icon deferred) |
+| H7 | `page.tsx` (home) + assets | SEO / social | Declares OG/Twitter cards but **no OG image** exists; no `opengraph-image`/apple-touch icon. | **FIXED** (Slice 1: branded `opengraph-image.tsx`; Slice 1 pt2: `apple-icon.tsx` — both via `next/og`) |
 | H8 | `(public)/403/page.tsx` | Dead-end | "Contact support" → `/support`, which has no page route (404 from an error page). | **FIXED** (Slice 1: → `mailto:CONTACT.email`) |
 
 ### Medium
@@ -63,7 +63,7 @@ Severity = user/business impact. **Status:** `FIXED` (this session, Slice 0), `S
 | M6 | `globals.css:118-120` | A11y | Global `:focus-visible { outline: 2px solid transparent }` makes native focus invisible; any element missing a ring class has zero visible focus. Fix is subtle (components rely on transparent outline to avoid double rings) → needs care. | **SLICE 0-b** (a11y pass w/ visual verify) |
 | M7 | `dashboards/charts.tsx` `HeatGrid` | A11y / token | `text-white` literal on variable-opacity tone bar can fall below AA on light tones. | **SLICE 0-b** |
 | M8 | `dashboards/primitives.tsx` vs `archetypes/shells.tsx` | Consistency | Two competing KPI grid systems (see H4). | **SLICE 2** |
-| M9 | `[slug]/page.tsx` | Data/SEO (NAP) | Hardcodes "McKinney, TX" but canonical location is Frisco (`lib/site.ts`) — inconsistent NAP; also `'use client'` blocks `metadata` export. | **FIXED (NAP)** (Slice 1: sourced from `CONTACT` single source; `metadata`-split via server wrapper deferred). ⚠️ Frisco-vs-McKinney is a business fact for the FSA to confirm in `lib/site.ts`. |
+| M9 | `[slug]/page.tsx` | Data/SEO (NAP) | Hardcodes "McKinney, TX" but canonical location is Frisco (`lib/site.ts`) — inconsistent NAP; also `'use client'` blocks `metadata` export. | **FIXED** (Slice 1: NAP from `CONTACT`; Slice 1 pt2: split into server `page.tsx` (exports `metadata`, noindex) + `ReferralClient.tsx`). ⚠️ Frisco-vs-McKinney is a business fact for the FSA to confirm in `lib/site.ts`. |
 | M10 | `/refer`, `/consent`, `AuthShell` pages | A2P footer | Bare `<main>` with no footer → no Privacy/SMS-Terms links on a **consent-capturing** page. | **SLICE 1** (footer chrome + carrier-ready consent copy written directly; no approval gate — see A2P report) |
 
 ### Low (representative — full list in agent transcripts)
@@ -71,11 +71,11 @@ Severity = user/business impact. **Status:** `FIXED` (this session, Slice 0), `S
 | # | Route/File | Category | Defect | Status |
 |---|---|---|---|---|
 | L1 | `globals.css:220` | Token | `body { color: #12243b }` hardcoded ink (near-`--foreground`); also `background`/font literals in the legacy base block. | **DEFERRED** (legacy base — §1.6; migrate carefully) |
-| L2 | `SiteFooter.tsx:18`, `page.tsx:356` | Token | Inline `#9DB6DE` / `#B9C9E6` hexes in shared public components. | **SLICE 1** |
+| L2 | `SiteFooter.tsx:18`, `page.tsx:356` | Token | Inline `#9DB6DE` / `#B9C9E6` hexes in shared public components. | **FIXED** (Slice 1 pt2: moved to `.msite` classes `brand__sub` / `microcopy--onnavy` in marketing.css) |
 | L3 | `globals.css` scrollbar; `BrandMark`/`ProfileMenu` `ring-white/10`; `shells.tsx` `bg-white/60` hairline | Token | Assorted raw white/rgba literals; introduce a `--highlight` token. | **SLICE 2** |
 | L4 | `archetypes/states.tsx` `StatusBadge` | Microcopy | Default label renders raw lowercase enum (`won`/`lost`). | **SLICE 2** |
 | L5 | `ui/badge.tsx` | Consistency | `assumption`/`security` variants use a different opacity/border recipe than status variants. | **SLICE 2** |
-| L6 | Public internal links (`SiteHeader`/`SiteFooter`/forms) | Perf/UX | `<a href>` for internal routes instead of `next/link` (full reloads; the pre-existing lint warnings). | **SLICE 1** |
+| L6 | Public internal links (`SiteHeader`/`SiteFooter`/forms) | Perf/UX | `<a href>` for internal routes instead of `next/link` (full reloads; the pre-existing lint warnings). | **PARTIAL** (Slice 1 pt2: `SiteHeader` + `SiteFooter` done, 56→22 warnings; `SiteContactForm`/workshop forms/legal pages remain — mechanical, follow-up) |
 | L7 | logo `<img>` in `SiteFooter`/`icons.tsx` | Images/CLS | Approved-asset SVG logos lack explicit `width`/`height` (CLS risk). | **SLICE 1** |
 
 ## 3. Correct-as-built (do not re-flag)

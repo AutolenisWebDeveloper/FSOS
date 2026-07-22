@@ -353,9 +353,7 @@ export default function HomePage() {
                       </span>
                     </span>
                   </div>
-                  <p className="microcopy" style={{ color: '#B9C9E6', marginTop: 18 }}>
-                    {LICENSING}
-                  </p>
+                  <p className="microcopy microcopy--onnavy">{LICENSING}</p>
                 </div>
                 <SiteContactForm />
               </div>

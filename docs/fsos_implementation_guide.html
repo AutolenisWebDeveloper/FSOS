@@ -322,7 +322,7 @@ body{background:var(--bg);color:var(--ink);font-family:'DM Sans',sans-serif;font
 <tr><td>Sales Desk</td><td>Case consultations, products, training</td><td>(866) 888-9739 → 3→3</td><td>Mon–Fri 7AM–5PM PT</td></tr>
 <tr><td>Matt Anderson</td><td>Financial Services Director — Central</td><td>(818) 584-0264</td><td>matthew.1.anderson@farmersinsurance.com</td></tr>
 <tr><td>Ando Agamalian</td><td>Internal Wholesaler — Central</td><td>(818) 584-0205</td><td>ando.agamalian@farmersinsurance.com</td></tr>
-<tr><td>Ryan Anderson</td><td>FFS Compliance TX — call before outreach</td><td>(253) 242-0597</td><td>ryan.anderson@farmersinsurance.com</td></tr>
+<tr><td>Ryan Anderson</td><td>FFS Compliance TX — compliance resource (optional)</td><td>(253) 242-0597</td><td>ryan.anderson@farmersinsurance.com</td></tr>
 <tr><td>Lora Brandt</td><td>OSJ Supervisory Principal</td><td>(818) 584-0199</td><td>lora.brandt@farmersinsurance.com</td></tr>
 <tr><td>Commissions</td><td>Commission payment questions</td><td>(866) 888-9739 → 6</td><td>usw_ffs_accounting@farmersinsurance.com</td></tr>
 </tbody>
@@ -335,9 +335,9 @@ body{background:var(--bg);color:var(--ink);font-family:'DM Sans',sans-serif;font
 <div id="tab-compliance" class="sec"><div class="wrap">
 <div class="ph-eye">Non-Negotiable</div>
 <div class="ph-title">Compliance Framework</div>
-<div class="ph-meta">Complete all four steps before any automated outreach goes live</div>
+<div class="ph-meta">Confirm these compliance items before any automated outreach goes live — the FSA owns go-live</div>
 
-<div class="warn"><strong>Ryan Anderson — FFS Compliance TX · (253) 242-0597 · ryan.anderson@farmersinsurance.com</strong><br>Call before any automated SMS or voice outreach goes live. Get written confirmation of the TRAIGA disclosure language.</div>
+<div class="warn"><strong>FFS Compliance resource (optional): Ryan Anderson — FFS Compliance TX · (253) 242-0597 · ryan.anderson@farmersinsurance.com</strong><br>The FSA owns go-live; no named-approver sign-off is required. Before activating outreach, ensure the TRAIGA disclosure language is in place — FFS compliance contacts are available if you want to confirm wording.</div>
 
 <div id="steps-compliance"></div>
 
@@ -859,17 +859,17 @@ phase6: { groups: [
 phase7: { groups: [
   { title: 'GHL configuration — do compliance check first', steps: [
 
-    { badge:'compliance', bl:'Required First', done:false,
-      title: 'Call Ryan Anderson before any outreach goes live',
-      sub: 'Ryan Anderson, FFS Compliance TX — (253) 242-0597',
-      detail: `<p><strong>This is required before activating any automated outreach.</strong></p>
-<p>Call Ryan Anderson at (253) 242-0597 and confirm:</p>
+    { badge:'compliance', bl:'Confirm First', done:false,
+      title: 'Confirm outreach is TRAIGA/TCPA-compliant before go-live',
+      sub: 'FSA owns go-live — FFS Compliance TX (253) 242-0597 is an optional resource',
+      detail: `<p><strong>Before activating any automated outreach, confirm the compliance items below.</strong> The FSA owns go-live — no named-approver sign-off is required.</p>
+<p>Confirm (FFS compliance contacts available if you want to verify wording):</p>
 <ul>
-<li>The exact TRAIGA 2026 AI disclosure language for GHL SMS messages</li>
+<li>The exact TRAIGA 2026 AI disclosure language for GHL SMS messages is in place</li>
 <li>Whether OPRA-related texts qualify as transactional (vs. requiring express written consent)</li>
 <li>That your FNA report format qualifies as educational only</li>
 </ul>
-<p>Get his confirmation in writing (email or text). Do not activate AI agents without this.</p>
+<p>Keep a written record of what you confirm.</p>
 <div class="warn">Texas SB 140 (effective Sept 1, 2025): private right of action, penalties up to $1,500 per text. TRAIGA 2026: AI disclosure required in all automated messages, penalties $10k–$200k. These are not optional.</div>` },
 
     { badge:'config', bl:'GHL', done:false,
@@ -1045,9 +1045,9 @@ compliance: { groups: [
   { title: 'Complete all 4 steps before any outreach goes live', steps: [
 
     { badge:'compliance', bl:'Required', done:false,
-      title: 'Call Ryan Anderson — confirm TRAIGA AI disclosure language',
-      sub: 'Ryan Anderson, FFS Compliance TX — (253) 242-0597 — get written confirmation',
-      detail: `<p>Call (253) 242-0597 and ask specifically:</p>
+      title: 'Confirm TRAIGA AI disclosure language is in place',
+      sub: 'FSA owns this — FFS Compliance TX (253) 242-0597 available to verify wording',
+      detail: `<p>Confirm the following (FFS compliance at (253) 242-0597 can help verify wording if you want):</p>
 <ol>
 <li>"What is the exact AI disclosure language I need in GHL AI agent SMS messages to comply with TRAIGA 2026?"</li>
 <li>"Do OPRA-related texts qualify as transactional messages or do they require express written consent under TCPA?"</li>
@@ -1082,14 +1082,13 @@ LIMIT 20;</div>
 <div class="tip">You can ask Claude to write the first draft: "Write an AIS Program document for a Farmers FSA who uses GHL AI Employee for appointment scheduling and Claude API for educational financial analysis. Follow NIST AI RMF safe harbor requirements under Texas TRAIGA 2026."</div>` },
 
     { badge:'compliance', bl:'Required', done:false,
-      title: 'Get FNA report reviewed by Ryan Anderson before client delivery',
-      sub: 'Send sample FNA to ryan.anderson@farmersinsurance.com for FINRA review',
-      detail: `<p>Before sending any AI-generated FNA report to a real client:</p>
+      title: 'Confirm the FNA report is educational-only before client delivery',
+      sub: 'FSA owns this — FFS Compliance TX (253) 242-0597 available if you want a second read',
+      detail: `<p>Before sending any AI-generated FNA report to a real client, confirm it is educational-only (guardrail §4.2 — no product recommendation or suitability determination). The FSA owns this review; FFS compliance is an optional resource:</p>
 <ol>
 <li>Generate one sample FNA from test data in the command center</li>
-<li>Email it to Ryan Anderson</li>
-<li>Ask: "Does this FNA document comply with FINRA guidelines as an educational tool? Does any language constitute a product recommendation or suitability determination?"</li>
-<li>Keep his written response</li>
+<li>Review it against the standard: "Does this FNA document read as an educational tool? Does any language constitute a product recommendation or suitability determination?" (FFS compliance can give a second read if you want.)</li>
+<li>Keep a written record of the review</li>
 </ol>
 <p>The FNA report includes the required FINRA disclaimer. Ryan's review confirms the format as a whole is appropriate.</p>` }
   ]}

@@ -310,7 +310,7 @@ AI agents may NEVER: recommend products, make suitability determinations, give i
 FNA reports must include: "For educational and informational purposes only. Not a product recommendation or suitability determination. Requires licensed FSA review per FINRA Reg BI."
 TCPA: written prior express consent required before any automated SMS
 TRAIGA 2026 (Texas): AI disclosure required in all automated outreach messages
-Call Ryan Anderson (253) 242-0597 before any automated outreach goes live
+Before any automated outreach goes live: confirm TCPA consent, TRAIGA disclosure, and A2P 10DLC/carrier requirements are met. The FSA owns go-live — no named-approver sign-off required; FFS Compliance TX (253) 242-0597 is available as a resource.
 
 GDC PAYOUT TIERS (used in commission calculator)
 Under $15k rolling 12-mo → 40% FSA payout
@@ -744,9 +744,9 @@ Run npm run build when complete.</div>
 <div class="wrap">
   <div class="eyebrow">Non-Negotiable</div>
   <div class="page-title">Compliance Framework</div>
-  <div class="page-sub">Every automated outreach feature must clear this checklist before going live. Call Ryan Anderson before activating anything.</div>
+  <div class="page-sub">Every automated outreach feature must clear this compliance checklist before going live. The FSA owns go-live — no named-approver sign-off is required.</div>
 
-  <div class="alert alert-red"><strong>Ryan Anderson — FFS Compliance TX</strong><br>(253) 242-0597 · ryan.anderson@farmersinsurance.com<br>Call him before any automated outbound SMS or voice goes live. Get his confirmation in writing.</div>
+  <div class="alert alert-red"><strong>FFS Compliance resource (optional): Ryan Anderson — FFS Compliance TX</strong><br>(253) 242-0597 · ryan.anderson@farmersinsurance.com<br>The FSA owns go-live. Before any automated outbound SMS or voice goes live, clear the compliance checklist below; FFS compliance is available if you want to verify wording.</div>
 
   <div class="section-title">What AI Agents Can and Cannot Do</div>
   <div class="two-col">
@@ -789,10 +789,10 @@ Run npm run build when complete.</div>
 
   <div class="section-title">Pre-Launch Compliance Checklist</div>
   <div class="steps">
-    <div class="step"><div class="step-num">1</div><div><div class="step-title">Call Ryan Anderson</div><div class="step-body">Confirm TRAIGA AI disclosure language for SMS and voice. Get written confirmation. Do not activate AI agents without this.</div></div></div>
+    <div class="step"><div class="step-num">1</div><div><div class="step-title">Confirm TRAIGA disclosure language</div><div class="step-body">Ensure the TRAIGA AI disclosure language for SMS and voice is in place before activating AI agents. The FSA owns this; FFS Compliance TX (253) 242-0597 can verify wording if you want. Keep a written record.</div></div></div>
     <div class="step"><div class="step-num">2</div><div><div class="step-title">Confirm TCPA consent mechanism</div><div class="step-body">Every contact who receives automated SMS must have given written prior express consent. Verify your consent capture is storing to the consent_ledger table in Supabase.</div></div></div>
     <div class="step"><div class="step-num">3</div><div><div class="step-title">Write your AIS Program document</div><div class="step-body">Texas TRAIGA 2026 safe harbor requires a written AI governance program. Describes what AI tools you use, their purpose, and your oversight process. 2-3 pages is sufficient.</div></div></div>
-    <div class="step"><div class="step-num">4</div><div><div class="step-title">Get FNA output reviewed</div><div class="step-body">Before sending any FNA report to a client, share a sample with Ryan Anderson and confirm it qualifies as educational, not investment advice.</div></div></div>
+    <div class="step"><div class="step-num">4</div><div><div class="step-title">Confirm FNA output is educational-only</div><div class="step-body">Before sending any FNA report to a client, confirm it qualifies as educational, not investment advice (guardrail §4.2). The FSA owns this review; FFS Compliance TX (253) 242-0597 is available for a second read if you want one.</div></div></div>
   </div>
 
   <div class="section-title">Texas SB 140 (Effective September 1, 2025)</div>

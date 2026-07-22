@@ -35,6 +35,11 @@ import {
 } from '@/components/dashboards'
 import { money, timeAgo, humanize } from '@/lib/dashboards/format'
 import { loadConversionsDashboard, type ConversionDue } from '@/lib/dashboards/conversions'
+import { load } from '@/lib/data/query'
+import { OriginateTermConversionButton } from '@/components/app/OriginateTermConversionButton'
+
+// Open (non-terminal) opportunity stages — a conversion opportunity is "live" here.
+const OPEN_OPP_STAGES = ['prospect', 'fact_find', 'quoted_proposed', 'application', 'underwriting_suitability']
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -45,14 +50,30 @@ export const runtime = 'nodejs'
 // defaults (§2.3); securities-flagged policies are shown but excluded from every
 // automated figure (firewall §2.1). All data is live; nothing is rebuilt.
 export default async function ConversionsPage() {
-  const res = await loadConversionsDashboard()
+  const [res, oppRes] = await Promise.all([
+    loadConversionsDashboard(),
+    // Open term-conversion opportunities originated from due windows (mig 047).
+    load<{ id: string }[]>(
+      (db) =>
+        db
+          .from('opportunities')
+          .select('id')
+          .eq('source', 'term_conversion')
+          .is('deleted_at', null)
+          .in('stage', OPEN_OPP_STAGES)
+          .limit(1000),
+      [],
+    ),
+  ])
+  const openOpportunities = oppRes.ok ? oppRes.data.length : 0
 
   const actions = (
     <div className="hidden flex-wrap gap-2 sm:flex">
       <Button asChild variant="outline" size="sm"><Link href="/app/conversions/eligible">Eligible list</Link></Button>
       <Button asChild variant="outline" size="sm"><Link href="/app/conversions/timeline">Timeline</Link></Button>
       <Button asChild variant="outline" size="sm"><Link href="/app/conversions/monitoring">Monitoring</Link></Button>
-      <Button asChild size="sm"><Link href="/app/conversions/import">Import list</Link></Button>
+      <Button asChild variant="outline" size="sm"><Link href="/app/conversions/import">Import list</Link></Button>
+      <OriginateTermConversionButton />
     </div>
   )
 
@@ -148,6 +169,7 @@ export default async function ConversionsPage() {
         <MetricCard label="≤ 30 days" value={kpis.urgent30.toLocaleString()} href="/app/conversions/eligible?tier=30" icon={Clock} tone="attention" hint="Urgent — window closing" />
         <MetricCard label="≤ 90 days" value={kpis.within90.toLocaleString()} href="/app/conversions/eligible?tier=90" icon={CalendarClock} tone="neutral" hint="Upcoming expirations" />
         <MetricCard label="Reviews scheduled" value={kpis.reviewsScheduled.toLocaleString()} href="/app/reviews" icon={CalendarCheck} tone="positive" hint={`${kpis.conversionRate}% of eligible`} />
+        <MetricCard label="Conversion opportunities" value={openOpportunities.toLocaleString()} href="/app/opportunities" icon={Layers} tone="brand" hint="Open in the pipeline" />
         <MetricCard
           label="Est. added premium"
           value={money(kpis.estAddedPremium)}

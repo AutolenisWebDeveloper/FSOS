@@ -66,10 +66,9 @@ program still opens **draft** PRs so a human can review before merge.
 - ⚠️ C1/C2 (invite/verify) need **backend** routes first — out of this initiative; flagged to owner.
 
 ### Slice 2 — FSA portal (`/app/*`, 156 pages) + shared component consolidation
-- Consolidate the 3 KPI tiles into one canonical `StatTile`/`MetricCard` + one KPI grid (H4/M8) — broad blast radius, review-gated.
-- Table sticky header / sticky-first-column / mobile stack pattern (M4/M5).
-- `StatusBadge` human labels (L4); `Badge` variant recipe normalization (L5).
-- Per-surface state/responsive/a11y remediation across dashboards, book of business, pipeline, comms, AI, compliance ops pages.
+- **Started (this session):** `MetricCard` is now the single canonical KPI tile (`valueSize` prop); `StatTile` delegates to it (H4 — output-preserving, no fork). Private-app `WorkshopStatusControl` link converted → **repo-wide `no-html-link` warnings = 0** (L6 done). Verified type-check/lint/test/build green.
+- **Remaining — needs the FSA portal actually rendered (Supabase auth + seed) to verify visually:** `DashboardGrid` builder-tile consolidation + unify the KPI grid (H4/M8); table sticky header / sticky-first-column / mobile-stack (M4/M5); chart categorical palette off the reserved gold/red/purple + `HeatGrid` contrast (H3/M7); global focus-visible fallback without double-ringing (M6); `StatusBadge` human labels (L4); `Badge` variant recipe (L5); per-surface state/responsive/a11y across dashboards, book of business, pipeline, comms, AI, compliance ops pages.
+- **Constraint:** this headless session has no Supabase auth/seed, so the auth-gated FSA dashboards can't be rendered here. The consolidation above is compile-verified and output-preserving; the remaining items are visual/design changes best done where the portal renders (or iterated on the Vercel preview with review).
 
 ### Slice 3 — `(admin)` + `(super)` portals
 ### Slice 4 — `(compliance)` portal (preserve every compliance/securities indicator)

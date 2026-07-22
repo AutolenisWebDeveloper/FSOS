@@ -138,8 +138,10 @@ must be confirmed manually in GHL; FSOS can't enumerate them:
   `owner_assessment_form`, `factfinder_form`, …) are populated.
 - **Forms** (Client Fact-Finder, Agency-Owner Financial Assessment) built and
   wired to the stage moves noted in the blueprint.
-- **Go-live gate**: A2P 10DLC registered, sending window (9a–8p) set, consent
-  fields wired, Ryan Anderson (Compliance TX) called — **before any live SMS**.
+- **Go-live gate**: before any live SMS, confirm A2P 10DLC registered, sending
+  window (9a–8p) set, consent fields wired, and TCPA/TRAIGA/carrier requirements
+  met. The FSA owns go-live — no named-approver sign-off is required; FFS
+  compliance contacts (Appendix A) remain available as a resource.
 
 ---
 

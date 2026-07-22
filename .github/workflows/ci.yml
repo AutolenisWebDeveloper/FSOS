@@ -43,6 +43,12 @@ jobs:
       - name: Tests
         run: npm test
 
+      # Production build gate: every audited route must compile. This is the
+      # frontend-audit §12 precondition — CI now runs the full
+      # type-check → lint → test → build chain on every PR and push.
+      - name: Build
+        run: npm run build
+
       # The RLS proof stands up an ephemeral Postgres via initdb + runuser -u
       # postgres + chown, which require root. GitHub-hosted runners execute steps
       # as the non-root `runner` user, so run this one step under sudo — preserving

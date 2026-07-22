@@ -90,4 +90,19 @@ const TableCell = React.forwardRef<HTMLTableCellElement, React.TdHTMLAttributes<
 )
 TableCell.displayName = 'TableCell'
 
-export { Table, TableHeader, TableBody, TableRow, TableHead, TableCell }
+// Programmatic table caption (DESIGN.md §7). The wrapper already sets
+// `caption-bottom`; pass `srOnly` to name a table for screen readers without a
+// visible caption. Every data table should name what it lists for a11y.
+const TableCaption = React.forwardRef<
+  HTMLTableCaptionElement,
+  React.HTMLAttributes<HTMLTableCaptionElement> & { srOnly?: boolean }
+>(({ className, srOnly, ...props }, ref) => (
+  <caption
+    ref={ref}
+    className={cn(srOnly ? 'sr-only' : 'mt-3 px-3 text-sm text-muted-foreground', className)}
+    {...props}
+  />
+))
+TableCaption.displayName = 'TableCaption'
+
+export { Table, TableHeader, TableBody, TableRow, TableHead, TableCell, TableCaption }

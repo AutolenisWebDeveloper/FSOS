@@ -38,8 +38,8 @@ Win-Back, Term Conversion, Appointment, Revenue Center) build on top of that coc
 
 | # | Slice | Status |
 |---|---|---|
-| 1 | AI Command Center composed view + compliance-spine proof | **Delivered** |
-| 2 | Cross-Sell revenue workflow (end-to-end) | Planned |
+| 1 | AI Command Center composed view + compliance-spine proof | **Delivered** (PR #90, merged) |
+| 2 | Cross-Sell revenue workflow (end-to-end) | **Delivered** |
 | 3 | Life Win-Back revenue workflow | Planned |
 | 4 | Term Conversion revenue workflow | Planned |
 | 5 | Appointment Generation & Recovery | Planned |
@@ -82,3 +82,44 @@ gate remains the single enforced send path.
 **Not in this slice.** Revenue attribution and the Revenue Center (slice 6); the
 per-workflow specialists (slices 2–5). Autonomous outbound stays disabled by default at
 `/super/ai/policies` (§35).
+
+## Slice 2 — Cross-Sell revenue workflow (delivered)
+
+**What.** Closed the §13.1 gap: cross-sell detection previously only logged an
+`activity` (`crossSellScan`) or sent outreach — it **never created a tracked, attributed,
+deduplicated pipeline opportunity**. This slice originates cross-sell **opportunities**
+from detected coverage gaps, reusing the existing `opportunities` table (no parallel
+pipeline).
+
+**Changes.**
+- `supabase/migrations/045_opportunity_source.sql` — **additive** nullable
+  `opportunities.source` column + partial index. The explicit origination-provenance
+  tag (§28) and the dedup key. Existing rows/paths unaffected; RLS inherited.
+- `src/lib/opportunities/crosssell.ts` — new **pure** planner (DB-free, unit-provable):
+  `isEligibleGap`, `engagementForGap`, `crossSellReason`, `planCrossSellOpportunities`.
+  Every draft is `is_security: false` (a literal — cross-sell is never a securities
+  target), carries **no invented commission/premium** (§4.3 — the FSA prices it), and
+  is **deduplicated across the household** (one open cross-sell opportunity per
+  household, and within a batch).
+- `src/lib/opportunities/originate.ts` — impure service: reads `v_cross_sell_gaps` +
+  open cross-sell opportunities, delegates the decision to the pure planner, inserts
+  drafts on `opportunities` (attribution: `household_id`, `referring_agency_id`,
+  `engagement`, `source='cross_sell'`, `stage_history`), and writes a per-opportunity +
+  summary audit.
+- `src/app/api/app/cross-sell/originate/route.ts` — `POST` (fsa + permission, Zod
+  `limit`), green-zone data assembly that **sends nothing**.
+- `src/components/app/OriginateCrossSellButton.tsx` + the cross-sell page — a "Create
+  opportunities" action and a "Cross-sell opportunities" KPI (open, in-pipeline).
+- `tests/crosssell-originate.test.mjs` — compiles the pure planner in isolation and
+  proves eligibility, dedup (across household, batch, and vs. terminal/other-source),
+  and the firewall invariant. Wired into `npm test`.
+
+**Verification.** `build`, `type-check`, `lint` clean; full `npm test` green (new
+suite: 13 assertions; `firewall-write-scan` still passes). Migration is additive +
+forward-only; the existing three opportunity-creation paths are untouched.
+
+**Known limitations.** No per-opportunity revenue estimate is invented (§4.3); the
+aggregate cross-sell revenue estimate remains assumption-badged on the dashboard.
+Origination is a human-triggered action (button) / callable service — wiring it into the
+`cross-sell-scan` cron is a controlled follow-up so a production job's behavior isn't
+changed inside this slice.

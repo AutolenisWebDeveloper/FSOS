@@ -26,6 +26,7 @@ import {
   GraduationCap,
   Calculator,
   Bot,
+  Gauge,
   AlertTriangle,
   ShieldCheck,
   ScanSearch,
@@ -54,6 +55,7 @@ const NAV: NavItem[] = [
   { href: '/app/dashboards', label: 'Dashboards', icon: LayoutGrid, group: 'Overview' },
   { href: '/app/forecasts', label: 'Forecasts', icon: TrendingUp, group: 'Overview' },
   { href: '/app/executive/briefing', label: 'Briefing', icon: Newspaper, group: 'Overview' },
+  { href: '/app/ai/workforce', label: 'AI Command Center', icon: Gauge, group: 'Overview' },
   { href: '/app/notifications', label: 'Notifications', icon: Bell, group: 'Overview' },
 
   // Production Operations — the highest-priority production workflows, each a

@@ -282,7 +282,7 @@ Additional binding rules (`twilio-a2p-compliance`):
 - **TCPA:** written prior express consent required before any automated SMS.
 - **TRAIGA 2026 (Texas):** AI disclosure required in all automated messages.
 - **A2P 10DLC** registration/brand/campaign must be in place before production SMS traffic.
-- **Human sign-off before go-live:** confirm with **Ryan Anderson, FFS Compliance TX — (253) 242-0597** before any automated outreach activates.
+- **Outreach must be compliant before activation:** before any automated outreach activates, it must satisfy TCPA (prior express consent), TRAIGA AI disclosure, A2P 10DLC/carrier requirements, and the §12 dispatcher gate. No named-individual sign-off is required to activate — the FSA owns go-live; any residual regulatory/carrier risk is documented and remediated, not gated behind an approver. (FFS compliance contacts remain available as a resource — Appendix A.)
 
 Blocked sends are logged and escalated — never silently dropped.
 
@@ -484,7 +484,7 @@ The result must be demonstrably more secure, usable, reliable, maintainable, and
 ---
 
 ## Appendix A — FFS key contacts
-- **Ryan Anderson**, Compliance TX — **(253) 242-0597** (required sign-off before any automated outreach goes live)
+- **Ryan Anderson**, Compliance TX — **(253) 242-0597** (FFS compliance contact/resource for TX — not an approval gate; the FSA owns go-live)
 - **Matt Anderson**, FSD Central — (818) 584-0264
 - **Sales Desk** — (866) 888-9739, Option 3 → 3, Mon–Fri 7AM–5PM PT
 

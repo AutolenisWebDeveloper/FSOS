@@ -17,13 +17,19 @@
 --     app-side only).
 -- The plaintext `dob` column is then dropped.
 --
--- FAIL CLOSED (step 0, runs BEFORE any DDL): if the plaintext `dob` column is present
--- and no encryption key is available, this migration RAISES and makes NO change — the
--- plaintext column is never created, altered, or dropped without the key present, and an
--- empty table is NOT a license to skip encryption (an empty preview DB can be seeded
--- later). The key is the `app.dob_key` GUC, set by scripts/migrate.mjs from
--- DOB_ENCRYPTION_KEY. Re-runs after the column is already dropped need no key (nothing
--- to encrypt).
+-- KEY-OPTIONAL (step 0, runs BEFORE any DDL): DOB encryption here is OPTIONAL because the
+-- owner subsequently decided (migration 044) that the legacy `customers` table is a
+-- personal-use dataset whose `dob` must stay plainly readable/editable. So:
+--   • when a key IS provided (the `app.dob_key` GUC, set by scripts/migrate.mjs from
+--     DOB_ENCRYPTION_KEY), the original C-2 path runs: plaintext dob is encrypted into
+--     dob_enc and the plaintext column is dropped;
+--   • when NO key is provided, this migration NO LONGER fails closed — it FAILS OPEN TO
+--     PLAINTEXT: it leaves `customers.dob` in place (never encrypts, never drops it) and
+--     the chain continues, letting migration 044 finalize the plain-dob state. This honors
+--     the owner decision rather than skipping a required control, and it unblocks keyless
+--     migration runs (Supabase preview branch, SQL editor) that a hard RAISE here would
+--     otherwise halt before 044 could ever run to undo the encryption.
+-- Re-runs after the column is already dropped are no-ops (nothing to encrypt).
 --
 -- C-1 — Add `customers.is_security` (default false), the DB source the campaign runner
 -- reads at the send boundary so an is_security customer is excluded by the gate firewall
@@ -31,14 +37,14 @@
 -- false`. A conservative backfill flags customers who have an OPRA/FFS securities case.
 -- ─────────────────────────────────────────────────────────
 
--- 0. FAIL CLOSED — must be the FIRST statement so a keyless run changes nothing.
+-- 0. KEY-OPTIONAL notice — must be the FIRST statement. A keyless run no longer raises; it
+--    leaves customers.dob plaintext (owner decision, mig 044) and lets the chain continue.
 do $guard$
 declare k text := current_setting('app.dob_key', true);
 begin
   if exists (select 1 from information_schema.columns where table_name = 'customers' and column_name = 'dob')
      and (k is null or k = '') then
-    raise exception
-      'Migration 042 fails closed: customers.dob (plaintext PII) is present but the DOB encryption key is not set. Provide DOB_ENCRYPTION_KEY as the app.dob_key GUC before running (scripts/migrate.mjs does this for `npm run migrate`; for the Supabase preview branch set it at the DB level, e.g. `ALTER DATABASE postgres SET app.dob_key = ''<preview-key>''`). An empty table is not a license to skip encryption.';
+    raise notice 'Migration 042: no DOB key (app.dob_key) set — leaving customers.dob PLAINTEXT per owner decision (mig 044) and skipping encryption. Provide DOB_ENCRYPTION_KEY to encrypt at rest instead.';
   end if;
 end $guard$;
 
@@ -85,19 +91,27 @@ begin
   end if;
 end $r$;
 
--- 3. Backfill: encrypt existing plaintext dob → dob_enc, derive age + birth parts. The
---    key is guaranteed present here (step 0 raised otherwise). Guarded on the column
---    still existing so the migration is safely re-runnable after the drop.
+-- 3. Backfill from the plaintext dob. Birthday parts + age are ALWAYS derived (non-PII, no
+--    year → not age/identity; needed by the renewals/birthday feature and kept by mig 044).
+--    Encryption into dob_enc happens ONLY when a key is present (key-optional per step 0);
+--    a keyless run leaves the plaintext dob untouched. Guarded on the column still existing
+--    so the migration is safely re-runnable after the drop.
 do $mig$
 declare k text := current_setting('app.dob_key', true);
 begin
   if exists (select 1 from information_schema.columns where table_name = 'customers' and column_name = 'dob') then
     update customers
-       set dob_enc     = encrypt_dob(dob, k),
-           age         = date_part('year', age(dob))::integer,
+       set age         = date_part('year', age(dob))::integer,
            birth_month = extract(month from dob)::smallint,
            birth_day   = extract(day   from dob)::smallint
-     where dob is not null and dob_enc is null;
+     where dob is not null
+       and (birth_month is null or birth_day is null or age is null);
+
+    if k is not null and k <> '' then
+      update customers
+         set dob_enc = encrypt_dob(dob, k)
+       where dob is not null and dob_enc is null;
+    end if;
   end if;
 end $mig$;
 
@@ -113,12 +127,19 @@ begin
   end if;
 end $sec$;
 
--- 5. Retire the plaintext-dob machinery: the trigger that read dob, and the age-from-dob
---    refresh inside run_nightly_scoring (age is now maintained by customer_dob_set).
-drop trigger if exists customers_set_age on customers;
-
+-- 5. Retire the plaintext-dob machinery — ONLY when encrypting (key present): the trigger
+--    that read dob, and the age-from-dob refresh inside run_nightly_scoring (age is then
+--    maintained by customer_dob_set; pg_cron cannot decrypt). A keyless run KEEPS the
+--    plaintext dob, so it KEEPS the trigger and the original run_nightly_scoring untouched.
 do $fix$
+declare k text := current_setting('app.dob_key', true);
 begin
+  if k is null or k = '' then
+    return; -- keyless: plaintext dob kept, leave its age machinery in place.
+  end if;
+
+  drop trigger if exists customers_set_age on customers;
+
   -- Only patch run_nightly_scoring if it exists (it does in prod via 001; not in focused
   -- fixtures that create their own). Remove the leading `update customers set age =
   -- date_part(... age(dob) ...)` block that reads the now-dropped dob column.
@@ -151,9 +172,16 @@ begin
   end if;
 end $fix$;
 
--- 6. Drop the plaintext DOB column. Reached only when step 0 confirmed the key is present
---    (or the column was already gone). All rows were encrypted into dob_enc above.
-alter table customers drop column if exists dob;
+-- 6. Drop the plaintext DOB column — ONLY when encrypting (key present). All rows were
+--    encrypted into dob_enc above. A keyless run KEEPS the plaintext dob (owner decision,
+--    mig 044) instead of dropping it.
+do $drop$
+declare k text := current_setting('app.dob_key', true);
+begin
+  if k is not null and k <> '' then
+    alter table customers drop column if exists dob;
+  end if;
+end $drop$;
 
 create index if not exists idx_customers_is_security on customers(is_security) where is_security = true;
 create index if not exists idx_customers_birthday    on customers(birth_month, birth_day) where birth_month is not null;

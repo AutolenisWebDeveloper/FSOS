@@ -135,6 +135,46 @@ try {
     // Without the key the encrypted value cannot be recovered — stays null (no crash).
     assert.equal(q('db2', `select coalesce(dob::text,'NULL') from customers where customer_id='${CID}'`), 'NULL')
   })
+
+  // ── DB3: apply 042 with NO key → must NOT fail closed (key-optional per owner decision,
+  //    mig 044). The plaintext dob is PRESERVED (not encrypted, not dropped) and the chain
+  //    continues; 044 (no key) then finalizes the plain-dob state. Regression proof for the
+  //    keyless migration-chain unblock. ──
+  sh(`runuser -u postgres -- ${PGBIN}/createdb -h ${H} -p ${P} -U postgres db3`)
+  writeFixture(`${L}/fx3.sql`, true)
+  apply('db3', `${L}/fx3.sql`, false)
+  check('042 runs with NO DOB key — no fail-closed RAISE; plaintext dob preserved', () => {
+    apply('db3', 'supabase/migrations/042_legacy_customer_pii_firewall.sql', false) // NO key — must not raise
+    assert.equal(
+      q('db3', `select count(*) from information_schema.columns where table_name='customers' and column_name='dob'`),
+      '1', 'plain dob column still present after keyless 042 (not dropped)',
+    )
+    assert.equal(
+      q('db3', `select dob from customers where customer_id='${CID}'`),
+      '1980-05-15', 'plaintext dob preserved verbatim (never encrypted, never dropped)',
+    )
+    assert.equal(q('db3', `select birth_month from customers where customer_id='${CID}'`), '5', 'non-PII birthday parts still derived')
+    assert.equal(q('db3', `select birth_day from customers where customer_id='${CID}'`), '15')
+    assert.equal(q('db3', `select is_security from customers where customer_id='${CID}'`), 'f', 'C-1 is_security firewall column added (default false)')
+  })
+  check('keyless 042 leaves NO encrypted artifacts (dob_enc empty, not encrypted)', () => {
+    // dob_enc column is added (additive) but stays NULL when keyless — nothing was encrypted.
+    assert.equal(
+      q('db3', `select coalesce((select 1 from customers where customer_id='${CID}' and dob_enc is not null limit 1),0)`),
+      '0', 'dob_enc not populated on a keyless run',
+    )
+  })
+  check('044 (no key) finalizes the plain-dob state after a keyless 042', () => {
+    apply('db3', 'supabase/migrations/044_revert_customer_dob_encryption.sql', false) // no key
+    assert.equal(
+      q('db3', `select dob from customers where customer_id='${CID}'`),
+      '1980-05-15', 'plaintext dob still directly readable after 044',
+    )
+    assert.equal(
+      q('db3', `select count(*) from information_schema.columns where table_name='customers' and column_name='dob_enc'`),
+      '0', 'dob_enc dropped by 044',
+    )
+  })
 } finally {
   try { sh(`runuser -u postgres -- ${PGBIN}/pg_ctl -D ${D} stop -m immediate > /dev/null 2>&1`) } catch { /* ignore */ }
 }

@@ -10,9 +10,14 @@ import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { CONTACT } from '@/lib/site'
 
 // Public route — no auth required
 export const dynamic = 'force-dynamic'
+
+// Location from the single NAP source of truth (lib/site) — not a hardcoded,
+// conflicting city string. Keeps every public surface consistent.
+const SUBTITLE = `Markist · Licensed FSA · ${CONTACT.address.city}, ${CONTACT.address.region}`
 
 interface Agency {
   agency_id: string
@@ -94,7 +99,7 @@ export default function AgencyReferralPage() {
 
   if (loading) return (
     <PublicPage>
-      <PublicCard subtitle="Markist · Licensed FSA · McKinney, TX">
+      <PublicCard subtitle={SUBTITLE}>
         <div className="space-y-4" role="status" aria-busy>
           <Skeleton className="h-6 w-40" />
           <Skeleton className="h-4 w-full" />
@@ -112,7 +117,7 @@ export default function AgencyReferralPage() {
 
   if (notFound) return (
     <PublicPage>
-      <PublicCard subtitle="Markist · Licensed FSA · McKinney, TX">
+      <PublicCard subtitle={SUBTITLE}>
         <div className="py-6 text-center">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
             <Link2Off className="h-6 w-6 text-muted-foreground" aria-hidden />
@@ -128,7 +133,7 @@ export default function AgencyReferralPage() {
 
   if (submitted) return (
     <PublicPage>
-      <PublicCard subtitle="Markist · Licensed FSA · McKinney, TX">
+      <PublicCard subtitle={SUBTITLE}>
         <div className="py-6 text-center">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-status-won/10">
             <CheckCircle2 className="h-6 w-6 text-status-won" aria-hidden />
@@ -152,7 +157,7 @@ export default function AgencyReferralPage() {
 
   return (
     <PublicPage>
-      <PublicCard subtitle="Markist · Licensed FSA · McKinney, TX">
+      <PublicCard subtitle={SUBTITLE}>
         <h1 className="text-lg font-semibold text-foreground">Refer a client</h1>
         {agency?.owner && (
           <p className="mt-1 text-sm font-medium text-primary">

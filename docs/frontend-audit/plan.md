@@ -53,6 +53,8 @@ program still opens **draft** PRs so a human can review before merge.
 - *Requires* live/visual verification (focus rings, chart contrast) → own PR.
 
 ### Slice 1 — Public marketing site + auth screens
+- **Part 1 shipped (this session):** `robots:index` + canonical `/workshops` in sitemap (H6 ✅); branded `opengraph-image.tsx` via `next/og` (H7 OG ✅); `/403` dead-end → `mailto` (H8 ✅); `[slug]` NAP sourced from the `CONTACT` single-source (M9 NAP ✅). Verified type-check/lint/test/build green.
+- **Remaining (Part 2 — benefits from browser verification):** apple-touch icon (H7); `[slug]` server-`metadata` split (M9); `.msite` token reconciliation/sanction (H5); inline hexes (L2); logo `width/height` CLS (L7); internal `<a>`→`next/link` (L6); auth-screen visual polish + mobile (states already present).
 - SEO: `robots:index` + sitemap entry for `/workshops` (H6); OG image + apple-touch icon (H7); `[slug]` server-metadata split (M9).
 - Dead-ends: `/403` support link (H8).
 - `.msite` token reconciliation or formal DESIGN.md sanction (H5); remove inline hexes (L2); logo `width/height` (L7); internal `<a>`→`next/link` (L6).

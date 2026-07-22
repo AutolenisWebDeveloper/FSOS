@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { AuthShell } from '@/components/archetypes'
 import { Button } from '@/components/ui/button'
+import { CONTACT } from '@/lib/site'
 
 export const metadata = { title: 'Access denied — FSOS' }
 
@@ -14,7 +15,8 @@ export default function ForbiddenPage() {
           <Link href="/login">Sign in with a different account</Link>
         </Button>
         <Button asChild variant="outline" className="w-full">
-          <Link href="/support">Contact support</Link>
+          {/* Real, reachable recovery path — /support has no route (would 404). */}
+          <a href={`mailto:${CONTACT.email}?subject=FSOS%20access%20help`}>Contact support</a>
         </Button>
       </div>
     </AuthShell>

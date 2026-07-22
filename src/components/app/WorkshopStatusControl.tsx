@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Loader2, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
@@ -40,12 +41,12 @@ export function WorkshopStatusControl({ workshopId, status }: { workshopId: stri
 
       {status === 'pending_review' ? (
         <>
-          <a
+          <Link
             href="/app/workshops/review"
             className="inline-flex items-center gap-1.5 rounded-md border border-status-pending/30 bg-status-pending/10 px-2.5 py-1 text-xs font-medium text-status-pending hover:bg-status-pending/20"
           >
             <ShieldCheck className="h-3.5 w-3.5" aria-hidden /> Awaiting your approval
-          </a>
+          </Link>
           <Button size="sm" variant="outline" onClick={() => setStatus('draft', 'Withdrawn to draft.')} disabled={busy}>
             Withdraw
           </Button>

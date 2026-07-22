@@ -205,6 +205,7 @@ export function MetricCard({
   hint,
   delta,
   spark,
+  valueSize = 'md',
 }: {
   label: string
   value: React.ReactNode
@@ -214,6 +215,8 @@ export function MetricCard({
   hint?: React.ReactNode
   delta?: React.ReactNode
   spark?: number[]
+  /** `lg` (30px) for the A1 executive tile; `md` (28px) for dense metric rows. */
+  valueSize?: 'md' | 'lg'
 }) {
   const card = (
     <div
@@ -246,7 +249,7 @@ export function MetricCard({
       <div className={cn(Icon ? 'mt-3' : 'mt-2')}>
         {Icon ? <MonoLabel className={cn('truncate', tone === 'attention' && 'text-gold-deep')}>{label}</MonoLabel> : null}
         <div className="mt-1.5 flex items-end justify-between gap-2">
-          <Numeric as="div" className={cn('text-[28px] font-semibold leading-none tracking-tight', tone === 'attention' && 'text-gold-deep')}>
+          <Numeric as="div" className={cn(valueSize === 'lg' ? 'text-[30px]' : 'text-[28px]', 'font-semibold leading-none tracking-tight', tone === 'attention' && 'text-gold-deep')}>
             {value}
           </Numeric>
           {spark && spark.length > 1 ? <Sparkline data={spark} tone={tone === 'neutral' ? 'brand' : tone} className="mb-0.5" /> : null}

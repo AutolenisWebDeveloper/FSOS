@@ -243,7 +243,7 @@ surface needs a new color, add a `.msite` var/class here and reference it.
 Extends the core set. Every pattern resolves color through tokens, ships all states (§27), is
 keyboard-operable, and is responsive (§14).
 
-- **KPI cards** (`StatTile`): mono eyebrow label, large `.numeric` value, trend indicator (§15.2), drill-in link. Never a bare number.
+- **KPI cards** — one canonical implementation: `MetricCard` (`dashboards/primitives`) with `valueSize` (`lg` 30px = the A1 executive tile, `md` 28px = dense metric rows), `tone`, optional `delta` + `spark`. `StatTile` (`archetypes/shells`) is the stable A1 alias that delegates to `MetricCard` — **do not fork a second tile**. Mono eyebrow label, large `.numeric` value, trend indicator (§15.2), drill-in link. Never a bare number.
 - **Filters:** grouped, labeled, active-filter chips + one-click "clear all"; state reflected in the URL (§12).
 - **Search:** debounced, scoped, typeahead where useful; distinct empty-query vs no-results; keyboard-navigable. Global search is real (multi-entity), never a stub.
 - **Command bar:** appears on bulk selection — count + scoped actions + clear; destructive actions confirm.

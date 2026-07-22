@@ -1,10 +1,11 @@
 import * as React from 'react'
 import Link from 'next/link'
-import { ChevronRight, ArrowUpRight, Check } from 'lucide-react'
+import { ChevronRight, Check } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { MonoLabel, Numeric } from '@/components/ui/typography'
+import { MetricCard } from '@/components/dashboards/primitives'
 import { BrandMark } from '@/components/portal/BrandMark'
 
 /*
@@ -123,13 +124,18 @@ export function DashboardShell({
  * tile links to its underlying list/detail (no dead ends) and lifts on hover.
  * `tone` tints the icon chip: `brand` for money/production, `attention` (gold)
  * for queues that need action, `neutral` for inventory counts.
+ *
+ * This is the large-value (`valueSize="lg"`, 30px) variant of the canonical
+ * KPI tile — the single implementation lives in `dashboards/primitives`
+ * (`MetricCard`). StatTile is the stable A1 alias so existing call sites and the
+ * archetype API stay unchanged; there is no forked tile implementation.
  */
 export function StatTile({
   label,
   value,
   href,
   hint,
-  icon: Icon,
+  icon,
   tone = 'neutral',
 }: {
   label: string
@@ -140,64 +146,7 @@ export function StatTile({
   icon?: LucideIcon
   tone?: 'neutral' | 'brand' | 'attention'
 }) {
-  const card = (
-    <Card
-      className={cn(
-        'group relative flex h-full flex-col overflow-hidden p-4',
-        tone === 'attention' && 'border-gold/45 bg-gradient-to-b from-gold/[0.07] to-transparent',
-        href && 'transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md',
-        href && (tone === 'attention' ? 'hover:border-gold/70' : 'hover:border-primary/40'),
-      )}
-    >
-      <span aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/60" />
-      <div className="flex items-start justify-between gap-2">
-        {Icon ? (
-          <span
-            aria-hidden
-            className={cn(
-              'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset',
-              tone === 'attention'
-                ? 'bg-gold/15 text-gold-deep ring-gold/25'
-                : tone === 'brand'
-                  ? 'bg-primary-soft/70 text-primary ring-primary/15'
-                  : 'bg-muted text-muted-foreground ring-border/60',
-            )}
-          >
-            <Icon className="h-[18px] w-[18px]" strokeWidth={1.9} />
-          </span>
-        ) : (
-          <MonoLabel className={cn(tone === 'attention' && 'text-gold-deep')}>{label}</MonoLabel>
-        )}
-        {href ? (
-          <ArrowUpRight
-            className={cn(
-              'h-4 w-4 shrink-0 text-muted-foreground/40 opacity-0 transition-all duration-200 group-hover:opacity-100',
-              tone === 'attention' ? 'group-hover:text-gold-deep' : 'group-hover:text-primary',
-            )}
-            aria-hidden
-          />
-        ) : null}
-      </div>
-      <div className={cn(Icon ? 'mt-3' : 'mt-2')}>
-        {Icon ? (
-          <MonoLabel className={cn('truncate', tone === 'attention' && 'text-gold-deep')}>{label}</MonoLabel>
-        ) : null}
-        <Numeric
-          as="div"
-          className={cn('mt-1.5 text-[30px] font-semibold leading-none tracking-tight', tone === 'attention' && 'text-gold-deep')}
-        >
-          {value}
-        </Numeric>
-        {hint ? <p className="mt-2 text-xs text-muted-foreground">{hint}</p> : null}
-      </div>
-    </Card>
-  )
-  if (!href) return card
-  return (
-    <Link href={href} className="block rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
-      {card}
-    </Link>
-  )
+  return <MetricCard label={label} value={value} href={href} hint={hint} icon={icon} tone={tone} valueSize="lg" />
 }
 
 // ─── A2 List / Index ──────────────────────────────────────────────────────────

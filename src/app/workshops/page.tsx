@@ -9,6 +9,9 @@ export const metadata: Metadata = {
   description:
     'Free educational workshops on retirement, life insurance, and financial planning with Markist Athelus, Financial Services Agent. In person and online. No products sold — education only.',
   alternates: { canonical: '/workshops' },
+  // Public lead-gen hub: opt in to indexing (root layout defaults to noindex for
+  // the private app). Without this the primary funnel page is silently de-indexed.
+  robots: { index: true, follow: true },
 }
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'

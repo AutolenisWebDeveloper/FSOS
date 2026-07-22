@@ -47,9 +47,9 @@ Severity = user/business impact. **Status:** `FIXED` (this session, Slice 0), `S
 | H3 | `dashboards/charts.tsx` `DONUT_TONES`/`HeatGrid` | Guardrail / token | Reserved gold (assumption) + red (loss) used as generic categorical chart fills — leaks guardrail color semantics. | **SLICE 0-b** (chart palette pass, needs visual review) |
 | H4 | `StatTile` / `MetricCard` / `DashboardGrid` tile | Component forking | **Three** near-duplicate executive KPI tiles with divergent tone vocabularies (3 vs 6) and grid systems (`sm:2/lg:4` vs `2/md:3/xl:5`). Foundation-layer debt that propagates. | **SLICE 2** (consolidation, broad blast radius → review) |
 | H5 | `marketing.css` `.msite` | Token / divergence | Fully parallel hardcoded-hex brand palette (`--navy:#0E2350`, `--blue:#1C428B`…) diverging from `--shell`/`--primary` — two brand blues ship in one app. | **SLICE 1** (derive from tokens **or** formally sanction in DESIGN.md) |
-| H6 | `workshops/page.tsx` | SEO | Lead-gen hub sets no `robots`, inherits root `noindex` → primary funnel page silently de-indexed; also absent from `sitemap.ts`. | **SLICE 1** |
-| H7 | `page.tsx` (home) + assets | SEO / social | Declares OG/Twitter cards but **no OG image** exists; no `opengraph-image`/apple-touch icon. | **SLICE 1** |
-| H8 | `(public)/403/page.tsx` | Dead-end | "Contact support" → `/support`, which has no page route (404 from an error page). | **SLICE 1** |
+| H6 | `workshops/page.tsx` | SEO | Lead-gen hub sets no `robots`, inherits root `noindex` → primary funnel page silently de-indexed; also absent from `sitemap.ts`. | **FIXED** (Slice 1: `robots:index` + sitemap now lists canonical `/workshops`) |
+| H7 | `page.tsx` (home) + assets | SEO / social | Declares OG/Twitter cards but **no OG image** exists; no `opengraph-image`/apple-touch icon. | **FIXED (OG)** (Slice 1: branded `opengraph-image.tsx` via `next/og`; apple-touch icon deferred) |
+| H8 | `(public)/403/page.tsx` | Dead-end | "Contact support" → `/support`, which has no page route (404 from an error page). | **FIXED** (Slice 1: → `mailto:CONTACT.email`) |
 
 ### Medium
 
@@ -63,7 +63,7 @@ Severity = user/business impact. **Status:** `FIXED` (this session, Slice 0), `S
 | M6 | `globals.css:118-120` | A11y | Global `:focus-visible { outline: 2px solid transparent }` makes native focus invisible; any element missing a ring class has zero visible focus. Fix is subtle (components rely on transparent outline to avoid double rings) → needs care. | **SLICE 0-b** (a11y pass w/ visual verify) |
 | M7 | `dashboards/charts.tsx` `HeatGrid` | A11y / token | `text-white` literal on variable-opacity tone bar can fall below AA on light tones. | **SLICE 0-b** |
 | M8 | `dashboards/primitives.tsx` vs `archetypes/shells.tsx` | Consistency | Two competing KPI grid systems (see H4). | **SLICE 2** |
-| M9 | `[slug]/page.tsx` | Data/SEO (NAP) | Hardcodes "McKinney, TX" but canonical location is Frisco (`lib/site.ts`) — inconsistent NAP; also `'use client'` blocks `metadata` export. | **SLICE 1** |
+| M9 | `[slug]/page.tsx` | Data/SEO (NAP) | Hardcodes "McKinney, TX" but canonical location is Frisco (`lib/site.ts`) — inconsistent NAP; also `'use client'` blocks `metadata` export. | **FIXED (NAP)** (Slice 1: sourced from `CONTACT` single source; `metadata`-split via server wrapper deferred). ⚠️ Frisco-vs-McKinney is a business fact for the FSA to confirm in `lib/site.ts`. |
 | M10 | `/refer`, `/consent`, `AuthShell` pages | A2P footer | Bare `<main>` with no footer → no Privacy/SMS-Terms links on a **consent-capturing** page. | **SLICE 1** (footer chrome + carrier-ready consent copy written directly; no approval gate — see A2P report) |
 
 ### Low (representative — full list in agent transcripts)

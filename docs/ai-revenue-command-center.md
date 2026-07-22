@@ -42,8 +42,8 @@ Win-Back, Term Conversion, Appointment, Revenue Center) build on top of that coc
 | 2 | Cross-Sell revenue workflow (end-to-end) | **Delivered** (PR #91, merged) |
 | 3 | Life Win-Back revenue workflow | **Delivered** (PR #92, merged) |
 | 4 | Term Conversion revenue workflow | **Delivered** (PR #94, merged) |
-| 5 | Appointment Generation & Recovery | **Delivered** |
-| 6 | Revenue Center (composed view) + Executive Dashboard enrichment | Planned |
+| 5 | Appointment Generation & Recovery | **Delivered** (PR #95, merged) |
+| 6 | Revenue Center (composed view) | **Delivered** |
 
 Each slice is one end-to-end capability (discovery → design → additive DB → services →
 API → frontend → TDD → verification → docs), opened as its own draft PR, reviewed
@@ -253,3 +253,54 @@ consent STOP/START keywords, so appointment-intent parsing must not naively recl
 them — a compliance-sensitive design left to a dedicated slice. No calendar API is wired
 (manual entry + labeled disconnected shell, §4.3). Wiring the recovery sweep into a cron
 is a controlled follow-up.
+
+## Slice 6 — Revenue Center (delivered)
+
+**What.** The **one net-new top-level page** the initiative permits (§0/§21): a
+**composed, read-only** view over existing data — it holds **no revenue source of
+truth**. It is the capstone that ties the whole initiative together: the opportunities
+the workforce originates in slices 2–4 roll up here, attributed by workflow via the
+`source` tags those slices created.
+
+**Changes (no migration — pure composition).**
+- `src/lib/revenue/center.ts` — new **pure** view-model: `revenueSummary` (securities
+  separated from every automated total), `revenueBySource` (**revenue by workflow — the
+  payoff of the `source` tags**), `pipelineByStage`, `conversionFunnel` (monotonic
+  at-or-past), `revenueAtRisk` (stalled + lost), `attributionQuality`, and
+  `dataQualityWarnings` (unattributed / no-value / unresolved-identity — surfaced, never
+  hidden, §17/§32).
+- `src/app/(fsa)/app/revenue/page.tsx` — the composed page. **Distinguishes Actual /
+  Weighted / Expected / Projected / Potential** with distinct labels and assumption
+  badges on estimates (§21): Actual from reconciled `v_commission_monthly`, Weighted +
+  Projected reuse `lib/analytics/forecast.ts` (`weightedPipeline` / `runRate`), Expected
+  from open opportunities, securities tracked on their own line. Plus revenue-by-workflow,
+  pipeline + conversion funnels, the appointment funnel (slice 5), today's workforce
+  activity, revenue-at-risk, and attribution/data-quality panels — all from the existing
+  dashboard components.
+- `src/app/(fsa)/layout.tsx` — a **Revenue Center** nav entry in the Overview cluster
+  (beside the AI Command Center). Every existing route preserved.
+- `tests/revenue-center.test.mjs` — proves the roll-ups, securities separation, source
+  attribution, funnels, at-risk, and the data-quality warnings. Wired into `npm test`.
+
+**Verification.** `build`, `type-check`, `lint` clean; full `npm test` green (new suite:
+10 assertions; `firewall-write-scan` still passes). No schema change, no new source of
+truth; every figure composes existing data with a clear Actual/Weighted/Expected/
+Projected/Potential label.
+
+**Known limitations.** Per-campaign **attributable revenue** is not shown — `v_campaign_metrics`
+carries delivery/engagement only, no revenue attribution exists per campaign (would need a
+new attribution model, out of scope). Executive-dashboard enrichment beyond this page is a
+follow-up.
+
+---
+
+## Initiative status
+
+All six planned slices are delivered, each as its own reviewed PR. The four §13 priority
+revenue workflows (Cross-Sell, Life Win-Back, Term Conversion) originate tracked,
+attributed, deduplicated, firewall-safe opportunities through **one shared, unit-proven
+origination pattern** (pure planner → service → API → UI → test, additive migrations
+045–047); appointments have real lifecycle + no-show recovery (048); and the AI Command
+Center (evolved `/app/ai/workforce`) + the Revenue Center compose it all into operator and
+executive cockpits. No parallel subsystem was created; the aggregate root (ADR-001),
+securities firewall (ADR-004), and NIGO boundaries (§5) are intact throughout.

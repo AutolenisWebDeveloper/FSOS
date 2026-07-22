@@ -32,6 +32,11 @@ import {
 } from '@/components/dashboards'
 import { money, timeAgo, humanize } from '@/lib/dashboards/format'
 import { loadCrossSellDashboard, type CrossSellGap } from '@/lib/dashboards/crosssell'
+import { load } from '@/lib/data/query'
+import { OriginateCrossSellButton } from '@/components/app/OriginateCrossSellButton'
+
+// Open (non-terminal) opportunity stages — a cross-sell opportunity is "live" here.
+const OPEN_OPP_STAGES = ['prospect', 'fact_find', 'quoted_proposed', 'application', 'underwriting_suitability']
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -42,14 +47,30 @@ export const runtime = 'nodejs'
 // an assumption-based estimate (§2.3). Wired to the existing gap views, activity
 // log, reviews, and per-household detail — no data duplicated, nothing rebuilt.
 export default async function CrossSellPage() {
-  const res = await loadCrossSellDashboard()
+  const [res, oppRes] = await Promise.all([
+    loadCrossSellDashboard(),
+    // Open cross-sell opportunities originated from gaps (attribution + dedup, mig 045).
+    load<{ id: string }[]>(
+      (db) =>
+        db
+          .from('opportunities')
+          .select('id')
+          .eq('source', 'cross_sell')
+          .is('deleted_at', null)
+          .in('stage', OPEN_OPP_STAGES)
+          .limit(1000),
+      [],
+    ),
+  ])
+  const openOpportunities = oppRes.ok ? oppRes.data.length : 0
 
   const actions = (
     <div className="hidden flex-wrap gap-2 sm:flex">
       <Button asChild variant="outline" size="sm"><Link href="/app/cross-sell/household-gaps">Household gaps</Link></Button>
       <Button asChild variant="outline" size="sm"><Link href="/app/cross-sell/agency-penetration">Agency penetration</Link></Button>
       <Button asChild variant="outline" size="sm"><Link href="/app/cross-sell/analytics">Analytics</Link></Button>
-      <Button asChild size="sm"><Link href="/app/crosssell">Import book</Link></Button>
+      <Button asChild variant="outline" size="sm"><Link href="/app/crosssell">Import book</Link></Button>
+      <OriginateCrossSellButton />
     </div>
   )
 
@@ -128,6 +149,7 @@ export default async function CrossSellPage() {
         <MetricCard label="No-life households" value={kpis.noLife.toLocaleString()} href="/app/cross-sell/household-gaps" icon={Users} tone="attention" hint="Highest-priority invites" />
         <MetricCard label="Agencies participating" value={kpis.agenciesParticipating.toLocaleString()} href="/app/cross-sell/agency-penetration" icon={Building2} tone="neutral" hint="Books with open gaps" />
         <MetricCard label="Reviews scheduled" value={kpis.reviewsScheduled.toLocaleString()} href="/app/reviews" icon={CalendarCheck} tone="positive" hint={`${kpis.conversionRate}% of identified`} />
+        <MetricCard label="Cross-sell opportunities" value={openOpportunities.toLocaleString()} href="/app/opportunities" icon={Layers} tone="brand" hint="Open in the pipeline" />
         <MetricCard
           label="Est. FSA revenue"
           value={money(kpis.estRevenue)}

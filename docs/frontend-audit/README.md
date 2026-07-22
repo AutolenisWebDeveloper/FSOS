@@ -35,10 +35,19 @@ change. Delivered as CI-gated vertical slices (draft PR per slice).
 no A2P/TCPA consent or legal-page copy. Compliance/consent/securities indicators
 untouched.
 
-**Not done here (reported, not fixed):** invite/verify auth stubs (need backend
-routes); all A2P consent/legal **wording** (legal + Ryan Anderson sign-off);
-per-portal redesign Slices 1–5; browser-based visual responsive/a11y capture.
-See `plan.md` and `a2p-10dlc-website-compliance.md`.
+**No approval gate.** Website content — legal, privacy, terms, SMS/A2P consent
+copy, forms — ships **compliant-by-construction**, written accurately against the
+`twilio-a2p-compliance` / `finra-rule-ingestion` references. No page requires a
+named individual's prior sign-off to go live — the FSA owns publish. Residual
+regulatory/legal/carrier risk is **documented with a recommendation**, never
+treated as an approval bottleneck; real business-specific values are left as
+`[[FSA TO PROVIDE]]` placeholders.
+
+**Not done here (reported, not fixed):** invite/verify auth stubs (need
+**backend** routes); A2P consent-copy standardization + TRAIGA disclosure
+(Slice 1, written directly — no gate); per-portal redesign Slices 1–5;
+browser-based visual responsive/a11y capture; A2P 10DLC campaign registration
+(FSA console task). See `plan.md` and `a2p-10dlc-website-compliance.md`.
 
 ## How to continue
 

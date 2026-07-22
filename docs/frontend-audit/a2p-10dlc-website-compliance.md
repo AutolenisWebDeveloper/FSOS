@@ -5,6 +5,15 @@
 > GoHighLevel). Frontend audit only — no backend/dispatcher changes.
 > **Authority:** `twilio-a2p-compliance` skill wins on any conflict.
 > **Status date:** 2026-07-22. **Verified against the live repo, read-only.**
+>
+> **No approval gate.** No page or copy requires a named individual's prior
+> sign-off to go live — the FSA owns publish. The goal is a site that is
+> **accurate and compliant by construction** with applicable law, carrier /
+> Twilio A2P 10DLC requirements, and best practice. Where content may present a
+> regulatory/legal/carrier risk, this report **documents it and recommends the
+> compliant change** — it never treats a page as blocked pending someone's
+> approval. Business-specific values (exact figures, IDs, addresses) are left as
+> `[[FSA TO PROVIDE]]` placeholders for the FSA to confirm, not as gates.
 
 ## Executive summary
 
@@ -16,9 +25,11 @@ disclosure. The homepage consultation form (`SiteContactForm`) is a
 **inconsistent consent copy across the five phone-collection forms**, (b) the
 `/refer` page missing its legal footer, and (c) the **TRAIGA AI-interaction
 disclosure not surfaced at the point of consent** (only in the outbound message
-body). All copy remediation is **legally binding, carrier-reviewable language →
-human legal + Ryan Anderson (FFS Compliance TX) sign-off required before merge**
-(§12.5). This report does not draft that language.
+body). The fix is to **bring the weaker forms up to the already-compliant
+`SiteContactForm` standard** and add the missing footer/disclosure — accurate,
+carrier-ready copy written directly against the `twilio-a2p-compliance`
+checklist, with `[[FSA TO PROVIDE]]` placeholders only where a real
+business-specific value is required. No approver gate.
 
 ## Surface-by-surface status
 
@@ -52,22 +63,32 @@ human legal + Ryan Anderson (FFS Compliance TX) sign-off required before merge**
 - **is_security firewall** `src/lib/compliance/firewall.ts` + gate step 6; securities threads never auto-reply.
 - **Twilio inbound signature verification** `src/lib/comms/twilio.ts` — constant-time; rejects in production.
 
-## Human-action items (cannot be completed by this frontend initiative)
+## Remediation items (implement in Slice 1 — no approval gate)
 
-1. **Standardize consent copy** to the `SiteContactForm` bar across `PublicForm`, `PublicReferForm`, and the workshop forms (brand, recurring automated, Msg&data rates, STOP/HELP, Privacy + SMS Terms links). **→ legal review of wording.**
-2. **`/refer` chrome** — wrap in `PublicPage`/`PublicFooter` (or add `(public)/layout.tsx`) so Privacy + SMS Terms links render; add the `/sms-terms` link to its CTA. Structural fix is dev-side; **the consent copy is legal-review.**
-3. **`/[slug]` agency referral** — decide whether it triggers SMS; if yes a full consent CTA + footer links are required. **→ legal.**
-4. **Workshop forms** — add a guaranteed static SMS-disclosure fallback independent of `sms_disclosure`.
-5. **TRAIGA consent-point disclosure** — add AI-interaction disclosure into consent UX where forms feed AI/automated messaging. **→ Ryan Anderson / legal to approve exact TRAIGA language.**
-6. **A2P 10DLC brand + campaign registration** in GHL/Twilio with Privacy + SMS Terms URLs populated; set `NEXT_PUBLIC_SMS_FROM` to the approved campaign number (currently falls back to office number — `src/lib/site.ts` ~55-63). Console task, not code.
-7. **Confirm HELP auto-response** wired to an approved reply.
-8. **Referrer-consents-for-third-party-number** design (`/refer`, `/[slug]`) — **→ legal / Ryan Anderson sign-off** before any SMS to referred numbers.
+Claude writes the accurate, carrier-ready copy directly against the
+`twilio-a2p-compliance` checklist; `[[FSA TO PROVIDE]]` marks only real
+business-specific values the FSA confirms.
 
-## Merge policy note (§12.5)
+1. **Standardize consent copy** to the `SiteContactForm` bar across `PublicForm`, `PublicReferForm`, and the workshop forms (brand, recurring automated, Msg&data rates, STOP/HELP, Privacy + SMS Terms links).
+2. **`/refer` chrome** — wrap in `PublicPage`/`PublicFooter` (or add `(public)/layout.tsx`) so Privacy + SMS Terms links render; add the `/sms-terms` link to its CTA.
+3. **`/[slug]` agency referral** — decide whether it triggers SMS; if yes, add a full consent CTA + footer links. (The referrer-consents-for-a-third-party-number design is a genuine TCPA question — see item 8 — surfaced as a recommendation, not a blocker.)
+4. **Workshop forms** — add a guaranteed static SMS-disclosure fallback independent of the DB `sms_disclosure` field so consent copy is never empty.
+5. **TRAIGA consent-point disclosure** — add the AI-interaction disclosure into the consent UX where forms feed AI/automated messaging.
 
-Every consent-copy or legal-page-wording change in items 1–5/8 is
-carrier-reviewable, legally binding text. Any slice touching it **must stop for
-human legal + Ryan Anderson sign-off before merge** and **may not auto-merge
-regardless of CI status.** Structural/chrome fixes (footer wrapping, static
-fallback scaffolding) are dev-side but should ship in the same reviewed slice as
-the copy they frame.
+### External / FYI (not code, not an approval gate)
+
+6. **A2P 10DLC brand + campaign registration** in GHL/Twilio with the live Privacy + SMS Terms URLs; set `NEXT_PUBLIC_SMS_FROM` to the approved campaign number (currently falls back to office number — `src/lib/site.ts` ~55-63). Console task the FSA performs.
+7. **Confirm HELP auto-response** is wired to an approved reply (carriers test HELP).
+8. **Referrer-consents-for-third-party-number** (`/refer`, `/[slug]`) — a real TCPA design question the FSA should resolve before SMS is sent to *referred* numbers. **Documented as a risk + recommendation; not a page-deployment gate.**
+
+## Merge policy note
+
+Website copy and legal pages ship **compliant-by-construction** — no page or
+consent-copy change is gated behind a named individual's sign-off. The audit's
+job is to make the copy accurate and carrier-ready and to **document any residual
+risk with a recommendation** (e.g. the third-party-number consent question in
+item 8) so the FSA can act on it. Auto-merge follows the general §12 policy: CI
+green + frontend-only diff + a11y/responsive evidence + no blocking review
+findings. The one control that is genuinely separate — **activating automated SMS
+*outreach* (actually sending texts)** — lives in the backend comms gate and is
+out of scope for this frontend initiative; it is unchanged here.

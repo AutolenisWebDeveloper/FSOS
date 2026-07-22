@@ -27,7 +27,7 @@
 
 ## 2. Prioritized defect register
 
-Severity = user/business impact. **Status:** `FIXED` (this session, Slice 0), `SLICE n` (scheduled), `HUMAN` (needs legal/compliance/backend owner — out of frontend scope).
+Severity = user/business impact. **Status:** `FIXED` (this session, Slice 0), `SLICE n` (scheduled), `HUMAN` (needs a **backend/business-owner** action such as a server route or a console task — out of *frontend* scope). No item is gated behind a compliance-officer approval: content ships compliant-by-construction and residual risk is documented with a recommendation (see A2P report).
 
 ### Critical
 
@@ -64,7 +64,7 @@ Severity = user/business impact. **Status:** `FIXED` (this session, Slice 0), `S
 | M7 | `dashboards/charts.tsx` `HeatGrid` | A11y / token | `text-white` literal on variable-opacity tone bar can fall below AA on light tones. | **SLICE 0-b** |
 | M8 | `dashboards/primitives.tsx` vs `archetypes/shells.tsx` | Consistency | Two competing KPI grid systems (see H4). | **SLICE 2** |
 | M9 | `[slug]/page.tsx` | Data/SEO (NAP) | Hardcodes "McKinney, TX" but canonical location is Frisco (`lib/site.ts`) — inconsistent NAP; also `'use client'` blocks `metadata` export. | **SLICE 1** |
-| M10 | `/refer`, `/consent`, `AuthShell` pages | A2P footer | Bare `<main>` with no footer → no Privacy/SMS-Terms links on a **consent-capturing** page. | **HUMAN + SLICE 1** (chrome fix dev-side; consent copy legal-review — see A2P report) |
+| M10 | `/refer`, `/consent`, `AuthShell` pages | A2P footer | Bare `<main>` with no footer → no Privacy/SMS-Terms links on a **consent-capturing** page. | **SLICE 1** (footer chrome + carrier-ready consent copy written directly; no approval gate — see A2P report) |
 
 ### Low (representative — full list in agent transcripts)
 

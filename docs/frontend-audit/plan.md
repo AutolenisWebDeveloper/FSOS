@@ -20,9 +20,21 @@
 - **A11y floor** — semantic markup, keyboard operable, visible focus, labels/roles, AA contrast, no color-only signaling, accessible tables/dialogs, `prefers-reduced-motion` respected.
 - **No horizontal overflow** at 320/375/390/430/768/1024/1280/1440/1920.
 
-## Merge policy (§12) — recap
+## Merge policy — recap (no approval gate)
 
-Auto-merge only if **all** hold: (1) CI green (type-check → lint → test → **build**, now wired); (2) diff **frontend-only** (no `supabase/migrations`, RLS, `lib/comms` gate, `lib/ai`, securities firewall, API contracts, business logic); (3) a11y + responsive evidence attached; (4) no blocking review findings; (5) **no A2P/TCPA legal/consent copy** (§11.A) — any such slice **stops for human legal + Ryan Anderson sign-off**. Otherwise → ready-for-review, stop. **This program opens draft PRs and does not auto-merge** in an unattended session.
+Auto-merge only if **all** hold: (1) CI green (type-check → lint → test → **build**, now wired); (2) diff **frontend-only** (no `supabase/migrations`, RLS, `lib/comms` gate, `lib/ai`, securities firewall, API contracts, business logic); (3) a11y + responsive evidence attached; (4) no blocking review findings. Otherwise → ready-for-review, stop.
+
+**No compliance-officer merge gate.** Website content — including legal, privacy,
+terms, and SMS/A2P consent copy — ships **compliant-by-construction**: written
+accurately against the `twilio-a2p-compliance` / `finra-rule-ingestion`
+references, with `[[FSA TO PROVIDE]]` placeholders for real business-specific
+values the FSA confirms. No page requires a named individual's prior sign-off to
+deploy — the FSA owns publish. Any residual regulatory/legal/carrier risk is
+**documented with a recommendation** in the PR/report, never treated as an
+approval bottleneck. (Separate matter, unchanged: *activating automated SMS
+outreach* — actually sending texts — is governed by the backend comms gate and
+is out of scope for this frontend initiative.) In an unattended session this
+program still opens **draft** PRs so a human can review before merge.
 
 ## Slices
 
@@ -46,7 +58,7 @@ Auto-merge only if **all** hold: (1) CI green (type-check → lint → test → 
 - `.msite` token reconciliation or formal DESIGN.md sanction (H5); remove inline hexes (L2); logo `width/height` (L7); internal `<a>`→`next/link` (L6).
 - NAP consistency from `CONTACT` (M9).
 - Auth screen polish/mobile/states refinement (login/mfa/forgot/reset) — **UI only, no auth logic.**
-- **A2P (§11.A) items are legal-review-gated** — `/refer` footer + consent-copy standardization, TRAIGA disclosure, workshop static fallback: implement structure, **stop for human legal + Ryan Anderson** on all binding copy (see A2P report). **This slice cannot auto-merge.**
+- **A2P items ship compliant-by-construction (no approval gate)** — `/refer` footer + consent-copy standardization, TRAIGA disclosure, workshop static fallback: write the accurate, carrier-ready copy directly against the `twilio-a2p-compliance` checklist, with `[[FSA TO PROVIDE]]` for business-specific values. Document any residual risk (e.g. third-party-number consent) as a recommendation. See A2P report.
 - ⚠️ C1/C2 (invite/verify) need **backend** routes first — out of this initiative; flagged to owner.
 
 ### Slice 2 — FSA portal (`/app/*`, 156 pages) + shared component consolidation
@@ -65,9 +77,10 @@ Each of Slices 2–5: audit every route's states/responsive/a11y/tokens against 
 
 Tokens-only · all states present · WCAG 2.2 AA · no horizontal overflow at all breakpoints · type-check/lint/test/build green · compliance/consent/securities indicators intact · no route removed/broken · no backend/schema/RLS/compliance/securities change · draft PR with a11y + responsive evidence · legal-gated copy stopped for human review.
 
-## Out of scope / human-action (surfaced, not done here)
+## Out of scope / FYI (surfaced, not done here)
 
-- Backend invite-accept + verify routes (C1/C2).
-- All A2P/TCPA consent + legal-page **wording** (legal + Ryan Anderson sign-off).
-- A2P 10DLC brand/campaign registration in GHL/Twilio; `NEXT_PUBLIC_SMS_FROM` = approved campaign number.
+- Backend invite-accept + verify routes (C1/C2) — backend, not frontend.
+- A2P 10DLC brand/campaign registration in GHL/Twilio; `NEXT_PUBLIC_SMS_FROM` = approved campaign number (a console task the FSA performs — not code, not an approval gate).
+- Activating automated SMS *outreach* (sending texts) — governed by the backend comms gate; out of frontend scope, unchanged.
+- Real business-specific content values (exact figures, IDs, office address, credentials, testimonials) — left as `[[FSA TO PROVIDE]]` placeholders for the FSA to fill; not a gate.
 - Visual/browser-based responsive + a11y screenshotting (no browser in this session) — to run per slice.

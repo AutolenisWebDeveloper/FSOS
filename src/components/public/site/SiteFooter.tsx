@@ -29,8 +29,11 @@ export function SiteFooter() {
             {/* Official Farmers Insurance logo (full lockup) — §17.1 approved asset,
                 rendered unaltered on a white card so it reads on the navy footer. */}
             <span className="foot__carrier">
+              {/* Intrinsic dims give the browser the aspect ratio so it reserves
+                  space before the SVG loads (no CLS); CSS (.foot__carrier img:
+                  height 42 / width auto) still controls the rendered size. */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/brand/farmers-logo.svg" alt="Farmers Insurance" />
+              <img src="/brand/farmers-logo.svg" alt="Farmers Insurance" width={1280} height={744} />
             </span>
             {SOCIAL.length > 0 ? (
               <div className="foot__soc">

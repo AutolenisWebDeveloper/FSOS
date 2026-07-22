@@ -146,9 +146,11 @@ export function Icon({
 export function BrandLogo() {
   return (
     <span className="brand__logo brand__logo--farmers">
-      {/* Plain <img> keeps the vector emblem crisp without next/image's SVG caveats. */}
+      {/* Plain <img> keeps the vector emblem crisp without next/image's SVG caveats.
+          Intrinsic dims (viewBox 112.5×65.6) reserve the aspect ratio; CSS sizes
+          it to the fixed 46px chip via object-fit: contain. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/brand/farmers-emblem.svg" alt="Farmers Insurance" />
+      <img src="/brand/farmers-emblem.svg" alt="Farmers Insurance" width={113} height={66} />
     </span>
   )
 }

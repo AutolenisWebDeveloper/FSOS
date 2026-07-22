@@ -75,8 +75,8 @@ Severity = user/business impact. **Status:** `FIXED` (this session, Slice 0), `S
 | L3 | `globals.css` scrollbar; `BrandMark`/`ProfileMenu` `ring-white/10`; `shells.tsx` `bg-white/60` hairline | Token | Assorted raw white/rgba literals; introduce a `--highlight` token. | **SLICE 2** |
 | L4 | `archetypes/states.tsx` `StatusBadge` | Microcopy | Default label renders raw lowercase enum (`won`/`lost`). | **SLICE 2** |
 | L5 | `ui/badge.tsx` | Consistency | `assumption`/`security` variants use a different opacity/border recipe than status variants. | **SLICE 2** |
-| L6 | Public internal links (`SiteHeader`/`SiteFooter`/forms) | Perf/UX | `<a href>` for internal routes instead of `next/link` (full reloads; the pre-existing lint warnings). | **PARTIAL** (Slice 1 pt2: `SiteHeader` + `SiteFooter` done, 56→22 warnings; `SiteContactForm`/workshop forms/legal pages remain — mechanical, follow-up) |
-| L7 | logo `<img>` in `SiteFooter`/`icons.tsx` | Images/CLS | Approved-asset SVG logos lack explicit `width`/`height` (CLS risk). | **SLICE 1** |
+| L6 | Public internal links (`SiteHeader`/`SiteFooter`/forms) | Perf/UX | `<a href>` for internal routes instead of `next/link` (full reloads; the pre-existing lint warnings). | **FIXED (public)** (pt2: header/footer; pt3: legal pages, consent forms, workshop detail pages — public `no-html-link` warnings now 0. Only private-app `WorkshopStatusControl` remains → **Slice 2**.) |
+| L7 | logo `<img>` in `SiteFooter`/`icons.tsx` | Images/CLS | Approved-asset SVG logos lack explicit `width`/`height` (CLS risk). | **FIXED** (Slice 1 pt3: intrinsic `width/height` on footer carrier logo + emblem — provides aspect ratio so space is reserved; CSS still controls display size) |
 
 ## 3. Correct-as-built (do not re-flag)
 

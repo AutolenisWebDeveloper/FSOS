@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import { CheckCircle2, CalendarDays, MapPin, Video } from 'lucide-react'
 import { postJson, firstFieldError } from '@/lib/client/api'
 import { Field } from '@/components/forms/Field'
@@ -168,8 +169,8 @@ export function WorkshopRegisterForm({ workshop }: { workshop: PublicWorkshop })
             ) : null}
             <p className="px-1 text-xs text-muted-foreground">
               See our{' '}
-              <a href="/sms-terms" className="underline hover:text-foreground">SMS Terms</a> and{' '}
-              <a href="/privacy" className="underline hover:text-foreground">Privacy Policy</a>. Registering does not require consent.
+              <Link href="/sms-terms" className="underline hover:text-foreground">SMS Terms</Link> and{' '}
+              <Link href="/privacy" className="underline hover:text-foreground">Privacy Policy</Link>. Registering does not require consent.
             </p>
           </fieldset>
 

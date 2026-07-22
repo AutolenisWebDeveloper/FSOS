@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import { BUSINESS, SMS_CONSENT } from '@/lib/site'
 
 const TOPICS = [
@@ -170,8 +171,8 @@ export function SiteContactForm() {
             provided, including appointment and policy updates, account and customer-service messages, and marketing or
             promotional offers. Messages originate from {SMS_CONSENT.from}. Msg frequency varies. Msg &amp; data rates
             may apply. Reply STOP to opt out, HELP for help. Consent is not a condition of purchase. See our{' '}
-            <a href="/privacy">Privacy Policy</a>, <a href="/terms">Terms of Use</a>, and{' '}
-            <a href="/sms-terms">SMS Terms &amp; Conditions</a>.
+            <Link href="/privacy">Privacy Policy</Link>, <Link href="/terms">Terms of Use</Link>, and{' '}
+            <Link href="/sms-terms">SMS Terms &amp; Conditions</Link>.
           </label>
         </div>
         <p className="consent__note">

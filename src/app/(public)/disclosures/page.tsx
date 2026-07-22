@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
 import { SiteShell } from '@/components/public/site/SiteShell'
 
 export const metadata: Metadata = {
@@ -77,8 +78,8 @@ export default function DisclosuresPage() {
 
             <h2 id="more">5. Related policies</h2>
             <p>
-              See also our <a href="/privacy">Privacy Policy</a>, <a href="/terms">Terms of Use</a>, and{' '}
-              <a href="/sms-terms">SMS Terms &amp; Conditions</a>.
+              See also our <Link href="/privacy">Privacy Policy</Link>, <Link href="/terms">Terms of Use</Link>, and{' '}
+              <Link href="/sms-terms">SMS Terms &amp; Conditions</Link>.
             </p>
           </article>
         </div>

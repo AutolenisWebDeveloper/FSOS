@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { CheckCircle2, CalendarDays, MapPin, Video, Users, Mail, ArrowRight, GraduationCap } from 'lucide-react'
 import { SiteShell } from '@/components/public/site/SiteShell'
@@ -69,12 +70,12 @@ export default async function WorkshopConfirmedPage(props: { params: Promise<{ s
           </div>
 
           <div className="whero__acts" style={{ justifyContent: 'center', marginTop: 30 }}>
-            <a className="btn btn--red" href="/workshops">
+            <Link className="btn btn--red" href="/workshops">
               Browse more workshops <ArrowRight aria-hidden />
-            </a>
-            <a className="btn btn--ghostnavy" href="/">
+            </Link>
+            <Link className="btn btn--ghostnavy" href="/">
               Back to home
-            </a>
+            </Link>
           </div>
         </div>
       </main>

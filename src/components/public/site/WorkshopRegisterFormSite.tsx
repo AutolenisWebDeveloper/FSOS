@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import { postJson, firstFieldError } from '@/lib/client/api'
 import type { PublicWorkshop } from '@/components/public/WorkshopRegisterForm'
 
@@ -149,7 +150,7 @@ export function WorkshopRegisterFormSite({ workshop }: { workshop: PublicWorksho
           </label>
         </div>
         <p className="consent__note">
-          See our <a href="/sms-terms">SMS Terms</a> and <a href="/privacy">Privacy Policy</a>. Registering does not
+          See our <Link href="/sms-terms">SMS Terms</Link> and <Link href="/privacy">Privacy Policy</Link>. Registering does not
           require consent, and consent is not a condition of attending.
         </p>
       </div>

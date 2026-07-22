@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import {
   CalendarDays,
@@ -204,9 +205,9 @@ export default async function WorkshopLandingPage(props: { params: Promise<{ slu
               <a className="btn btn--red" href={registerHref}>
                 {ctaLabel} <ArrowRight aria-hidden />
               </a>
-              <a className="btn btn--ghostnavy" href="/workshops">
+              <Link className="btn btn--ghostnavy" href="/workshops">
                 Browse all workshops
-              </a>
+              </Link>
             </div>
 
             <p className="wdisc">

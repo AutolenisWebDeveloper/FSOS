@@ -41,8 +41,8 @@ Win-Back, Term Conversion, Appointment, Revenue Center) build on top of that coc
 | 1 | AI Command Center composed view + compliance-spine proof | **Delivered** (PR #90, merged) |
 | 2 | Cross-Sell revenue workflow (end-to-end) | **Delivered** (PR #91, merged) |
 | 3 | Life Win-Back revenue workflow | **Delivered** (PR #92, merged) |
-| 4 | Term Conversion revenue workflow | **Delivered** |
-| 5 | Appointment Generation & Recovery | Planned |
+| 4 | Term Conversion revenue workflow | **Delivered** (PR #94, merged) |
+| 5 | Appointment Generation & Recovery | **Delivered** |
 | 6 | Revenue Center (composed view) + Executive Dashboard enrichment | Planned |
 
 Each slice is one end-to-end capability (discovery → design → additive DB → services →
@@ -210,3 +210,46 @@ the conversion importer, dashboard, and per-policy action route are unchanged.
 `termConversionCandidates`); this slice adds the missing **opportunity origination** and
 does not change the outreach path. No commission is invented (§4.3). Wiring origination
 into the `conversion-watch` cron is a controlled follow-up.
+
+## Slice 5 — Appointment Generation & Recovery (delivered)
+
+**What.** FSOS had an `appointments` table (status `scheduled/completed/cancelled/no_show`)
+but **nothing ever advanced an appointment past `scheduled`** — no lifecycle management,
+no no-show detection, no recovery, and no direct opportunity link. This slice adds the
+**recovery half of §13.4** — appointment lifecycle + no-show recovery + funnel + a direct
+opportunity link — reusing `appointments` / `work_tasks`. It does **not** fabricate a
+calendar integration (none is verified — §4.3): appointments stay manually entered /
+created from a review, and this layer manages their lifecycle.
+
+**Changes.**
+- `supabase/migrations/048_appointment_lifecycle.sql` — **additive** nullable
+  `appointments.opportunity_id` FK (§13.4 "link the appointment to its originating
+  opportunity") + the two indexes the lifecycle/recovery sweep needs (the table had
+  none).
+- `src/lib/appointments/recovery.ts` — new **pure** core: `canTransition` (validated
+  status state machine), `isOverdue` (scheduled-but-past triage), `needsRecovery`,
+  `appointmentFunnel` (honest show-rate = held ÷ (held + no-show), 0 when none held),
+  `planNoShowRecovery` (one recovery task per un-recovered no-show, deduped).
+- `src/lib/appointments/service.ts` — `setAppointmentStatus` (validated transition +
+  audit) and `runNoShowRecovery` (sweeps no-shows, creates internal reschedule
+  `work_tasks`, deduped against open agent tasks, + activity + audit).
+- `src/app/api/app/appointments/[id]/route.ts` (`PATCH` status) and
+  `src/app/api/app/appointments/recovery/route.ts` (`POST` sweep) — fsa + permission,
+  Zod. **Green-zone — they send nothing.**
+- The calendar page — an appointment funnel (scheduled / held / no-shows / show-rate),
+  an **Overdue — needs a decision** triage panel (mark held / no-show), a **No-shows**
+  panel + a **Run no-show recovery** action. The disconnected Google Calendar shell is
+  preserved (no fabricated integration).
+- `tests/appointment-recovery.test.mjs` — proves the state machine, overdue detection,
+  the funnel, and recovery planning/dedup. Wired into `npm test`.
+
+**Verification.** `build`, `type-check`, `lint` clean; full `npm test` green (new suite:
+14 assertions; `firewall-write-scan` still passes). Migration is additive + forward-only;
+the review-create appointment insert path and CalendarView are unchanged.
+
+**Known limitations.** The **Generation-from-replies** half of §13.4 (parsing inbound
+replies into appointment intent) is **deferred**: inbound `cancel`/`yes` are already
+consent STOP/START keywords, so appointment-intent parsing must not naively reclassify
+them — a compliance-sensitive design left to a dedicated slice. No calendar API is wired
+(manual entry + labeled disconnected shell, §4.3). Wiring the recovery sweep into a cron
+is a controlled follow-up.

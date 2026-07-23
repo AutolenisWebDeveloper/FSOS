@@ -160,6 +160,10 @@ export async function dispatchCampaign(campaignId: string, actor: string): Promi
       campaignVariant: variant.key,
       isSecurity: false,
       recipientContext: recipientContext(r),
+      // Slice 1 — record the represented agency on every campaign message (§7). The
+      // represented agency owner / delegation are attached by the delegated-campaign
+      // path (later slice); a plain FSA broadcast records the represented agency only.
+      ownership: { representedAgencyId: r.agency_id },
     })
 
     if (outcome.sent) {

@@ -60,10 +60,11 @@ export function SiteFooter() {
           <div>
             <p className="foot__h">Resources</p>
             <ul className="foot__list">
+              <li><Link href="/services">Services</Link></li>
               <li><Link href="/workshops">Workshops</Link></li>
+              <li><Link href="/faq">FAQ</Link></li>
               <li><Link href="/#process">How It Works</Link></li>
               <li><Link href="/#reviews">Client Reviews</Link></li>
-              <li><Link href="/#about">About Markist</Link></li>
               <li><Link href="/#contact">Contact</Link></li>
             </ul>
           </div>
@@ -71,7 +72,7 @@ export function SiteFooter() {
           <div>
             <p className="foot__h">Company</p>
             <ul className="foot__list">
-              <li><Link href="/#about">About</Link></li>
+              <li><Link href="/about">About</Link></li>
               <li><Link href="/#contact">Contact</Link></li>
               <li><a href="https://brokercheck.finra.org/" target="_blank" rel="noopener">FINRA BrokerCheck</a></li>
               <li><a href="https://www.investor.gov/CRS" target="_blank" rel="noopener">Investor.gov/CRS</a></li>

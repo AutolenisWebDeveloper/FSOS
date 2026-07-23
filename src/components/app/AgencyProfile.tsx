@@ -33,6 +33,13 @@ interface Agency {
   pc_book_policies: number
   life_policies_in_force: number
   ghl_synced_at: string | null
+  fnwl_serving_agent_no: string | null
+  office_address: string | null
+  office_city: string | null
+  office_state: string | null
+  office_zip: string | null
+  existing_leads_user: boolean | null
+  interested: boolean | null
 }
 
 export async function AgencyProfile({ id, tab }: { id: string; tab: AgencyTab }) {
@@ -165,10 +172,52 @@ async function OverviewTab({ id, agency }: { id: string; agency: Agency }) {
         .limit(10),
     [],
   )
+  const owner = await load<{ email: string | null; phone: string | null; mobile_phone: string | null }[]>(
+    (db) => db.from('agency_owners').select('email, phone, mobile_phone').eq('agency_id', id).order('created_at', { ascending: true }).limit(1),
+    [],
+  )
+  const contact = owner.ok ? owner.data[0] : undefined
   const stage = activation.ok && activation.data[0] ? activation.data[0].stage : '—'
+
+  const officeLine = [agency.office_address, agency.office_city, agency.office_state, agency.office_zip]
+    .filter(Boolean)
+    .join(', ')
+  const hasContact = !!(agency.fnwl_serving_agent_no || officeLine || contact?.email || contact?.phone || contact?.mobile_phone)
 
   return (
     <div className="mt-4 space-y-4">
+      {hasContact ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Contact &amp; office</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+              {agency.fnwl_serving_agent_no ? (
+                <div><dt className="text-xs text-muted-foreground">Farmers agent code</dt><dd className="mt-0.5 font-medium">{agency.fnwl_serving_agent_no}</dd></div>
+              ) : null}
+              {contact?.email ? (
+                <div><dt className="text-xs text-muted-foreground">Email</dt><dd className="mt-0.5"><a href={`mailto:${contact.email}`} className="text-primary hover:underline">{contact.email}</a></dd></div>
+              ) : null}
+              {contact?.phone ? (
+                <div><dt className="text-xs text-muted-foreground">Business phone</dt><dd className="mt-0.5"><a href={`tel:${contact.phone}`} className="hover:underline">{contact.phone}</a></dd></div>
+              ) : null}
+              {contact?.mobile_phone ? (
+                <div><dt className="text-xs text-muted-foreground">Mobile</dt><dd className="mt-0.5"><a href={`tel:${contact.mobile_phone}`} className="hover:underline">{contact.mobile_phone}</a></dd></div>
+              ) : null}
+              {officeLine ? (
+                <div className="sm:col-span-2"><dt className="text-xs text-muted-foreground">Office</dt><dd className="mt-0.5">{officeLine}</dd></div>
+              ) : null}
+            </dl>
+            {(agency.existing_leads_user || agency.interested) ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {agency.existing_leads_user ? <Badge variant="active">Existing leads user</Badge> : null}
+                {agency.interested ? <Badge variant="pending">Interested</Badge> : null}
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="YTD placed premium" value={<Money value={agency.ytd_placed_premium} />} />
         <Stat label="YTD referrals" value={<Numeric>{agency.ytd_referrals}</Numeric>} />

@@ -86,7 +86,7 @@ export default async function FnaAssumptionsPage() {
       {res.data.length === 0 ? (
         <EmptyState
           title="No assumption sets yet"
-          description="The default assumption set is seeded by migration 051. If none appears, apply the FNA data-model migration."
+          description="The default assumption set is seeded by the FNA data-model migration (052). If none appears, apply it."
         />
       ) : (
         <div className="space-y-6">

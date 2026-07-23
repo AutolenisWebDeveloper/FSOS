@@ -91,7 +91,7 @@ try {
   psqlFile('supabase/migrations/013_p2_operational_enhancement.sql')
   psqlFile('supabase/migrations/015_security_invoker_views.sql')
   // 033 creates comm_conversations/comm_message_events (needed by the Slice 2 identity
-  // columns in 051). Depends only on 009/013 tables already applied above.
+  // columns in 053). Depends only on 009/013 tables already applied above.
   psqlFile('supabase/migrations/033_comms_inbound_knowledge_campaigns.sql')
   // 049 adds the delegation + assignment-review tables (Slice 1). Both are back-office
   // only (no client policy) — the proof below asserts a client sees ZERO rows from each.

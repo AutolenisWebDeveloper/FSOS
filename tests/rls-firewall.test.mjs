@@ -98,7 +98,7 @@ try {
   psqlFile('supabase/migrations/049_comm_delegation_ownership.sql')
   // 050 tightens comm_assignment_reviews.channel/destination to NOT NULL (#107 follow-up).
   psqlFile('supabase/migrations/050_comm_assignment_review_notnull.sql')
-  // 051 adds the identity-disclosure config (Slice 2) — back-office, client sees 0 rows.
+  // 053 adds the identity-disclosure config (Slice 2) — back-office, client sees 0 rows.
   psqlFile('supabase/migrations/053_comm_identity_disclosure.sql')
 
   // Seed: this client's household + a second household; a life + a securities policy.

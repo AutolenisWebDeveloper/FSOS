@@ -17,7 +17,7 @@
 | 5 | **Tags** | `addContactTags` (`ghl.ts`); `src-referral`, `src-event`, nurture tags | **Replace** 🔨 slices 5/12 | FSOS uses `comm_audiences` definitions + campaign enrollment + `activities` for segmentation instead of GHL tags. | Audience segment resolves the equivalent cohort; campaign enrolls it. | Replace |
 | 6 | **Pipelines & stages** | `ghl.ts` ID map (Pipelines A/B/C, stage UUIDs) | **Replace** 🔨 D1 | Native opportunity/pipeline stages on the aggregate-root spine (`opportunities`) — the FSOS spine already models pipeline; D1 wires native stage transitions. | Stage transition on a native opportunity advances state and fires downstream logic (row 7). | Replace |
 | 7 | **Commission-case creation on "Application Submitted" + issue-marking on "Issued"** | `webhooks/ghl` `handleOpportunityStage` (keyed on `ghl_opportunity_id`) | **Replace** 🔨 **D1 (critical)** | Native stage-transition service that creates a `commission_cases`/`cases` row at Application Submitted (idempotent) and marks issued at Issued. Only pipeline→case trigger — must exist before removal. | Move a native opportunity to Application Submitted → case created once (idempotent on retry); to Issued → case marked issued; securities opp → firewalled, no auto-case. | Replace |
-| 8 | **Appointment creation → activity log** | `webhooks/ghl` `handleAppointment` → `activity` | **Replace** 🔨 D1 | Native appointment logging. Calendly webhook (`CALENDLY_WEBHOOK_SECRET`) already replaces GHL calendar/booking; D1 confirms appointment activity is logged natively. | Book via Calendly → `activity`/`appointments` row logged; appointment-confirmation campaign (slice 12) can fire. | Replace |
+| 8 | **AppointmentCreate → appointment activity logging** (the webhook's 4th side-effect) | `webhooks/ghl` `handleAppointment` → `activity` (`type:'appointment'`, `channel:'ghl'`, `ghl_activity_id`) | **Replace** 🔨 D1 | **Verified:** `/api/webhooks/calendly` writes to the **`activity`** table (legacy) — the *same* table GHL's `handleAppointment` writes — plus `customers` + `consent_ledger`. So the appointment **activity-log** equivalent is already covered by Calendly; removing GHL's handler does not lose it. **However**, neither GHL nor Calendly writes the **spine `appointments` table** (mig `048_appointment_lifecycle`) — that surface is populated by the appointment-lifecycle slice, independent of GHL. So this is **not a pure Calendly freebie**: the activity log is covered, but if the intent is a native spine `appointments` row on booking, that is a **D1 native-replacement item** (wire Calendly → `appointments`), tracked here explicitly. | (a) Book via Calendly → an `activity` row is logged (parity with GHL). (b) D1 acceptance: the same booking creates/updates a spine `appointments` row, and an appointment-confirmation campaign (slice 9) can fire from it. | Replace (D1 = wire Calendly → spine `appointments`) |
 | 9 | **DND / opt-out capture** | `webhooks/ghl` `handleOptOut` → `consent_ledger` + `customers.consent_*` | **Replace** 🔨 **D0 + D1 (TCPA-critical)** | Native Twilio-STOP + Resend-unsubscribe already flow through `inbound.ts` → `consents` + `dnc_entries` + `audit_log`. **D0 migrates historical GHL opt-outs into the enforcement stores `consents` (revoked, per channel) and/or `dnc_entries` — NOT `consent_ledger`**, which `send.ts`/`gate.ts` never read (`consents` is member-keyed, so resolve GHL contact → member; unresolvable opt-outs **fail closed** to `dnc_entries`). `source='ghl_migration'`, timestamps preserved. D1 verifies coverage. | STOP suppresses immediately; Resend unsubscribe suppresses marketing email; **every GHL-migrated opt-out is enforced THROUGH `evaluateGate`** (the gate blocks the send — a row existing proves nothing) after decommission (dedicated test). | Replace |
 | 10 | **Workflow automations (WF-0…WF-43)** | GHL UI workflows (tag/pipeline/lead_source triggers); `docs/ghl_workshop_workflows.md` | **Replace** 🔨 slices 5–12 | FSOS native campaign engine (`comm_campaigns`/`comm_sequences`) + cron + the campaign library (§12). These are not API-creatable in GHL; they move wholesale to FSOS-native. | Each equivalent journey runs as a native campaign/sequence with the gate enforced; simulation shows the path. | Replace |
 | 11 | **Message templates** | GHL email/SMS templates | **Extend** ✅ | `comm_templates` with the approval workflow already exists (submitted/approved/archived/requires_optout). Library blueprints (§12) build on it. | Template requires approval before a campaign can use it; unapproved blocked at gate step 4. | Extend |
@@ -62,6 +62,27 @@ workshops subsystem carries. The lead-score push and Pipeline-A routing are GHL-
 **Scan completeness:** `grep -rniE "ghl" supabase/migrations/` returns hits only in
 `002`/`003`/`004`/`023`/`026`/`038`/`039` (columns/tables) and `040`/`041` (behavior comments) — no
 other migration references GHL. Rows #1–#25 therefore cover every GHL migration artifact.
+
+### `ghlSummary()` UI surfaces — go BLANK at D3 without a per-surface decision
+
+`ghlSummary()` (`src/lib/ghl.ts`) reads `ghl_stage_id`/`ghl_pipeline_id`/`ghl_contact_id` and is
+attached by **6 API routes**; the legacy command center (`src/components/pages/fsos_command_center.jsx`)
+renders its `ghl.stage`/`ghl.pipeline`/`ghl.stage_position` chips (guarded with `?.`, so at D3 they
+degrade to blank rather than crash — but the pipeline info silently disappears). Each needs an
+explicit Replace or Remove so nothing goes blank unnoticed:
+
+| # | Surface (API producer → UI) | Renders | Decision | Native replacement / rationale |
+|---|---|---|---|---|
+| 26 | `/api/dashboard` → command-center customer rows | GHL stage/pipeline chip | **Replace** 🔨 D3 | Show the household's native **`opportunities.stage`** (spine) instead of the GHL stage. |
+| 27 | `/api/scores` → opportunities/scoring view | GHL stage chip on each opp | **Replace** 🔨 D3 | The scored records *are* native opportunities — render their native stage; drop the `ghlSummary` attach. |
+| 28 | `/api/customers/next-action` → next-action surface | `ghl_stage`/`ghl_pipeline` fields | **Replace** 🔨 D3 | Native opportunity stage drives the next-best-action; replace the `p.ghl.stage/pipeline` reads with the native stage. |
+| 29 | `/api/agencies/list` → Agency Owners view | GHL Pipeline-B (agency-owner) stage | **Replace** 🔨 D3 | Use native **`agency_activation.stage`** (pilot → active → strategic) — the native equivalent of GHL Pipeline B. |
+| 30 | `/api/search` → global search results | GHL stage chip per result | **Remove** 🔨 D3 | Search rows don't need a pipeline chip; drop it to keep results clean (native stage is visible on the record's detail view). |
+| 31 | `/api/opra` → OPRA center (legacy) | GHL stage chip | **Remove** 🔨 D3 | OPRA is a legacy module (`docs/legacy-mapping.md` C6) with no native pipeline equivalent; remove the chip, no replacement. |
+
+At D3, each of these 6 routes drops its `import { ghlSummary }` + attach; surfaces marked
+**Replace** swap in the named native source; surfaces marked **Remove** drop the chip. The legacy
+command-center reads (`c.ghl?.stage`, etc.) are then dead and removed with the rest of the GHL UI.
 
 ## Data preservation (row-count + checksum scope — §2.A)
 

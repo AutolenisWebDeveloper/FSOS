@@ -46,20 +46,37 @@ export async function resolveDelegation(
   input: DelegationResolveInput,
 ): Promise<DelegationDecision & { delegationId?: string | null }> {
   try {
-    const { data } = await getDb()
-      .from('agency_communication_delegations')
-      .select(
-        'id, status, agency_id, effective_at, expires_at, permitted_campaign_types, permitted_channels, representative_user_id',
-      )
-      .eq('agency_id', input.agencyId)
-      .eq('status', 'ACTIVE')
-      .limit(20)
-    const rows = (data ?? []) as DelegationRow[]
-    const rec =
-      (input.senderUserId ? rows.find((r) => r.representative_user_id === input.senderUserId) : undefined) ??
-      rows.find((r) => !r.representative_user_id) ??
-      rows[0] ??
-      null
+    // Deterministic selection (PostgREST does not guarantee row order): prefer a
+    // delegation scoped to THIS sender, else an agency-wide one (null representative),
+    // else any active — each query ordered created_at desc, limit 1.
+    const cols =
+      'id, status, agency_id, effective_at, expires_at, permitted_campaign_types, permitted_channels, representative_user_id'
+    const activeQuery = () =>
+      getDb()
+        .from('agency_communication_delegations')
+        .select(cols)
+        .eq('agency_id', input.agencyId)
+        .eq('status', 'ACTIVE')
+
+    let rec: DelegationRow | null = null
+    if (input.senderUserId) {
+      const { data } = await activeQuery()
+        .eq('representative_user_id', input.senderUserId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+      rec = ((data ?? [])[0] as DelegationRow) ?? null
+    }
+    if (!rec) {
+      const { data } = await activeQuery()
+        .is('representative_user_id', null)
+        .order('created_at', { ascending: false })
+        .limit(1)
+      rec = ((data ?? [])[0] as DelegationRow) ?? null
+    }
+    if (!rec) {
+      const { data } = await activeQuery().order('created_at', { ascending: false }).limit(1)
+      rec = ((data ?? [])[0] as DelegationRow) ?? null
+    }
     const decision = evaluateDelegation(rec, {
       now: new Date().toISOString(),
       channel: input.channel,
@@ -183,25 +200,38 @@ export async function enqueueAssignmentReview(input: AssignmentReviewInput): Pro
       .eq('status', 'open')
       .is('campaign_id', input.campaignId ?? null)
       .limit(1)
-    if (!Array.isArray(existing) || existing.length === 0) {
-      await db.from('comm_assignment_reviews').insert({
-        channel: input.channel,
-        destination: input.destination,
-        member_id: input.memberId ?? null,
-        household_id: input.householdId ?? null,
-        agency_id: input.agencyId ?? null,
-        campaign_id: input.campaignId ?? null,
-        reason: input.reason,
-        conflict: input.conflict ?? {},
-        status: 'open',
-      })
+    let reviewId: string | null = Array.isArray(existing) && existing.length > 0 ? existing[0].id : null
+    if (!reviewId) {
+      const { data: inserted } = await db
+        .from('comm_assignment_reviews')
+        .insert({
+          channel: input.channel,
+          destination: input.destination,
+          member_id: input.memberId ?? null,
+          household_id: input.householdId ?? null,
+          agency_id: input.agencyId ?? null,
+          campaign_id: input.campaignId ?? null,
+          reason: input.reason,
+          conflict: input.conflict ?? {},
+          status: 'open',
+        })
+        .select('id')
+        .maybeSingle()
+      reviewId = inserted?.id ?? null
     }
+    // Audit linkage points at the review row itself (not the household) so the specific
+    // enqueued item is traceable; the household is preserved in the diff for context.
     await writeAudit({
       actor: 'system',
       action: 'comms.blocked',
       entity: 'comm_assignment_review',
-      entityId: input.householdId ?? null,
-      diff: { channel: input.channel, destination: input.destination, reason: input.reason },
+      entityId: reviewId,
+      diff: {
+        channel: input.channel,
+        destination: input.destination,
+        reason: input.reason,
+        household_id: input.householdId ?? null,
+      },
     })
   } catch {
     /* best-effort — the gate has already blocked the send; the queue is the recovery path */

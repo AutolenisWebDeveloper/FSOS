@@ -93,6 +93,8 @@ try {
   // 049 adds the delegation + assignment-review tables (Slice 1). Both are back-office
   // only (no client policy) — the proof below asserts a client sees ZERO rows from each.
   psqlFile('supabase/migrations/049_comm_delegation_ownership.sql')
+  // 050 tightens comm_assignment_reviews.channel/destination to NOT NULL (#107 follow-up).
+  psqlFile('supabase/migrations/050_comm_assignment_review_notnull.sql')
 
   // Seed: this client's household + a second household; a life + a securities policy.
   // conversion_deadline/is_with_us are set so every policy also surfaces in the

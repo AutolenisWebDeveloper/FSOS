@@ -306,7 +306,10 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
         actual_sender_user_id: ctx.ownership?.actualSenderUserId ?? null,
         represented_agent_id: ctx.ownership?.representedAgentId ?? null,
         represented_agency_owner_id: ctx.ownership?.representedAgencyOwnerId ?? null,
-        represented_agency_id: ctx.ownership?.representedAgencyId ?? convAgencyId ?? null,
+        // For an on-behalf-of send the authoritative represented agency is the delegation's
+        // agency; prefer explicit ownership, then delegation, then the conversation's agency.
+        represented_agency_id:
+          ctx.ownership?.representedAgencyId ?? ctx.delegation?.agencyId ?? convAgencyId ?? null,
         contact_owner_id: ctx.ownership?.contactOwnerId ?? null,
         communication_operator_id: ctx.ownership?.communicationOperatorId ?? null,
         book_of_business_ref: ctx.ownership?.bookOfBusinessRef ?? null,

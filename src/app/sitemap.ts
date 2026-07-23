@@ -7,6 +7,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const routes: { path: string; priority: number; changeFrequency: MetadataRoute.Sitemap[number]['changeFrequency'] }[] = [
     { path: '/', priority: 1.0, changeFrequency: 'weekly' },
     { path: '/services', priority: 0.8, changeFrequency: 'monthly' },
+    { path: '/about', priority: 0.7, changeFrequency: 'monthly' },
+    { path: '/faq', priority: 0.6, changeFrequency: 'monthly' },
     // The hub lives at /workshops; /events 308-redirects here (next.config.js), so
     // list the canonical URL crawlers should index, not the redirect.
     { path: '/workshops', priority: 0.6, changeFrequency: 'weekly' },

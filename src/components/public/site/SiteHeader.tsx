@@ -14,7 +14,7 @@ const SOLUTIONS = [
   'Business Protection',
 ]
 
-export function SiteHeader({ active = 'home' }: { active?: 'home' | 'services' | 'contact' | 'workshops' | 'none' }) {
+export function SiteHeader({ active = 'home' }: { active?: 'home' | 'services' | 'about' | 'faq' | 'contact' | 'workshops' | 'none' }) {
   const [open, setOpen] = React.useState(false)
   const book = bookingUrl()
   const login = loginUrl()
@@ -93,14 +93,19 @@ export function SiteHeader({ active = 'home' }: { active?: 'home' | 'services' |
                 </Link>
               </li>
               <li>
-                <Link href="/#about">About</Link>
+                <Link href="/about" aria-current={active === 'about' ? 'page' : undefined}>
+                  About
+                </Link>
               </li>
               <li>
-                <Link href="/#process">
+                <Link href="/faq" aria-current={active === 'faq' ? 'page' : undefined}>
                   Resources
                   <Icon name="caret" className="caret" />
                 </Link>
                 <div className="menu">
+                  <Link href="/faq" onClick={() => setOpen(false)}>
+                    FAQ
+                  </Link>
                   <Link href="/#process" onClick={() => setOpen(false)}>
                     How It Works
                   </Link>

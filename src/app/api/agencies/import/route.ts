@@ -5,29 +5,36 @@ import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { parseSpreadsheet, extensionOf, SUPPORTED_EXTENSIONS } from '@/lib/spreadsheet'
 import { mapAndValidateAgency, resolveAgencyColumns, type MappedAgency } from '@/lib/agencyDirectory'
+import { buildContactIndex } from '@/lib/import/resolution'
+import { loadContactCandidates } from '@/lib/import/auditWriter'
+import { applyOwnerContactResolution, type AgencyOwnerContactInput } from '@/lib/services/agencyOwnerContact'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-// OS-02 Agency Directory bulk import. Upload a Farmers agent directory (CSV/XLSX)
-// and create agency-partnership + owner pairs on the aggregate-root spine — the
-// batch equivalent of POST /api/agencies. RBAC-gated (create = fsa/super, same as
-// the single-create route), deduped (in-file + against-DB by agent code / email),
-// and fully audited (import_batches / import_records + audit_log). These are the
-// FSA's own partnership prospects — not client comms — so this is not consent-gated
-// here; outbound messaging stays gated at send time by the comms dispatcher.
+// OS-02 Agency Directory bulk import → aggregate-root spine AND the unified
+// Contact Center. Upload a Farmers agent directory (CSV/XLSX): each row creates
+// (or backfills) an agency_partnership + owner, then the owner is reconciled into
+// contacts through the shared, non-destructive resolution engine — merged into the
+// right existing contact (filling missing address/phone/email, linking the agency
+// so the agent number surfaces via the Book of Business) or created, with
+// ambiguous matches routed to manual review. agency_owners.contact_id links the
+// two representations. RBAC-gated (create = fsa/super), deduped, fully audited.
 const MAX_FILE_BYTES = 5 * 1024 * 1024 // 5 MB
-const MAX_ROWS = 500 // each row fans out to 4 dependent inserts
+const MAX_ROWS = 500
 
-type RowStatus = 'success' | 'duplicate' | 'invalid' | 'failed'
+type PartnerStatus = 'success' | 'duplicate' | 'invalid' | 'failed'
+type ContactStatus = 'created' | 'merged' | 'review' | 'skipped'
 
 interface RowResult {
   row_number: number
   agent_code: string | null
   owner_name: string | null
   email: string | null
-  status: RowStatus
+  status: PartnerStatus
   agency_id: string | null
+  contact_status: ContactStatus | null
+  contact_id: string | null
   error_message: string | null
 }
 
@@ -95,49 +102,40 @@ export async function POST(req: NextRequest) {
 
   // ── Map + in-file dedupe ───────────────────────────────────────────────────
   const results: RowResult[] = new Array(rows.length)
-  const toImport: Array<{ index: number; agency: MappedAgency }> = []
+  const toProcess: Array<{ index: number; agency: MappedAgency }> = []
   const seen = new Set<string>()
 
   rows.forEach((record, i) => {
     const rowNumber = i + 1
     const { agency, errors } = mapAndValidateAgency(record, colMap, { state: defaultState })
     if (!agency) {
-      results[i] = { row_number: rowNumber, agent_code: null, owner_name: null, email: null, status: 'invalid', agency_id: null, error_message: errors.join('; ') }
+      results[i] = { row_number: rowNumber, agent_code: null, owner_name: null, email: null, status: 'invalid', agency_id: null, contact_status: null, contact_id: null, error_message: errors.join('; ') }
       return
     }
     if (seen.has(agency.dedupeKey)) {
-      results[i] = { row_number: rowNumber, agent_code: agency.agent_code, owner_name: agency.owner_name, email: agency.email, status: 'duplicate', agency_id: null, error_message: `Duplicate of an earlier row (${agency.dedupeKey})` }
+      results[i] = { row_number: rowNumber, agent_code: agency.agent_code, owner_name: agency.owner_name, email: agency.email, status: 'duplicate', agency_id: null, contact_status: 'skipped', contact_id: null, error_message: `Duplicate of an earlier row (${agency.dedupeKey})` }
       return
     }
     seen.add(agency.dedupeKey)
-    toImport.push({ index: i, agency })
+    toProcess.push({ index: i, agency })
   })
 
   const db = getDb()
   const actor = actorOf(auth.session)
 
-  // ── Against-DB dedupe: skip agents already on the spine ────────────────────
+  // ── Existing-agency lookup (for backfill instead of skip) ──────────────────
+  const existingByCode = new Map<string, string>() // agent_code(upper) → agency_id
+  const existingByEmail = new Map<string, string>() // owner email(lower) → agency_id
   try {
-    const codes = Array.from(new Set(toImport.map((t) => t.agency.agent_code).filter((c): c is string => !!c)))
-    const emails = Array.from(new Set(toImport.map((t) => t.agency.email).filter((e): e is string => !!e)))
-    const existingCodes = new Set<string>()
-    const existingEmails = new Set<string>()
+    const codes = Array.from(new Set(toProcess.map((t) => t.agency.agent_code).filter((c): c is string => !!c)))
+    const emails = Array.from(new Set(toProcess.map((t) => t.agency.email).filter((e): e is string => !!e)))
     if (codes.length) {
-      const { data } = await db.from('agency_partnerships').select('fnwl_serving_agent_no').in('fnwl_serving_agent_no', codes).is('deleted_at', null)
-      for (const r of data ?? []) if (r.fnwl_serving_agent_no) existingCodes.add(String(r.fnwl_serving_agent_no).toUpperCase())
+      const { data } = await db.from('agency_partnerships').select('id, fnwl_serving_agent_no').in('fnwl_serving_agent_no', codes).is('deleted_at', null)
+      for (const r of data ?? []) if (r.fnwl_serving_agent_no) existingByCode.set(String(r.fnwl_serving_agent_no).toUpperCase(), r.id)
     }
     if (emails.length) {
-      const { data } = await db.from('agency_owners').select('email').in('email', emails)
-      for (const r of data ?? []) if (r.email) existingEmails.add(String(r.email).toLowerCase())
-    }
-    for (let k = toImport.length - 1; k >= 0; k--) {
-      const { index, agency } = toImport[k]
-      const codeDup = agency.agent_code && existingCodes.has(agency.agent_code.toUpperCase())
-      const emailDup = agency.email && existingEmails.has(agency.email.toLowerCase())
-      if (codeDup || emailDup) {
-        results[index] = { row_number: index + 1, agent_code: agency.agent_code, owner_name: agency.owner_name, email: agency.email, status: 'duplicate', agency_id: null, error_message: codeDup ? 'An agency with this agent code already exists.' : 'An owner with this email already exists.' }
-        toImport.splice(k, 1)
-      }
+      const { data } = await db.from('agency_owners').select('email, agency_id').in('email', emails)
+      for (const r of data ?? []) if (r.email && r.agency_id) existingByEmail.set(String(r.email).toLowerCase(), r.agency_id)
     }
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Could not check for existing agencies.' }, { status: 500 })
@@ -154,91 +152,113 @@ export async function POST(req: NextRequest) {
   }
   const batchId = batch.id as string
 
-  // ── Create partnership + owner pairs (sequential: dependent inserts) ───────
+  // ── Build the contact-resolution index once from the existing book ─────────
+  const index = buildContactIndex(await loadContactCandidates(db))
   const importRecords: Array<Record<string, unknown>> = []
-  for (const { index, agency } of toImport) {
-    const rowNumber = index + 1
-    const raw = rows[index]
+
+  // ── Process each row: partnership → owner → contact reconciliation ─────────
+  for (const { index: rowIndex, agency } of toProcess) {
+    const rowNumber = rowIndex + 1
+    const raw = rows[rowIndex]
     try {
-      const { data: created, error } = await db
-        .from('agency_partnerships')
-        .insert({
-          agency_name: agency.agency_name,
-          owner_name: agency.owner_name,
-          status: 'prospective',
-          fnwl_serving_agent_no: agency.agent_code,
-          office_address: agency.office_address,
-          office_city: agency.office_city,
-          office_state: agency.office_state,
-          office_zip: agency.office_zip,
-          existing_leads_user: agency.existing_leads_user,
-          interested: agency.interested,
+      // 1. Resolve the agency_partnership (existing → backfill; else create).
+      const codeKey = agency.agent_code ? agency.agent_code.toUpperCase() : null
+      const emailKeyLc = agency.email ? agency.email.toLowerCase() : null
+      let agencyId = (codeKey && existingByCode.get(codeKey)) || (emailKeyLc && existingByEmail.get(emailKeyLc)) || null
+      let partnerStatus: PartnerStatus = agencyId ? 'duplicate' : 'success'
+
+      if (!agencyId) {
+        const { data: created, error } = await db
+          .from('agency_partnerships')
+          .insert({
+            agency_name: agency.agency_name,
+            owner_name: agency.owner_name,
+            status: 'prospective',
+            fnwl_serving_agent_no: agency.agent_code,
+            office_address: agency.office_address,
+            office_city: agency.office_city,
+            office_state: agency.office_state,
+            office_zip: agency.office_zip,
+            existing_leads_user: agency.existing_leads_user,
+            interested: agency.interested,
+            owner_scope: actor,
+          })
+          .select('id')
+          .single()
+        if (error || !created) {
+          results[rowIndex] = { row_number: rowNumber, agent_code: agency.agent_code, owner_name: agency.owner_name, email: agency.email, status: 'failed', agency_id: null, contact_status: null, contact_id: null, error_message: error?.message ?? 'Insert failed' }
+          continue
+        }
+        agencyId = created.id as string
+        // Same activation + first-check-in side effects as the single-create route.
+        await db.from('agency_activation').insert({ agency_id: agencyId, stage: 'identified' })
+        await db.from('work_tasks').insert({
+          title: `Initial check-in: ${agency.agency_name}`,
+          entity_type: 'agency_partnership',
+          entity_id: agencyId,
+          source: 'workflow',
+          due_at: new Date(Date.now() + 3 * 86400000).toISOString(),
           owner_scope: actor,
         })
-        .select('id')
-        .single()
-      if (error || !created) {
-        results[index] = { row_number: rowNumber, agent_code: agency.agent_code, owner_name: agency.owner_name, email: agency.email, status: 'failed', agency_id: null, error_message: error?.message ?? 'Insert failed' }
-        continue
+        // Newly created → make it available for same-batch email/code dedupe.
+        if (codeKey) existingByCode.set(codeKey, agencyId)
+        if (emailKeyLc) existingByEmail.set(emailKeyLc, agencyId)
       }
-      const agencyId = created.id as string
 
-      if (agency.email || agency.business_phone || agency.mobile_phone) {
-        await db.from('agency_owners').insert({
-          agency_id: agencyId,
-          full_name: agency.owner_name,
-          email: agency.email,
-          phone: agency.business_phone,
-          mobile_phone: agency.mobile_phone,
-        })
+      // 2. Ensure an agency_owners row (holds email/phones; link target).
+      const ownerId = await getOrCreateOwner(db, agencyId, agency)
+
+      // 3. Reconcile the owner into the Contact Center via the shared engine.
+      const contactInput: AgencyOwnerContactInput = {
+        agencyId,
+        agentCode: agency.agent_code,
+        ownerName: agency.owner_name,
+        email: agency.email,
+        businessPhone: agency.business_phone,
+        mobilePhone: agency.mobile_phone,
+        address: agency.office_address,
+        city: agency.office_city,
+        state: agency.office_state,
+        zip: agency.office_zip,
       }
-      // Same activation + first-check-in side effects as the single-create route.
-      await db.from('agency_activation').insert({ agency_id: agencyId, stage: 'identified' })
-      await db.from('work_tasks').insert({
-        title: `Initial check-in: ${agency.agency_name}`,
-        entity_type: 'agency_partnership',
-        entity_id: agencyId,
-        source: 'workflow',
-        due_at: new Date(Date.now() + 3 * 86400000).toISOString(),
-        owner_scope: actor,
-      })
+      const applied = await applyOwnerContactResolution(db, index, contactInput, actor)
+      const contactStatus: ContactStatus = applied.status
+      const contactId = applied.contactId
 
-      results[index] = { row_number: rowNumber, agent_code: agency.agent_code, owner_name: agency.owner_name, email: agency.email, status: 'success', agency_id: agencyId, error_message: null }
-      importRecords.push({
-        batch_id: batchId,
-        entity_type: 'agency_partnership',
-        raw,
-        decision: { action: 'created', matchedBy: agency.agent_code ? ['agent_code'] : agency.email ? ['email'] : [] },
-        target_id: agencyId,
-        confidence: 'exact',
-        review_status: 'auto',
-        owner_scope: actor,
-      })
+      // 4. Link the owner record to its reconciled contact.
+      if (ownerId && contactId) await db.from('agency_owners').update({ contact_id: contactId }).eq('id', ownerId)
+
+      results[rowIndex] = { row_number: rowNumber, agent_code: agency.agent_code, owner_name: agency.owner_name, email: agency.email, status: partnerStatus, agency_id: agencyId, contact_status: contactStatus, contact_id: contactId, error_message: partnerStatus === 'duplicate' ? 'Agency already on file — contact backfilled.' : null }
+
+      // Partnership audit record.
+      importRecords.push({ batch_id: batchId, entity_type: 'agency_partnership', raw, decision: { action: partnerStatus === 'success' ? 'created' : 'backfilled', matchedBy: codeKey && existingByCode.has(codeKey) ? ['agent_code'] : emailKeyLc ? ['email'] : [] }, target_id: agencyId, confidence: 'exact', review_status: 'auto', owner_scope: actor })
+      // Contact reconciliation record (also populates the manual-review queue).
+      importRecords.push({ batch_id: batchId, entity_type: 'contact', raw, decision: { action: applied.resolution.action, matchedBy: applied.resolution.matchedBy, conflict: applied.resolution.conflict, candidateIds: applied.resolution.candidateIds }, target_id: contactId, merged_fields: applied.mergedFields, rejected_values: applied.rejectedValues, confidence: applied.resolution.confidence, review_status: contactStatus === 'review' ? 'needs_review' : 'auto', owner_scope: actor })
     } catch (e) {
-      results[index] = { row_number: rowNumber, agent_code: agency.agent_code, owner_name: agency.owner_name, email: agency.email, status: 'failed', agency_id: null, error_message: e instanceof Error ? e.message : 'Insert failed' }
+      results[rowIndex] = { row_number: rowNumber, agent_code: agency.agent_code, owner_name: agency.owner_name, email: agency.email, status: 'failed', agency_id: null, contact_status: null, contact_id: null, error_message: e instanceof Error ? e.message : 'Insert failed' }
     }
   }
 
-  // Record every non-created row too (duplicate/invalid) for a complete trail.
+  // Record invalid/in-file-duplicate rows too, for a complete trail.
   for (const r of results) {
-    if (r.status === 'success') continue
-    importRecords.push({
-      batch_id: batchId,
-      entity_type: 'agency_partnership',
-      raw: rows[r.row_number - 1] ?? {},
-      decision: { action: r.status, reason: r.error_message },
-      confidence: 'none',
-      review_status: r.status === 'invalid' ? 'needs_review' : 'skipped',
-      owner_scope: actor,
-    })
+    if (r.status === 'invalid' || (r.status === 'duplicate' && r.agency_id === null)) {
+      importRecords.push({ batch_id: batchId, entity_type: 'agency_partnership', raw: rows[r.row_number - 1] ?? {}, decision: { action: r.status, reason: r.error_message }, confidence: 'none', review_status: r.status === 'invalid' ? 'needs_review' : 'skipped', owner_scope: actor })
+    }
   }
-  if (importRecords.length) await db.from('import_records').insert(importRecords)
+  if (importRecords.length) {
+    const CHUNK = 500
+    for (let i = 0; i < importRecords.length; i += CHUNK) await db.from('import_records').insert(importRecords.slice(i, i + CHUNK))
+  }
 
   const counts = { success: 0, duplicate: 0, invalid: 0, failed: 0 }
-  for (const r of results) counts[r.status]++
+  const contactCounts = { created: 0, merged: 0, review: 0, skipped: 0 }
+  for (const r of results) {
+    counts[r.status]++
+    if (r.contact_status) contactCounts[r.contact_status]++
+  }
 
-  await db.from('import_batches').update({ stats: { total_rows: rows.length, ...counts } }).eq('id', batchId)
-  await writeAudit({ actor, action: 'import.committed', entity: 'import_batch', entityId: batchId, diff: { source: 'agency', filename: file.name, total: rows.length, counts } })
+  await db.from('import_batches').update({ stats: { total_rows: rows.length, ...counts, contacts: contactCounts } }).eq('id', batchId)
+  await writeAudit({ actor, action: 'import.committed', entity: 'import_batch', entityId: batchId, diff: { source: 'agency', filename: file.name, total: rows.length, counts, contacts: contactCounts } })
 
   return NextResponse.json({
     success: true,
@@ -246,9 +266,25 @@ export async function POST(req: NextRequest) {
     filename: file.name,
     total: rows.length,
     counts,
+    contacts: contactCounts,
     detected_columns: colMap,
     rows: results,
   })
+}
+
+/** Find the agency's owner row (prefer an email match), else create it. Returns the owner id. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function getOrCreateOwner(db: any, agencyId: string, agency: MappedAgency): Promise<string | null> {
+  let q = db.from('agency_owners').select('id').eq('agency_id', agencyId)
+  if (agency.email) q = q.eq('email', agency.email)
+  const { data: found } = await q.limit(1)
+  if (found && found[0]) return found[0].id
+  const { data: ins } = await db
+    .from('agency_owners')
+    .insert({ agency_id: agencyId, full_name: agency.owner_name, email: agency.email, phone: agency.business_phone, mobile_phone: agency.mobile_phone })
+    .select('id')
+    .single()
+  return ins?.id ?? null
 }
 
 // GET — recent agency-import history (batch list).

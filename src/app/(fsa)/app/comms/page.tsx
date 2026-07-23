@@ -25,6 +25,7 @@ export default async function CommsTimelinePage() {
       <Button asChild variant="outline"><Link href="/app/comms/campaigns">Campaigns</Link></Button>
       <Button asChild variant="outline"><Link href="/app/comms/suppression">Suppression</Link></Button>
       <Button asChild variant="outline"><Link href="/app/comms/assignments">Assignment Review</Link></Button>
+      <Button asChild variant="outline"><Link href="/app/comms/identity">Identity Disclosure</Link></Button>
       <Button asChild variant="outline"><Link href="/app/comms/delivery">Delivery</Link></Button>
     </div>
   )

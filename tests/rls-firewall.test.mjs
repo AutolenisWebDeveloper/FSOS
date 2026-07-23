@@ -90,11 +90,16 @@ try {
   psqlFile('supabase/migrations/012_p1_reviews_comms_commission.sql')
   psqlFile('supabase/migrations/013_p2_operational_enhancement.sql')
   psqlFile('supabase/migrations/015_security_invoker_views.sql')
+  // 033 creates comm_conversations/comm_message_events (needed by the Slice 2 identity
+  // columns in 051). Depends only on 009/013 tables already applied above.
+  psqlFile('supabase/migrations/033_comms_inbound_knowledge_campaigns.sql')
   // 049 adds the delegation + assignment-review tables (Slice 1). Both are back-office
   // only (no client policy) — the proof below asserts a client sees ZERO rows from each.
   psqlFile('supabase/migrations/049_comm_delegation_ownership.sql')
   // 050 tightens comm_assignment_reviews.channel/destination to NOT NULL (#107 follow-up).
   psqlFile('supabase/migrations/050_comm_assignment_review_notnull.sql')
+  // 051 adds the identity-disclosure config (Slice 2) — back-office, client sees 0 rows.
+  psqlFile('supabase/migrations/051_comm_identity_disclosure.sql')
 
   // Seed: this client's household + a second household; a life + a securities policy.
   // conversion_deadline/is_with_us are set so every policy also surfaces in the
@@ -127,7 +132,7 @@ try {
       `('44444444-4444-4444-4444-444444444444','55555555-5555-5555-5555-555555555555','ACTIVE');\n` +
       `insert into comm_assignment_reviews(channel, destination, household_id, reason) values ` +
       `('sms','+15550100','22222222-2222-2222-2222-222222222222','ownership unresolved: no agency owner');\n` +
-      `grant select on agency_communication_delegations, comm_assignment_reviews to authenticated;\n`,
+      `grant select on agency_communication_delegations, comm_assignment_reviews, comm_identity_config to authenticated;\n`,
   )
   psqlFile(`${L}/seed.sql`)
 
@@ -156,6 +161,9 @@ try {
   )
   const visibleAssignments = psqlQuery(
     'set role authenticated; select count(*) from comm_assignment_reviews;',
+  )
+  const visibleIdentityConfig = psqlQuery(
+    'set role authenticated; select count(*) from comm_identity_config;',
   )
 
   let passed = 0
@@ -196,6 +204,9 @@ try {
   })
   t('client CANNOT read comm_assignment_reviews (back-office default-deny, mig 049)', () => {
     assert.equal(visibleAssignments, '0', `expected 0 assignment reviews to a client, got: ${visibleAssignments}`)
+  })
+  t('client CANNOT read comm_identity_config (back-office default-deny, mig 051)', () => {
+    assert.equal(visibleIdentityConfig, '0', `expected 0 identity-config rows to a client, got: ${visibleIdentityConfig}`)
   })
 
   console.log(`\nCase 7: all ${passed} RLS firewall assertions passed.`)

@@ -99,7 +99,7 @@ try {
   // 050 tightens comm_assignment_reviews.channel/destination to NOT NULL (#107 follow-up).
   psqlFile('supabase/migrations/050_comm_assignment_review_notnull.sql')
   // 051 adds the identity-disclosure config (Slice 2) — back-office, client sees 0 rows.
-  psqlFile('supabase/migrations/051_comm_identity_disclosure.sql')
+  psqlFile('supabase/migrations/053_comm_identity_disclosure.sql')
 
   // Seed: this client's household + a second household; a life + a securities policy.
   // conversion_deadline/is_with_us are set so every policy also surfaces in the
@@ -205,7 +205,7 @@ try {
   t('client CANNOT read comm_assignment_reviews (back-office default-deny, mig 049)', () => {
     assert.equal(visibleAssignments, '0', `expected 0 assignment reviews to a client, got: ${visibleAssignments}`)
   })
-  t('client CANNOT read comm_identity_config (back-office default-deny, mig 051)', () => {
+  t('client CANNOT read comm_identity_config (back-office default-deny, mig 053)', () => {
     assert.equal(visibleIdentityConfig, '0', `expected 0 identity-config rows to a client, got: ${visibleIdentityConfig}`)
   })
 

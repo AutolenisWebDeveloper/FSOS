@@ -1,5 +1,7 @@
 -- ─────────────────────────────────────────────────────────
--- Migration: 051_comm_identity_disclosure
+-- Migration: 053_comm_identity_disclosure
+-- (Renumbered from 051 → 053 to resolve a migration-number collision after main added
+--  051_agency_directory_import + 052_agency_owner_contact_link. Content unchanged.)
 --
 -- Native Communications Platform — SLICE 2: First-contact identity disclosure engine
 -- (master build instruction §8; ADR-016).

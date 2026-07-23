@@ -163,8 +163,11 @@ never `fetch` directly. Other host mentions are docs-only (`docs/apex_to_ghl_flo
 1. **Commission-case lifecycle** (webhook `OpportunityStageUpdate`) — the only pipeline→case
    trigger. → **D1 native replacement (required).**
 2. **GHL opt-out capture** (webhook `handleOptOut` → `consent_ledger` + `customers.consent_*`).
-   Secondary to native Twilio-STOP/Resend-unsubscribe, but must not be lost. → **D0 export +
-   D1 coverage check.**
+   Secondary to native Twilio-STOP/Resend-unsubscribe, but must not be lost. **Note the target
+   mismatch:** the gate enforces from `consents` + `dnc_entries` (`send.ts`), **not**
+   `consent_ledger` — so D0 must migrate historical opt-outs into `consents`/`dnc_entries`
+   (member-resolved, fail-closed to `dnc_entries`), not into `consent_ledger`. → **D0 export
+   (enforcement stores) + D1 coverage check.** See ADR-014 D0.
 3. **Appointment activity** logging. → **D1 native appointment logging.**
 4. **Pipeline stage display** (`ghlSummary()` across dashboard/scores/search/opra/agencies reading
    `ghl_stage_id`/`ghl_pipeline_id`). → native stage source or graceful removal in D3.
@@ -174,7 +177,8 @@ never `fetch` directly. Other host mentions are docs-only (`docs/apex_to_ghl_flo
 ## 12. D0 gate & D5 proof checklist
 
 **D0 gate:** the reconciliation report must show **zero unresolved opt-outs** before any GHL code
-is deleted.
+is deleted, and each migrated opt-out must be **enforced through `evaluateGate`** (written to
+`consents`/`dnc_entries`, and proven to *block* a send) — a row's mere existence is not proof.
 
 **D5 proof (attach empty-result evidence):**
 - No outbound requests to `leadconnectorhq.com` / `services.leadconnectorhq.com` /

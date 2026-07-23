@@ -24,9 +24,13 @@ FSOS carries **two parallel drip/campaign engines** that were built at different
 
 Both engines already route every send through the one dispatcher (`sendThroughGate` → `dispatch` → `evaluateGate`), so compliance is *not* the divergence risk. The divergence risk is **schema fragmentation**: two campaign models, two enrollment models, two spines (legacy `customers` vs. aggregate-root `households`), diverging over time.
 
+**Relationship to `docs/legacy-mapping.md` (C1–C6).** legacy-mapping records two things that must be reconciled explicitly, not silently contradicted (authority order, CLAUDE.md §1). (a) Its C1/C6 decisions state that legacy tables "are kept in place and left untouched — nothing is renamed or dropped." (b) Its own legacy→aggregate-root **table mapping already names `comm_campaigns` / `comm_campaign_enrollments` as the aggregate-root equivalent** of legacy `campaigns` / `campaign_enrollments` ("New comms model routes every send through the 7-step dispatcher gate"). This ADR is consistent with (b) and **narrowly supersedes (a) for exactly two tables** — see the Decision.
+
 ## Decision
 
 **The `comm_*` family is the single canonical communications data model.** All new communications work — campaigns, enrollments, templates, sequences, audiences, messages, conversations, events, hours — targets `comm_*` and the aggregate-root spine (`households` / `household_members` / `agency_partnerships` / `contacts`). No third family may be introduced (master build instruction §0: "do not add a third family").
+
+**This ADR narrowly supersedes the C1/C6 "kept untouched, never dropped" stance for exactly two tables — `campaigns` and `campaign_enrollments` (migration 006) — and nothing else.** Every other legacy table named in `docs/legacy-mapping.md` (`customers`, `commission_cases`, `activity`, `consent_ledger`, `policies`, `scores`, `opra_cases`, …) remains governed by legacy-mapping and is untouched by this decision. The reason for the narrow exception: unlike those tables, the `006` campaign engine is a *second live implementation of a subsystem FSOS already has* (`comm_*`), which CLAUDE.md §6 forbids — and legacy-mapping itself already designates `comm_*` as its equivalent. `docs/legacy-mapping.md` is updated in the same change to note this supersession.
 
 The legacy `006` engine (`campaigns`, `campaign_enrollments`) and its `/api/campaigns/*` routes are the **deprecation surface**, not a second sanctioned pattern:
 

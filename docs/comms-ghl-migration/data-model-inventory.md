@@ -132,7 +132,7 @@ stage/pipeline provenance). All retained as legacy provenance in D3, dropped in 
 | Duplication | A | B | Resolution |
 |---|---|---|---|
 | **Campaign/enrollment engine** | `006` `campaigns`/`campaign_enrollments` (legacy `customers`) | `009` `comm_campaigns`/`comm_campaign_enrollments` (spine) | ADR-013: canonical = `comm_*`; drain + retire 006. |
-| **Consent store** | `consent_ledger` (001, legacy customers, event log) | `consents` (009, spine, current-state) + `dnc_entries` | Gate reads `consents`/`dnc_entries`; `consent_ledger` is the immutable ledger. Keep both roles; the purpose axis extends both. Reconcile GHL-webhook writes (which target `consent_ledger`) in D1. |
+| **Consent store** | `consent_ledger` (001, legacy customers, event log) | `consents` (009, spine, current-state) + `dnc_entries` | **The gate enforces from `consents`/`dnc_entries` only — `consent_ledger` is never read by `send.ts`/`gate.ts`.** So D0 must migrate GHL opt-outs into `consents`/`dnc_entries` (member-resolved, fail-closed), NOT `consent_ledger`; the GHL-webhook's `consent_ledger` writes are reconciled in D1. Keep both roles; the §8 purpose axis extends both. |
 | **Contact/customer** | legacy `customers` (001) | spine `households`/`household_members`/`contacts` (009/026) | Aggregate root = spine (ADR-001); legacy kept per `docs/legacy-mapping.md` C1–C6. |
 | **Import path** | `/api/ghl/contacts/upload` (legacy) + `/api/app/contacts/upload` (spine) + `/api/admin/imports/ghl` (CSV→spine) | — | D3 retargets to the **native** `/app/contacts/import` + `/api/app/contacts/import`; no duplication. |
 

@@ -2,7 +2,7 @@
 // and the pure delegation decision core, offline (no live Supabase), mirroring
 // tests/guardrail.test.mjs.
 //
-//   • gate.ts gains `ownership` (0) and `delegation` (3b) steps. Both default
+//   • gate.ts gains `ownership` (0) and `delegation` (2c) steps. Both default
 //     PERMISSIVE (existing callers/tests unaffected) and both HARD-BLOCK + ESCALATE
 //     when explicitly failed. Ownership routes to the assignment-review queue.
 //   • delegation.ts (pure) decides whether an FSA may communicate ON BEHALF OF an

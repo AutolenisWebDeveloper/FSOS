@@ -44,7 +44,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     }
 
     const status = body.data.action === 'resolve' ? 'resolved' : 'dismissed'
-    const { error } = await db
+    const { data: updated, error } = await db
       .from('comm_assignment_reviews')
       .update({
         status,
@@ -54,7 +54,13 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       })
       .eq('id', id)
       .eq('status', 'open') // optimistic guard against a concurrent resolve
+      .select('id')
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    // No row updated → another request resolved it between the pre-check and the update.
+    // Report the conflict rather than a false success (and write no audit row).
+    if (!Array.isArray(updated) || updated.length === 0) {
+      return NextResponse.json({ error: 'Review is no longer open.' }, { status: 409 })
+    }
 
     await writeAudit({
       actor: actorOf(auth.session),

@@ -191,8 +191,8 @@ export interface AssignmentReviewInput {
 
 /**
  * Route an unresolvable-ownership record to the assignment-review queue (§6). Idempotent
- * enough for retries: a duplicate open review for the same (destination, campaign) is
- * harmless. Best-effort + audited (comms.blocked), never throws into the send path.
+ * enough for retries: a duplicate open review for the same (channel, destination, campaign)
+ * is harmless. Best-effort + audited (comms.blocked), never throws into the send path.
  */
 export async function enqueueAssignmentReview(input: AssignmentReviewInput): Promise<void> {
   try {
@@ -226,10 +226,14 @@ export async function enqueueAssignmentReview(input: AssignmentReviewInput): Pro
         })
         .select('id')
         .maybeSingle()
-      // If the insert failed (constraint/RLS), do NOT write a misleading audit row with a
+      // If the insert failed OR returned no id, do NOT write a misleading audit row with a
       // null entity id — bail into the catch so the failure is a no-op, not a false record.
-      if (insertErr) throw insertErr
-      reviewId = inserted?.id ?? null
+      // (getDb() is the service-role client, so a failure here is a constraint/transport
+      // error, not RLS.)
+      if (insertErr || !inserted?.id) {
+        throw insertErr ?? new Error('assignment-review insert returned no id')
+      }
+      reviewId = inserted.id
     }
     // Audit linkage points at the review row itself (not the household) so the specific
     // enqueued item is traceable; the household is preserved in the diff for context.

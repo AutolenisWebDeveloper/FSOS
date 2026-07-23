@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import Image from 'next/image'
+import Link from 'next/link'
 import { SiteShell } from '@/components/public/site/SiteShell'
 import { SiteContactForm } from '@/components/public/site/SiteContactForm'
 import { Icon } from '@/components/public/site/icons'
@@ -166,10 +167,10 @@ export default function HomePage() {
                   </div>
                   <h3>{s.title}</h3>
                   <p>{s.body}</p>
-                  <a className="card__more" href="#contact">
+                  <Link className="card__more" href={`/services#${s.title.toLowerCase().replace(/\s+/g, '-')}`}>
                     Learn More <Icon name="arrow" />
                     <span className="sr-only"> about {s.title}</span>
-                  </a>
+                  </Link>
                 </article>
               ))}
             </div>

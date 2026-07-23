@@ -24,6 +24,8 @@ import { recordMessageEvent } from './events'
 import { personalize, type RecipientContext } from './personalize'
 import { instrumentEmailHtml } from './tracking'
 import { resolveDelegation, enqueueAssignmentReview } from './ownership'
+import { resolveIdentityDisclosure, type IdentityContext } from './identity-resolver'
+import { prependIdentityDisclosure } from './identity'
 
 export interface SendContext {
   channel: Channel
@@ -113,6 +115,14 @@ export interface SendContext {
   ownershipResolved?: boolean
   /** Human-readable reason ownership is unresolved (surfaced in the review queue + audit). */
   ownershipConflict?: string
+  /**
+   * First-contact identity disclosure context (Slice 2, §8). When present, the PLATFORM
+   * decides whether a full introduction is required for this (channel, contact) and
+   * AUTO-PREPENDS the approved disclosure — the author never inserts it. Absent → no
+   * identity governance (existing callers unaffected). A full intro is only auto-inserted
+   * when an APPROVED comm_identity_config exists (never fabricates the Farmers wording).
+   */
+  identity?: IdentityContext
 }
 
 export interface SendOutcome {
@@ -234,6 +244,31 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
   // Personalize merge tokens (safe substitution; the gate still checks the result).
   const personalized = personalize(ctx.body, ctx.recipientContext ?? {})
 
+  // First-contact identity disclosure (§8). The platform decides + auto-prepends the
+  // approved disclosure when a full introduction is required; the author never inserts
+  // it. The prepended text is included BEFORE the gate runs, so the full message (incl.
+  // disclosure) is compliance-checked. Absent ctx.identity → no change.
+  let identityFullIntro: boolean | null = null
+  let identityFirstTouch: boolean | null = null
+  let identityVersion: number | null = null
+  let identityReason: string | null = null
+  let identityBody = personalized
+  if (ctx.identity) {
+    const idr = await resolveIdentityDisclosure({
+      channel: ctx.channel,
+      conversationId,
+      ctx: ctx.identity,
+    })
+    // identity_full_intro records what was ACTUALLY prepended, not merely what was
+    // required: when no approved config exists, idr.disclosure is null and no full intro
+    // is sent — the (unmet) requirement is still captured in identityReason for audit.
+    identityFullIntro = idr.disclosure != null
+    identityFirstTouch = idr.isFirstChannelTouch
+    identityVersion = idr.disclosure != null ? idr.version : null
+    identityReason = idr.reason
+    if (idr.disclosure) identityBody = prependIdentityDisclosure(idr.disclosure, personalized)
+  }
+
   // Compute the gate context FRESH (send-time re-check — WF-9 invariant). Step 4
   // is satisfied by an approved template OR, for AI-authored replies with no
   // template, an approved AI policy (both AI kill switches on).
@@ -286,7 +321,7 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
         direction: 'outbound',
         recipient: to,
         subject: ctx.subject ?? null,
-        body: personalized,
+        body: identityBody,
         delivery_status: 'queued',
         template_id: ctx.templateId ?? null,
         campaign_id: ctx.campaignId ?? null,
@@ -314,6 +349,11 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
         communication_operator_id: ctx.ownership?.communicationOperatorId ?? null,
         book_of_business_ref: ctx.ownership?.bookOfBusinessRef ?? null,
         delegation_id: resolvedDelegationId,
+        // Slice 2 — what identity disclosure the platform applied to this send (§8).
+        identity_full_intro: identityFullIntro,
+        is_first_channel_touch: identityFirstTouch,
+        identity_disclosure_version: identityVersion,
+        identity_disclosure_reason: identityReason,
         queued_at: new Date().toISOString(),
       })
       .select('id')
@@ -323,9 +363,10 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
     /* best-effort; dispatcher still writes the durable audit + escalation */
   }
 
-  // Instrument outbound email with open/click tracking (needs the message id).
+  // Instrument outbound email with open/click tracking (needs the message id). The body
+  // already includes any auto-prepended identity disclosure (identityBody).
   const sendBody =
-    ctx.channel === 'email' && messageId ? instrumentEmailHtml(personalized, messageId) : personalized
+    ctx.channel === 'email' && messageId ? instrumentEmailHtml(identityBody, messageId) : identityBody
 
   const req: DispatchRequest = {
     channel: ctx.channel,
@@ -384,6 +425,26 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
       reason: ctx.ownershipConflict ?? result.gate.reason ?? 'Ownership could not be resolved.',
       conflict: { ownershipConflict: ctx.ownershipConflict ?? null },
     })
+  }
+
+  // Record the per-channel identity state on the thread once a FULL introduction has
+  // actually been sent (§8), so subsequent sends on this channel use the abbreviated form
+  // until a refresh condition (new sender/purpose, reassignment, inactivity) recurs.
+  if (result.sent && conversationId && identityFullIntro && ctx.identity) {
+    try {
+      await db
+        .from('comm_conversations')
+        .update({
+          identity_disclosed_at: new Date().toISOString(),
+          identity_disclosure_version: identityVersion,
+          identity_sender_user_id: ctx.identity.senderUserId ?? null,
+          identity_purpose: ctx.identity.purpose ?? null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', conversationId)
+    } catch {
+      /* best-effort — the message row already records what was disclosed */
+    }
   }
 
   // Record the lifecycle event + advance the thread recency.

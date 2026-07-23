@@ -427,6 +427,8 @@ The identity is consistent across homepage, public pages, login, forgot-password
 | ADR-009 | Design-system governance |
 | ADR-010 | Data ownership & RLS |
 | ADR-012 | Compliance Intelligence (NIGO-resolution) exception (§5) |
+| ADR-013 | Canonical `comm_*` communications data model (reconcile the 006 duplication) |
+| ADR-014 | GoHighLevel decommission (ordered, data-preservation-first) |
 
 New architectural decisions get a new ADR using `docs/adr/ADR-000-template.md`. Status values: Proposed → Accepted → Superseded (link the superseding ADR).
 

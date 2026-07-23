@@ -48,7 +48,7 @@ the legacy schema in place). The legacy tables are unaffected.
 | `workshops`, `workshop_registrations` | `appointments` / events (P1) | Legacy event flow; public `/events` remains. |
 | `form_submissions`, `form_sends` | `document_requests` / intake (P1) | Legacy forms system; public `/forms/[formId]` remains. |
 | `activity` (singular) | `activities` (plural, new) | Distinct tables; new `activities` is the spine activity log. |
-| `campaigns`, `campaign_enrollments` | `comm_campaigns`, `comm_campaign_enrollments` | New comms model routes every send through the 7-step dispatcher gate. |
+| `campaigns`, `campaign_enrollments` | `comm_campaigns`, `comm_campaign_enrollments` | New comms model routes every send through the 7-step dispatcher gate. **ADR-013 narrowly supersedes the C1/C6 "never dropped" stance for these two tables only:** `comm_*` is canonical; the `006` engine is a frozen deprecation surface to be drained then retired. All other legacy tables below remain kept-untouched per C1/C6. |
 | `tasks` (legacy) | `work_tasks` | New tasks carry entity linkage + source (manual/workflow/agent). |
 | `daily_briefings` | Executive Intelligence agent output (P1) | Legacy briefing generator; superseded by the agent roster. |
 

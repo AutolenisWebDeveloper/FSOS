@@ -3,7 +3,8 @@
   "regions": ["iad1"],
   "crons": [
     { "path": "/api/cron/renewal-watch", "schedule": "0 9 * * *" },
-    { "path": "/api/cron/campaign-dispatch", "schedule": "0 12 * * *" }
+    { "path": "/api/cron/campaign-dispatch", "schedule": "0 12 * * *" },
+    { "path": "/api/cron/data-quality", "schedule": "0 7 * * *" }
   ],
   "functions": {
     "src/app/api/forms/fna/route.ts": { "maxDuration": 60 },

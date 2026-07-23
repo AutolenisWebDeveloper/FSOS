@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Plus } from 'lucide-react'
+import { Plus, Upload } from 'lucide-react'
 import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Button } from '@/components/ui/button'
 import { load } from '@/lib/data/query'
@@ -26,12 +26,19 @@ export default async function AgenciesPage() {
     ),
   ])
 
-  const newButton = (
-    <Button asChild>
-      <Link href="/app/agencies/new">
-        <Plus className="h-4 w-4" /> New partnership
-      </Link>
-    </Button>
+  const actions = (
+    <div className="flex items-center gap-2">
+      <Button asChild variant="outline">
+        <Link href="/app/agencies/import">
+          <Upload className="h-4 w-4" /> Import directory
+        </Link>
+      </Button>
+      <Button asChild>
+        <Link href="/app/agencies/new">
+          <Plus className="h-4 w-4" /> New partnership
+        </Link>
+      </Button>
+    </div>
   )
 
   let body: React.ReactNode
@@ -61,7 +68,7 @@ export default async function AgenciesPage() {
       title="Agency Partnerships"
       description="Your book of agency-owner partnerships — the aggregate root of FSOS."
       breadcrumb={[{ label: 'FSA', href: '/app' }, { label: 'Agencies' }]}
-      actions={newButton}
+      actions={actions}
     >
       {body}
     </ListShell>

@@ -14,7 +14,7 @@ const SOLUTIONS = [
   'Business Protection',
 ]
 
-export function SiteHeader({ active = 'home' }: { active?: 'home' | 'contact' | 'workshops' | 'none' }) {
+export function SiteHeader({ active = 'home' }: { active?: 'home' | 'services' | 'contact' | 'workshops' | 'none' }) {
   const [open, setOpen] = React.useState(false)
   const book = bookingUrl()
   const login = loginUrl()
@@ -75,13 +75,13 @@ export function SiteHeader({ active = 'home' }: { active?: 'home' | 'contact' | 
                 </Link>
               </li>
               <li>
-                <Link href="/#solutions">
-                  Solutions
+                <Link href="/services" aria-current={active === 'services' ? 'page' : undefined}>
+                  Services
                   <Icon name="caret" className="caret" />
                 </Link>
                 <div className="menu">
                   {SOLUTIONS.map((s) => (
-                    <Link key={s} href="/#solutions" onClick={() => setOpen(false)}>
+                    <Link key={s} href={`/services#${s.toLowerCase().replace(/\s+/g, '-')}`} onClick={() => setOpen(false)}>
                       {s}
                     </Link>
                   ))}

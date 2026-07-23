@@ -155,6 +155,13 @@
 .msite .card__more{font-size:14px;font-weight:600;color:var(--red);text-decoration:none;display:inline-flex;align-items:center;gap:6px}
 .msite .card__more svg{width:18px;height:18px}
 .msite .card__more:hover{gap:9px;color:var(--red2)}
+/* Services page — richer educational cards (svc__*): title, checked points, and
+   the securities/FFS reference note. Reuses the .card container + palette. */
+.msite .svc__title{font-size:19px;margin-bottom:8px;color:var(--navy)}
+.msite .svc__points{list-style:none;margin:0 0 16px;padding:0;display:flex;flex-direction:column;gap:9px}
+.msite .svc__points li{display:flex;align-items:flex-start;gap:9px;font-size:14px;color:var(--slate);line-height:1.5}
+.msite .svc__tick{width:17px;height:17px;flex:0 0 auto;margin-top:2px;color:var(--blue)}
+.msite .svc__note{font-size:12px;color:var(--slate);opacity:.9;margin:0 0 16px;padding-top:12px;border-top:1px solid var(--line)}
 
 /* Technology band */
 .msite .tech{display:grid;grid-template-columns:.95fr 1.05fr;gap:clamp(30px,5vw,60px);align-items:center}

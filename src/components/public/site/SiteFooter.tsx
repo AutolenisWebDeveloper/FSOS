@@ -51,7 +51,7 @@ export function SiteFooter() {
             <ul className="foot__list">
               {SOLUTIONS.map((s) => (
                 <li key={s}>
-                  <Link href="/#solutions">{s}</Link>
+                  <Link href={`/services#${s.toLowerCase().replace(/\s+/g, '-')}`}>{s}</Link>
                 </li>
               ))}
             </ul>

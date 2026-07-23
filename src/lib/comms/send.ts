@@ -26,6 +26,8 @@ import { instrumentEmailHtml } from './tracking'
 import { resolveDelegation, enqueueAssignmentReview } from './ownership'
 import { resolveIdentityDisclosure, type IdentityContext } from './identity-resolver'
 import { prependIdentityDisclosure } from './identity'
+import { resolveSendPolicy } from './policy-resolver'
+import type { MessagePurpose } from './purpose'
 
 export interface SendContext {
   channel: Channel
@@ -123,6 +125,15 @@ export interface SendContext {
    * when an APPROVED comm_identity_config exists (never fabricates the Farmers wording).
    */
   identity?: IdentityContext
+  /**
+   * Message purpose (Slice 3, §9). When provided, the send path applies purpose-scoped
+   * consent + frequency caps + priority-collision (policy-resolver.ts) and records the
+   * purpose on the message. Absent → no purpose-policy governance (existing callers
+   * unaffected; channel-wide consent is used as today).
+   */
+  purpose?: MessagePurpose
+  /** The highest-priority OTHER campaign purpose active for this recipient (collision, §10). */
+  activeCampaignPurpose?: MessagePurpose | null
 }
 
 export interface SendOutcome {
@@ -281,7 +292,33 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
   // Gate step 1: member-keyed consent OR a domain-owned durable per-channel grant
   // (workshops). The OR can only ADD consent an existing caller never asserted; it never
   // removes it. DNC/quiet-hours/recommendation/securities remain enforced below.
-  const consent = memberConsent || ctx.durableConsentGranted === true
+  let consent = memberConsent || ctx.durableConsentGranted === true
+
+  // Purpose policy (Slice 3, §9/§10): purpose-scoped consent + frequency caps + priority
+  // collision. Opt-in via ctx.purpose. Purpose-scoped consent (when a row exists) REPLACES
+  // the channel-wide check — a purpose-level revoke must win over a channel grant; a
+  // durable workshop grant can still OR in. Frequency/collision become non-escalating gate
+  // deferrals. Absent ctx.purpose → unchanged behavior.
+  let withinFrequencyCaps: boolean | undefined
+  let frequencyReason: string | undefined
+  let collisionPaused: boolean | undefined
+  let collisionReason: string | undefined
+  if (ctx.purpose) {
+    const policy = await resolveSendPolicy({
+      memberId: convMemberId,
+      channel: ctx.channel,
+      purpose: ctx.purpose,
+      conversationId,
+      activeCampaignPurpose: ctx.activeCampaignPurpose ?? null,
+    })
+    if (policy.consentForPurpose !== null) {
+      consent = policy.consentForPurpose || ctx.durableConsentGranted === true
+    }
+    withinFrequencyCaps = policy.frequency.allowed
+    frequencyReason = policy.frequency.reason
+    collisionPaused = !policy.collision.allowed
+    collisionReason = policy.collision.reason
+  }
   // Operator hours of operation (business-local). A human-typed 1:1 reply from the
   // FSA inbox is NOT gated by business hours — the licensed operator is present and
   // choosing to send. Automated/AI/bulk sends ARE gated (held outside hours).
@@ -354,6 +391,8 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
         is_first_channel_touch: identityFirstTouch,
         identity_disclosure_version: identityVersion,
         identity_disclosure_reason: identityReason,
+        // Slice 3 — record the classified purpose (§9: frequency counting + analytics).
+        purpose: ctx.purpose ?? null,
         queued_at: new Date().toISOString(),
       })
       .select('id')
@@ -381,6 +420,10 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
       hasConsent: consent,
       recipientLocalHour: recipientLocalHour(ctx.utcOffsetHours),
       withinBusinessHours,
+      withinFrequencyCaps,
+      frequencyReason,
+      collisionPaused,
+      collisionReason,
       delegationValid,
       delegationReason,
       onDNC: dnc,

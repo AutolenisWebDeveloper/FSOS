@@ -13,6 +13,8 @@ export type GateStep =
   | 'consent' // 1
   | 'quiet_hours' // 2 — legal TCPA floor (9–20 recipient-local), non-negotiable
   | 'business_hours' // 2b — operator's hours of operation (can only tighten the floor)
+  | 'frequency' // 2d — per-recipient rate caps (operational deferral, §9)
+  | 'collision' // 2e — higher-priority campaign / active conversation underway (§10)
   | 'delegation' // 2c — FSA↔agency-owner on-behalf-of authority must be ACTIVE + in-scope
   | 'dnc' // 3
   | 'approved_template' // 4
@@ -41,6 +43,22 @@ export interface GateInput {
   delegationValid?: boolean
   /** 2d — reason delegation failed (from delegation.ts, for escalation + audit). */
   delegationReason?: string
+  /**
+   * 2d(freq) — within the recipient's configured frequency caps (§9). Defaults to TRUE.
+   * A false is a non-escalating DEFERRAL/suppression (held or dropped this cycle), not a
+   * compliance violation — like business_hours, it does not escalate.
+   */
+  withinFrequencyCaps?: boolean
+  /** reason the frequency cap blocked (from frequency.ts). */
+  frequencyReason?: string
+  /**
+   * 2e — a higher-priority campaign or an active conversation is underway, so this
+   * (lower-priority/promotional) send should PAUSE (§10). Defaults to FALSE (no collision).
+   * A true is a non-escalating pause, not a compliance violation.
+   */
+  collisionPaused?: boolean
+  /** reason the send was paused (from frequency.ts evaluateCollision). */
+  collisionReason?: string
   /** 1 — valid channel consent on file. */
   hasConsent: boolean
   /** 2 — recipient-local hour (0–23). */
@@ -72,6 +90,8 @@ export interface GateResult {
 
 const BLOCK: Record<GateStep, string> = {
   ownership: 'Ownership could not be resolved — routed to assignment review; not sent.',
+  frequency: 'Recipient frequency cap reached — held for a later cycle.',
+  collision: 'A higher-priority campaign or active conversation is underway — send paused.',
   delegation: 'No active, in-scope delegation to communicate on behalf of the agency owner.',
   consent: 'No valid channel consent on file.',
   quiet_hours: 'Outside permitted quiet hours (9:00–20:00 recipient-local).',
@@ -104,6 +124,10 @@ export function evaluateGate(input: GateInput): GateResult {
   if (!input.hasConsent) return blocked('consent')
   if (!withinQuietHours(input.recipientLocalHour)) return blocked('quiet_hours')
   if (input.withinBusinessHours === false) return blocked('business_hours', false)
+  // 2d/2e — operational deferrals (rate caps + priority collision). Non-escalating: the
+  // send is held/paused for a later cycle, not a compliance violation (§9/§10).
+  if (input.withinFrequencyCaps === false) return blocked('frequency', false, input.frequencyReason)
+  if (input.collisionPaused === true) return blocked('collision', false, input.collisionReason)
   // 2c — on-behalf-of authority. Checked before content approval / recommendation:
   // a message the FSA is not authorized to send at all must never reach content checks.
   if (input.delegationValid === false) return blocked('delegation', true, input.delegationReason)

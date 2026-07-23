@@ -230,11 +230,31 @@ export async function workforceOrchestrator(): Promise<JobResult> {
   return { ok: true, handled: result.totalSent, note: `workforce: ${result.built.queued} queued; ${parts}` }
 }
 
-// data-quality — flag households/members missing contact info.
+// data-quality — reconcile unlinked agency owners into the unified Contact Center
+// (merge/create/link via the shared resolution engine, non-destructive), then flag
+// (not collapse) remaining data gaps: members missing contact info + duplicate
+// contact groups. Idempotent: linked owners are skipped on the next run.
 export async function dataQuality(): Promise<JobResult> {
   const db = getDb()
-  const { count } = await db.from('household_members').select('id', { count: 'exact', head: true }).is('email', null).is('phone', null)
-  return { ok: true, handled: count ?? 0, note: `data-quality: ${count ?? 0} members missing contact info` }
+  const { reconcileAgencyOwnerContacts, countContactDuplicates } = await import('@/lib/services/dataQualityReconcile')
+  const rec = await reconcileAgencyOwnerContacts()
+  const { count: membersMissing } = await db.from('household_members').select('id', { count: 'exact', head: true }).is('email', null).is('phone', null)
+  const duplicates = await countContactDuplicates()
+
+  if (rec.scanned > 0) {
+    await writeAudit({
+      actor: SYSTEM,
+      action: 'ai.run',
+      entity: 'data_quality',
+      diff: { owners: rec, members_missing_contact: membersMissing ?? 0, duplicate_contact_groups: duplicates },
+    })
+  }
+
+  return {
+    ok: true,
+    handled: rec.linked,
+    note: `data-quality: reconciled ${rec.scanned} owners → ${rec.merged} merged / ${rec.created} created / ${rec.review} need review; ${membersMissing ?? 0} members missing contact info; ${duplicates} duplicate contact groups flagged`,
+  }
 }
 
 // backup-verify — record a backup-verification heartbeat (independent pg_dump is external).

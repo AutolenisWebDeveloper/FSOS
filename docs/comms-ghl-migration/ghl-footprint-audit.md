@@ -72,6 +72,13 @@ movement.
 
 ## 4. Migrations
 
+**GHL touches 9 migrations, not 4** — **7 add columns/tables** (`002`, `003`, `004`, `023`, `026`,
+`038`, `039`) and **2 add GHL-dependent behavior only** (`040` lead-score push, `041` Pipeline-A
+feedback routing — comments, no columns). Verified by an exhaustive `grep -rniE "ghl"
+supabase/migrations/` across all 48 files; this is the complete set. The `026`/`038`/`039` GHL
+columns have **no indexes** (only `002`/`003`/`004`/`023` create GHL indexes), so the D4 index-drop
+list is complete as-is; `026`/`038`/`039` contribute only KEEP-and-comment provenance columns.
+
 | File | Adds |
 |---|---|
 | `002_ghl_integration.sql` | `ghl_contact_id/opportunity_id/stage_id/pipeline_id` on `customers`; `ghl_opportunity_id` on `commission_cases`; `ghl_activity_id` on `activity`. Partial-unique idx on `customers.ghl_contact_id`. |

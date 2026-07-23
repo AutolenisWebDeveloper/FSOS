@@ -45,6 +45,24 @@ Capabilities #4 (custom fields), #5 (tags), and #6 (pipelines/stages) above cove
 #16–#20 cover the *code artifacts* that implement them, so D3 removal and the D5 proof each have
 concrete, named targets.
 
+### Workshops GHL touchpoints & columns (migrations 026/038/039/040/041)
+
+Row #12 covers workshops generically; these are the **explicit** decommission line items the
+workshops subsystem carries. The lead-score push and Pipeline-A routing are GHL-dependent
+*behavior* and each needs a native replacement or a justified Remove.
+
+| # | GHL capability / column | Where | FSOS status | Replacement | Verification test | Final status |
+|---|---|---|---|---|---|---|
+| 21 | **Workshop lead-score push to GHL `lead_score`** (post-event nurture pushes signed score deltas) | mig `040_workshop_comms_engine.sql:57`; `src/lib/workshops/comms-engine.ts`, `reminders.ts` | **Replace** 🔨 D1/D3 | Persist the score delta natively (already stored: `workshop_registrations.lead_score_delta`, mig 040) and drive nurture segmentation off the native field instead of pushing to GHL. No external score store. | Attend/no-show a workshop → native `lead_score_delta` updated and nurture segment resolves from it; no GHL `lead_score` call (grep `lead_score` in workshops libs → no GHL push). | Replace |
+| 22 | **Workshop feedback → GHL Pipeline-A routing** (qualified feedback routed into the consult spine as a GHL opportunity) | mig `041_workshop_delivery_automation.sql:64`; `src/app/api/public/workshops/feedback/route.ts`, `workshops/server.ts` `convertRegistrationToLead` | **Replace** 🔨 D1/D3 | Route qualified feedback to a **native opportunity** on the aggregate-root spine (the same native stage-transition service as row 7), not GHL Pipeline-A. Securities registrants stay firewalled to the FFS path (unchanged). | Submit qualifying feedback → a native `opportunities` row is created (not a GHL push); securities registrant → no auto-opportunity; parity with pre-migration conversion count. | Replace |
+| 23 | **`workshop_registrations.ghl_opportunity_id`** — the "converted" signal for attendance analytics | mig `039`; `workshops/attendance.ts`, `analytics-server.ts`, `WorkshopRegistrations.tsx` | **Replace** 🔨 D1/D3 | Native conversion signal (link to the native `opportunities` row from row 22); attendance analytics read the native link. Column retained as legacy provenance (D4 KEEP), stops being written. | Attendance "converted" count matches pre-migration using the native signal; no read of `ghl_opportunity_id` for new conversions. | Replace |
+| 24 | **`workshop_registrations.ghl_contact_id`** | mig `038` | **Archive** 📦 D4 | Native contact link (`household_member`/`contacts`) already present via the registration→member resolution. Column kept as legacy provenance, commented, not written. | Registration resolves to a native member without `ghl_contact_id`; column has legacy `COMMENT`. | Archive |
+| 25 | **`contacts.ghl_contact_id`** (spine table) | mig `026` | **Archive** 📦 D4 | Native contact identity is the row itself; the GHL link is provenance only. Kept + commented in D4, dropped only in the deferred retirement. | Native contact flows never read/write `ghl_contact_id`; column has legacy `COMMENT`. | Archive |
+
+**Scan completeness:** `grep -rniE "ghl" supabase/migrations/` returns hits only in
+`002`/`003`/`004`/`023`/`026`/`038`/`039` (columns/tables) and `040`/`041` (behavior comments) — no
+other migration references GHL. Rows #1–#25 therefore cover every GHL migration artifact.
+
 ## Data preservation (row-count + checksum scope — §2.A)
 
 Before **and** after every destructive phase, produce a row-count + checksum report over at

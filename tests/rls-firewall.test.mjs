@@ -90,6 +90,9 @@ try {
   psqlFile('supabase/migrations/012_p1_reviews_comms_commission.sql')
   psqlFile('supabase/migrations/013_p2_operational_enhancement.sql')
   psqlFile('supabase/migrations/015_security_invoker_views.sql')
+  // 049 adds the delegation + assignment-review tables (Slice 1). Both are back-office
+  // only (no client policy) — the proof below asserts a client sees ZERO rows from each.
+  psqlFile('supabase/migrations/049_comm_delegation_ownership.sql')
 
   // Seed: this client's household + a second household; a life + a securities policy.
   // conversion_deadline/is_with_us are set so every policy also surfaces in the
@@ -111,7 +114,18 @@ try {
       `('22222222-2222-2222-2222-222222222222','warm_handoff','prospect', false),` +
       `('22222222-2222-2222-2222-222222222222','direct','fact_find', true);\n` +
       `grant select on household_policies, households, opportunities to authenticated;\n` +
-      `grant select on v_conversions_due, v_policy_lapse_risk, v_pipeline_by_engagement to authenticated;\n`,
+      `grant select on v_conversions_due, v_policy_lapse_risk, v_pipeline_by_engagement to authenticated;\n` +
+      // Slice 1 (mig 049): a delegation + an assignment-review row. Both back-office;
+      // a client must see NEITHER (default-deny RLS, no client policy) even with grant.
+      `insert into agency_partnerships(id, agency_name, owner_name) values ` +
+      `('44444444-4444-4444-4444-444444444444','Test Agency','Owner One');\n` +
+      `insert into agency_owners(id, agency_id, full_name) values ` +
+      `('55555555-5555-5555-5555-555555555555','44444444-4444-4444-4444-444444444444','Owner One');\n` +
+      `insert into agency_communication_delegations(agency_id, agency_owner_id, status) values ` +
+      `('44444444-4444-4444-4444-444444444444','55555555-5555-5555-5555-555555555555','ACTIVE');\n` +
+      `insert into comm_assignment_reviews(channel, destination, household_id, reason) values ` +
+      `('sms','+15550100','22222222-2222-2222-2222-222222222222','ownership unresolved: no agency owner');\n` +
+      `grant select on agency_communication_delegations, comm_assignment_reviews to authenticated;\n`,
   )
   psqlFile(`${L}/seed.sql`)
 
@@ -132,6 +146,14 @@ try {
   )
   const viewPipelineRows = psqlQuery(
     'set role authenticated; select count(*) from v_pipeline_by_engagement;',
+  )
+
+  // Slice 1 (mig 049): client must see zero delegation / assignment-review rows.
+  const visibleDelegations = psqlQuery(
+    'set role authenticated; select count(*) from agency_communication_delegations;',
+  )
+  const visibleAssignments = psqlQuery(
+    'set role authenticated; select count(*) from comm_assignment_reviews;',
   )
 
   let passed = 0
@@ -165,6 +187,13 @@ try {
     // Client has no RLS read path to opportunities at all; the view must not
     // become a back door (including for the is_security opportunity).
     assert.equal(viewPipelineRows, '0', `expected 0 pipeline rows via view, got: ${viewPipelineRows}`)
+  })
+
+  t('client CANNOT read agency_communication_delegations (back-office default-deny, mig 049)', () => {
+    assert.equal(visibleDelegations, '0', `expected 0 delegations to a client, got: ${visibleDelegations}`)
+  })
+  t('client CANNOT read comm_assignment_reviews (back-office default-deny, mig 049)', () => {
+    assert.equal(visibleAssignments, '0', `expected 0 assignment reviews to a client, got: ${visibleAssignments}`)
   })
 
   console.log(`\nCase 7: all ${passed} RLS firewall assertions passed.`)

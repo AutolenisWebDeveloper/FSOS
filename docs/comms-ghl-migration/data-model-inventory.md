@@ -84,6 +84,18 @@ types/channels/segments/sender-identities/windows/status). The actual-sender-vs-
 fields (`actual_sender_user_id`, `represented_agent_id`, `represented_agency_owner_id`,
 `contact_owner_id`, …) also have no existing home and extend `comm_messages`.
 
+**IMPLEMENTED (Slice 1, migration 049 / ADR-015).** The join-table form was chosen:
+`agency_communication_delegations` (`agency_id`, `agency_owner_id`, `representative_user_id`,
+`permitted_campaign_types/channels/segments`, approved sender-identity/phone/email-domain
+allow-lists, `effective_at`/`expires_at`, `status` DRAFT→ACTIVE→SUSPENDED→EXPIRED→REVOKED). The
+distinct attribution columns (`actual_sender_user_id`, `represented_agent_id`,
+`represented_agency_owner_id`, `represented_agency_id`, `contact_owner_id`,
+`communication_operator_id`, `book_of_business_ref`, `delegation_id`) extend `comm_messages`
+(nullable, additive). Unresolved ownership routes to the new `comm_assignment_reviews` queue.
+Enforcement is a step inside the one gate (`delegation.ts` → `gate.ts` steps `ownership` +
+`delegation`); resolvers are fail-closed in `ownership.ts`. `book_of_business_ref` maps to the
+existing `households.owner_scope` — no parallel ownership key was added (ADR-013).
+
 ## 5. RLS + the CI firewall proof
 
 RLS enabled on all core `comm_*` tables (`010` loop covers `comm_campaigns`, `comm_templates`,

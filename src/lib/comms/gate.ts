@@ -9,9 +9,11 @@
 import { containsRecommendationLanguage, withinQuietHours } from '../compliance/guardrail'
 
 export type GateStep =
+  | 'ownership' // 0 — authoritative ownership must resolve; unresolved → assignment review
   | 'consent' // 1
   | 'quiet_hours' // 2 — legal TCPA floor (9–20 recipient-local), non-negotiable
   | 'business_hours' // 2b — operator's hours of operation (can only tighten the floor)
+  | 'delegation' // 2c — FSA↔agency-owner on-behalf-of authority must be ACTIVE + in-scope
   | 'dnc' // 3
   | 'approved_template' // 4
   | 'recommendation' // 5
@@ -21,6 +23,24 @@ export type GateStep =
 export interface GateInput {
   draft: string
   channel: 'sms' | 'email'
+  /**
+   * 0 — authoritative ownership resolved (agency / agency-owner / represented-agent /
+   * actual sender). Defaults to TRUE so existing callers are unaffected. A false is a
+   * HARD block that ESCALATES: the record is routed to the assignment-review queue and
+   * is never sent on ambiguous ownership (master build instruction §6).
+   */
+  ownershipResolved?: boolean
+  /** 0b — reason ownership could not be resolved (for the review queue + audit). */
+  ownershipConflict?: string
+  /**
+   * 2c — the FSA↔agency-owner delegation authorizing this on-behalf-of send is ACTIVE
+   * and in-scope. Defaults to TRUE (a send that is NOT on behalf of an agency owner —
+   * direct FSA / human / transactional — is unconstrained here). A false HARD-blocks +
+   * escalates (§7): the enrollment pauses and an exception is raised.
+   */
+  delegationValid?: boolean
+  /** 2d — reason delegation failed (from delegation.ts, for escalation + audit). */
+  delegationReason?: string
   /** 1 — valid channel consent on file. */
   hasConsent: boolean
   /** 2 — recipient-local hour (0–23). */
@@ -51,6 +71,8 @@ export interface GateResult {
 }
 
 const BLOCK: Record<GateStep, string> = {
+  ownership: 'Ownership could not be resolved — routed to assignment review; not sent.',
+  delegation: 'No active, in-scope delegation to communicate on behalf of the agency owner.',
   consent: 'No valid channel consent on file.',
   quiet_hours: 'Outside permitted quiet hours (9:00–20:00 recipient-local).',
   business_hours: 'Outside configured hours of operation — held for the next in-hours cycle.',
@@ -64,8 +86,8 @@ const BLOCK: Record<GateStep, string> = {
 // Blocks escalate to the human FSA by default. The one exception is business_hours:
 // being outside operating hours is an OPERATIONAL deferral (retry next cycle), not a
 // compliance failure, so it does not escalate or record a compliance event.
-function blocked(step: GateStep, escalate = true): GateResult {
-  return { allowed: false, blockedStep: step, reason: BLOCK[step], escalate }
+function blocked(step: GateStep, escalate = true, reason?: string): GateResult {
+  return { allowed: false, blockedStep: step, reason: reason ?? BLOCK[step], escalate }
 }
 
 /**
@@ -75,9 +97,16 @@ function blocked(step: GateStep, escalate = true): GateResult {
  * business hours is a soft deferral. Every block escalates EXCEPT business_hours.
  */
 export function evaluateGate(input: GateInput): GateResult {
+  // 0 — ownership is a PRECONDITION: an unresolved/ambiguous owner means we cannot
+  // trust any downstream signal (consent, delegation) for this contact. Route to the
+  // assignment-review queue instead of sending.
+  if (input.ownershipResolved === false) return blocked('ownership', true, input.ownershipConflict)
   if (!input.hasConsent) return blocked('consent')
   if (!withinQuietHours(input.recipientLocalHour)) return blocked('quiet_hours')
   if (input.withinBusinessHours === false) return blocked('business_hours', false)
+  // 2c — on-behalf-of authority. Checked before content approval / recommendation:
+  // a message the FSA is not authorized to send at all must never reach content checks.
+  if (input.delegationValid === false) return blocked('delegation', true, input.delegationReason)
   if (input.onDNC) return blocked('dnc')
   if (!input.usesApprovedTemplateOrPolicy) return blocked('approved_template')
   if (containsRecommendationLanguage(input.draft)) return blocked('recommendation')

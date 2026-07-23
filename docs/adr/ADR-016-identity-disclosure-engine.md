@@ -17,7 +17,7 @@ Two hard constraints from the contract: the exact Farmers legal/brand entity wor
 
 **1. A pure decision + rendering core: `src/lib/comms/identity.ts`.** `evaluateIdentityDisclosure` decides, per channel, whether a **full** introduction is required (first-ever touch on this channel, new campaign, new purpose, different sender, reassignment, inactivity beyond the configured window, the contact asked who is calling, or a prior disclosure that can't be confirmed) or the **abbreviated** form is allowed. It is clock-injected and exhaustively unit-tested offline, mirroring `gate.ts`/`delegation.ts`. `renderIdentityDisclosure` fills the approved, **configurable** templates with only the registered identity tokens; `prependIdentityDisclosure` composes disclosure + body idempotently.
 
-**2. Editable, approval-gated config: `comm_identity_config` (migration 051).** A singleton carrying the `fsa_role_label`, the `full_template`, the `abbreviated_template`, the `inactivity_days` window, a `version`, an `approval_status`, and `is_assumption`. It is seeded with the §8 default structure as a **config default** (`is_assumption=true` → gold "config default — verify" badge) in `draft` status. **Nothing is auto-disclosed until the config is approved** — the FSA verifies the wording, then approves. Editing bumps the version and resets approval, so a changed disclosure can never auto-send before re-approval.
+**2. Editable, approval-gated config: `comm_identity_config` (migration 053).** A singleton carrying the `fsa_role_label`, the `full_template`, the `abbreviated_template`, the `inactivity_days` window, a `version`, an `approval_status`, and `is_assumption`. It is seeded with the §8 default structure as a **config default** (`is_assumption=true` → gold "config default — verify" badge) in `draft` status. **Nothing is auto-disclosed until the config is approved** — the FSA verifies the wording, then approves. Editing bumps the version and resets approval, so a changed disclosure can never auto-send before re-approval.
 
 **3. Per-channel state on the conversation.** One thread = one channel (`comm_conversations` unique on `(channel, contact)`), so the per-channel disclosure state lives on the conversation: `identity_disclosed_at`, `identity_disclosure_version`, `identity_sender_user_id`, `identity_purpose`. `comm_messages` records what each send disclosed: `identity_full_intro`, `is_first_channel_touch`, `identity_disclosure_version`, `identity_disclosure_reason`. All additive/nullable.
 
@@ -54,7 +54,7 @@ Two hard constraints from the contract: the exact Farmers legal/brand entity wor
 
 - CLAUDE.md §4.2, §4.3; master build instruction §8
 - ADR-003, ADR-004, ADR-015
-- Migration `supabase/migrations/051_comm_identity_disclosure.sql`
+- Migration `supabase/migrations/053_comm_identity_disclosure.sql`
 - `src/lib/comms/identity.ts`, `identity-resolver.ts`, `send.ts`
 - Tests: `tests/comms-identity.test.mjs`, `tests/rls-firewall.test.mjs` (extended)
 - `docs/comms-native/slice-2-identity-disclosure.md`

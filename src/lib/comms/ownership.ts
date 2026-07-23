@@ -58,23 +58,28 @@ export async function resolveDelegation(
         .eq('agency_id', input.agencyId)
         .eq('status', 'ACTIVE')
 
+    // Every query checks `error` and throws into the fail-closed catch below — a lookup
+    // failure must never fall through to a broader record and incorrectly ALLOW a send.
     let rec: DelegationRow | null = null
     if (input.senderUserId) {
-      const { data } = await activeQuery()
+      const { data, error } = await activeQuery()
         .eq('representative_user_id', input.senderUserId)
         .order('created_at', { ascending: false })
         .limit(1)
+      if (error) throw error
       rec = ((data ?? [])[0] as DelegationRow) ?? null
     }
     if (!rec) {
-      const { data } = await activeQuery()
+      const { data, error } = await activeQuery()
         .is('representative_user_id', null)
         .order('created_at', { ascending: false })
         .limit(1)
+      if (error) throw error
       rec = ((data ?? [])[0] as DelegationRow) ?? null
     }
     if (!rec) {
-      const { data } = await activeQuery().order('created_at', { ascending: false }).limit(1)
+      const { data, error } = await activeQuery().order('created_at', { ascending: false }).limit(1)
+      if (error) throw error
       rec = ((data ?? [])[0] as DelegationRow) ?? null
     }
     const decision = evaluateDelegation(rec, {
@@ -186,23 +191,27 @@ export interface AssignmentReviewInput {
 
 /**
  * Route an unresolvable-ownership record to the assignment-review queue (§6). Idempotent
- * enough for retries: a duplicate open review for the same (destination, campaign) is
- * harmless. Best-effort + audited (comms.blocked), never throws into the send path.
+ * enough for retries: a duplicate open review for the same (channel, destination, campaign)
+ * is harmless. Best-effort + audited (comms.blocked), never throws into the send path.
  */
 export async function enqueueAssignmentReview(input: AssignmentReviewInput): Promise<void> {
   try {
     const db = getDb()
-    // Avoid piling duplicate open reviews for the same destination + campaign.
+    // Avoid piling duplicate open reviews for the same (channel, destination, campaign) —
+    // the queue is routed/deduped by channel + destination, so an SMS review must not
+    // collide with an email one. Ordered so the chosen existing row is deterministic.
     const { data: existing } = await db
       .from('comm_assignment_reviews')
       .select('id')
+      .eq('channel', input.channel)
       .eq('destination', input.destination)
       .eq('status', 'open')
       .is('campaign_id', input.campaignId ?? null)
+      .order('created_at', { ascending: false })
       .limit(1)
     let reviewId: string | null = Array.isArray(existing) && existing.length > 0 ? existing[0].id : null
     if (!reviewId) {
-      const { data: inserted } = await db
+      const { data: inserted, error: insertErr } = await db
         .from('comm_assignment_reviews')
         .insert({
           channel: input.channel,
@@ -217,7 +226,14 @@ export async function enqueueAssignmentReview(input: AssignmentReviewInput): Pro
         })
         .select('id')
         .maybeSingle()
-      reviewId = inserted?.id ?? null
+      // If the insert failed OR returned no id, do NOT write a misleading audit row with a
+      // null entity id — bail into the catch so the failure is a no-op, not a false record.
+      // (getDb() is the service-role client, so a failure here is a constraint/transport
+      // error, not RLS.)
+      if (insertErr || !inserted?.id) {
+        throw insertErr ?? new Error('assignment-review insert returned no id')
+      }
+      reviewId = inserted.id
     }
     // Audit linkage points at the review row itself (not the household) so the specific
     // enqueued item is traceable; the household is preserved in the diff for context.

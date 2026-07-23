@@ -259,9 +259,12 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
       conversationId,
       ctx: ctx.identity,
     })
-    identityFullIntro = idr.fullIntro
+    // identity_full_intro records what was ACTUALLY prepended, not merely what was
+    // required: when no approved config exists, idr.disclosure is null and no full intro
+    // is sent — the (unmet) requirement is still captured in identityReason for audit.
+    identityFullIntro = idr.disclosure != null
     identityFirstTouch = idr.isFirstChannelTouch
-    identityVersion = idr.version
+    identityVersion = idr.disclosure != null ? idr.version : null
     identityReason = idr.reason
     if (idr.disclosure) identityBody = prependIdentityDisclosure(idr.disclosure, personalized)
   }

@@ -24,9 +24,17 @@ const SaveSchema = z.object({
 const ApproveSchema = z.object({ action: z.literal('approve') })
 const BodySchema = z.discriminatedUnion('action', [SaveSchema, ApproveSchema])
 
+// The route uses the service-role DB client (bypasses RLS), so it enforces the role
+// allowlist itself — the SAME allowlist as comms/templates management (fsa /
+// licensed_staff / super_admin). requireApiRole('fsa') already rejects other portals,
+// so the allowlist is kept honest (no compliance/admin here — they can never reach it).
+const MANAGE_ROLES = ['fsa', 'licensed_staff', 'super_admin'] as const
+
 export async function GET() {
   const auth = await requireApiRole('fsa')
   if (!auth.ok) return auth.response
+  const denied = requirePermission(auth.session, [...MANAGE_ROLES])
+  if (denied) return denied
   try {
     const { data, error } = await getDb().from('comm_identity_config').select('*').eq('id', 'global').maybeSingle()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -39,8 +47,9 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const auth = await requireApiRole('fsa')
   if (!auth.ok) return auth.response
-  // Managing the disclosure wording + approval is a compliance-sensitive back-office action.
-  const denied = requirePermission(auth.session, ['fsa', 'licensed_staff', 'compliance', 'admin', 'super_admin'])
+  // Managing the disclosure wording + approval is a licensed back-office action, gated to
+  // the same roles as template management (the FSA portal admits only these).
+  const denied = requirePermission(auth.session, [...MANAGE_ROLES])
   if (denied) return denied
 
   const parsed = await readJson<unknown>(req)

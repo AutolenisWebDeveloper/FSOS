@@ -55,6 +55,19 @@ export function IdentityEditor({ config }: { config: IdentityConfig }) {
     }
   }
 
+  function save() {
+    const n = Number(days)
+    if (!Number.isInteger(n) || n < 1) {
+      setError('Enter a whole number of days (1 or more) for the inactivity window.')
+      setOk(null)
+      return
+    }
+    void post(
+      { action: 'save', fsaRoleLabel: roleLabel, fullTemplate: full, abbreviatedTemplate: abbrev, inactivityDays: n, markVerified: verified },
+      'save',
+    )
+  }
+
   return (
     <div className="space-y-4">
       <div className="space-y-1.5">
@@ -91,23 +104,7 @@ export function IdentityEditor({ config }: { config: IdentityConfig }) {
       {ok && <p className="text-sm text-status-won" role="status">{ok}</p>}
 
       <div className="flex flex-wrap gap-2">
-        <Button
-          variant="outline"
-          disabled={busy !== null}
-          onClick={() =>
-            post(
-              {
-                action: 'save',
-                fsaRoleLabel: roleLabel,
-                fullTemplate: full,
-                abbreviatedTemplate: abbrev,
-                inactivityDays: Number(days) || 45,
-                markVerified: verified,
-              },
-              'save',
-            )
-          }
-        >
+        <Button variant="outline" disabled={busy !== null} onClick={save}>
           {busy === 'save' ? 'Saving…' : 'Save draft'}
         </Button>
         <Button disabled={busy !== null || config.approval_status === 'approved'} onClick={() => post({ action: 'approve' }, 'approve')}>

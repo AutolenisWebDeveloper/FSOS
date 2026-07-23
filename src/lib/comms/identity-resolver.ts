@@ -110,7 +110,11 @@ export async function resolveIdentityDisclosure(params: {
     ),
     reassignment: params.ctx.reassignment === true,
     contactAskedWhoIsThis: params.ctx.contactAskedWhoIsThis === true,
-    priorDisclosureConfirmable: true,
+    // We can only claim the prior disclosure is still contextually clear when the caller
+    // told us who is sending AND why — otherwise sender/purpose changes are invisible and
+    // §8 requires failing safe to a full re-introduction. (Moot on first touch, which
+    // short-circuits to a full intro regardless.)
+    priorDisclosureConfirmable: !!(params.ctx.senderUserId && params.ctx.purpose),
   })
 
   let disclosure: string | null = null

@@ -23,6 +23,7 @@ import { loadHoursPolicy, isWithinOperatingHours } from './hours'
 import { recordMessageEvent } from './events'
 import { personalize, type RecipientContext } from './personalize'
 import { instrumentEmailHtml } from './tracking'
+import { resolveDelegation, enqueueAssignmentReview } from './ownership'
 
 export interface SendContext {
   channel: Channel
@@ -78,6 +79,40 @@ export interface SendContext {
    * enforced. Never set this for bulk/automated/AI sends.
    */
   humanAuthored?: boolean
+  /**
+   * Delegated on-behalf-of context (Slice 1). Set ONLY when the FSA is communicating on
+   * behalf of an agency owner. When present, send.ts resolves the ACTIVE, in-scope
+   * delegation FRESH at send time (ownership.ts → delegation.ts) and passes the result
+   * to the gate (step `delegation`). An invalid delegation HARD-blocks + escalates.
+   * Absent → the send is not on-behalf-of anyone and the delegation step is a no-op.
+   */
+  delegation?: {
+    agencyId: string
+    campaignType?: string | null
+    senderUserId?: string | null
+  }
+  /**
+   * Authoritative ownership attribution to persist on the comm_messages row (§7 — the
+   * ACTUAL sender and the REPRESENTED party stay distinct, never one ambiguous field).
+   */
+  ownership?: {
+    actualSenderUserId?: string | null
+    representedAgentId?: string | null
+    representedAgencyOwnerId?: string | null
+    representedAgencyId?: string | null
+    contactOwnerId?: string | null
+    communicationOperatorId?: string | null
+    bookOfBusinessRef?: string | null
+    delegationId?: string | null
+  }
+  /**
+   * When the caller has already determined ownership cannot be resolved (§6), set false:
+   * the gate blocks on step `ownership` and the record is routed to the assignment-review
+   * queue instead of sending. Defaults to resolved.
+   */
+  ownershipResolved?: boolean
+  /** Human-readable reason ownership is unresolved (surfaced in the review queue + audit). */
+  ownershipConflict?: string
 }
 
 export interface SendOutcome {
@@ -221,6 +256,24 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
     ctx.humanAuthored === true ||
     (ctx.aiGenerated === true && !ctx.templateId ? await hasApprovedAiPolicy(ctx.aiAuthorAgentKey) : false)
 
+  // On-behalf-of authority (Slice 1). Resolved FRESH here (never from an enrollment
+  // snapshot). Absent delegation context → not an on-behalf-of send → step is a no-op.
+  let delegationValid: boolean | undefined
+  let delegationReason: string | undefined
+  let resolvedDelegationId: string | null = ctx.ownership?.delegationId ?? null
+  if (ctx.delegation) {
+    const dec = await resolveDelegation({
+      agencyId: ctx.delegation.agencyId,
+      channel: ctx.channel,
+      campaignType: ctx.delegation.campaignType ?? null,
+      senderUserId: ctx.delegation.senderUserId ?? null,
+      contactAgencyId: convAgencyId ?? null,
+    })
+    delegationValid = dec.valid
+    delegationReason = dec.reason
+    resolvedDelegationId = dec.delegationId ?? resolvedDelegationId
+  }
+
   // Pre-insert the message row (queued) so email tracking can reference its id and
   // so a blocked send is still visible in the timeline. The final status/provider
   // id are patched after dispatch.
@@ -249,6 +302,18 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
         consent_at_send: consent,
         actor: ctx.actor,
         ai_generated: ctx.aiGenerated === true,
+        // Slice 1 — distinct actual-sender vs represented-party attribution (§7).
+        actual_sender_user_id: ctx.ownership?.actualSenderUserId ?? null,
+        represented_agent_id: ctx.ownership?.representedAgentId ?? null,
+        represented_agency_owner_id: ctx.ownership?.representedAgencyOwnerId ?? null,
+        // For an on-behalf-of send the authoritative represented agency is the delegation's
+        // agency; prefer explicit ownership, then delegation, then the conversation's agency.
+        represented_agency_id:
+          ctx.ownership?.representedAgencyId ?? ctx.delegation?.agencyId ?? convAgencyId ?? null,
+        contact_owner_id: ctx.ownership?.contactOwnerId ?? null,
+        communication_operator_id: ctx.ownership?.communicationOperatorId ?? null,
+        book_of_business_ref: ctx.ownership?.bookOfBusinessRef ?? null,
+        delegation_id: resolvedDelegationId,
         queued_at: new Date().toISOString(),
       })
       .select('id')
@@ -270,9 +335,13 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
     actor: ctx.actor,
     entity: ctx.entity ?? (conversationId ? { type: 'conversation', id: conversationId } : undefined),
     gate: {
+      ownershipResolved: ctx.ownershipResolved,
+      ownershipConflict: ctx.ownershipConflict,
       hasConsent: consent,
       recipientLocalHour: recipientLocalHour(ctx.utcOffsetHours),
       withinBusinessHours,
+      delegationValid,
+      delegationReason,
       onDNC: dnc,
       usesApprovedTemplateOrPolicy: approved,
       isSecurity: ctx.isSecurity === true,
@@ -300,6 +369,21 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
     } catch {
       /* best-effort */
     }
+  }
+
+  // Unresolved ownership → route to the assignment-review queue (§6). The gate has
+  // already blocked the send; this is the human-resolution recovery path.
+  if (!result.sent && result.gate.blockedStep === 'ownership') {
+    await enqueueAssignmentReview({
+      channel: ctx.channel,
+      destination: to,
+      memberId: convMemberId,
+      householdId: convHouseholdId,
+      agencyId: convAgencyId ?? ctx.delegation?.agencyId ?? null,
+      campaignId: ctx.campaignId ?? null,
+      reason: ctx.ownershipConflict ?? result.gate.reason ?? 'Ownership could not be resolved.',
+      conflict: { ownershipConflict: ctx.ownershipConflict ?? null },
+    })
   }
 
   // Record the lifecycle event + advance the thread recency.

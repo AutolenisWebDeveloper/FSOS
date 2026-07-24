@@ -433,6 +433,7 @@ The identity is consistent across homepage, public pages, login, forgot-password
 | ADR-016 | First-contact identity disclosure engine |
 | ADR-017 | Policy-engine extensions: purpose classification, frequency caps, priority collision |
 | ADR-018 | Conversation mode: a customer reply pauses promotional automation |
+| ADR-019 | AI authority matrix + communication evaluations (code-enforced, not prompt-enforced) |
 
 New architectural decisions get a new ADR using `docs/adr/ADR-000-template.md`. Status values: Proposed → Accepted → Superseded (link the superseding ADR).
 

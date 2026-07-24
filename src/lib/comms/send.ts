@@ -28,6 +28,8 @@ import { resolveIdentityDisclosure, type IdentityContext } from './identity-reso
 import { prependIdentityDisclosure } from './identity'
 import { resolveSendPolicy } from './policy-resolver'
 import type { MessagePurpose } from './purpose'
+import { evaluateOutboundMessage } from './evaluations'
+import type { AiMessageClass } from './ai-authority'
 
 export interface SendContext {
   channel: Channel
@@ -76,6 +78,14 @@ export interface SendContext {
    * the conversation responder. Ignored unless aiGenerated && no templateId.
    */
   aiAuthorAgentKey?: string
+  /**
+   * The AI message CLASS (§11, Slice 5). When set on an aiGenerated send, the authority
+   * matrix + §12 evaluations run BEFORE dispatch: a draft-only/blocked class or any
+   * evaluation failure is NOT auto-sent — it is recorded as a draft on agent_actions and
+   * escalated to the licensed FSA. Absent → existing behavior (the gate's approved-AI-
+   * policy check still governs). Enforced through code + classification, not prompts.
+   */
+  aiMessageClass?: AiMessageClass | string
   /**
    * A 1:1 reply personally typed by an authenticated, licensed operator (the FSA
    * inbox). The human IS the content approval for gate step 4 — but recommendation
@@ -430,6 +440,65 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
       usesApprovedTemplateOrPolicy: approved,
       isSecurity: ctx.isSecurity === true,
     },
+  }
+
+  // AI authority matrix + §12 evaluations (Slice 5). For a CLASSIFIED AI send, evaluate
+  // before dispatch: a draft-only/blocked class or any evaluation failure is never
+  // auto-sent — it is recorded as a draft on agent_actions and escalated to the FSA.
+  if (ctx.aiGenerated === true && ctx.aiMessageClass) {
+    const identitySatisfied = !ctx.identity ? true : identityFirstTouch ? identityFullIntro === true : true
+    const evalResult = evaluateOutboundMessage({
+      draft: identityBody,
+      messageClass: ctx.aiMessageClass,
+      purposeClassified: !!ctx.purpose,
+      ownershipResolved: ctx.ownershipResolved !== false,
+      identityDisclosureSatisfied: identitySatisfied,
+      consentCompatible: consent,
+      templateApproved: approved,
+    })
+    if (!evalResult.mayAutoSend) {
+      // Hold as a human-review draft (not sent). Record the AI action + escalate.
+      try {
+        await db.from('agent_actions').insert({
+          kind: 'ai_draft',
+          actor: ctx.actor,
+          outcome: evalResult.authority === 'blocked' ? 'blocked' : 'drafted',
+          target_type: ctx.entity?.type ?? 'conversation',
+          target_id: ctx.entity?.id ?? convHouseholdId ?? conversationId,
+          reason: evalResult.failures.length ? evalResult.failures.join(',') : `authority:${evalResult.authority}`,
+          note: `ai message class "${ctx.aiMessageClass}" → ${evalResult.authority}; not auto-sent (§11/§12)`,
+          drafted_content: identityBody,
+        })
+      } catch {
+        /* best-effort; the message row below still records the hold */
+      }
+      if (messageId) {
+        try {
+          await db.from('comm_messages').update({
+            delivery_status: 'blocked',
+            blocked_step: 'ai_authority',
+            block_reason: evalResult.failures.length ? evalResult.failures.join(',') : `draft_only:${evalResult.authority}`,
+            updated_at: new Date().toISOString(),
+          }).eq('id', messageId)
+        } catch { /* best-effort */ }
+      }
+      await recordMessageEvent({
+        messageId,
+        conversationId,
+        campaignId: ctx.campaignId ?? null,
+        event: 'failed',
+        channel: ctx.channel,
+        detail: `ai_authority:${evalResult.authority}`,
+      })
+      return {
+        sent: false,
+        blocked: true,
+        gate: { allowed: false, escalate: true, reason: `AI message held for human review (${evalResult.authority}).` },
+        messageId,
+        conversationId: conversationId ?? undefined,
+        reason: `AI message class "${ctx.aiMessageClass}" is not auto-send (${evalResult.failures.join(',') || evalResult.authority}); drafted for the FSA.`,
+      }
+    }
   }
 
   const result = await dispatch(req)

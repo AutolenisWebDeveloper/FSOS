@@ -12,11 +12,14 @@
 
 import { getDb } from '@/lib/supabase/client'
 import { canTransitionContent, type SocialContentStatus } from './status'
+import { precheckContentForReview, summarizePrecheck, type PrecheckIssue } from './precheck'
+import type { SocialPlatform } from './adapters/types'
 import type { ContentDraft } from './schema'
 
 export type StoreResult<T> =
   | { ok: true; data: T }
   | { ok: false; kind: 'not_found' | 'invalid' | 'invalid_transition' | 'error'; message: string }
+  | { ok: false; kind: 'precheck_failed'; message: string; issues: PrecheckIssue[] }
 
 export interface ContentRow {
   id: string
@@ -167,6 +170,22 @@ export async function submitForReview(id: string, actor: string): Promise<StoreR
   if (!canTransitionContent(current.data.status, 'IN_REVIEW')) {
     return { ok: false, kind: 'invalid_transition', message: `Cannot submit from ${current.data.status}` }
   }
+
+  // Securities / claims pre-check GATE (§4.1/§4.2). A draft may not enter review
+  // until it passes — enforced here in the service, not just the UI. A failure is a
+  // terminal, non-retryable block that escalates to the human FSA (never sent).
+  const pre = precheckContentForReview({
+    title: current.data.title,
+    body: current.data.body,
+    link: current.data.link,
+    platforms: current.data.platforms as SocialPlatform[],
+    media: current.data.media,
+    is_security: current.data.is_security,
+  })
+  if (!pre.ok) {
+    return { ok: false, kind: 'precheck_failed', message: summarizePrecheck(pre), issues: pre.blocks }
+  }
+
   const db = getDb()
   const versions = await listVersions(id)
   if (!versions.ok) return versions

@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { SOCIAL_PLATFORMS, type SocialPlatform } from '@/lib/social/adapters'
 import { PLATFORM_LABELS, PLATFORM_BODY_LIMITS } from '@/lib/social/labels'
+import { suggestedPostingWindow, SUGGESTION_BASIS_LABEL } from '@/lib/social/suggestions'
 
 interface Variant {
   platform: string
@@ -15,7 +16,12 @@ interface Variant {
   hashtags: string[]
 }
 
-export function DraftEditor() {
+interface KnowledgeArticle {
+  id: string
+  title: string
+}
+
+export function DraftEditor({ knowledgeArticles = [] }: { knowledgeArticles?: KnowledgeArticle[] }) {
   const router = useRouter()
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
@@ -25,6 +31,7 @@ export function DraftEditor() {
 
   // AI assist state
   const [topic, setTopic] = useState('')
+  const [knowledgeId, setKnowledgeId] = useState('')
   const [aiVariants, setAiVariants] = useState<Variant[]>([])
   const [aiFlags, setAiFlags] = useState<string[]>([])
   const [aiMessage, setAiMessage] = useState<string | null>(null)
@@ -45,7 +52,12 @@ export function DraftEditor() {
       const resp = await fetch('/api/social/draft', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ topic, platforms, campaign_tag: campaignTag || undefined }),
+        body: JSON.stringify({
+          topic,
+          platforms,
+          campaign_tag: campaignTag || undefined,
+          knowledge_document_id: knowledgeId || undefined,
+        }),
       })
       const data = await resp.json()
       if (!resp.ok) {
@@ -115,7 +127,8 @@ export function DraftEditor() {
             Draft with AI
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Grounded in your knowledge library. The AI drafts variants for your review — it never publishes or recommends a product.
+            Grounded in your knowledge library and the Farmers brand voice, sized to each platform, with the required educational
+            disclaimer appended. The AI drafts variants for your review — it never publishes or recommends a product.
           </p>
           <div className="mt-3 flex flex-col gap-2 sm:flex-row">
             <Input
@@ -129,6 +142,26 @@ export function DraftEditor() {
               Draft
             </Button>
           </div>
+          {knowledgeArticles.length > 0 ? (
+            <div className="mt-2">
+              <Label htmlFor="ai-knowledge" className="text-xs text-muted-foreground">
+                Ground on a knowledge article (optional)
+              </Label>
+              <select
+                id="ai-knowledge"
+                className="mt-1 w-full rounded-md border border-shell-border bg-background px-3 py-2 text-sm"
+                value={knowledgeId}
+                onChange={(e) => setKnowledgeId(e.target.value)}
+              >
+                <option value="">Whole library (search by topic)</option>
+                {knowledgeArticles.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
           {aiMessage ? (
             <p className="mt-3 flex items-start gap-2 rounded-md border border-status-assumption/40 bg-status-assumption/10 p-2 text-xs text-status-assumption">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -234,9 +267,15 @@ export function DraftEditor() {
               </div>
               <p className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap text-sm text-foreground">{body || 'Nothing to preview yet.'}</p>
               {pv.over ? <p className="mt-1 text-xs text-status-lost">Over the {PLATFORM_LABELS[pv.platform]} limit — trim before scheduling.</p> : null}
+              <p className="mt-2 border-t border-shell-border pt-2 text-xs text-muted-foreground">
+                Suggested time: <span className="font-medium text-foreground">{suggestedPostingWindow(pv.platform).label}</span>
+              </p>
             </div>
           ))
         )}
+        {previews.length > 0 ? (
+          <p className="text-xs italic text-muted-foreground">{SUGGESTION_BASIS_LABEL}</p>
+        ) : null}
       </div>
     </div>
   )

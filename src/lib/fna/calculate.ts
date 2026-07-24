@@ -15,25 +15,80 @@ import {
   retirementProjection,
   educationFunding,
   survivorIncome,
+  money,
+  D,
   type AssumptionSet,
   type CalcContext,
   type CalcResult,
+  type ValueLabel,
 } from './engine'
 import { planTypeDef, planFieldKeys } from './plan-types'
 
 /** Flat, normalized input map keyed by field key (see plan-types fields). */
 export type PlanValues = Record<string, number>
 
-/** Normalize fna_inputs rows into a flat numeric map (last numeric value wins). */
-export function normalizeInputs(
-  rows: Array<{ key: string; value_numeric?: number | null }>,
-): PlanValues {
-  const out: PlanValues = {}
+/** One fna_inputs row as seen by normalization (only the fields that pick a winner). */
+export interface NormalizeRow {
+  key: string
+  value_numeric?: number | null
+  source_label?: string | null
+  created_at?: string | null
+}
+
+/**
+ * Source authority ranking (higher wins) used to pick a deterministic value when a
+ * key is supplied by more than one source. Mirrors the source labels enumerated in
+ * FnaInputSchema (store.ts). A verified value (checked against a source of record)
+ * outranks a client/FSA entry, which outranks a prefilled/imported value, which
+ * outranks a derived/assumption value. Unknown labels rank as an estimate.
+ */
+// Typed by ValueLabel so adding a provenance label to the shared VALUE_LABELS tuple
+// forces a rank here (compile error otherwise) — the vocabulary can't drift.
+const SOURCE_RANK: Record<ValueLabel, number> = {
+  verified: 7,
+  client_supplied: 6,
+  needs_confirmation: 5,
+  imported: 4,
+  estimated: 3,
+  assumption_based: 2,
+  calculated: 1,
+  incomplete: 0,
+  unavailable: 0,
+}
+
+/** Rank a source label; absent label defaults to client_supplied (schema default). */
+function sourceRank(label?: string | null): number {
+  if (!label) return SOURCE_RANK.client_supplied
+  return SOURCE_RANK[label as ValueLabel] ?? SOURCE_RANK.estimated
+}
+
+/**
+ * Normalize fna_inputs rows into a flat numeric map, picking a DETERMINISTIC winner
+ * per key: highest source authority, then most recent (created_at), then larger
+ * value as a final stable tie-break. This is independent of the row order the DB
+ * returns, so the same stored rows always calculate to the same values, prefill
+ * (imported) can never override a client entry, and repeated saves don't drift the
+ * result (root-cause fix — inputs were previously "last row wins" over an unordered
+ * read). Only finite numeric rows are candidates.
+ */
+export function normalizeInputs(rows: NormalizeRow[]): PlanValues {
+  const best = new Map<string, { value: number; rank: number; at: string }>()
   for (const r of rows) {
-    if (typeof r.value_numeric === 'number' && Number.isFinite(r.value_numeric)) {
-      out[r.key] = r.value_numeric
+    if (typeof r.value_numeric !== 'number' || !Number.isFinite(r.value_numeric)) continue
+    const rank = sourceRank(r.source_label)
+    const at = r.created_at ?? ''
+    const cur = best.get(r.key)
+    if (
+      !cur ||
+      rank > cur.rank ||
+      (rank === cur.rank && at > cur.at) ||
+      (rank === cur.rank && at === cur.at && r.value_numeric > cur.value)
+    ) {
+      best.set(r.key, { value: r.value_numeric, rank, at })
     }
   }
+  const out: PlanValues = {}
+  for (const [k, v] of best) out[k] = v.value
   return out
 }
 
@@ -75,8 +130,26 @@ export function calculatePlan(
   const push = (r: CalcResult<unknown>) =>
     results.push({ formula_id: r.formula_id, formula_version: r.formula_version, envelope: r, confidence: r.confidence })
 
-  // A life-insurance income-replacement gross need feeds the coverage-gap "need".
-  let lifeIncomeReplacementGross = 0
+  // The life-insurance income-replacement gross need feeds the coverage-gap "need".
+  // Compute it through a memoized helper so coverage-gap gets the correct need
+  // regardless of whether life_insurance_need is listed, or listed AFTER it, in the
+  // plan type's `analyses` — no dependence on a mutable loop variable set by a
+  // sibling case (which previously made a reordered config silently report a $0 gap).
+  let lifeResult: CalcResult<unknown> | null = null
+  const computeLifeNeed = (): CalcResult<unknown> => {
+    if (!lifeResult) {
+      lifeResult = lifeInsuranceNeed(
+        {
+          annualIncome: money(D(values.monthly_income ?? 0).times(12)),
+          existingCoverage: has(values, 'existing_life_coverage') ? values.existing_life_coverage : undefined,
+          totalDebts: values.total_debt ?? values.total_liabilities ?? 0,
+        },
+        assumptions,
+        ctx,
+      )
+    }
+    return lifeResult
+  }
 
   for (const id of analyses) {
     switch (id) {
@@ -106,21 +179,9 @@ export function calculatePlan(
           ),
         )
         break
-      case 'life_insurance_need': {
-        const r = lifeInsuranceNeed(
-          {
-            annualIncome: (values.monthly_income ?? 0) * 12,
-            existingCoverage: has(values, 'existing_life_coverage') ? values.existing_life_coverage : undefined,
-            totalDebts: values.total_debt ?? values.total_liabilities ?? 0,
-          },
-          assumptions,
-          ctx,
-        )
-        const out = r.output as { incomeReplacement: { grossNeed: number } }
-        lifeIncomeReplacementGross = out.incomeReplacement.grossNeed
-        push(r)
+      case 'life_insurance_need':
+        push(computeLifeNeed())
         break
-      }
       case 'coverage_gap':
         push(
           coverageGap(
@@ -128,7 +189,7 @@ export function calculatePlan(
               coverage: has(values, 'existing_life_coverage')
                 ? [{ label: 'In-force life', type: 'life', faceAmount: values.existing_life_coverage }]
                 : [],
-              recommendedNeed: lifeIncomeReplacementGross,
+              recommendedNeed: (computeLifeNeed().output as { incomeReplacement: { grossNeed: number } }).incomeReplacement.grossNeed,
             },
             ctx,
           ),

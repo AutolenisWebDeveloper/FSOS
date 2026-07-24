@@ -4,17 +4,11 @@
 // Reused across the plan workspace, results, and module views so every displayed
 // number is labeled consistently. No hardcoded hex — Badge variants resolve tokens.
 import { Badge } from '@/components/ui/badge'
+import type { ValueLabel } from '@/lib/fna/engine/types'
 
-export type ValueLabel =
-  | 'verified'
-  | 'client_supplied'
-  | 'imported'
-  | 'calculated'
-  | 'estimated'
-  | 'assumption_based'
-  | 'incomplete'
-  | 'unavailable'
-  | 'needs_confirmation'
+// Provenance vocabulary is defined once in the engine (VALUE_LABELS); re-exported
+// here for existing importers of this module.
+export type { ValueLabel }
 
 const LABEL_TEXT: Record<ValueLabel, string> = {
   verified: 'Verified',

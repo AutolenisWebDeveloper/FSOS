@@ -220,6 +220,19 @@ never a fresh inline hex in a component:
 new inline `style={{ color: '#…' }}` hexes in a component. When the marketing
 surface needs a new color, add a `.msite` var/class here and reference it.
 
+### 6.6 FNA PDF export (`@react-pdf/renderer`) — sanctioned inline hex [AS-BUILT]
+
+The generated FNA PDF (`src/lib/fna/report-pdf.tsx`) renders through
+`@react-pdf/renderer`, which paints to a PDF canvas and **cannot resolve CSS custom
+properties / Tailwind tokens** — there is no DOM and no stylesheet cascade. Its
+`StyleSheet.create` therefore uses **inline hex values**, and this is the one
+**sanctioned exception** to "never inline a hex." The values are the official Farmers
+palette from §5.2 (`#1C428B` Farmers blue, `#A20F30` deep red, neutral inks), kept in
+sync by hand with the token layer. Rule: any new color in the PDF must be an existing
+official-palette value from §5.2 (not a fresh invention), and this is the only file
+permitted to inline brand hex outside the `.msite` scope. Screen surfaces still resolve
+every color through a token.
+
 ---
 
 ## 7. Core components [AS-BUILT] (`src/components/ui`)

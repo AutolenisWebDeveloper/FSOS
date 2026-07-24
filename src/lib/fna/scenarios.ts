@@ -7,7 +7,7 @@
 // results (fna_scenarios) pinned to base_version_id.
 
 import { calculatePlan, type PlanValues, type PlanCalculation } from './calculate'
-import type { AssumptionSet, CalcContext } from './engine'
+import { D, atLeastZero, type AssumptionSet, type CalcContext } from './engine'
 
 export interface ScenarioOverride {
   /** Replace input values outright. */
@@ -54,7 +54,9 @@ export function applyOverride(
 ): { values: PlanValues; assumptions: AssumptionSet } {
   const values: PlanValues = { ...baseValues }
   if (override.inputs) for (const [k, v] of Object.entries(override.inputs)) values[k] = v
-  if (override.inputDeltas) for (const [k, d] of Object.entries(override.inputDeltas)) values[k] = Math.max(0, (values[k] ?? 0) + d)
+  // Apply deltas in Decimal (not native float) and floor at 0 — money math never
+  // uses native arithmetic (engine money rule), and the result stays deterministic.
+  if (override.inputDeltas) for (const [k, d] of Object.entries(override.inputDeltas)) values[k] = atLeastZero(D(values[k] ?? 0).plus(d)).toNumber()
 
   const overridden = override.assumptions ?? {}
   const assumptions: AssumptionSet = {

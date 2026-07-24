@@ -31,6 +31,25 @@ export async function load<T>(fn: QueryFn, fallback: T): Promise<LoadResult<T>> 
   }
 }
 
+// The count fn returns PostgREST's exact count (use `.select('id', { count:
+// 'exact', head: true })` — no rows transferred, just the count).
+type CountFn = (db: SupabaseClient<any>) => PromiseLike<{ count: number | null; error: { message: string } | null }> // eslint-disable-line @typescript-eslint/no-explicit-any
+
+/**
+ * Load a COUNT without transferring rows (head:true). Use for dashboard tiles that
+ * only need "how many" — avoids fetching up-to-1000 id rows just to take `.length`.
+ * Degrades to `fallback` (default 0) on any failure so a widget never crashes.
+ */
+export async function loadCount(fn: CountFn, fallback = 0): Promise<number> {
+  try {
+    const { count, error } = await fn(getDb())
+    if (error) return fallback
+    return count ?? fallback
+  } catch {
+    return fallback
+  }
+}
+
 // A range-capable query builder (supabase-js returns one from .from().select()...).
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type RangeBuilder = { range: (from: number, to: number) => PromiseLike<{ data: any; error: { message: string } | null }> }
@@ -69,4 +88,16 @@ export async function loadAll<T>(
 /** The DOB encryption key the app passes to the pgcrypto RPCs (never stored in DB). */
 export function dobKey(): string {
   return process.env.DOB_ENCRYPTION_KEY || process.env.FSOS_DOB_KEY || 'fsos-dev-dob-key-change-me'
+}
+
+/**
+ * Normalize a PostgREST embedded relation to a single row. An embedded relation
+ * (e.g. `households(primary_name)`) may deserialize as a single object OR a
+ * one-element array depending on the join; this collapses both (and null) to
+ * `T | null`, replacing the `Array.isArray(x) ? x[0] : x` idiom that was
+ * copy-pasted across ~14 report/route/page files.
+ */
+export function unwrapOne<T>(rel: T | T[] | null | undefined): T | null {
+  if (rel == null) return null
+  return Array.isArray(rel) ? (rel[0] ?? null) : rel
 }

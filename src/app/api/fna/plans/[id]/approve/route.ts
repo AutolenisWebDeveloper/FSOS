@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { configErrorResponse } from '@/lib/http'
+import { configErrorResponse, storeErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { getPlan, approveVersion } from '@/lib/fna/store'
@@ -21,14 +21,11 @@ export async function POST(_req: NextRequest, props: { params: Promise<{ id: str
   const actor = actorOf(auth.session)
   try {
     const plan = await getPlan(params.id)
-    if (!plan.ok) return NextResponse.json({ error: plan.message }, { status: plan.kind === 'not_found' ? 404 : 500 })
+    if (!plan.ok) return storeErrorResponse(plan, 'fna.approve.getPlan')
     if (!plan.data.current_version_id) return NextResponse.json({ error: 'Calculate the plan before approving.' }, { status: 422 })
 
     const res = await approveVersion(plan.data.current_version_id, actor)
-    if (!res.ok) {
-      const status = res.kind === 'not_found' ? 404 : res.kind === 'invalid_transition' ? 409 : 500
-      return NextResponse.json({ error: res.message }, { status })
-    }
+    if (!res.ok) return storeErrorResponse(res, 'fna.approve')
     await writeAudit({
       actor,
       action: 'approval.decided',

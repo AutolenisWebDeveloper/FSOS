@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { requireRole } from '@/lib/auth/session'
 import { PageHeader, ErrorState, Section } from '@/components/archetypes'
 import { load } from '@/lib/data/query'
+import { RetryButton } from '@/components/ui/RetryButton'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
@@ -43,7 +44,24 @@ export default async function FnaPlanScenariosPage(props: { params: Promise<{ id
   if (!planRes.ok) {
     return (
       <div className="space-y-6">
-        {planRes.kind === 'not_configured' ? <ErrorState title="Database not configured" /> : <ErrorState description={planRes.message} />}
+        <PageHeader
+          title="Scenarios"
+          breadcrumb={[
+            { label: 'FSA', href: '/app' },
+            { label: 'AI FNA Command Center', href: '/app/fna' },
+            { label: 'Plans', href: '/app/fna/plans' },
+            { label: 'Workspace', href: `/app/fna/plans/${params.id}` },
+            { label: 'Scenarios' },
+          ]}
+        />
+        {planRes.kind === 'not_configured' ? (
+          <ErrorState title="Database not configured" />
+        ) : (
+          <div className="space-y-3">
+            <ErrorState description={planRes.message} />
+            <RetryButton />
+          </div>
+        )}
       </div>
     )
   }

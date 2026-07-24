@@ -66,6 +66,44 @@ the non-negotiable architecture principle.
   · Imported · Calculated · Estimated · Assumption-based · Incomplete · Unavailable
   · Needs confirmation. Engine outputs are `calculated`. Render via
   `src/components/fna/value-label.tsx`.
+- **Deterministic input resolution** (`normalizeInputs` in `calculate.ts`): `fna_inputs`
+  can hold more than one row for the same key (different sources → a real conflict to
+  surface). The value the engine uses is picked deterministically: **highest source
+  authority** (verified > client_supplied > needs_confirmation > imported > estimated >
+  assumption_based > calculated), then **most recent** (`created_at`), then a stable
+  numeric tie-break — never "whatever row the DB returned last." Reads that feed it
+  (`getPlanInputs`, the intake page) select `created_at` and order by it; the intake
+  form shows the same winner the engine will use. `saveInputs` **replaces** same
+  `(key, member, source)` rows (no proliferation, no false self-conflict) while
+  preserving other sources for genuine conflict detection.
+- **Server derives record identity** (never trust the client): `createRecommendation`
+  derives `household_id` from the plan and validates any `version_id` belongs to that
+  plan — a client can't pin a governance record to another tenant's household (getDb()
+  bypasses RLS, so identity integrity is enforced in the service layer).
+- **Report field formatting is explicit, not guessed** (`report.ts` `fieldFormat`):
+  money is the default; only the non-money output keys (fraction-percent, whole-percent,
+  count, duration) are enumerated. Never format-by-substring — that once rendered the
+  money field `monthlyIncomeMargin` as "50000.0%". A new money field needs no change; a
+  new percent/count field is added to `FIELD_FORMAT`.
+- **Single provenance vocabulary:** the source labels live once in `VALUE_LABELS`
+  (engine/types.ts). The Zod enum (store), the `SOURCE_RANK` (calculate.ts, typed
+  `Record<ValueLabel, number>`), and the UI badge map (value-label.tsx) all derive from
+  it — adding a label is one edit, enforced by the compiler.
+- **Validate untyped JSONB on READ, not just write:** assumption-sets and version
+  snapshots are Zod-parsed on load (`parseAssumptionSet`) and fall back to
+  DEFAULT_ASSUMPTIONS — a malformed row can't reach the engine and 500 a calc.
+- **AI never sources a figure — enforced at persistence too:** the narrative generator
+  strips any numeric fields the model emits (`key_metrics`, `monthly_retirement_gap`),
+  and `/api/fna/save` Zod-validates the report to known narrative fields only (unknown
+  keys stripped) so no AI number or smuggled securities data reaches storage.
+- **Safe errors + right audit action:** routes never return a raw DB error
+  (`storeErrorResponse`/`internalErrorResponse` in `@/lib/http` log detail, return a
+  generic message, §16.1); the deterministic calculate/scenario audits are
+  `entity.created`, NOT `ai.run` (§13.9 — don't pollute the AI-governance trail).
+- **Query for scale:** FNA lists paginate (`.range` + Prev/Next); dashboard tiles use
+  head-only counts (`loadCount`); the intelligence widget scopes the version fetch to
+  the plans' `current_version_id`s; filter windows are pushed into SQL, not JS. Index
+  the columns you filter/sort (migration `064` covers audit_log/fna_plans/policies).
 
 ## How to add things
 
@@ -89,7 +127,8 @@ the non-negotiable architecture principle.
 ## Tests (the pure-core offline pattern)
 
 `tests/fna-engine.test.mjs` (30), `tests/fna-plan-lifecycle.test.mjs` (10),
-`tests/fna-calculate.test.mjs` (9) compile the pure modules standalone with `tsc`
+`tests/fna-calculate.test.mjs` (13, incl. input-resolution determinism), `tests/fna-report.test.mjs`
+(6, incl. money/percent/count field-format regression) compile the pure modules standalone with `tsc`
 into a temp dir under cwd (so `decimal.js` resolves) and assert. `tests/rls-firewall.test.mjs`
 proves `fna_*` RLS default-deny + version immutability against ephemeral Postgres.
 Golden values are hand-computed and pinned — never let them drift silently.

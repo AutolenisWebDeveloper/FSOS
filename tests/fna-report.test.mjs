@@ -16,9 +16,11 @@ process.on('exit', () => {
     /* best-effort */
   }
 })
-execSync(`npx tsc src/lib/fna/report.ts --outDir ${out} --module commonjs --target es2020 --moduleResolution node --skipLibCheck --esModuleInterop`, { stdio: 'inherit' })
+// report.ts now imports the single FINRA_DISCLAIMER constant from lib/compliance,
+// so compile both; tsc roots at src/lib and emits out/fna/report.js.
+execSync(`npx tsc src/lib/fna/report.ts src/lib/compliance.ts --outDir ${out} --module commonjs --target es2020 --moduleResolution node --skipLibCheck --esModuleInterop`, { stdio: 'inherit' })
 const require = createRequire(import.meta.url)
-const { extractReportRows, buildReportSections, REPORT_DISCLOSURE, formulaLabel } = require(join(out, 'report.js'))
+const { extractReportRows, buildReportSections, REPORT_DISCLOSURE, formulaLabel } = require(join(out, 'fna/report.js'))
 
 const results = []
 const check = (name, fn) => {
@@ -44,6 +46,23 @@ check('extractReportRows formats money, percent, boolean, and nested objects', (
   assert.equal(byLabel['Savings Rate'], '30.0%')
   assert.equal(byLabel['Is Deficit'], 'No')
   assert.equal(byLabel['Income Replacement — Gross Need'], '$850,000')
+})
+
+check('monthlyIncomeMargin is money, not a percentage (regression: was rendering ×100%)', () => {
+  const rows = extractReportRows({ monthlyIncomeMargin: 500, sustainableAnnualIncome: 60000 })
+  const byLabel = Object.fromEntries(rows.map((r) => [r.label, r.value]))
+  assert.equal(byLabel['Monthly Income Margin'], '$500') // NOT "50000.0%"
+  assert.equal(byLabel['Sustainable Annual Income'], '$60,000')
+})
+
+check('whole-percent, fraction-percent, and count fields render correctly', () => {
+  const rows = extractReportRows({ targetReplacementPct: 60, fundedRatio: 1.2, assetCount: 3, liabilityCount: 2, monthsCovered: 4 })
+  const byLabel = Object.fromEntries(rows.map((r) => [r.label, r.value]))
+  assert.equal(byLabel['Target Replacement Pct'], '60.0%') // already 0..100, NOT ×100
+  assert.equal(byLabel['Funded Ratio'], '120.0%') // 0..1 fraction ×100
+  assert.equal(byLabel['Asset Count'], '3') // integer, NOT "$3"
+  assert.equal(byLabel['Liability Count'], '2')
+  assert.equal(byLabel['Months Covered'], '4') // duration, NOT currency/percent
 })
 
 check('buildReportSections carries formula version, confidence, assumptions, missing', () => {

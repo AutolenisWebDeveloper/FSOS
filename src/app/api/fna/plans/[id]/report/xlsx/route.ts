@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import ExcelJS from 'exceljs'
 import { getDb } from '@/lib/supabase/client'
-import { configErrorResponse } from '@/lib/http'
+import { configErrorResponse, internalErrorResponse } from '@/lib/http'
+import { unwrapOne } from '@/lib/data/query'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { buildReportSections, REPORT_DISCLOSURE, type ReportResultInput } from '@/lib/fna/report'
@@ -28,7 +29,7 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
       .eq('id', params.id)
       .is('deleted_at', null)
       .maybeSingle()
-    if (pErr) return NextResponse.json({ error: pErr.message }, { status: 500 })
+    if (pErr) return internalErrorResponse(pErr.message, { label: 'fna.report.xlsx' })
     if (!plan) return NextResponse.json({ error: 'Plan not found' }, { status: 404 })
     if (plan.status !== 'APPROVED' || !plan.current_version_id) {
       return NextResponse.json({ error: 'Only an APPROVED plan can be exported.' }, { status: 403 })
@@ -37,7 +38,7 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
     const { data: version } = await db.from('fna_versions').select('version_no, engine_version, assumption_set_version, created_at').eq('id', plan.current_version_id).maybeSingle()
     const { data: results } = await db.from('fna_results').select('formula_id, formula_version, envelope, confidence').eq('version_id', plan.current_version_id).order('formula_id', { ascending: true })
 
-    const hh = Array.isArray(plan.households) ? plan.households[0] : plan.households
+    const hh = unwrapOne(plan.households)
     const sections = buildReportSections((results ?? []) as ReportResultInput[])
 
     const wb = new ExcelJS.Workbook()

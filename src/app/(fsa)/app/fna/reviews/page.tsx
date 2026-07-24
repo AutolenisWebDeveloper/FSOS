@@ -1,7 +1,8 @@
 import Link from 'next/link'
 import { requireRole } from '@/lib/auth/session'
 import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
-import { load } from '@/lib/data/query'
+import { load, unwrapOne } from '@/lib/data/query'
+import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 
@@ -54,13 +55,21 @@ export default async function FnaReviewsPage() {
       breadcrumb={breadcrumb}
     >
       {res.data.length === 0 ? (
-        <EmptyState title="No reviews yet" description="Reviews created in the pipeline appear here as planning triggers — each can kick off an FNA refresh." />
+        <EmptyState
+          title="No reviews yet"
+          description="Reviews created in the pipeline appear here as planning triggers — each can kick off an FNA refresh."
+          action={
+            <Button asChild>
+              <Link href="/app/fna/plans/new">Start a plan</Link>
+            </Button>
+          }
+        />
       ) : (
         <Card>
           <CardContent className="p-0">
             <ul className="divide-y">
               {res.data.map((r) => {
-                const hh = Array.isArray(r.households) ? r.households[0] : r.households
+                const hh = unwrapOne(r.households)
                 return (
                   <li key={r.id} className="flex items-center justify-between gap-3 px-4 py-3">
                     <div className="min-w-0">

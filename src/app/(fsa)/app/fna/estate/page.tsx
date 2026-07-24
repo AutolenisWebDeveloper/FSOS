@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { requireRole } from '@/lib/auth/session'
 import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { load } from '@/lib/data/query'
+import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 
@@ -43,7 +44,15 @@ export default async function FnaEstatePage() {
       breadcrumb={breadcrumb}
     >
       {res.data.length === 0 ? (
-        <EmptyState title="No households yet" description="Add a household from a referral to begin estate & beneficiary discovery." />
+        <EmptyState
+          title="No households yet"
+          description="Add a household from a referral to begin estate & beneficiary discovery."
+          action={
+            <Button asChild>
+              <Link href="/app/fna/plans">View plans</Link>
+            </Button>
+          }
+        />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {res.data.map((h) => {

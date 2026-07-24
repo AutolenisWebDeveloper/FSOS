@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { FileSignature, ListChecks, Wallet, ShieldCheck } from 'lucide-react'
 import { requireRole } from '@/lib/auth/session'
 import { PageHeader, ErrorState, EmptyState, StatTile, Section } from '@/components/archetypes'
-import { load } from '@/lib/data/query'
+import { load, unwrapOne } from '@/lib/data/query'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
@@ -147,7 +147,7 @@ export default async function FnaOverviewPage() {
             <CardContent className="p-0">
               <ul className="divide-y">
                 {plans.data.map((p) => {
-                  const hh = Array.isArray(p.households) ? p.households[0] : p.households
+                  const hh = unwrapOne(p.households)
                   return (
                     <li key={p.id}>
                       <Link href={`/app/fna/plans/${p.id}`} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-muted/40">

@@ -5,8 +5,12 @@
 // standalone (tests/fna-report.test.mjs). Every figure keeps its formula id +
 // version so the report is reproducible from the version.
 
-export const REPORT_DISCLOSURE =
-  'For educational and informational purposes only. Not a product recommendation or suitability determination. Requires licensed FSA review per FINRA Reg BI.'
+import { FINRA_DISCLAIMER } from '../compliance'
+
+// The mandatory FINRA educational footer (build instruction §4.2). Sourced from the
+// single legal-frozen constant (screen.ts uses the same) so the report footer and
+// the generator footer can never drift — one place to change under legal review.
+export const REPORT_DISCLOSURE = FINRA_DISCLAIMER
 
 const FORMULA_LABEL: Record<string, string> = {
   cash_flow: 'Cash flow',
@@ -28,11 +32,61 @@ function humanize(k: string): string {
   return k.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
 }
 
-function fmt(key: string, value: number): string {
+// How a numeric output field is rendered. Money is the safe default; the map lists
+// only the NON-money exceptions so a new money field can never be mis-rendered.
+type FieldFormat = 'money' | 'fraction_pct' | 'whole_pct' | 'count' | 'duration'
+
+// Explicit per-field format for engine output keys whose NAME would otherwise be
+// guessed wrong (fixes a real defect: monthlyIncomeMargin is money — the old
+// "contains 'margin'" heuristic rendered a $500/mo margin as "50000.0%";
+// targetReplacementPct is already a whole percent, not a 0..1 fraction; the *Count
+// fields are integers, not dollars).
+const FIELD_FORMAT: Record<string, FieldFormat> = {
+  // 0..1 fractions shown as a percentage (×100)
+  savingsRate: 'fraction_pct',
+  coverageRatio: 'fraction_pct',
+  adequacyRatio: 'fraction_pct',
+  fundedRatio: 'fraction_pct',
+  realRate: 'fraction_pct',
+  realPostRate: 'fraction_pct',
+  monthlyRate: 'fraction_pct',
+  annualRate: 'fraction_pct',
+  // already a whole percent (0..100), shown as-is with a % sign
+  targetReplacementPct: 'whole_pct',
+  // integer counts (not currency)
+  assetCount: 'count',
+  liabilityCount: 'count',
+  // number of periods / age (not currency, not a percent)
+  monthsCovered: 'duration',
+  targetMonths: 'duration',
+  currentAge: 'duration',
+}
+
+function fieldFormat(key: string): FieldFormat {
+  const explicit = FIELD_FORMAT[key]
+  if (explicit) return explicit
   const k = key.toLowerCase()
-  if (k.includes('ratio') || k.includes('rate') || k.includes('margin')) return `${(value * 100).toFixed(1)}%`
-  if (k.includes('months') || k.includes('years') || k.includes('age')) return value.toLocaleString('en-US', { maximumFractionDigits: 1 })
-  return value.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
+  if (k.endsWith('pct') || k.endsWith('percent')) return 'whole_pct'
+  if (k.includes('ratio') || k.includes('rate')) return 'fraction_pct'
+  if (k.includes('count')) return 'count'
+  if (k.includes('months') || k.includes('years') || k.includes('age')) return 'duration'
+  return 'money'
+}
+
+function fmt(key: string, value: number): string {
+  switch (fieldFormat(key)) {
+    case 'fraction_pct':
+      return `${(value * 100).toFixed(1)}%`
+    case 'whole_pct':
+      return `${value.toFixed(1)}%`
+    case 'count':
+      return value.toLocaleString('en-US', { maximumFractionDigits: 0 })
+    case 'duration':
+      return value.toLocaleString('en-US', { maximumFractionDigits: 1 })
+    case 'money':
+    default:
+      return value.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
+  }
 }
 
 export interface ReportRow {

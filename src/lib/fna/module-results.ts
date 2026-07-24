@@ -3,7 +3,7 @@
 // latest CALCULATED result for a given formula from each plan's CURRENT version —
 // two queries, no N+1: (1) plans with a current version, (2) the matching result
 // rows — joined in memory. Read-only; used by RSC module pages.
-import { load, type LoadResult } from '@/lib/data/query'
+import { load, unwrapOne, type LoadResult } from '@/lib/data/query'
 
 export interface ModuleResult {
   planId: string
@@ -53,7 +53,7 @@ export async function loadModuleResults(formulaId: string): Promise<LoadResult<M
     if (!p.current_version_id) continue
     const r = byVersion.get(p.current_version_id)
     if (!r) continue
-    const hh = Array.isArray(p.households) ? p.households[0] : p.households
+    const hh = unwrapOne(p.households)
     out.push({
       planId: p.id,
       householdName: hh?.primary_name ?? 'Household',

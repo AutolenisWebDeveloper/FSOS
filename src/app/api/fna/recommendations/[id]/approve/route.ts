@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { configErrorResponse } from '@/lib/http'
+import { configErrorResponse, storeErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { approveRecommendation } from '@/lib/fna/store'
@@ -20,7 +20,7 @@ export async function POST(_req: NextRequest, props: { params: Promise<{ id: str
   const actor = actorOf(auth.session)
   try {
     const res = await approveRecommendation(params.id, actor)
-    if (!res.ok) return NextResponse.json({ error: res.message }, { status: res.kind === 'not_found' ? 404 : 500 })
+    if (!res.ok) return storeErrorResponse(res, 'fna.recommendations.approve')
     await writeAudit({
       actor,
       action: 'approval.decided',

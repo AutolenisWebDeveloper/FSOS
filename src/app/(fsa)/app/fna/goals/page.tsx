@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { requireRole } from '@/lib/auth/session'
 import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
-import { load } from '@/lib/data/query'
+import { load, unwrapOne } from '@/lib/data/query'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
@@ -81,7 +81,7 @@ export default async function FnaGoalsPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {res.data.map((g) => {
-            const hh = Array.isArray(g.households) ? g.households[0] : g.households
+            const hh = unwrapOne(g.households)
             return (
               <Card key={g.id}>
                 <CardContent className="space-y-2 pt-6">

@@ -1,13 +1,43 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, internalErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
-import { screenFnaReport, withDisclaimer, type FnaReport } from '@/lib/fna/screen'
+import { screenFnaReport, withDisclaimer } from '@/lib/fna/screen'
 import { persistNarrativeSnapshot } from '@/lib/fna/store'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+
+// Bound + validate the report at the edge (§3.1.7 — no unvalidated write). Only the
+// known NARRATIVE fields are allowed; zod strips every other key, so AI-authored
+// numeric fields (key_metrics, monthly_retirement_gap) or any smuggled securities-
+// substantive data (§4.1) can never reach documents.content / fna_versions.narrative.
+const FnaReportSchema = z
+  .object({
+    executive_summary: z.string().max(4000).optional(),
+    financial_position: z.string().max(8000).optional(),
+    gaps: z.array(z.string().max(2000)).max(50).optional(),
+    recommendations: z
+      .array(
+        z.object({
+          priority: z.number().int().min(0).max(99).optional(),
+          title: z.string().max(500).optional(),
+          description: z.string().max(4000).optional(),
+          // Category only — never a specific product/carrier (§1 red line).
+          product_category: z.string().max(120).optional(),
+        }),
+      )
+      .max(50)
+      .optional(),
+    next_steps: z.array(z.string().max(2000)).max(50).optional(),
+    risk_profile: z.string().max(64).optional(),
+    urgency: z.string().max(32).optional(),
+    ffs_managed: z.boolean().optional(),
+    compliance_disclaimer: z.string().max(1000).optional(),
+  })
+  .strip()
 
 // Save a reviewed FNA to Document OS (classification 'fna_report') + an activity
 // on the household (docs/legacy-port.md §2.1: "report saved as a document, not
@@ -20,16 +50,17 @@ export async function POST(req: NextRequest) {
   const denied = requirePermission(auth.session, ['fsa', 'licensed_staff', 'super_admin'])
   if (denied) return denied
 
-  const parsed = await readJson<{ household_id?: string; report?: FnaReport }>(req)
+  const parsed = await readJson<{ household_id?: string; report?: unknown }>(req)
   if ('error' in parsed) return parsed.error
   const { household_id: householdId, report: rawReport } = parsed.data
   if (!householdId) return NextResponse.json({ error: 'household_id required' }, { status: 400 })
-  if (!rawReport || typeof rawReport !== 'object') {
-    return NextResponse.json({ error: 'report required' }, { status: 400 })
+  const reportParse = FnaReportSchema.safeParse(rawReport)
+  if (!reportParse.success) {
+    return NextResponse.json({ error: 'invalid report', details: reportParse.error.flatten() }, { status: 400 })
   }
 
   // Force the disclaimer, then re-screen. A save can never bypass the red line.
-  const report = withDisclaimer(rawReport)
+  const report = withDisclaimer(reportParse.data)
   const screen = screenFnaReport(report)
   if (!screen.allow) {
     return NextResponse.json({ blocked: true, reasons: screen.reasons }, { status: 422 })
@@ -46,7 +77,7 @@ export async function POST(req: NextRequest) {
       .eq('id', householdId)
       .is('deleted_at', null)
       .maybeSingle()
-    if (hhErr) return NextResponse.json({ error: hhErr.message }, { status: 500 })
+    if (hhErr) return internalErrorResponse(hhErr.message, { label: 'fna.save.household' })
     if (!hh) return NextResponse.json({ error: 'Household not found' }, { status: 404 })
 
     const title = `Financial Needs Analysis — ${hh.primary_name}`
@@ -69,7 +100,7 @@ export async function POST(req: NextRequest) {
       })
       .select('id')
       .single()
-    if (docErr) return NextResponse.json({ error: docErr.message }, { status: 500 })
+    if (docErr) return internalErrorResponse(docErr.message, { label: 'fna.save.document' })
 
     await db.from('activities').insert({
       entity_type: 'household',

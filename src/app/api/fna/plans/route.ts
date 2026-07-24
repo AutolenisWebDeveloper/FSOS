@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, storeErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { createPlan } from '@/lib/fna/store'
@@ -26,10 +26,7 @@ export async function POST(req: NextRequest) {
   const actor = actorOf(auth.session)
   try {
     const res = await createPlan(householdId, planType, { title, reviewId, actor })
-    if (!res.ok) {
-      const status = res.kind === 'not_found' ? 404 : res.kind === 'invalid_transition' ? 409 : 400
-      return NextResponse.json({ error: res.message }, { status })
-    }
+    if (!res.ok) return storeErrorResponse(res, 'fna.plans.create')
     await writeAudit({
       actor,
       action: 'entity.created',

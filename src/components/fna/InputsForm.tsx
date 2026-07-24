@@ -18,6 +18,24 @@ interface Field {
   help?: string
 }
 
+// Field-unit → input placeholder. Mirrors the PlanField unit vocabulary in
+// lib/fna/plan-types.ts (usd | usd_monthly | age | years | count) so the hint
+// matches the value the field actually collects.
+function unitPlaceholder(unit: string): string {
+  switch (unit) {
+    case 'usd_monthly':
+      return '$ /mo'
+    case 'count':
+      return 'number'
+    case 'age':
+    case 'years':
+      return 'years'
+    case 'usd':
+    default:
+      return '$'
+  }
+}
+
 const SECTION_TITLE: Record<string, string> = {
   income: 'Income',
   expenses: 'Expenses',
@@ -120,7 +138,7 @@ export function InputsForm({
             <p className="text-sm font-medium">
               {answered}/{fields.length} answered · {pct}% complete
             </p>
-            <div className="mt-1 h-1.5 w-56 max-w-full overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+            <div className="mt-1 h-1.5 w-56 max-w-full overflow-hidden rounded-full bg-muted" role="progressbar" aria-label="Intake completeness" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
               <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${pct}%` }} />
             </div>
             <p className="mt-1 text-xs text-muted-foreground">Missing values lower analytical confidence — they never block the analysis.</p>
@@ -157,7 +175,7 @@ export function InputsForm({
                   inputMode="decimal"
                   value={values[f.key]}
                   onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
-                  placeholder={f.unit === 'age' ? 'years' : f.unit === 'years' ? 'years' : '$'}
+                  placeholder={unitPlaceholder(f.unit)}
                   disabled={busy !== false}
                 />
                 {f.help ? <p className="text-xs text-muted-foreground">{f.help}</p> : null}

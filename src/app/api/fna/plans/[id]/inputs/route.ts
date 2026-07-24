@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, storeErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { saveInputs, getPlan, FnaInputSchema } from '@/lib/fna/store'
@@ -28,10 +28,10 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   const actor = actorOf(auth.session)
   try {
     const plan = await getPlan(params.id)
-    if (!plan.ok) return NextResponse.json({ error: plan.message }, { status: plan.kind === 'not_found' ? 404 : 500 })
+    if (!plan.ok) return storeErrorResponse(plan, 'fna.inputs.getPlan')
 
     const res = await saveInputs(params.id, body.data.inputs, actor)
-    if (!res.ok) return NextResponse.json({ error: res.message }, { status: 500 })
+    if (!res.ok) return storeErrorResponse(res, 'fna.inputs.save')
 
     await writeAudit({
       actor,

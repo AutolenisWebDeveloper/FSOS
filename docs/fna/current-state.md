@@ -22,7 +22,7 @@
 - **Pure-core pattern** (`src/lib/data/gdc-tiers.ts`): dependency-free, no I/O, exported pure functions, unit-tested offline by compiling standalone with `tsc`. This is the template for the calculation engine.
 - **Test harness** (`tests/*.test.mjs`): `execSync('npx tsc … --outDir <tmp>')` → `createRequire` → `assert`. No live Supabase. `npm test` chains every proof; CI (`.github/workflows/ci.yml`) runs `npm ci → type-check → lint → npm test → build → test:rls`.
 - **Guardrails already in code:** securities firewall (`is_security` excluded from the model), green-zone red line (`screenFnaReport`), verbatim FINRA disclaimer (`FNA_DISCLAIMER`).
-- **Migrations** run through **048**; new work starts at **049**.
+- **Migrations** — this figure was a point-in-time note (then "run through 048"). As built, the FNA data model shipped as **`060_fna_data_model.sql`**, recommendations as **`062_fna_recommendations.sql`**, and the FNA performance indexes as **`064_fna_performance_indexes.sql`** (repo head is 064; the 049 base was superseded by parallel comms/social migrations). New FNA migrations continue after the current head.
 - Money math today is ad-hoc JS (`round2` in `gdc-tiers.ts` uses native floats) — acceptable for tier display, **not** for planning figures.
 
 ## 2. The gap (what the overhaul must add)

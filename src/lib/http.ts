@@ -19,6 +19,29 @@ export function configErrorResponse(err: unknown): NextResponse | null {
 }
 
 /**
+ * Client-safe response for an internal/DB error. The real detail is LOGGED
+ * server-side (never returned to the client, §16.1 — no SQL/RLS/schema strings in
+ * responses) and the client gets a generic message. Use for raw DB errors and the
+ * `kind:'error'` branch of a service result.
+ */
+export function internalErrorResponse(detail: unknown, opts: { status?: number; label?: string } = {}): NextResponse {
+  // eslint-disable-next-line no-console
+  console.error(`[api]${opts.label ? ' ' + opts.label + ':' : ''}`, detail instanceof Error ? detail.message : detail)
+  return NextResponse.json({ error: 'A server error occurred. Please try again.' }, { status: opts.status ?? 500 })
+}
+
+/**
+ * Map a failed service result (`StoreResult`-style: `{ kind, message }`) to a
+ * client-safe response. `not_found` and `invalid_transition` messages are
+ * app-authored (safe to show); `error` is a DB/internal failure → generic + logged.
+ */
+export function storeErrorResponse(res: { kind: 'not_found' | 'invalid_transition' | 'error'; message: string }, label?: string): NextResponse {
+  if (res.kind === 'not_found') return NextResponse.json({ error: res.message }, { status: 404 })
+  if (res.kind === 'invalid_transition') return NextResponse.json({ error: res.message }, { status: 409 })
+  return internalErrorResponse(res.message, { label })
+}
+
+/**
  * Parse a `limit` query param safely. Never returns NaN, always capped.
  */
 export function parseLimit(raw: string | null, fallback = 50, max = 200): number {

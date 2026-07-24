@@ -15,9 +15,12 @@ import {
   retirementProjection,
   educationFunding,
   survivorIncome,
+  money,
+  D,
   type AssumptionSet,
   type CalcContext,
   type CalcResult,
+  type ValueLabel,
 } from './engine'
 import { planTypeDef, planFieldKeys } from './plan-types'
 
@@ -39,7 +42,9 @@ export interface NormalizeRow {
  * outranks a client/FSA entry, which outranks a prefilled/imported value, which
  * outranks a derived/assumption value. Unknown labels rank as an estimate.
  */
-const SOURCE_RANK: Record<string, number> = {
+// Typed by ValueLabel so adding a provenance label to the shared VALUE_LABELS tuple
+// forces a rank here (compile error otherwise) — the vocabulary can't drift.
+const SOURCE_RANK: Record<ValueLabel, number> = {
   verified: 7,
   client_supplied: 6,
   needs_confirmation: 5,
@@ -54,7 +59,7 @@ const SOURCE_RANK: Record<string, number> = {
 /** Rank a source label; absent label defaults to client_supplied (schema default). */
 function sourceRank(label?: string | null): number {
   if (!label) return SOURCE_RANK.client_supplied
-  return SOURCE_RANK[label] ?? SOURCE_RANK.estimated
+  return SOURCE_RANK[label as ValueLabel] ?? SOURCE_RANK.estimated
 }
 
 /**
@@ -125,8 +130,26 @@ export function calculatePlan(
   const push = (r: CalcResult<unknown>) =>
     results.push({ formula_id: r.formula_id, formula_version: r.formula_version, envelope: r, confidence: r.confidence })
 
-  // A life-insurance income-replacement gross need feeds the coverage-gap "need".
-  let lifeIncomeReplacementGross = 0
+  // The life-insurance income-replacement gross need feeds the coverage-gap "need".
+  // Compute it through a memoized helper so coverage-gap gets the correct need
+  // regardless of whether life_insurance_need is listed, or listed AFTER it, in the
+  // plan type's `analyses` — no dependence on a mutable loop variable set by a
+  // sibling case (which previously made a reordered config silently report a $0 gap).
+  let lifeResult: CalcResult<unknown> | null = null
+  const computeLifeNeed = (): CalcResult<unknown> => {
+    if (!lifeResult) {
+      lifeResult = lifeInsuranceNeed(
+        {
+          annualIncome: money(D(values.monthly_income ?? 0).times(12)),
+          existingCoverage: has(values, 'existing_life_coverage') ? values.existing_life_coverage : undefined,
+          totalDebts: values.total_debt ?? values.total_liabilities ?? 0,
+        },
+        assumptions,
+        ctx,
+      )
+    }
+    return lifeResult
+  }
 
   for (const id of analyses) {
     switch (id) {
@@ -156,21 +179,9 @@ export function calculatePlan(
           ),
         )
         break
-      case 'life_insurance_need': {
-        const r = lifeInsuranceNeed(
-          {
-            annualIncome: (values.monthly_income ?? 0) * 12,
-            existingCoverage: has(values, 'existing_life_coverage') ? values.existing_life_coverage : undefined,
-            totalDebts: values.total_debt ?? values.total_liabilities ?? 0,
-          },
-          assumptions,
-          ctx,
-        )
-        const out = r.output as { incomeReplacement: { grossNeed: number } }
-        lifeIncomeReplacementGross = out.incomeReplacement.grossNeed
-        push(r)
+      case 'life_insurance_need':
+        push(computeLifeNeed())
         break
-      }
       case 'coverage_gap':
         push(
           coverageGap(
@@ -178,7 +189,7 @@ export function calculatePlan(
               coverage: has(values, 'existing_life_coverage')
                 ? [{ label: 'In-force life', type: 'life', faceAmount: values.existing_life_coverage }]
                 : [],
-              recommendedNeed: lifeIncomeReplacementGross,
+              recommendedNeed: (computeLifeNeed().output as { incomeReplacement: { grossNeed: number } }).incomeReplacement.grossNeed,
             },
             ctx,
           ),

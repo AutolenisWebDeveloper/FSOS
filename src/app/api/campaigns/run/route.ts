@@ -7,6 +7,7 @@ import { buildCampaignSend } from '@/lib/comms/campaign-run'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+export const maxDuration = 60
 
 // POST /api/campaigns/run  (internal)  body: { campaign_id?, limit? }
 // Processes due enrollments (next_send_at <= now, status active): sends the current

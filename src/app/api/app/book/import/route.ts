@@ -7,6 +7,7 @@ import { emailLc, phoneDigits } from '@/lib/contacts/normalize'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+export const maxDuration = 60
 
 const MAX_FILE_BYTES = 12 * 1024 * 1024
 const MAX_ROWS = 20000

@@ -8,6 +8,7 @@ import { FINRA_DISCLAIMER } from '@/lib/compliance'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+export const maxDuration = 60
 
 // POST /api/customers/meeting-prep  (internal)  body: { customer_id }
 // Generates a pre-appointment one-pager: summary, key facts, coverage gaps,

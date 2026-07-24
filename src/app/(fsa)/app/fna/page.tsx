@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { FileSignature, ListChecks, Wallet, ShieldCheck, Sparkles } from 'lucide-react'
+import { FileSignature, ListChecks, Wallet, ShieldCheck } from 'lucide-react'
 import { requireRole } from '@/lib/auth/session'
 import { PageHeader, ErrorState, EmptyState, StatTile, Section } from '@/components/archetypes'
 import { load } from '@/lib/data/query'
@@ -100,12 +100,32 @@ export default async function FnaOverviewPage() {
         <StatTile label="Approved" value={approvedCount} icon={ShieldCheck} tone="brand" hint="Presentable to a client" />
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatTile label="Cash flow" value="Analyze" href="/app/fna/cash-flow" icon={Wallet} />
-        <StatTile label="Net worth" value="Balance sheet" href="/app/fna/net-worth" icon={ListChecks} />
-        <StatTile label="Goals" value="Track" href="/app/fna/goals" icon={Sparkles} />
-        <StatTile label="Assumptions" value="Config — verify" href="/app/fna/assumptions" icon={ShieldCheck} tone="attention" />
-      </div>
+      <Section title="Planning modules" description="Every analysis and workspace across the command center.">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+          {[
+            { href: '/app/fna/plans', label: 'Plans' },
+            { href: '/app/fna/cash-flow', label: 'Cash flow' },
+            { href: '/app/fna/net-worth', label: 'Net worth' },
+            { href: '/app/fna/retirement', label: 'Retirement' },
+            { href: '/app/fna/education', label: 'Education' },
+            { href: '/app/fna/protection', label: 'Protection' },
+            { href: '/app/fna/estate', label: 'Estate & beneficiary' },
+            { href: '/app/fna/goals', label: 'Goals' },
+            { href: '/app/fna/scenarios', label: 'Scenarios' },
+            { href: '/app/fna/reviews', label: 'Reviews' },
+            { href: '/app/fna/reports', label: 'Reports' },
+            { href: '/app/fna/documents', label: 'Documents & data quality' },
+            { href: '/app/fna/business-owner', label: 'Business owner' },
+            { href: '/app/fna/tax-aware', label: 'Tax-aware' },
+            { href: '/app/fna/assumptions', label: 'Assumptions' },
+            { href: '/app/fna/generate', label: 'Generate narrative' },
+          ].map((m) => (
+            <Link key={m.href} href={m.href} className="rounded-md border p-3 text-sm font-medium transition-colors hover:bg-muted/40">
+              {m.label}
+            </Link>
+          ))}
+        </div>
+      </Section>
 
       <Section title="Recent plans" description="The latest planning activity across households." action={<Link className="text-sm text-primary hover:underline" href="/app/fna/plans">View all</Link>}>
         {plans.data.length === 0 ? (

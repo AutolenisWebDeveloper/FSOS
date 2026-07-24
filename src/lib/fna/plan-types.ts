@@ -105,6 +105,29 @@ export const PLAN_TYPES: PlanTypeDef[] = [
     analyses: EXPRESS_ANALYSES,
     reportTemplate: 'express',
   },
+  {
+    // Config entry (Slice 8) — same engine + data model as Comprehensive, with a
+    // business-owner emphasis. Business-specific analyses (succession/buy-sell) are
+    // added as their formulas land; today it runs the comprehensive analysis set.
+    id: 'business_owner_review',
+    label: 'Business Owner Review',
+    description: 'Comprehensive planning with a business-owner lens — protection, retirement, and succession discovery.',
+    sections: ['income', 'expenses', 'assets', 'liabilities', 'coverage', 'household', 'retirement', 'education', 'survivor'],
+    fields: [...INCOME, ...EXPENSES, ...BALANCE, ...COVERAGE, ...RETIREMENT, ...EDUCATION, ...SURVIVOR],
+    analyses: [...EXPRESS_ANALYSES, 'retirement_projection', 'education_funding', 'survivor_income'],
+    reportTemplate: 'comprehensive',
+  },
+  {
+    // Config entry (Slice 8) — tax treatment is a stored, LABELED assumption
+    // (effective_tax_rate); this plan surfaces it. Assumptions only — never tax advice.
+    id: 'tax_aware_review',
+    label: 'Tax-Aware Planning Review',
+    description: 'Comprehensive planning that surfaces the tax-treatment assumption. Assumptions only — not tax advice.',
+    sections: ['income', 'expenses', 'assets', 'liabilities', 'coverage', 'household', 'retirement'],
+    fields: [...INCOME, ...EXPENSES, ...BALANCE, ...COVERAGE, ...RETIREMENT],
+    analyses: [...EXPRESS_ANALYSES, 'retirement_projection'],
+    reportTemplate: 'comprehensive',
+  },
 ]
 
 export function planTypeDef(id: string): PlanTypeDef | undefined {

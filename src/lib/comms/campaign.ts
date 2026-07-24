@@ -17,6 +17,8 @@ import { writeAudit } from '@/lib/audit/log'
 import type { RecipientContext } from './personalize'
 import type { MessagePurpose } from './purpose'
 import { campaignSendConfig, delegationSendContext } from './campaign-config'
+import { campaignClaimKeys, buildDataConfidence } from './claims'
+import { resolveClaimFields } from './claim-resolver'
 
 export interface DispatchCounts {
   audience: number
@@ -192,6 +194,8 @@ export async function dispatchCampaign(campaignId: string, actor: string): Promi
 
   // Slice 7 — resolve the campaign-level purpose + delegated-sender context ONCE.
   const campCtx = await campaignDispatchContext(campaign)
+  // Slice 8 §18 — declared specific-claim fields (resolved per recipient below).
+  const declaredClaims = campaignClaimKeys(campaign.claim_fields)
 
   for (const r of audience) {
     const to = channel === 'email' ? r.email! : r.phone!
@@ -202,6 +206,10 @@ export async function dispatchCampaign(campaignId: string, actor: string): Promi
       .from('comm_campaign_enrollments')
       .insert({ campaign_id: campaignId, member_id: r.member_id, household_id: r.household_id, agency_id: r.agency_id, status: 'enrolled', variant: variant.key })
     if (enrollErr) continue // already enrolled/sent → skip (idempotent)
+
+    // Slice 8 §18 — resolve declared claims for this recipient; an unverified/conflicting
+    // field excludes the send (gate data_confidence) + raises a verification task (§13).
+    const claims = declaredClaims.length > 0 ? await resolveClaimFields(campaign.claim_fields, { householdId: r.household_id }) : []
 
     const outcome = await sendThroughGate({
       channel,
@@ -226,6 +234,8 @@ export async function dispatchCampaign(campaignId: string, actor: string): Promi
       // only the recipient's represented agency.
       delegation: campCtx.delegation,
       ownership: campCtx.ownership ?? { representedAgencyId: r.agency_id },
+      // Slice 8 §18 — never send a specific claim on unverified/conflicting data (§13).
+      dataConfidence: claims.length > 0 ? buildDataConfidence(claims) : undefined,
     })
 
     if (outcome.sent) {

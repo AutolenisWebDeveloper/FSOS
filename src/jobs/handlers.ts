@@ -6,6 +6,8 @@
 import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
 import { dispatchCampaign, refreshCampaignMetrics, campaignDispatchContext, type CampaignDispatchContext } from '@/lib/comms/campaign'
+import { buildDataConfidence } from '@/lib/comms/claims'
+import { resolveClaimFields } from '@/lib/comms/claim-resolver'
 import { sendThroughGate, isTemplateApproved } from '@/lib/comms/send'
 import { evaluateResume } from '@/lib/comms/conversation-mode'
 import type { JobResult } from './index'
@@ -155,7 +157,7 @@ export async function dripAdvance(): Promise<JobResult> {
   // Due enrollments across all active drip campaigns.
   const { data: enrollments } = await db
     .from('comm_campaign_enrollments')
-    .select('id, campaign_id, member_id, household_id, agency_id, current_step, comm_campaigns!inner(id, type, channel, sequence_id, status, archived_at, purpose, represented_agency_owner_id, delegation_id)')
+    .select('id, campaign_id, member_id, household_id, agency_id, current_step, comm_campaigns!inner(id, type, channel, sequence_id, status, archived_at, purpose, represented_agency_owner_id, delegation_id, claim_fields)')
     .eq('status', 'enrolled')
     .lte('next_send_at', nowISO)
     .limit(1000)
@@ -165,7 +167,7 @@ export async function dripAdvance(): Promise<JobResult> {
   const ctxCache = new Map<string, CampaignDispatchContext>()
 
   let handled = 0
-  for (const e of (enrollments ?? []) as unknown as Array<{ id: string; campaign_id: string; member_id: string; household_id: string; agency_id: string | null; current_step: number; comm_campaigns: { id: string; type: string; channel: string; sequence_id: string | null; status: string; archived_at: string | null; purpose: string | null; represented_agency_owner_id: string | null; delegation_id: string | null } }>) {
+  for (const e of (enrollments ?? []) as unknown as Array<{ id: string; campaign_id: string; member_id: string; household_id: string; agency_id: string | null; current_step: number; comm_campaigns: { id: string; type: string; channel: string; sequence_id: string | null; status: string; archived_at: string | null; purpose: string | null; represented_agency_owner_id: string | null; delegation_id: string | null; claim_fields: string[] | null } }>) {
     const camp = e.comm_campaigns
     if (!camp || camp.type !== 'drip' || camp.status !== 'active' || camp.archived_at || !camp.sequence_id) continue
 
@@ -200,6 +202,9 @@ export async function dripAdvance(): Promise<JobResult> {
         })
         ctxCache.set(camp.id, campCtx)
       }
+      // Slice 8 §18 — resolve declared claims for this recipient; unverified/conflicting
+      // excludes the step + raises a verification task (§13). Absent claim_fields → no-op.
+      const claims = await resolveClaimFields(camp.claim_fields, { householdId: e.household_id })
       await sendThroughGate({
         channel: camp.channel as 'sms' | 'email',
         to,
@@ -218,6 +223,7 @@ export async function dripAdvance(): Promise<JobResult> {
         purpose: campCtx.purpose,
         delegation: campCtx.delegation,
         ownership: campCtx.ownership ?? { representedAgencyId: e.agency_id },
+        dataConfidence: claims.length > 0 ? buildDataConfidence(claims) : undefined,
       })
       handled++
     }

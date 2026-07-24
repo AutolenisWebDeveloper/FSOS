@@ -11,6 +11,7 @@ import { WizardShell } from '@/components/archetypes'
 import { TEMPLATE_CATEGORY } from '@/lib/validation/schemas'
 import { postJson, firstFieldError } from '@/lib/client/api'
 import { MESSAGE_PURPOSES } from '@/lib/comms/purpose'
+import { CLAIM_FIELD_KEYS } from '@/lib/comms/claims'
 
 const STEPS = ['Audience', 'Template', 'Schedule', 'Confirm', 'Review']
 
@@ -28,8 +29,10 @@ export function CampaignBuilder({ templates, delegations = [] }: { templates: { 
   const [step, setStep] = React.useState(0)
   const [saving, setSaving] = React.useState(false)
   const [form, setForm] = React.useState({ name: '', channel: 'email', category: 'educational', template_id: '', audience: 'all_consented', schedule_at: '', ack: false, purpose: '', delegation_id: '' })
+  const [claimFields, setClaimFields] = React.useState<string[]>([])
 
   function set<K extends keyof typeof form>(k: K, val: (typeof form)[K]) { setForm((f) => ({ ...f, [k]: val })) }
+  function toggleClaim(key: string) { setClaimFields((c) => (c.includes(key) ? c.filter((k) => k !== key) : [...c, key])) }
   const channelTemplates = templates.filter((t) => t.channel === form.channel)
 
   async function submit() {
@@ -43,6 +46,7 @@ export function CampaignBuilder({ templates, delegations = [] }: { templates: { 
       audience: { kind: form.audience }, schedule_at: form.schedule_at || undefined, quiet_hours_ack: form.ack,
       ...(form.purpose ? { purpose: form.purpose } : {}),
       ...(chosen ? { delegation_id: chosen.id, represented_agency_owner_id: chosen.ownerId } : {}),
+      ...(claimFields.length > 0 ? { claim_fields: claimFields } : {}),
     })
     setSaving(false)
     if (!res.ok) {
@@ -100,6 +104,16 @@ export function CampaignBuilder({ templates, delegations = [] }: { templates: { 
           </Field>
           {channelTemplates.length === 0 ? <p className="text-sm text-muted-foreground">No approved {form.channel} templates. Create + approve one first.</p> : null}
           <Field id="category" label="Category"><Select id="category" value={form.category} onChange={(e) => set('category', e.target.value)}>{TEMPLATE_CATEGORY.map((c) => (<option key={c} value={c}>{c.replace(/_/g, ' ')}</option>))}</Select></Field>
+          <Field id="claim_fields" label="Specific claims this message makes" hint="If the message states a deadline, coverage status, or appointment time, check it. Each is verified per recipient at send time — an unverified one is excluded, never guessed (§13).">
+            <div className="space-y-1">
+              {CLAIM_FIELD_KEYS.map((k) => (
+                <label key={k} className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={claimFields.includes(k)} onChange={() => toggleClaim(k)} className="h-4 w-4 rounded border-input" />
+                  <span>{k.replace(/_/g, ' ')}</span>
+                </label>
+              ))}
+            </div>
+          </Field>
         </div>
       ) : null}
       {step === 2 ? (
@@ -119,6 +133,7 @@ export function CampaignBuilder({ templates, delegations = [] }: { templates: { 
           <p><span className="text-muted-foreground">Audience:</span> {form.audience}</p>
           <p><span className="text-muted-foreground">Purpose:</span> {form.purpose ? form.purpose.replace(/_/g, ' ').toLowerCase() : 'none (channel-wide consent)'}</p>
           <p><span className="text-muted-foreground">On behalf of:</span> {delegations.find((d) => d.id === form.delegation_id)?.ownerName ?? 'direct FSA send'}</p>
+          <p><span className="text-muted-foreground">Specific claims:</span> {claimFields.length > 0 ? claimFields.map((k) => k.replace(/_/g, ' ')).join(', ') + ' (verified per recipient)' : 'none'}</p>
           <p><span className="text-muted-foreground">Consent/quiet-hours confirmed:</span> {form.ack ? 'yes' : 'no'}</p>
         </div>
       ) : null}

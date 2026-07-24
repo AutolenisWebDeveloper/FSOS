@@ -6,6 +6,7 @@
 import { z } from 'zod'
 // Relative (not @/) so the offline P0/P1 gate tests can compile this file with tsc.
 import { MESSAGE_PURPOSES } from '../comms/purpose'
+import { CLAIM_FIELD_KEYS } from '../comms/claims'
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 export const uuid = z.string().uuid()
@@ -468,6 +469,9 @@ export const CampaignCreateSchema = z.object({
   // direct FSA campaign (represented agency is still recorded per-recipient at dispatch).
   represented_agency_owner_id: uuid.optional(),
   delegation_id: uuid.optional(),
+  // Slice 8 §18 (§13) — specific per-recipient claim fields the message depends on.
+  // Resolved per recipient at dispatch; an unverified/conflicting one excludes the send.
+  claim_fields: z.array(z.enum(CLAIM_FIELD_KEYS as unknown as [string, ...string[]])).max(3).optional(),
 })
   .refine((v) => !(v.delegation_id && !v.represented_agency_owner_id), {
     message: 'A delegated campaign needs the represented agency owner.',

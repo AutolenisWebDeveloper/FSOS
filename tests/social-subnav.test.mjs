@@ -58,9 +58,9 @@ t('Publishing groups calendar + queue', () => {
   assert.deepEqual(items.sort(), ['/app/social/calendar', '/app/social/queue'])
 })
 
-t('Engagement, Insight, Setup route to engagement / analytics / accounts', () => {
+t('Engagement, Insight, Setup route to engagement / analytics+attribution / accounts', () => {
   assert.deepEqual(groupOf('Engagement').items.map((i) => i.href), ['/app/social/engagement'])
-  assert.deepEqual(groupOf('Insight').items.map((i) => i.href), ['/app/social/analytics'])
+  assert.deepEqual(groupOf('Insight').items.map((i) => i.href), ['/app/social/analytics', '/app/social/attribution'])
   assert.deepEqual(groupOf('Setup').items.map((i) => i.href), ['/app/social/accounts'])
 })
 

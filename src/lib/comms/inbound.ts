@@ -58,6 +58,15 @@ async function applyOptOut(conv: Conversation, contact: string): Promise<void> {
           { member_id: conv.member_id, household_id: conv.household_id, channel: conv.channel, status: 'revoked', source: 'inbound_stop', updated_at: new Date().toISOString() },
           { onConflict: 'member_id,channel' },
         )
+      // STOP is authoritative across the WHOLE consent model: also revoke every
+      // purpose-scoped grant on this channel so a scoped grant can never survive a STOP
+      // and re-enable sends (the resolver also treats a channel revoke as a floor, but
+      // cascading keeps the two stores consistent — TCPA opt-out, §12/§4.2).
+      await db
+        .from('comm_consent_purposes')
+        .update({ status: 'revoked', updated_at: new Date().toISOString() })
+        .eq('member_id', conv.member_id)
+        .eq('channel', conv.channel)
     }
     await db.from('dnc_entries').upsert({ contact, channel: conv.channel, scope: 'internal', reason: 'inbound STOP' }, { onConflict: 'contact,channel' })
     await writeAudit({ actor: 'system', action: 'consent.revoked', entity: 'conversation', entityId: conv.id, diff: { channel: conv.channel, via: 'inbound_stop', contact } })

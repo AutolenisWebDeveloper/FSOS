@@ -237,15 +237,36 @@ async function hasApprovedAiPolicy(agentKey = 'conversation'): Promise<boolean> 
   }
 }
 
-/** Recipient on internal/external DNC for this channel (gate step 3). */
+/**
+ * Recipient on internal/external DNC for this channel (gate step 3).
+ *
+ * DNC is a TCPA opt-out control, so the match must be TOLERANT of contact-format drift:
+ * a STOP arrives from the carrier as full E.164 (`+1XXXXXXXXXX`) while an outbound `to`
+ * may be stored bare (`XXXXXXXXXX`). An exact-string match would miss the STOP row and
+ * re-message a suppressed recipient. For SMS we match on the last-10-digit suffix; email
+ * is matched on the normalized (lower-cased) address. Fails SAFE (blocked) on error.
+ */
 async function onDNC(to: string, channel: Channel): Promise<boolean> {
   try {
-    const { data } = await getDb()
-      .from('dnc_entries')
-      .select('id')
-      .eq('contact', to)
-      .in('channel', [channel, 'all'])
-      .limit(1)
+    const db = getDb()
+    if (channel === 'sms') {
+      const digits = to.replace(/[^\d]/g, '')
+      const tail = digits.slice(-10)
+      if (tail.length < 10) {
+        // Not enough digits to match tolerantly — fall back to exact and fail safe.
+        const { data } = await db.from('dnc_entries').select('id').eq('contact', to).in('channel', ['sms', 'all']).limit(1)
+        return Array.isArray(data) && data.length > 0
+      }
+      // Any stored DNC contact ending in these 10 digits blocks (format-agnostic).
+      const { data } = await db
+        .from('dnc_entries')
+        .select('id')
+        .in('channel', ['sms', 'all'])
+        .ilike('contact', `%${tail}`)
+        .limit(1)
+      return Array.isArray(data) && data.length > 0
+    }
+    const { data } = await db.from('dnc_entries').select('id').eq('contact', to).in('channel', ['email', 'all']).limit(1)
     return Array.isArray(data) && data.length > 0
   } catch {
     // Fail safe: if we cannot verify DNC, treat as blocked (never send blindly).
@@ -267,6 +288,13 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
   let convMemberId = ctx.memberId ?? null
   let convHouseholdId = ctx.householdId ?? null
   let convAgencyId = ctx.agencyId ?? null
+  // Server-derived securities-firewall signal (§4.1). The conversation persists the
+  // household's securities flag (getOrCreateConversation → conversationIsSecurity); we
+  // OR it with any caller-supplied ctx.isSecurity below so the firewall can NEVER be
+  // bypassed by a call site that omits or falsifies the flag (e.g. the one-off send
+  // route, which accepts a client-supplied is_security). Defense in depth: the firewall
+  // only ever gets MORE restrictive here, never less.
+  let convIsSecurity = false
   if (!conversationId) {
     const conv = await getOrCreateConversation(ctx.channel, to)
     if (conv) {
@@ -274,12 +302,30 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
       convMemberId = convMemberId ?? conv.member_id
       convHouseholdId = convHouseholdId ?? conv.household_id
       convAgencyId = convAgencyId ?? conv.agency_id
+      convIsSecurity = conv.is_security === true
+    }
+  } else {
+    // Reusing an existing thread (e.g. the inbox reply path) — still resolve the stored
+    // securities flag server-side rather than trusting the caller.
+    try {
+      const { data: conv } = await db
+        .from('comm_conversations')
+        .select('is_security')
+        .eq('id', conversationId)
+        .maybeSingle()
+      convIsSecurity = conv?.is_security === true
+    } catch {
+      convIsSecurity = false
     }
   }
 
   // Personalize merge tokens (safe substitution; the gate still checks the result).
-  const personalized = personalize(ctx.body, ctx.recipientContext ?? {})
+  // On email the body is HTML → HTML-escape recipient-controlled merge VALUES so a
+  // name/city containing markup can't inject into the delivered email or the stored
+  // body the operator console renders (stored-XSS defense, §13.8). SMS substitutes raw.
+  const personalized = personalize(ctx.body, ctx.recipientContext ?? {}, { escapeHtml: ctx.channel === 'email' })
   // Slice 9B — the stored plaintext part, personalized the same way (email multipart).
+  // Plaintext is never HTML, so values are substituted verbatim (no escaping).
   const personalizedText = ctx.bodyText ? personalize(ctx.bodyText, ctx.recipientContext ?? {}) : undefined
 
   // First-contact identity disclosure (§8). The platform decides + auto-prepends the
@@ -474,16 +520,21 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
       delegationReason,
       onDNC: dnc,
       usesApprovedTemplateOrPolicy: approved,
-      isSecurity: ctx.isSecurity === true,
+      // Firewall (§4.1): caller flag OR the server-resolved conversation/household flag.
+      isSecurity: ctx.isSecurity === true || convIsSecurity,
       dataConfidenceOk,
       dataConfidenceReason,
     },
   }
 
-  // AI authority matrix + §12 evaluations (Slice 5). For a CLASSIFIED AI send, evaluate
-  // before dispatch: a draft-only/blocked class or any evaluation failure is never
-  // auto-sent — it is recorded as a draft on agent_actions and escalated to the FSA.
-  if (ctx.aiGenerated === true && ctx.aiMessageClass) {
+  // AI authority matrix + §12 evaluations (Slice 5). Runs for EVERY aiGenerated send —
+  // NOT only classified ones — so a caller can never bypass §11 by omitting the class:
+  // an absent/unknown class fails safe to draft_only (evaluateAiAuthority), so unclassified
+  // autonomous AI content is held for the licensed FSA, never auto-sent (§4.2/§11 —
+  // enforced through code + classification, not prompts). A positively-classified auto_send
+  // class that clears every §12 check still auto-sends.
+  if (ctx.aiGenerated === true) {
+    const classLabel = ctx.aiMessageClass || 'unclassified'
     const identitySatisfied = !ctx.identity ? true : identityFirstTouch ? identityFullIntro === true : true
     const evalResult = evaluateOutboundMessage({
       draft: identityBody,
@@ -504,7 +555,7 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
           target_type: ctx.entity?.type ?? 'conversation',
           target_id: ctx.entity?.id ?? convHouseholdId ?? conversationId,
           reason: evalResult.failures.length ? evalResult.failures.join(',') : `authority:${evalResult.authority}`,
-          note: `ai message class "${ctx.aiMessageClass}" → ${evalResult.authority}; not auto-sent (§11/§12)`,
+          note: `ai message class "${classLabel}" → ${evalResult.authority}; not auto-sent (§11/§12)`,
           drafted_content: identityBody,
         })
       } catch {
@@ -534,7 +585,7 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
         gate: { allowed: false, escalate: true, reason: `AI message held for human review (${evalResult.authority}).` },
         messageId,
         conversationId: conversationId ?? undefined,
-        reason: `AI message class "${ctx.aiMessageClass}" is not auto-send (${evalResult.failures.join(',') || evalResult.authority}); drafted for the FSA.`,
+        reason: `AI message class "${classLabel}" is not auto-send (${evalResult.failures.join(',') || evalResult.authority}); drafted for the FSA.`,
       }
     }
   }
@@ -553,6 +604,9 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
           provider: result.sent ? (ctx.channel === 'sms' ? 'twilio' : 'resend') : null,
           provider_id: result.providerId ?? null,
           sent_at: result.sent ? new Date().toISOString() : null,
+          // Persist the EXACT transmitted body so the audit record includes the SMS
+          // TRAIGA disclosure footer the dispatcher appended at send (§13.9 audit fidelity).
+          ...(result.sent && result.sentBody ? { body: result.sentBody } : {}),
           error: result.error ?? null,
           updated_at: new Date().toISOString(),
         })

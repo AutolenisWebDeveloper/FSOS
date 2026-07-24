@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { ConversationReplySchema, ConversationPatchSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
@@ -18,7 +18,7 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
   try {
     const db = getDb()
     const { data: conv, error } = await db.from('comm_conversations').select('*').eq('id', id).maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('comms/conversations/[id]', error)
     if (!conv) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     const { data: messages } = await db
       .from('comm_messages')
@@ -38,7 +38,7 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
 export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
   const auth = await requireApiRole('fsa')
   if (!auth.ok) return auth.response
-  const denied = requirePermission(auth.session, ['fsa', 'licensed_staff', 'admin', 'super_admin'])
+  const denied = requirePermission(auth.session, ['fsa', 'licensed_staff', 'super_admin'])
   if (denied) return denied
   const { id } = await props.params
 
@@ -56,7 +56,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       .eq('id', id)
       .select('id, status, ai_autoreply, assigned_user')
       .maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('comms/conversations/[id]', error)
     if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     await writeAudit({ actor, action: 'entity.updated', entity: 'conversation', entityId: id, diff: v.data })
     return NextResponse.json({ conversation: data })

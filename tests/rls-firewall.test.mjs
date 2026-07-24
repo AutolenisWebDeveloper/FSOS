@@ -193,6 +193,15 @@ try {
       // Slice 9 (mig 062): a human recommendation on this plan — back-office only.
       `insert into fna_recommendations(plan_id, household_id, objective, authored_by) values ` +
       `('77777777-7777-7777-7777-777777777777','22222222-2222-2222-2222-222222222222','Review protection gap','fsa');\n` +
+      // Review hardening (DB I3): the most PII-sensitive comm tables — the message ledger
+      // (recipient + full body) and the conversation thread — must be client-invisible too.
+      // comm_conversations has an explicit back-office policy (mig 033); comm_messages is
+      // RLS-enabled deny-by-default (mig 010). Seed one row in each; a client must see ZERO
+      // even WITH select granted (proving RLS/the policy denies, not just a missing grant).
+      `insert into comm_conversations(channel, contact, member_id, household_id, is_security) values ` +
+      `('sms','+15550100','66666666-6666-6666-6666-666666666666','22222222-2222-2222-2222-222222222222', false);\n` +
+      `insert into comm_messages(channel, direction, recipient, body, delivery_status) values ` +
+      `('sms','outbound','+15550100','client PII body','sent');\n` +
       // Social module (mig 063): a channel, content, an APPROVED + an IN_REVIEW
       // version, an APPROVED-gated schedule entry, and a publish-log row. All
       // social_* tables are back-office only; a client must see NONE even with grant.
@@ -211,7 +220,7 @@ try {
       // Back-office only; a client must see NONE even with grant.
       `insert into social_engagement(id, channel_id, platform, engagement_type, author_handle, body, classification, route, resolution_status) values ` +
       `('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee','88888888-8888-8888-8888-888888888888','youtube','comment','@viewer','Interested — how much?','lead','create_lead','unmatched');\n` +
-      `grant select on agency_communication_delegations, comm_assignment_reviews, comm_identity_config, comm_frequency_policy, comm_consent_purposes, comm_conversation_policy, fna_plans, fna_versions, fna_recommendations, social_channels, social_content, social_content_versions, social_schedule_entries, social_publish_log, social_engagement to authenticated;\n`,
+      `grant select on agency_communication_delegations, comm_assignment_reviews, comm_identity_config, comm_frequency_policy, comm_consent_purposes, comm_conversation_policy, comm_conversations, comm_messages, fna_plans, fna_versions, fna_recommendations, social_channels, social_content, social_content_versions, social_schedule_entries, social_publish_log, social_engagement to authenticated;\n`,
   )
   psqlFile(`${L}/seed.sql`)
 
@@ -252,6 +261,14 @@ try {
   )
   const visibleConversationPolicy = psqlQuery(
     'set role authenticated; select count(*) from comm_conversation_policy;',
+  )
+  // DB I3 — the message ledger (recipient + full body) + conversation threads are the
+  // most PII-sensitive comm tables; a client must read ZERO rows from either.
+  const visibleCommConversations = psqlQuery(
+    'set role authenticated; select count(*) from comm_conversations;',
+  )
+  const visibleCommMessages = psqlQuery(
+    'set role authenticated; select count(*) from comm_messages;',
   )
 
   // Slice 2 (mig 060): client must see zero FNA plan / version rows.
@@ -362,6 +379,12 @@ try {
   })
   t('client CANNOT read comm_conversation_policy (back-office default-deny, mig 056)', () => {
     assert.equal(visibleConversationPolicy, '0', `expected 0 conversation-policy rows to a client, got: ${visibleConversationPolicy}`)
+  })
+  t('client CANNOT read comm_conversations (back-office policy, mig 033) — PII threads', () => {
+    assert.equal(visibleCommConversations, '0', `expected 0 conversations to a client, got: ${visibleCommConversations}`)
+  })
+  t('client CANNOT read comm_messages (RLS deny-by-default, mig 010) — message ledger PII', () => {
+    assert.equal(visibleCommMessages, '0', `expected 0 messages to a client, got: ${visibleCommMessages}`)
   })
 
   t('client CANNOT read fna_plans (back-office default-deny, mig 060)', () => {

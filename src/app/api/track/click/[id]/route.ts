@@ -15,7 +15,12 @@ export const runtime = 'nodejs'
 
 export async function GET(req: NextRequest, props: { params: Promise<{ id: string }> }) {
   const { id } = await props.params
-  const target = safeRedirectTarget(req.nextUrl.searchParams.get('u'))
+  // The target must carry a valid HMAC signature bound to this message id (when a
+  // signing secret is configured) — otherwise the redirector would be an open proxy.
+  const target = safeRedirectTarget(req.nextUrl.searchParams.get('u'), {
+    messageId: id,
+    sig: req.nextUrl.searchParams.get('s'),
+  })
   if (!target) return NextResponse.json({ error: 'Invalid link' }, { status: 400 })
 
   if (id && /^[0-9a-f-]{36}$/i.test(id)) {

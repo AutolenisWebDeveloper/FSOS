@@ -30,12 +30,15 @@ export function CampaignBuilder({ templates, delegations = [] }: { templates: { 
   const [saving, setSaving] = React.useState(false)
   const [form, setForm] = React.useState({ name: '', channel: 'email', category: 'educational', template_id: '', audience: 'all_consented', schedule_at: '', ack: false, purpose: '', delegation_id: '' })
   const [claimFields, setClaimFields] = React.useState<string[]>([])
+  const [nameTouched, setNameTouched] = React.useState(false)
 
   function set<K extends keyof typeof form>(k: K, val: (typeof form)[K]) { setForm((f) => ({ ...f, [k]: val })) }
   function toggleClaim(key: string) { setClaimFields((c) => (c.includes(key) ? c.filter((k) => k !== key) : [...c, key])) }
   const channelTemplates = templates.filter((t) => t.channel === form.channel)
+  const nameMissing = !form.name.trim()
 
   async function submit() {
+    if (nameMissing) { setNameTouched(true); setStep(0); toast.error('Enter a campaign name.'); return }
     if (!form.ack) { toast.error('Confirm consent + quiet-hours to continue.'); return }
     if (!form.template_id) { toast.error('Select an approved template.'); return }
     setSaving(true)
@@ -66,16 +69,21 @@ export function CampaignBuilder({ templates, delegations = [] }: { templates: { 
         <>
           <Button variant="outline" onClick={() => setStep((s) => Math.max(0, s - 1))} disabled={step === 0 || saving}>Back</Button>
           {step < STEPS.length - 1 ? (
-            <Button onClick={() => setStep((s) => s + 1)} disabled={step === 1 && !form.template_id}>Next</Button>
+            <Button
+              onClick={() => { if (step === 0 && nameMissing) { setNameTouched(true); return } setStep((s) => s + 1) }}
+              disabled={(step === 0 && nameMissing) || (step === 1 && !form.template_id)}
+            >
+              Next
+            </Button>
           ) : (
-            <Button onClick={submit} disabled={saving || !form.ack || !form.template_id}>{saving ? 'Creating…' : 'Create campaign'}</Button>
+            <Button onClick={submit} disabled={saving || nameMissing || !form.ack || !form.template_id}>{saving ? 'Creating…' : 'Create campaign'}</Button>
           )}
         </>
       }
     >
       {step === 0 ? (
         <div className="space-y-4">
-          <Field id="name" label="Campaign name" required><Input id="name" value={form.name} onChange={(e) => set('name', e.target.value)} /></Field>
+          <Field id="name" label="Campaign name" required error={nameTouched && nameMissing ? 'Campaign name is required.' : undefined}><Input id="name" value={form.name} onChange={(e) => set('name', e.target.value)} onBlur={() => setNameTouched(true)} /></Field>
           <Field id="channel" label="Channel"><Select id="channel" value={form.channel} onChange={(e) => { set('channel', e.target.value); set('template_id', '') }}><option value="email">email</option><option value="sms">sms</option></Select></Field>
           <Field id="audience" label="Audience" hint="The gate re-checks every recipient at send time"><Select id="audience" value={form.audience} onChange={(e) => set('audience', e.target.value)}><option value="all_consented">All consented members</option><option value="cross_sell">Cross-sell gap households</option><option value="conversion">Conversion-due households</option></Select></Field>
           <Field id="purpose" label="Message purpose" hint="Drives purpose-scoped consent, frequency caps + priority collision at dispatch">

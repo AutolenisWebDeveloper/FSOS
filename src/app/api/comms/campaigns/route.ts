@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { CampaignCreateSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
@@ -15,7 +15,7 @@ export async function GET() {
   if (!auth.ok) return auth.response
   try {
     const { data, error } = await getDb().from('comm_campaigns').select('*').is('archived_at', null).order('created_at', { ascending: false })
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('comms/campaigns', error)
     return NextResponse.json({ campaigns: data ?? [] })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed' }, { status: 500 })
@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
       })
       .select('*')
       .single()
-    if (error || !data) return NextResponse.json({ error: error?.message ?? 'Insert failed' }, { status: 500 })
+    if (error || !data) return dbErrorResponse('comms/campaigns', error)
     await writeAudit({ actor, action: 'entity.created', entity: 'comm_campaign', entityId: data.id, diff: { name: data.name, template_id: v.data.template_id } })
     return NextResponse.json({ campaign: data }, { status: 201 })
   } catch (e) {

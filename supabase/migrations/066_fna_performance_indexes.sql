@@ -1,4 +1,4 @@
--- 064_fna_performance_indexes.sql
+-- 066_fna_performance_indexes.sql
 -- Forward-only, additive (indexes only — no data or schema change, no lock risk on
 -- these table sizes). Closes the full-scan / unindexed-sort paths the FNA Command
 -- Center audit found. Every index is `if not exists` so re-running is a no-op.

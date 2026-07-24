@@ -82,7 +82,7 @@
 ### Marketing & Communications (OS-12)
 - **Tables:** `campaigns, campaign_enrollments, templates (versions, approval), messages, suppression, consents`
 - **API:** `api/comms/send` 🛡 (the dispatcher), `api/comms/templates`, `api/comms/campaigns`
-- **Jobs:** `campaign-dispatch` 🛡 (per-recipient 7-step gate)
+- **Jobs:** `campaign-dispatch` 🛡 (per-recipient 13-step gate — `../data-guardrails.md` §5)
 - **Integrations:** Twilio 🔌 (`webhooks/twilio` inbound STOP), email provider 🔌 (`webhooks/email`)
 - **Audit:** template create/edit/approve, campaign activate, every send AND block
 
@@ -137,7 +137,7 @@
 | `agency-dormancy` | daily | agency_partnerships | status, tasks | — |
 | `cross-sell-scan` | daily | v_cross_sell_gaps | opps, enrollments | 🛡 invite-only |
 | `commission-reconcile` | daily | commissions | discrepancies | — |
-| `campaign-dispatch` | minutes | campaigns, consents | messages | 🛡 7-step gate |
+| `campaign-dispatch` | minutes | campaigns, consents | messages | 🛡 13-step gate (`../data-guardrails.md` §5) |
 | `agent-runner` | event/schedule | per agent | agent_actions, escalations | 🛡 guardrail + kill switch |
 | `data-quality` | daily | all | flags | — |
 | `backup-verify` | daily | backups | status | — |

@@ -132,8 +132,13 @@ export function evaluateGate(input: GateInput): GateResult {
   // assignment-review queue instead of sending.
   if (input.ownershipResolved === false) return blocked('ownership', true, input.ownershipConflict)
   if (!input.hasConsent) return blocked('consent')
+  // The LEGAL TCPA quiet-hours floor (escalating) stays early. The operator's own hours
+  // of operation (business_hours) is a NON-escalating operational deferral and is checked
+  // LAST with frequency/collision — never here — so a firewall / DNC / recommendation /
+  // delegation / data-confidence trip evaluated outside operating hours still surfaces as
+  // its own escalating block and is not masked as a benign "held for hours" deferral
+  // (§13.9: never silently downgrade a compliance control).
   if (!withinQuietHours(input.recipientLocalHour)) return blocked('quiet_hours')
-  if (input.withinBusinessHours === false) return blocked('business_hours', false)
   // 2c — on-behalf-of authority. Checked before content approval / recommendation:
   // a message the FSA is not authorized to send at all must never reach content checks.
   if (input.delegationValid === false) return blocked('delegation', true, input.delegationReason)
@@ -145,10 +150,12 @@ export function evaluateGate(input: GateInput): GateResult {
   // contact + raise a verification task; never send on a guess.
   if (input.dataConfidenceOk === false) return blocked('data_confidence', true, input.dataConfidenceReason)
   if (input.otherRuleBlocked) return blocked('other_rule')
-  // 2d/2e — operational deferrals (rate caps + priority collision) are checked LAST, so
-  // they only ever defer a COMPLIANCE-CLEAN send: a message that should escalate for an
-  // invalid delegation / DNC / securities / recommendation surfaces + escalates first and
-  // is never masked by a non-escalating deferral (§9/§10; ADR-017).
+  // 2b/2d/2e — operational deferrals (business hours, rate caps, priority collision) are
+  // checked LAST, so they only ever defer a COMPLIANCE-CLEAN send: a message that should
+  // escalate for an invalid delegation / DNC / securities / recommendation / data-confidence
+  // issue surfaces + escalates first and is never masked by a non-escalating deferral
+  // (§9/§10; ADR-017). business_hours can only TIGHTEN the legal quiet-hours floor above.
+  if (input.withinBusinessHours === false) return blocked('business_hours', false)
   if (input.withinFrequencyCaps === false) return blocked('frequency', false, input.frequencyReason)
   if (input.collisionPaused === true) return blocked('collision', false, input.collisionReason)
   return { allowed: true, escalate: false }

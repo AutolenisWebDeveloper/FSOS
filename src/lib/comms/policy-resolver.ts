@@ -22,12 +22,17 @@ import {
   type PolicyDecision,
 } from './frequency'
 
-const MARKETING_PURPOSES = "('MARKETING','WORKSHOP')"
+// Marketing purposes counted against the marketing-email caps (§9). Passed to the typed
+// PostgREST `.in()` builder — NOT `.filter('purpose','in', "(...)")`, whose raw-string form
+// matches the literal parenthesized text (including the quotes) and silently counts zero,
+// which would let the marketing-email caps fail open.
+const MARKETING_PURPOSES = ['MARKETING', 'WORKSHOP'] as const
 
 /**
- * Purpose-scoped consent (§9). Prefer a purpose-scoped row; if none exists, fall back to
- * the channel-wide (NULL-purpose) row. Returns true only on an explicit granted status.
- * A purpose-scoped REVOKED overrides a channel-wide grant. Fails closed (false) on error.
+ * Purpose-scoped consent (§9). A channel-wide REVOKE is a hard FLOOR — a STOP (or any
+ * channel-level revoke) can never be overridden by a purpose-scoped grant. Otherwise a
+ * purpose-scoped row wins (its grant OR revoke); with no scoped row, fall back to the
+ * channel-wide grant. Returns true only on an explicit granted status. Fails closed on error.
  */
 export async function hasConsentForPurpose(
   memberId: string,
@@ -37,23 +42,17 @@ export async function hasConsentForPurpose(
   try {
     const db = getDb()
     const consentPurpose = purposeToConsentPurpose(purpose, channel)
-    // Prefer a purpose-scoped row (companion table, unique per member/channel/purpose).
-    const { data: scoped } = await db
-      .from('comm_consent_purposes')
-      .select('status')
-      .eq('member_id', memberId)
-      .eq('channel', channel)
-      .eq('purpose', consentPurpose)
-      .maybeSingle()
-    if (scoped) return scoped.status === 'granted' // scoped grant OR revoke wins
-    // Fall back to the channel-wide consent (consents, unique per member/channel).
-    const { data: channelWide } = await db
-      .from('consents')
-      .select('status')
-      .eq('member_id', memberId)
-      .eq('channel', channel)
-      .maybeSingle()
-    return channelWide?.status === 'granted'
+    const [scopedRes, channelRes] = await Promise.all([
+      // Purpose-scoped row (companion table, unique per member/channel/purpose).
+      db.from('comm_consent_purposes').select('status').eq('member_id', memberId).eq('channel', channel).eq('purpose', consentPurpose).maybeSingle(),
+      // Channel-wide consent (consents, unique per member/channel).
+      db.from('consents').select('status').eq('member_id', memberId).eq('channel', channel).maybeSingle(),
+    ])
+    // Channel-wide revoke is the floor: STOP/opt-out at the channel level wins over any
+    // purpose-scoped grant, so the two stores can never disagree in the permissive direction.
+    if (channelRes.data?.status === 'revoked') return false
+    if (scopedRes.data) return scopedRes.data.status === 'granted' // scoped grant OR revoke wins
+    return channelRes.data?.status === 'granted'
   } catch {
     return false
   }
@@ -94,8 +93,8 @@ export async function resolveFrequency(memberId: string, channel: Channel, purpo
     const [smsToday, sms7, mktToday, mkt7, combinedToday, lastSend] = await Promise.all([
       base().eq('channel', 'sms').gte('sent_at', dayAgo),
       base().eq('channel', 'sms').gte('sent_at', weekAgo),
-      base().eq('channel', 'email').filter('purpose', 'in', MARKETING_PURPOSES).gte('sent_at', dayAgo),
-      base().eq('channel', 'email').filter('purpose', 'in', MARKETING_PURPOSES).gte('sent_at', weekAgo),
+      base().eq('channel', 'email').in('purpose', MARKETING_PURPOSES as unknown as string[]).gte('sent_at', dayAgo),
+      base().eq('channel', 'email').in('purpose', MARKETING_PURPOSES as unknown as string[]).gte('sent_at', weekAgo),
       base().gte('sent_at', dayAgo),
       db.from('comm_messages').select('sent_at').eq('direction', 'outbound').eq('delivery_status', 'sent').eq('member_id', memberId).not('sent_at', 'is', null).order('sent_at', { ascending: false }).limit(1).maybeSingle(),
     ])

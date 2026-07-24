@@ -41,7 +41,7 @@ Build entities in spine order so each has its parent to reference:
 - Admin Portal: cases queue, document processing, data imports (wizard: mapping→preview→validate→error report→rollback→audit), support queue, user support.
 - Executive: briefing (AI priorities), KPIs, production, performance, conversion/cross-sell overviews, alerts.
 - Renewal/X-date/SLA/dormancy jobs live.
-**Gate:** every P1 page Definition of Done; every automated send passes the 7-step gate; every agent run is logged with confidence + cost.
+**Gate:** every P1 page Definition of Done; every automated send passes the 13-step gate (`docs/data-guardrails.md` §5); every agent run is logged with confidence + cost.
 
 ## PHASE 3 — P2 (operational enhancement)
 Agency map/leaderboard/health/penetration · policy lapse-risk · review types config · analytics pages (conversion, cross-sell, comms, referral) · sequences/audience builder · workflow builder (triggers/conditions/delays/branching/failure/retry) · documents missing-detection · reports builder + scheduled · commission reconciliation/chargebacks/trails/adjustments/statements · AI evaluations · admin exports/duplicates · compliance legal-holds/attestations/policies · partner training/tasks · client reviews/case-status · super workflows/sandbox/webhooks.
@@ -92,7 +92,7 @@ Plus: unit · integration · e2e (seeded local Supabase) · permission/RLS · wo
 - [ ] No automated action lacks an audit trail (`audit_log` written on every mutation, send, block, and AI action).
 - [ ] No AI agent exceeds its permissions (green-zone only; red-line recommendations hard-blocked in tests).
 - [ ] No securities workflow crosses the FFS firewall (`is_security` never auto-sent; client portal never exposes securities fields).
-- [ ] No communication bypasses consent + quiet-hours + suppression (the 7-step dispatcher gate).
+- [ ] No communication bypasses consent + quiet-hours + suppression (the 13-step dispatcher gate; `docs/data-guardrails.md` §5).
 - [ ] No page is complete without responsive + empty + loading + error + success states.
 - [ ] No feature is complete unless wired to real data and covered by tests.
 - [ ] Every Farmers-data assumption (splits, conversion windows, product availability) is a labeled, editable config default — none invented.

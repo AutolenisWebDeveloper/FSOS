@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { TemplateCreateSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
@@ -17,7 +17,7 @@ export async function GET() {
   if (!auth.ok) return auth.response
   try {
     const { data, error } = await getDb().from('comm_templates').select('*').is('archived_at', null).order('updated_at', { ascending: false })
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('comms/templates', error)
     return NextResponse.json({ templates: data ?? [] })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed' }, { status: 500 })
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
       .insert({ name: v.data.name, channel: v.data.channel, category: v.data.category, body: v.data.body, approval_status: 'draft', version: 1, updated_by: actor })
       .select('*')
       .single()
-    if (error || !data) return NextResponse.json({ error: error?.message ?? 'Insert failed' }, { status: 500 })
+    if (error || !data) return dbErrorResponse('comms/templates', error)
     await writeAudit({ actor, action: 'entity.created', entity: 'comm_template', entityId: data.id, diff: { name: data.name, channel: data.channel, category: data.category } })
     return NextResponse.json({ template: data }, { status: 201 })
   } catch (e) {

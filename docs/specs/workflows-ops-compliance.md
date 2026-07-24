@@ -10,7 +10,7 @@
 
 **Happy path:**
 1. **Build.** `/app/comms/campaigns/new` (wizard): audience (segment/audience builder) → approved template(s) → schedule/cadence → consent + quiet-hours confirmation → review → activate. 📝 activation.
-2. **Dispatch.** `campaign-dispatch` job iterates recipients. For EACH recipient, the 🛡 7-step dispatcher gate runs: (1) valid channel consent · (2) within quiet hours (recipient-local, 9–20 floor) · (3) not on DNC · (4) approved template/policy · (5) not an individualized securities recommendation · (6) not is_security · (7) not otherwise blocked. 
+2. **Dispatch.** `campaign-dispatch` job iterates recipients. For EACH recipient, the 🛡 13-step dispatcher gate runs, blocking on the first failure: (1) ownership resolved · (2) valid channel consent · (3) within quiet hours (recipient-local, 9–20 floor) · (4) active in-scope delegation · (5) not on DNC · (6) approved template/policy · (7) not an individualized securities recommendation · (8) not is_security · (9) data-confidence on specific claims · (10) no other FFS/Farmers/carrier/state/federal rule block · then the non-escalating operational deferrals (11) business hours · (12) frequency caps · (13) priority collision. Canonical enumeration: `../data-guardrails.md` §5. 
 3. **Result.** Pass → send via Twilio/email 🔌 → delivery status tracked (sent/delivered/failed). Fail → suppressed + reason recorded + ⤴ (if judgment needed). 📝 each send AND each block (never silently dropped).
 4. **Delivery handling.** `/app/comms/delivery`: failed → retry (idempotent) or dead-letter; bounces update suppression.
 5. **Analytics.** Send/response/opt-out rates in `/app/comms/analytics`.
@@ -149,7 +149,7 @@
 ---
 
 ## Cross-workflow invariants (must hold everywhere)
-- Every automated client-facing send passes the 🛡 7-step gate at SEND time.
+- Every automated client-facing send passes the 🛡 13-step gate at SEND time (`../data-guardrails.md` §5).
 - No securities substantive data enters FSOS; is_security is excluded from automation and routed to FFS 🛡.
 - No AI action is a product/investment/replacement recommendation; those ⤴ to the human FSA.
 - Every mutation, send, block, AI action, and stage change writes 📝 to `audit_log`.

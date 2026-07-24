@@ -16,7 +16,7 @@ this is an extension, not a rebuild:
   `selectForQuota`, firewall/consent/DNC baked in). Durable runs via
   `jobs/agent-runner.ts` (`agent_runs` / `agent_actions` / `compliance_events`,
   kill-switch, idempotency, retry). Cron entry `workforce-orchestrator`.
-- **Compliance gate.** The 7-step gate is pure in `lib/comms/gate.ts` and bound to the
+- **Compliance gate.** The 13-step gate (`docs/data-guardrails.md` §5) is pure in `lib/comms/gate.ts` and bound to the
   DB at send time in `lib/comms/send.ts` (`sendThroughGate`): consent, quiet hours,
   business hours, DNC, approved template/AI policy, recommendation language,
   `is_security`. `lib/comms/dispatcher.ts` is the single send path; there is no

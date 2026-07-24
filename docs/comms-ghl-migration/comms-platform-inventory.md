@@ -8,7 +8,7 @@
 
 | Module | Exports (key) | Responsibility |
 |---|---|---|
-| `gate.ts` | `GateStep`, `GateInput`, `GateResult`, `evaluateGate()` | **Pure** decision core — the 7-step gate (§3). No I/O. Additive: new steps extend the union + input + chain. |
+| `gate.ts` | `GateStep`, `GateInput`, `GateResult`, `evaluateGate()` | **Pure** decision core — the 13-step gate (§3; canonical enumeration `../data-guardrails.md` §5). No I/O. Additive: new steps extend the union + input + chain. |
 | `send.ts` | `SendContext`, `SendOutcome`, `isTemplateApproved()`, `sendThroughGate()` | Send-time binding. Computes gate context **fresh from the DB**, threads conversation, personalizes, pre-inserts `comm_messages`, calls dispatcher, patches row + events. **The single choke point.** |
 | `dispatcher.ts` | `DispatchRequest`, `DispatchResult`, `DispatchDeps`, `defaultDeps`, `dispatch()` | Execution core. Runs `evaluateGate`; ALLOW → footer + provider send (via `deps.send`); BLOCK → `compliance_events` + `agent_actions` escalation + audit, **never sends**. Injectable `deps` seam for tests. No force-send path. |
 | `conversations.ts` | `resolveContact()`, `getOrCreateConversation()`, `touchConversation()`, `conversationIsSecurity()` | Threading — exactly one `comm_conversations` per `(channel, contact)`; resolves member→household→agency (+securities flag); recency/unread pointers. |

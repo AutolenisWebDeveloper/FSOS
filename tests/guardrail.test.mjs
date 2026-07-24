@@ -158,6 +158,24 @@ t('the gate DEFERS (does not escalate) a send outside business hours', () => {
   assert.equal(r.escalate, false) // operational deferral, NOT a compliance escalation
 })
 
+t('an ESCALATING compliance trip is NEVER masked by the business-hours deferral', () => {
+  // A securities-flagged / DNC / recommendation send that also happens to be outside
+  // operating hours must still surface + ESCALATE on its own compliance step — business
+  // hours is a non-escalating deferral checked LAST and must not short-circuit it
+  // (§13.9: never silently downgrade a compliance control; regression for gate C1).
+  const sec = evaluateGate({ ...okCtx, draft: 'Your account update.', channel: 'email', isSecurity: true, withinBusinessHours: false })
+  assert.equal(sec.blockedStep, 'is_security')
+  assert.equal(sec.escalate, true)
+
+  const dnc = evaluateGate({ ...okCtx, draft: 'Hi there', channel: 'sms', onDNC: true, withinBusinessHours: false })
+  assert.equal(dnc.blockedStep, 'dnc')
+  assert.equal(dnc.escalate, true)
+
+  const rec = evaluateGate({ ...okCtx, draft: 'You should buy the whole life policy.', channel: 'sms', withinBusinessHours: false })
+  assert.equal(rec.blockedStep, 'recommendation')
+  assert.equal(rec.escalate, true)
+})
+
 t('business hours can never widen past the legal quiet-hours floor', () => {
   // Even if the business window "allowed" it, the earlier quiet-hours step blocks a
   // 6am recipient-local send and that block ESCALATES (it is a legal violation).

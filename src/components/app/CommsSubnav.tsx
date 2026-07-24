@@ -48,8 +48,10 @@ const GROUPS: { label: string; items: { href: string; label: string }[] }[] = [
   },
 ]
 
-function useIsActive(href: string): boolean {
+function useIsActive(href: string, exact = false): boolean {
   const pathname = usePathname()
+  // Overview (exact) must not light up on every child route (all start with /app/comms).
+  if (exact) return pathname === href
   if (href === '/app/comms/campaigns') {
     // Don't let the list swallow its own /new sibling's active state.
     return pathname === href || (pathname.startsWith(href + '/') && pathname !== '/app/comms/campaigns/new')
@@ -57,8 +59,8 @@ function useIsActive(href: string): boolean {
   return pathname === href || pathname.startsWith(href + '/')
 }
 
-function SubnavLink({ href, label }: { href: string; label: string }) {
-  const active = useIsActive(href)
+function SubnavLink({ href, label, exact = false }: { href: string; label: string; exact?: boolean }) {
+  const active = useIsActive(href, exact)
   return (
     <Link
       href={href}
@@ -77,9 +79,7 @@ export function CommsSubnav() {
   return (
     <nav aria-label="Communications sections" className="mb-4 rounded-lg border bg-card p-2">
       <div className="flex flex-col gap-2 lg:flex-row lg:flex-wrap lg:items-center">
-        <Link href="/app/comms" className="rounded-md px-2.5 py-1 text-sm font-medium hover:bg-muted">
-          Overview
-        </Link>
+        <SubnavLink href="/app/comms" label="Overview" exact />
         {GROUPS.map((g) => (
           <div key={g.label} className="flex flex-wrap items-center gap-1 border-l pl-2">
             <span className="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{g.label}</span>

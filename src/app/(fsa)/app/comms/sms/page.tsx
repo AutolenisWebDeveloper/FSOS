@@ -6,7 +6,7 @@ import { Numeric } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
 
-// OS-12 Sms Inbox (A2). Replying to a securities-flagged thread is blocked + escalated;
+// OS-12 SMS Inbox (A2). Replying to a securities-flagged thread is blocked + escalated;
 // opt-out (STOP) is honored immediately via the consent/DNC sync.
 export default async function Page() {
   const msgs = await load<{ id: string; direction: string; recipient: string | null; body: string | null; delivery_status: string; blocked_step: string | null; created_at: string }[]>(
@@ -14,7 +14,7 @@ export default async function Page() {
     [],
   )
   return (
-    <ListShell title="Sms Inbox" description="Consented Sms threads. Replies pass the gate; STOP opts out immediately." breadcrumb={[{ label: 'FSA', href: '/app' }, { label: 'Comms', href: '/app/comms' }, { label: 'Sms' }]}>
+    <ListShell title="SMS Inbox" description="Consented SMS threads. Replies pass the gate; STOP opts out immediately." breadcrumb={[{ label: 'FSA', href: '/app' }, { label: 'Comms', href: '/app/comms' }, { label: 'SMS' }]}>
       {!msgs.ok ? (
         <ErrorState description={msgs.kind === 'not_configured' ? 'Database not configured.' : msgs.message} />
       ) : msgs.data.length === 0 ? (

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { configErrorResponse, parseLimit } from '@/lib/http'
+import { configErrorResponse, dbErrorResponse, parseLimit } from '@/lib/http'
 import { requireApiRole } from '@/lib/auth/api'
 
 export const dynamic = 'force-dynamic'
@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
     if (channel === 'sms' || channel === 'email') builder = builder.eq('channel', channel)
     if (status) builder = builder.eq('status', status)
     const { data, error } = await builder
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('comms/conversations', error)
     return NextResponse.json({ conversations: data ?? [] })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed' }, { status: 500 })

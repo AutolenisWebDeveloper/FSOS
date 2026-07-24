@@ -133,7 +133,7 @@
 | admin/ops | 🔶 | 🔶 | 🔶 | 🔶(submit) | 🔶 | 🚫 | 🔶 |
 | compliance/supervisor | ✅(read) | 🚫 | 🚫 | ✅(approve) | ✅ | 🚫 | 🚫 |
 | agency_owner/client | 🚫 | 🚫 | 🚫 | 🚫 | 🚫 | 🔶(reply, consented) | 🚫 |
-> Template approval = compliance/supervisor/super only. All M through the 7-step gate.
+> Template approval = compliance/supervisor/super only. All M through the 13-step gate (`../data-guardrails.md` §5).
 
 ### Documents
 | Role | V | C(upload) | E(meta) | D | X | share |

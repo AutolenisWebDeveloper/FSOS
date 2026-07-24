@@ -346,28 +346,28 @@ try {
     assert.equal(approvedDeleteBlocked, true, 'deleting an APPROVED version must raise')
   })
 
-  t('client CANNOT read social_channels (back-office default-deny, mig 061)', () => {
+  t('client CANNOT read social_channels (back-office default-deny, mig 062)', () => {
     assert.equal(visibleSocialChannels, '0', `expected 0 social channels to a client, got: ${visibleSocialChannels}`)
   })
-  t('client CANNOT read social_content (back-office default-deny, mig 061)', () => {
+  t('client CANNOT read social_content (back-office default-deny, mig 062)', () => {
     assert.equal(visibleSocialContent, '0', `expected 0 social content to a client, got: ${visibleSocialContent}`)
   })
-  t('client CANNOT read social_content_versions (back-office default-deny, mig 061)', () => {
+  t('client CANNOT read social_content_versions (back-office default-deny, mig 062)', () => {
     assert.equal(visibleSocialVersions, '0', `expected 0 social versions to a client, got: ${visibleSocialVersions}`)
   })
-  t('social approval gate: scheduling a non-APPROVED version raises (mig 061 trigger)', () => {
+  t('social approval gate: scheduling a non-APPROVED version raises (mig 062 trigger)', () => {
     assert.equal(socialApprovalGateBlocked, true, 'scheduling an IN_REVIEW version must raise')
   })
-  t('social_content_versions snapshot columns are immutable (mig 061 trigger)', () => {
+  t('social_content_versions snapshot columns are immutable (mig 062 trigger)', () => {
     assert.equal(socialSnapshotBlocked, true, 'updating snapshot on a frozen version must raise')
   })
   t('social_content_versions lifecycle column (status) remains editable', () => {
     assert.equal(socialStatusAllowed, true, 'advancing status must be allowed')
   })
-  t('a PUBLISHED social_content_version cannot be deleted (mig 061 trigger)', () => {
+  t('a PUBLISHED social_content_version cannot be deleted (mig 062 trigger)', () => {
     assert.equal(socialPublishedDeleteBlocked, true, 'deleting a PUBLISHED version must raise')
   })
-  t('social_publish_log is append-only (mig 061 trigger)', () => {
+  t('social_publish_log is append-only (mig 062 trigger)', () => {
     assert.equal(socialPublishLogAppendOnly, true, 'updating an immutable publish-log row must raise')
   })
 

@@ -127,10 +127,13 @@ try {
   // (no client policy) — the proof below asserts a client sees ZERO rows from them.
   psqlFile('supabase/migrations/060_fna_data_model.sql')
   // 061 adds comm_templates.body_text/render_sha/source_key (Slice 9B hybrid render).
-  // Renumbered from 060 after main merged 060_fna_data_model (migration numbers are unique).
   psqlFile('supabase/migrations/061_comm_template_render.sql')
   // 062 adds fna_recommendations (Slice 9) — back-office only; a client sees ZERO rows.
   psqlFile('supabase/migrations/062_fna_recommendations.sql')
+  // 063 adds the Social Content Module (ADR-026). All social_* tables are
+  // back-office only (no client policy) — the proof below asserts a client sees
+  // ZERO rows, and that the approval gate + immutability + append-only triggers fire.
+  psqlFile('supabase/migrations/063_social_content.sql')
 
   // Seed: this client's household + a second household; a life + a securities policy.
   // conversion_deadline/is_with_us are set so every policy also surfaces in the
@@ -185,7 +188,21 @@ try {
       // Slice 9 (mig 062): a human recommendation on this plan — back-office only.
       `insert into fna_recommendations(plan_id, household_id, objective, authored_by) values ` +
       `('77777777-7777-7777-7777-777777777777','22222222-2222-2222-2222-222222222222','Review protection gap','fsa');\n` +
-      `grant select on agency_communication_delegations, comm_assignment_reviews, comm_identity_config, comm_frequency_policy, comm_consent_purposes, comm_conversation_policy, fna_plans, fna_versions, fna_recommendations to authenticated;\n`,
+      // Social module (mig 063): a channel, content, an APPROVED + an IN_REVIEW
+      // version, an APPROVED-gated schedule entry, and a publish-log row. All
+      // social_* tables are back-office only; a client must see NONE even with grant.
+      `insert into social_channels(id, platform, display_name, status) values ` +
+      `('88888888-8888-8888-8888-888888888888','youtube','Test YT','not_configured');\n` +
+      `insert into social_content(id, body, status) values ` +
+      `('99999999-9999-9999-9999-999999999999','Educational tips','DRAFT');\n` +
+      `insert into social_content_versions(id, content_id, version_no, status, snapshot) values ` +
+      `('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','99999999-9999-9999-9999-999999999999',1,'APPROVED','{}'),` +
+      `('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb','99999999-9999-9999-9999-999999999999',2,'IN_REVIEW','{}');\n` +
+      `insert into social_schedule_entries(id, version_id, channel_id, scheduled_at, idempotency_key) values ` +
+      `('cccccccc-cccc-cccc-cccc-cccccccccccc','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','88888888-8888-8888-8888-888888888888', now(), 'sched-1');\n` +
+      `insert into social_publish_log(id, schedule_entry_id, version_id, channel_id, attempt, outcome, platform_post_id) values ` +
+      `('dddddddd-dddd-dddd-dddd-dddddddddddd','cccccccc-cccc-cccc-cccc-cccccccccccc','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','88888888-8888-8888-8888-888888888888',1,'success','yt_123');\n` +
+      `grant select on agency_communication_delegations, comm_assignment_reviews, comm_identity_config, comm_frequency_policy, comm_consent_purposes, comm_conversation_policy, fna_plans, fna_versions, fna_recommendations, social_channels, social_content, social_content_versions, social_schedule_entries, social_publish_log to authenticated;\n`,
   )
   psqlFile(`${L}/seed.sql`)
 
@@ -240,6 +257,32 @@ try {
   const snapshotUpdateBlocked = psqlErrors(`update fna_versions set results = '{"x":1}'::jsonb where ${V};`)
   const statusUpdateAllowed = !psqlErrors(`update fna_versions set status='APPROVED' where ${V};`)
   const approvedDeleteBlocked = psqlErrors(`delete from fna_versions where ${V};`)
+
+  // ── Social module (mig 061) — back-office isolation + gate/immutability triggers ──
+  const visibleSocialChannels = psqlQuery('set role authenticated; select count(*) from social_channels;')
+  const visibleSocialContent = psqlQuery('set role authenticated; select count(*) from social_content;')
+  const visibleSocialVersions = psqlQuery('set role authenticated; select count(*) from social_content_versions;')
+
+  // Approval gate: scheduling the IN_REVIEW version (bbbb) must raise. Runs BEFORE
+  // that version's status is advanced below.
+  const socialApprovalGateBlocked = psqlErrors(
+    "insert into social_schedule_entries(version_id, channel_id, scheduled_at, idempotency_key) values ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb','88888888-8888-8888-8888-888888888888', now(), 'sched-2');",
+  )
+  // Version immutability: a snapshot column cannot change; status can; a PUBLISHED
+  // version cannot be deleted.
+  const socialSnapshotBlocked = psqlErrors(
+    `update social_content_versions set snapshot = '{"x":1}'::jsonb where id='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';`,
+  )
+  const socialStatusAllowed = !psqlErrors(
+    "update social_content_versions set status='PUBLISHED' where id='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';",
+  )
+  const socialPublishedDeleteBlocked = psqlErrors(
+    "delete from social_content_versions where id='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';",
+  )
+  // Append-only publish log: UPDATE must raise.
+  const socialPublishLogAppendOnly = psqlErrors(
+    "update social_publish_log set attempt=2 where id='dddddddd-dddd-dddd-dddd-dddddddddddd';",
+  )
 
   let passed = 0
   const t = (name, fn) => { fn(); passed++; console.log('  ✓', name) }
@@ -310,6 +353,31 @@ try {
   })
   t('an APPROVED fna_version cannot be deleted (mig 060 trigger)', () => {
     assert.equal(approvedDeleteBlocked, true, 'deleting an APPROVED version must raise')
+  })
+
+  t('client CANNOT read social_channels (back-office default-deny, mig 063)', () => {
+    assert.equal(visibleSocialChannels, '0', `expected 0 social channels to a client, got: ${visibleSocialChannels}`)
+  })
+  t('client CANNOT read social_content (back-office default-deny, mig 063)', () => {
+    assert.equal(visibleSocialContent, '0', `expected 0 social content to a client, got: ${visibleSocialContent}`)
+  })
+  t('client CANNOT read social_content_versions (back-office default-deny, mig 063)', () => {
+    assert.equal(visibleSocialVersions, '0', `expected 0 social versions to a client, got: ${visibleSocialVersions}`)
+  })
+  t('social approval gate: scheduling a non-APPROVED version raises (mig 063 trigger)', () => {
+    assert.equal(socialApprovalGateBlocked, true, 'scheduling an IN_REVIEW version must raise')
+  })
+  t('social_content_versions snapshot columns are immutable (mig 063 trigger)', () => {
+    assert.equal(socialSnapshotBlocked, true, 'updating snapshot on a frozen version must raise')
+  })
+  t('social_content_versions lifecycle column (status) remains editable', () => {
+    assert.equal(socialStatusAllowed, true, 'advancing status must be allowed')
+  })
+  t('a PUBLISHED social_content_version cannot be deleted (mig 063 trigger)', () => {
+    assert.equal(socialPublishedDeleteBlocked, true, 'deleting a PUBLISHED version must raise')
+  })
+  t('social_publish_log is append-only (mig 063 trigger)', () => {
+    assert.equal(socialPublishLogAppendOnly, true, 'updating an immutable publish-log row must raise')
   })
 
   console.log(`\nCase 7: all ${passed} RLS firewall assertions passed.`)

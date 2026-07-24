@@ -189,6 +189,18 @@ export async function saveInputs(planId: string, inputs: FnaInputWrite[], actor:
   return { ok: true, data: { written: rows.length, conflicts: conflicts.length } }
 }
 
+/** All input rows for a plan (for calculation + conflict/quality views). */
+export async function getPlanInputs(
+  planId: string,
+): Promise<StoreResult<Array<{ key: string; section: string; value_numeric: number | null; source_label: string }>>> {
+  const { data, error } = await getDb()
+    .from('fna_inputs')
+    .select('key, section, value_numeric, source_label')
+    .eq('plan_id', planId)
+  if (error) return { ok: false, kind: 'error', message: error.message }
+  return { ok: true, data: (data ?? []) as Array<{ key: string; section: string; value_numeric: number | null; source_label: string }> }
+}
+
 // ── Assumption sets ──────────────────────────────────────────────────────────
 /**
  * The active assumption-set for a household: a household-scoped active set if one

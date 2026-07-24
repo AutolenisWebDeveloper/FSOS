@@ -5,7 +5,7 @@
 // (household + members), and a policy. Status is normalized to the
 // household_policies enum; variable products are flagged is_security (§2.1).
 
-import ExcelJS from 'exceljs'
+import { xlsxToMatrix } from './xlsxRaw'
 
 export type PolicyStatus = 'active' | 'lapsed' | 'cancelled' | 'non_renewed' | 'renewed'
 
@@ -49,18 +49,6 @@ export interface ParsedBook {
   skipped: number // rows without a policy number or owner
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function cellStr(v: any): string {
-  if (v == null) return ''
-  if (typeof v === 'object') {
-    if (v instanceof Date) return v.toISOString().slice(0, 10)
-    if (typeof v.text === 'string') return v.text
-    if (typeof v.result !== 'undefined') return String(v.result)
-    if (typeof v.hyperlink === 'string') return v.hyperlink
-  }
-  return String(v).trim()
-}
-
 function toIsoDate(s: string): string | null {
   const t = s.trim()
   if (!t) return null
@@ -98,22 +86,9 @@ function ownerKey(name: string, zip: string): string {
 }
 
 export async function parseInforceBook(buffer: Buffer): Promise<ParsedBook> {
-  const wb = new ExcelJS.Workbook()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await wb.xlsx.load(buffer as any)
-  const ws = wb.worksheets.find((w) => w.rowCount > 0) || wb.worksheets[0]
-  if (!ws) throw new Error('The workbook has no worksheets.')
-
-  // Build a full 1-based matrix (preserve column alignment).
-  const matrix: string[][] = []
-  ws.eachRow({ includeEmpty: false }, (row) => {
-    const cells: string[] = []
-    row.eachCell({ includeEmpty: true }, (cell, col) => {
-      cells[col - 1] = cellStr(cell.value)
-    })
-    for (let i = 0; i < cells.length; i++) if (cells[i] === undefined) cells[i] = ''
-    matrix.push(cells)
-  })
+  // Read the first non-empty worksheet into a column-aligned string matrix.
+  const matrix = await xlsxToMatrix(buffer)
+  if (matrix.length === 0) throw new Error('The workbook has no worksheets.')
 
   // Locate the header row (the one with "Policy Number").
   let headerRow = -1

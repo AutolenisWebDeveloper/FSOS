@@ -54,6 +54,18 @@ export const RescheduleSchema = z.object({
 })
 export type Reschedule = z.infer<typeof RescheduleSchema>
 
+// ── Engagement triage (Slice 5) ──────────────────────────────────────────────
+export const LinkContactSchema = z.object({
+  contact_id: z.string().uuid(),
+})
+export type LinkContact = z.infer<typeof LinkContactSchema>
+
+export const EngagementTaskSchema = z.object({
+  title: z.string().trim().min(1).max(300),
+  due_at: z.string().datetime({ offset: true }).optional(),
+})
+export type EngagementTask = z.infer<typeof EngagementTaskSchema>
+
 // Partial edit of a draft (all fields optional).
 export const ContentEditSchema = ContentDraftSchema.partial()
 export type ContentEdit = z.infer<typeof ContentEditSchema>

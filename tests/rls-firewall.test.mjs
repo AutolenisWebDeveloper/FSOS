@@ -136,6 +136,9 @@ try {
   psqlFile('supabase/migrations/063_social_content.sql')
   // 064 adds social_schedule_entries.next_attempt_at (Slice 3 retry/backoff).
   psqlFile('supabase/migrations/064_social_schedule_retry.sql')
+  // 065 adds social_engagement CRM-linkage columns (Slice 5). work_tasks +
+  // opportunities FKs resolve (mig 009); resolved_contact_id stays a plain uuid.
+  psqlFile('supabase/migrations/065_social_engagement_crm.sql')
 
   // Seed: this client's household + a second household; a life + a securities policy.
   // conversion_deadline/is_with_us are set so every policy also surfaces in the
@@ -204,7 +207,11 @@ try {
       `('cccccccc-cccc-cccc-cccc-cccccccccccc','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','88888888-8888-8888-8888-888888888888', now(), 'sched-1');\n` +
       `insert into social_publish_log(id, schedule_entry_id, version_id, channel_id, attempt, outcome, platform_post_id) values ` +
       `('dddddddd-dddd-dddd-dddd-dddddddddddd','cccccccc-cccc-cccc-cccc-cccccccccccc','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','88888888-8888-8888-8888-888888888888',1,'success','yt_123');\n` +
-      `grant select on agency_communication_delegations, comm_assignment_reviews, comm_identity_config, comm_frequency_policy, comm_consent_purposes, comm_conversation_policy, fna_plans, fna_versions, fna_recommendations, social_channels, social_content, social_content_versions, social_schedule_entries, social_publish_log to authenticated;\n`,
+      // Slice 5 (mig 065): an inbound engagement row with the CRM-linkage columns.
+      // Back-office only; a client must see NONE even with grant.
+      `insert into social_engagement(id, channel_id, platform, engagement_type, author_handle, body, classification, route, resolution_status) values ` +
+      `('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee','88888888-8888-8888-8888-888888888888','youtube','comment','@viewer','Interested — how much?','lead','create_lead','unmatched');\n` +
+      `grant select on agency_communication_delegations, comm_assignment_reviews, comm_identity_config, comm_frequency_policy, comm_consent_purposes, comm_conversation_policy, fna_plans, fna_versions, fna_recommendations, social_channels, social_content, social_content_versions, social_schedule_entries, social_publish_log, social_engagement to authenticated;\n`,
   )
   psqlFile(`${L}/seed.sql`)
 
@@ -297,6 +304,12 @@ try {
   // next_attempt_at column exists (mig 064) and is nullable/back-office.
   const socialNextAttemptExists = !psqlErrors(
     "select next_attempt_at from social_schedule_entries where id='cccccccc-cccc-cccc-cccc-cccccccccccc';",
+  )
+  // Slice 5 (mig 065): social_engagement is back-office; a client sees ZERO rows.
+  const visibleSocialEngagement = psqlQuery('set role authenticated; select count(*) from social_engagement;')
+  // The CRM-linkage columns exist and are queryable (mig 065).
+  const socialEngagementCrmCols = !psqlErrors(
+    "select classification, route, matched_by, linked_task_id, linked_opportunity_id from social_engagement where id='eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';",
   )
 
   let passed = 0
@@ -397,6 +410,12 @@ try {
   t('social publish claim is EXACTLY-ONCE: first claim wins, second is a no-op (mig 064)', () => {
     assert.equal(socialClaimFirst, 'UPDATE 1', `first claim must affect exactly 1 row, got: ${socialClaimFirst}`)
     assert.equal(socialClaimSecond, 'UPDATE 0', `second claim must affect 0 rows, got: ${socialClaimSecond}`)
+  })
+  t('client CANNOT read social_engagement (back-office default-deny, mig 063/065)', () => {
+    assert.equal(visibleSocialEngagement, '0', `expected 0 engagement rows to a client, got: ${visibleSocialEngagement}`)
+  })
+  t('social_engagement CRM-linkage columns exist (mig 065)', () => {
+    assert.equal(socialEngagementCrmCols, true, 'classification/route/matched_by/linked_* columns must exist')
   })
   t('social_schedule_entries.next_attempt_at exists (mig 064)', () => {
     assert.equal(socialNextAttemptExists, true, 'next_attempt_at column must exist')

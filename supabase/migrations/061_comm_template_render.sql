@@ -1,5 +1,5 @@
 -- ─────────────────────────────────────────────────────────
--- Migration: 060_comm_template_render
+-- Migration: 061_comm_template_render
 --
 -- Native Communications Platform — SLICE 9B: hybrid email rendering (ADR-025). Campaign
 -- email templates are authored as React Email components and rendered AT BUILD TIME to a

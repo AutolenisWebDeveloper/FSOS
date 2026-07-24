@@ -12,7 +12,7 @@
 | **Author-time React templates** | `src/emails/`: `_layout` + 3 exemplars (annual-review, term-conversion-window, coverage-gap) + `registry`. `@react-email/*` are **devDependencies** — imported only by the generation script + test, never by app runtime. |
 | **Deterministic render + hash** | `src/emails/render.ts` `renderEmailTemplate` → `{ html, text, sha }` (`sha256(html + ' ' + text)`). The send path never renders React — it dispatches stored bytes. |
 | **Determinism test (byte-identical)** | `tests/email-determinism.test.mjs` bundles the registry with esbuild (installed, no network) and asserts each template renders **byte-identical** HTML + plaintext across runs, that `render_sha` pins those bytes, and green-zone invariants (tokens present, no baked-in opt-out footer, non-empty plaintext). |
-| **Stored, immutable, versioned** | Migration 060: `comm_templates.body_text` (plaintext, part of the approved artifact) + `render_sha` (pins bytes) + `source_key`. |
+| **Stored, immutable, versioned** | migration 061: `comm_templates.body_text` (plaintext, part of the approved artifact) + `render_sha` (pins bytes) + `source_key`. |
 | **Generation (immutable-approval preserved)** | `scripts/build-email-templates.ts` (`npm run templates:build`) renders each component → upserts a DRAFT template. Same `render_sha` → no-op; changed bytes → bump `version` + reset to draft (approval cleared) → re-approval; new `source_key` → v1 draft. |
 | **Multipart send** | `sendThroughGate` gains `ctx.bodyText`; the dispatcher threads it to `sendEmail`'s existing `text` param (email only). Plaintext is personalized + identity-prepended like the HTML, but not tracking-instrumented. Absent → single-part (existing behavior). The campaign broadcast path supplies it from the stored `body_text`. |
 
@@ -35,7 +35,7 @@ reviewer must approve. The determinism test guarantees the render is reproducibl
 
 - `tests/email-determinism.test.mjs` — 9 assertions across 3 templates (byte-identical render, sha pins
   bytes, green-zone invariants).
-- `tests/rls-firewall.test.mjs` — applies migration 060 (real Postgres).
+- `tests/rls-firewall.test.mjs` — applies migration 061 (real Postgres).
 - `npm test` (+`email-determinism`) · `type-check` · `lint` · `test:rls` · `build` — all green.
 
 ## Guardrails touched

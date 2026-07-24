@@ -433,7 +433,11 @@ export async function approveVersion(versionId: string, actor: string): Promise<
   const { data: v, error } = await db.from('fna_versions').select('id, plan_id, status').eq('id', versionId).maybeSingle()
   if (error) return { ok: false, kind: 'error', message: error.message }
   if (!v) return { ok: false, kind: 'not_found', message: 'Version not found' }
-  if (!canTransition(v.status as FnaStatus, 'APPROVED')) {
+  // A solo licensed FSA reviewing IS the approval step, so a CALCULATED version may
+  // be approved directly (the review + approval collapse); UNDER_REVIEW also
+  // approves. Any other status (DRAFT/SUPERSEDED/ARCHIVED/already APPROVED) is
+  // rejected (build instruction §0.B — no review the app doesn't require).
+  if (v.status !== 'CALCULATED' && v.status !== 'UNDER_REVIEW') {
     return { ok: false, kind: 'invalid_transition', message: `cannot approve from ${v.status}` }
   }
   const { data: updated, error: uErr } = await db

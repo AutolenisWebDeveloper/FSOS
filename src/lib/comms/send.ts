@@ -30,6 +30,7 @@ import { resolveSendPolicy } from './policy-resolver'
 import type { MessagePurpose } from './purpose'
 import { evaluateOutboundMessage } from './evaluations'
 import type { AiMessageClass } from './ai-authority'
+import { evaluateDataConfidence, type ClaimField } from './data-confidence'
 
 export interface SendContext {
   channel: Channel
@@ -144,6 +145,14 @@ export interface SendContext {
   purpose?: MessagePurpose
   /** The highest-priority OTHER campaign purpose active for this recipient (collision, §10). */
   activeCampaignPurpose?: MessagePurpose | null
+  /**
+   * Data-confidence context (Slice 6, §13). Set when the message makes SPECIFIC claims
+   * (a conversion deadline, product ownership, lapse/age status, …): pass the fields those
+   * claims depend on. An unverified/conflicting field excludes the send (gate step
+   * data_confidence) and raises a verification task — never sent on a guess. Absent → no
+   * specific-claim constraint (generic invitations are unaffected).
+   */
+  dataConfidence?: { makesSpecificClaims: boolean; claims: ClaimField[]; minConfidence?: number }
 }
 
 export interface SendOutcome {
@@ -329,6 +338,19 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
     collisionPaused = !policy.collision.allowed
     collisionReason = policy.collision.reason
   }
+
+  // Data confidence (Slice 6, §13): a message making SPECIFIC claims on unverified/
+  // conflicting data is excluded (gate step data_confidence) and a verification task is
+  // raised. Opt-in via ctx.dataConfidence; a generic invitation passes.
+  let dataConfidenceOk: boolean | undefined
+  let dataConfidenceReason: string | undefined
+  let dataConfidenceUnverified: string[] = []
+  if (ctx.dataConfidence) {
+    const dc = evaluateDataConfidence(ctx.dataConfidence)
+    dataConfidenceOk = dc.allowed
+    dataConfidenceReason = dc.reason
+    dataConfidenceUnverified = dc.unverified
+  }
   // Operator hours of operation (business-local). A human-typed 1:1 reply from the
   // FSA inbox is NOT gated by business hours — the licensed operator is present and
   // choosing to send. Automated/AI/bulk sends ARE gated (held outside hours).
@@ -439,6 +461,8 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
       onDNC: dnc,
       usesApprovedTemplateOrPolicy: approved,
       isSecurity: ctx.isSecurity === true,
+      dataConfidenceOk,
+      dataConfidenceReason,
     },
   }
 
@@ -537,6 +561,23 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
       reason: ctx.ownershipConflict ?? result.gate.reason ?? 'Ownership could not be resolved.',
       conflict: { ownershipConflict: ctx.ownershipConflict ?? null },
     })
+  }
+
+  // Data-confidence exclusion → raise a verification task (§13). The gate blocked the
+  // send; this is the recovery path (verify the field, then re-enable). Best-effort.
+  if (!result.sent && result.gate.blockedStep === 'data_confidence') {
+    try {
+      // The dispatcher already wrote the comms.blocked audit for this gate block; here we
+      // only add the operator-facing verification task (the §13 recovery path).
+      await db.from('work_tasks').insert({
+        title: `Verify data before sending: ${dataConfidenceUnverified.join(', ') || 'unverified claim'}`,
+        entity_type: convHouseholdId ? 'household' : 'conversation',
+        entity_id: convHouseholdId ?? conversationId,
+        source: 'workflow',
+      })
+    } catch {
+      /* best-effort — the gate has already blocked + escalated the send */
+    }
   }
 
   // Record the per-channel identity state on the thread once a FULL introduction has

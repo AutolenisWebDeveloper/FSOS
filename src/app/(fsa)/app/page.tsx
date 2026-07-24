@@ -8,6 +8,7 @@ import { computeWidgets } from '@/lib/analytics/metrics'
 import { DASHBOARD_WIDGETS } from '@/lib/analytics/catalog'
 import { DashboardGrid } from '@/components/app/DashboardGrid'
 import { TriageBand } from '@/components/app/TriageBand'
+import { FnaPlanningIntelligence } from '@/components/fna/FnaPlanningIntelligence'
 import type { DashboardWidgetPlacement } from '@/lib/validation/schemas'
 
 export const dynamic = 'force-dynamic'
@@ -61,6 +62,10 @@ export default async function FsaDashboardPage() {
       >
         <DashboardGrid widgets={widgets} initialLayout={savedLayout} />
       </Section>
+
+      {/* Slice 10 — planning intelligence surfaced onto the existing dashboard
+          (no new dashboard); self-contained + degrades to nothing when empty. */}
+      <FnaPlanningIntelligence />
     </div>
   )
 }

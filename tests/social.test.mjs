@@ -51,9 +51,11 @@ t('every platform has an adapter', () => {
 })
 
 t('an inactive adapter reports NOT configured even with a credential present', () => {
-  // Slice 1: no adapter is active yet, so a channel with a credential is still
-  // not configured (capabilities gate on `active`).
-  const caps = getAdapter('youtube').capabilities({ platform: 'youtube', hasCredential: true })
+  // An inactive platform (instagram is activated later, in Slice 7) is not
+  // configured even with a credential (capabilities gate on `active`). NOTE:
+  // YouTube is ACTIVE as of Slice 3 — its activation is proven in
+  // tests/social-schedule.test.mjs; use a still-inactive platform here.
+  const caps = getAdapter('instagram').capabilities({ platform: 'instagram', hasCredential: true })
   assert.equal(caps.configured, false)
   assert.equal(caps.canPost, false)
   assert.ok(caps.reason && caps.reason.length > 0, 'must give a human reason')

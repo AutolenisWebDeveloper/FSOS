@@ -15,10 +15,11 @@
 // no API path exists and browser automation is prohibited.
 
 import { BaseSocialPublisher } from './base'
+import { YouTubePublisher } from './youtube'
 import type { PlatformSupport, SocialPlatform } from './types'
 
 export const PLATFORM_SUPPORT: Record<SocialPlatform, PlatformSupport> = {
-  youtube: { canPost: true, canReadEngagement: true, canReadAnalytics: true, active: false }, // slice 3
+  youtube: { canPost: true, canReadEngagement: true, canReadAnalytics: true, active: true }, // slice 3 — ACTIVE
   facebook_page: { canPost: true, canReadEngagement: true, canReadAnalytics: true, active: false }, // slice 4
   instagram: { canPost: true, canReadEngagement: true, canReadAnalytics: true, active: false }, // slice 7
   linkedin_company: { canPost: true, canReadEngagement: true, canReadAnalytics: true, active: false }, // slice 7
@@ -37,7 +38,7 @@ class PlatformPublisher extends BaseSocialPublisher {
 }
 
 export const SOCIAL_ADAPTERS: Record<SocialPlatform, BaseSocialPublisher> = {
-  youtube: new PlatformPublisher('youtube'),
+  youtube: new YouTubePublisher(),
   facebook_page: new PlatformPublisher('facebook_page'),
   instagram: new PlatformPublisher('instagram'),
   linkedin_company: new PlatformPublisher('linkedin_company'),

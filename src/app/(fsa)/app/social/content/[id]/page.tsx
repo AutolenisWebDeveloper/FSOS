@@ -5,6 +5,7 @@ import { DetailShell, ErrorState, StatusBadge } from '@/components/archetypes'
 import { PLATFORM_LABELS, contentStatusBadge } from '@/lib/social/labels'
 import type { SocialPlatform } from '@/lib/social/adapters'
 import { ContentReviewActions } from './review-actions'
+import { ScheduleControl } from './schedule-control'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -52,6 +53,11 @@ export default async function SocialContentDetailPage(props: { params: Promise<{
     ),
   ])
 
+  const channelsRes = await load<{ id: string; platform: string; display_name: string | null; status: string }[]>(
+    (db) => db.from('social_channels').select('id, platform, display_name, status').is('deleted_at', null).order('platform', { ascending: true }),
+    [],
+  )
+
   const breadcrumb = [
     { label: 'FSA', href: '/app' },
     { label: 'Social', href: '/app/social' },
@@ -96,6 +102,17 @@ export default async function SocialContentDetailPage(props: { params: Promise<{
             status={content.status}
             currentVersionId={content.current_version_id}
           />
+
+          {(content.status === 'APPROVED' || content.status === 'SCHEDULED') && content.current_version_id ? (
+            <ScheduleControl
+              versionId={content.current_version_id}
+              channels={(channelsRes.ok ? channelsRes.data : []).map((c) => ({
+                id: c.id,
+                label: (PLATFORM_LABELS[c.platform as SocialPlatform] ?? c.platform) + (c.display_name ? ` · ${c.display_name}` : ''),
+                connected: c.status === 'connected',
+              }))}
+            />
+          ) : null}
         </div>
 
         <div>

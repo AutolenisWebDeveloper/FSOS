@@ -52,14 +52,20 @@ export interface PublisherCapabilities {
   reason?: string
 }
 
-// The minimal, non-secret channel view an adapter needs. Token MATERIAL never
-// travels through this — only whether a usable credential is present.
+// The minimal channel view an adapter needs. For capability discovery, token
+// MATERIAL never travels here — only whether a usable credential is present. For
+// the PUBLISH path, the server-side publisher decrypts the OAuth secret and passes
+// it as `accessToken`; it is populated only in-process on the server, is never
+// logged, and is never serialized into any client-facing shape.
 export interface ChannelContext {
   platform: SocialPlatform
   externalAccountId?: string | null
   // True when the server-side secret store holds a usable, unexpired credential.
   hasCredential: boolean
   tokenExpiresAt?: string | null
+  // SERVER-ONLY, publish path only. Decrypted per-call by the publisher, never
+  // persisted here, never sent to the browser, never logged.
+  accessToken?: string
 }
 
 export interface PublishInput {

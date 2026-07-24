@@ -38,9 +38,16 @@ const base = {
   current_retirement_savings: 100000,
   annual_retirement_contribution: 12000,
   other_annual_income: 20000,
+  years_until_college: 10,
+  annual_college_cost_today: 30000,
+  education_current_savings: 20000,
+  education_annual_contribution: 2000,
 }
 function retShortfall(calc) {
   return calc.results.find((r) => r.formula_id === 'retirement_projection').envelope.output.shortfall
+}
+function eduShortfall(calc) {
+  return calc.results.find((r) => r.formula_id === 'education_funding').envelope.output.shortfall
 }
 
 const results = []
@@ -89,6 +96,18 @@ check('market stress lowers projected savings', () => {
   const p0 = baseCalc.results.find((r) => r.formula_id === 'retirement_projection').envelope.output.projectedSavingsAtRetirement
   const p1 = stress.results.find((r) => r.formula_id === 'retirement_projection').envelope.output.projectedSavingsAtRetirement
   assert.ok(p1 < p0, 'lower returns ⇒ lower projected savings')
+})
+
+check('funding education more reduces the education shortfall', () => {
+  const baseCalc = computeScenario('comprehensive', base, DEFAULT_ASSUMPTIONS, {}, CTX)
+  const more = computeScenario('comprehensive', base, DEFAULT_ASSUMPTIONS, scenarioPreset('education_fund_more').override, CTX)
+  assert.ok(eduShortfall(more) <= eduShortfall(baseCalc), 'more education contribution ⇒ smaller (or equal) shortfall')
+})
+
+check('a lower-cost school reduces the education shortfall', () => {
+  const baseCalc = computeScenario('comprehensive', base, DEFAULT_ASSUMPTIONS, {}, CTX)
+  const cheaper = computeScenario('comprehensive', base, DEFAULT_ASSUMPTIONS, scenarioPreset('lower_cost_school').override, CTX)
+  assert.ok(eduShortfall(cheaper) <= eduShortfall(baseCalc), 'lower cost ⇒ smaller (or equal) shortfall')
 })
 
 check('scenario does not mutate the base inputs/assumptions', () => {

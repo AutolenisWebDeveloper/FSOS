@@ -37,6 +37,9 @@ export const SCENARIO_PRESETS: ScenarioPreset[] = [
   { type: 'market_stress', name: 'Market stress', description: 'Lower returns: 3% pre / 2% post retirement.', override: { assumptions: { investment_return_pre_retirement: 0.03, investment_return_post_retirement: 0.02 } } },
   { type: 'long_life', name: 'Long life (to 100)', description: 'Longevity sensitivity — plan to age 100.', override: { assumptions: { life_expectancy: 100 } } },
   { type: 'delayed_social_security', name: 'Delay Social Security', description: 'Higher other retirement income from delaying Social Security.', override: { inputDeltas: { other_annual_income: 8000 } } },
+  { type: 'education_fund_more', name: 'Fund education +$3k / yr', description: 'Increase annual education contribution by $3,000.', override: { inputDeltas: { education_annual_contribution: 3000 } } },
+  { type: 'lower_cost_school', name: 'Lower-cost school', description: 'Model a school $10,000/yr less expensive.', override: { inputDeltas: { annual_college_cost_today: -10000 } } },
+  { type: 'delay_college', name: 'Delay college 2 years', description: 'Two more years to save before college.', override: { inputDeltas: { years_until_college: 2 } } },
 ]
 
 export function scenarioPreset(type: string): ScenarioPreset | undefined {

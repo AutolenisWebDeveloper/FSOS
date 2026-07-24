@@ -144,4 +144,19 @@ t('compliance blocks still take precedence over the operational deferrals', () =
   assert.equal(r.escalate, true)
 })
 
+t('frequency/collision are LAST — a DNC / delegation / securities failure escalates first', () => {
+  // DNC + frequency-capped → DNC (escalates), not a silent frequency deferral.
+  const dnc = evaluateGate({ draft: 'hi', channel: 'sms', ...okCtx, onDNC: true, withinFrequencyCaps: false })
+  assert.equal(dnc.blockedStep, 'dnc')
+  assert.equal(dnc.escalate, true)
+  // invalid delegation + collision-paused → delegation (escalates), not a silent pause.
+  const del = evaluateGate({ draft: 'hi', channel: 'sms', ...okCtx, delegationValid: false, collisionPaused: true })
+  assert.equal(del.blockedStep, 'delegation')
+  assert.equal(del.escalate, true)
+  // securities + frequency-capped → is_security (firewall escalates), not a deferral.
+  const sec = evaluateGate({ draft: 'hi', channel: 'sms', ...okCtx, isSecurity: true, withinFrequencyCaps: false })
+  assert.equal(sec.blockedStep, 'is_security')
+  assert.equal(sec.escalate, true)
+})
+
 console.log(`\nAll ${passed} policy-engine assertions passed.`)

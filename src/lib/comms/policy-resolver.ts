@@ -37,16 +37,22 @@ export async function hasConsentForPurpose(
   try {
     const db = getDb()
     const consentPurpose = purposeToConsentPurpose(purpose, channel)
-    const { data } = await db
-      .from('consents')
-      .select('status, purpose')
+    // Prefer a purpose-scoped row (companion table, unique per member/channel/purpose).
+    const { data: scoped } = await db
+      .from('comm_consent_purposes')
+      .select('status')
       .eq('member_id', memberId)
       .eq('channel', channel)
-      .or(`purpose.eq.${consentPurpose},purpose.is.null`)
-    const rows = (data ?? []) as { status: string; purpose: string | null }[]
-    const scoped = rows.find((r) => r.purpose === consentPurpose)
-    if (scoped) return scoped.status === 'granted' // scoped row wins (grant or revoke)
-    const channelWide = rows.find((r) => r.purpose === null)
+      .eq('purpose', consentPurpose)
+      .maybeSingle()
+    if (scoped) return scoped.status === 'granted' // scoped grant OR revoke wins
+    // Fall back to the channel-wide consent (consents, unique per member/channel).
+    const { data: channelWide } = await db
+      .from('consents')
+      .select('status')
+      .eq('member_id', memberId)
+      .eq('channel', channel)
+      .maybeSingle()
     return channelWide?.status === 'granted'
   } catch {
     return false

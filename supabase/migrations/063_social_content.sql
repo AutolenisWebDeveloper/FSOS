@@ -1,5 +1,5 @@
 -- ─────────────────────────────────────────────────────────────────────────────
--- Migration: 062_social_content  (Social Content Module — Slice 1, ADR-026)
+-- Migration: 063_social_content  (Social Content Module — Slice 1, ADR-026)
 --
 -- There is NO existing Social Engine (repo-wide search confirms only footer icons
 -- and the legacy command center match "social"). This is a greenfield module INSIDE

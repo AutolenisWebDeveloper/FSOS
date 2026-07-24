@@ -25,7 +25,7 @@ await build({
   logLevel: 'silent',
 })
 const require = createRequire(pathToFileURL(join(process.cwd(), 'tests/')).href)
-const { EMAIL_TEMPLATES, renderEmailTemplate, renderSha } = require(outfile)
+const { EMAIL_TEMPLATES, renderEmailTemplate, renderSha, containsRecommendationLanguage } = require(outfile)
 
 let passed = 0
 const t = (name, fn) => { fn(); passed++; console.log('  ✓', name) }
@@ -59,6 +59,9 @@ for (const tpl of EMAIL_TEMPLATES) {
     assert.ok(text.trim().length > 0, 'plaintext is non-empty')
     // The dispatcher appends the TRAIGA/opt-out footer at send time — it must NOT be baked in.
     assert.ok(!/unsubscribe|reply stop|opt.?out/i.test(html), 'no baked-in opt-out footer (dispatcher adds it)')
+    // §2.2 red line — no individualized recommendation / call-to-action language (build-gated).
+    assert.equal(containsRecommendationLanguage(text), false, 'plaintext must be recommendation-free')
+    assert.equal(containsRecommendationLanguage(html), false, 'HTML must be recommendation-free')
   })
 }
 

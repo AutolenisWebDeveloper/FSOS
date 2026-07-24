@@ -105,6 +105,8 @@ try {
   // 055 reconciles 054: restores consents unique(member,channel) + moves the purpose axis
   // to the companion comm_consent_purposes table (upsert-safe). Both back-office.
   psqlFile('supabase/migrations/055_comm_consent_purpose_reconcile.sql')
+  // 056 adds the conversation-mode pause status + comm_conversation_policy (Slice 4).
+  psqlFile('supabase/migrations/056_comm_conversation_mode.sql')
 
   // Seed: this client's household + a second household; a life + a securities policy.
   // conversion_deadline/is_with_us are set so every policy also surfaces in the
@@ -150,7 +152,7 @@ try {
       `on conflict (member_id, channel) do update set status = excluded.status;\n` +
       `insert into comm_consent_purposes(member_id, channel, purpose, status) values ` +
       `('66666666-6666-6666-6666-666666666666','sms','MARKETING_SMS','granted');\n` +
-      `grant select on agency_communication_delegations, comm_assignment_reviews, comm_identity_config, comm_frequency_policy, comm_consent_purposes to authenticated;\n`,
+      `grant select on agency_communication_delegations, comm_assignment_reviews, comm_identity_config, comm_frequency_policy, comm_consent_purposes, comm_conversation_policy to authenticated;\n`,
   )
   psqlFile(`${L}/seed.sql`)
 
@@ -188,6 +190,9 @@ try {
   )
   const visibleConsentPurposes = psqlQuery(
     'set role authenticated; select count(*) from comm_consent_purposes;',
+  )
+  const visibleConversationPolicy = psqlQuery(
+    'set role authenticated; select count(*) from comm_conversation_policy;',
   )
 
   let passed = 0
@@ -237,6 +242,9 @@ try {
   })
   t('client CANNOT read comm_consent_purposes (back-office default-deny, mig 055)', () => {
     assert.equal(visibleConsentPurposes, '0', `expected 0 consent-purpose rows to a client, got: ${visibleConsentPurposes}`)
+  })
+  t('client CANNOT read comm_conversation_policy (back-office default-deny, mig 056)', () => {
+    assert.equal(visibleConversationPolicy, '0', `expected 0 conversation-policy rows to a client, got: ${visibleConversationPolicy}`)
   })
 
   console.log(`\nCase 7: all ${passed} RLS firewall assertions passed.`)

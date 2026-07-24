@@ -23,6 +23,7 @@ import { recordMessageEvent } from './events'
 import { draftReply } from '@/lib/ai/responder'
 import { sendThroughGate } from './send'
 import { classifyKeyword, type Intent } from './keywords'
+import { shouldPauseOnReply } from './conversation-mode'
 
 export type { Intent } from './keywords'
 export { classifyKeyword } from './keywords'
@@ -62,6 +63,27 @@ async function applyOptOut(conv: Conversation, contact: string): Promise<void> {
     await writeAudit({ actor: 'system', action: 'consent.revoked', entity: 'conversation', entityId: conv.id, diff: { channel: conv.channel, via: 'inbound_stop', contact } })
   } catch {
     /* best-effort; the inbound row is already recorded */
+  }
+}
+
+/**
+ * A genuine customer reply pauses the member's ACTIVE drip enrollments (§10): set them to
+ * PAUSED_FOR_CONVERSATION. The drip runner only advances status='enrolled', so FSOS never
+ * sends a "we haven't heard back" follow-up after the customer has already replied. Paused
+ * enrollments resume later per comm_conversation_policy (resumePausedEnrollments). Returns
+ * the number paused.
+ */
+async function pauseActiveEnrollments(memberId: string, reason: string): Promise<number> {
+  try {
+    const { data } = await getDb()
+      .from('comm_campaign_enrollments')
+      .update({ status: 'paused_for_conversation', paused_at: new Date().toISOString(), pause_reason: reason })
+      .eq('member_id', memberId)
+      .eq('status', 'enrolled')
+      .select('id')
+    return Array.isArray(data) ? data.length : 0
+  } catch {
+    return 0
   }
 }
 
@@ -151,6 +173,22 @@ export async function processInbound(input: InboundInput): Promise<InboundResult
     await applyOptIn(conv, contact)
     result.optedIn = true
     return result
+  }
+
+  // §10 — a genuine reply (anything past the STOP/START keywords, excluding a bare HELP)
+  // pauses the member's active promotional automation so no scheduled "haven't heard
+  // back" message follows the customer's reply. Resumed later per the conversation policy.
+  if (shouldPauseOnReply(result.intent === 'help') && conv.member_id) {
+    const paused = await pauseActiveEnrollments(conv.member_id, `inbound ${input.channel} reply`)
+    if (paused > 0) {
+      await writeAudit({
+        actor: 'system',
+        action: 'entity.updated',
+        entity: 'comm_campaign_enrollment',
+        entityId: conv.member_id,
+        diff: { paused_for_conversation: paused, conversation: conv.id, reason: 'inbound reply' },
+      })
+    }
   }
 
   // Securities-flagged threads are never auto-replied — escalate to the human FSA.

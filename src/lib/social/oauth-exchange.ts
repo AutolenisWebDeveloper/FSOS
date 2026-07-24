@@ -86,11 +86,18 @@ async function completeYouTube(code: string, redirectUri: string, env: Env): Pro
   const externalAccountId = first?.id || 'youtube'
   const displayName = first?.snippet?.title || null
 
+  // Capture the scopes Google actually GRANTED (space-separated) so partial-consent
+  // is detectable downstream; fall back to the requested list if absent.
+  const granted =
+    typeof tok.json.scope === 'string' && tok.json.scope.trim()
+      ? tok.json.scope.trim().split(/\s+/)
+      : SOCIAL_OAUTH_PROVIDERS.youtube.scopes
+
   return {
     envelope: { accessToken, refreshToken, expiresAt, tokenType: 'Bearer' },
     externalAccountId,
     displayName,
-    scopes: SOCIAL_OAUTH_PROVIDERS.youtube.scopes,
+    scopes: granted,
   }
 }
 
@@ -158,11 +165,21 @@ async function completeFacebook(code: string, redirectUri: string, env: Env): Pr
     throw new Error('No Facebook Page is available on this account. Grant the app access to a Page and reconnect.')
   }
 
+  // Capture the permissions actually GRANTED (status === 'granted') so partial-consent
+  // is detectable; fall back to the requested list if the call fails.
+  let granted = SOCIAL_OAUTH_PROVIDERS.facebook_page.scopes
+  const perms = await fetchJson(`${base}/me/permissions?${new URLSearchParams({ access_token: longToken })}`)
+  if (perms.ok && Array.isArray(perms.json.data)) {
+    const rows = perms.json.data as { permission?: string; status?: string }[]
+    const g = rows.filter((r) => r.status === 'granted' && r.permission).map((r) => r.permission as string)
+    if (g.length) granted = g
+  }
+
   return {
     envelope: { accessToken: page.access_token, expiresAt: null, tokenType: 'Bearer' },
     externalAccountId: page.id,
     displayName: page.name || null,
-    scopes: SOCIAL_OAUTH_PROVIDERS.facebook_page.scopes,
+    scopes: granted,
   }
 }
 

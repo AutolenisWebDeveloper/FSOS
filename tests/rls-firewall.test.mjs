@@ -107,6 +107,8 @@ try {
   psqlFile('supabase/migrations/055_comm_consent_purpose_reconcile.sql')
   // 056 adds the conversation-mode pause status + comm_conversation_policy (Slice 4).
   psqlFile('supabase/migrations/056_comm_conversation_mode.sql')
+  // 057 adds comm_campaigns.simulated_at + last_simulation (Slice 6 §14) — applies cleanly.
+  psqlFile('supabase/migrations/057_comm_campaign_simulation.sql')
 
   // Seed: this client's household + a second household; a life + a securities policy.
   // conversion_deadline/is_with_us are set so every policy also surfaces in the

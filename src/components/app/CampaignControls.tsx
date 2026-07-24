@@ -98,15 +98,22 @@ export function CampaignBuilder({ templates }: { templates: { id: string; name: 
   )
 }
 
+interface SimSummary { audience: number; wouldSend: number; excluded: number; excludedByStep: Record<string, number> }
+
 export function CampaignActivateControls({ id, status }: { id: string; status: string }) {
   const router = useRouter()
-  const [busy, setBusy] = React.useState(false)
+  const [busy, setBusy] = React.useState<null | 'activate' | 'pause' | 'simulate'>(null)
+  const [sim, setSim] = React.useState<SimSummary | null>(null)
 
   async function act(action: 'activate' | 'pause') {
-    setBusy(true)
+    setBusy(action)
     const res = await postJson<{ dispatched?: { sent: number; suppressed: number; audience: number }; note?: string }>(`/api/comms/campaigns/${id}`, { action })
-    setBusy(false)
-    if (!res.ok) { toast.error(firstFieldError(res.error).message); return }
+    setBusy(null)
+    if (!res.ok) {
+      // §14 — activation requires a recent simulation pass.
+      if (res.error.reason === 'simulation_required') { toast.error('Run a simulation before activating this campaign (§14).'); return }
+      toast.error(firstFieldError(res.error).message); return
+    }
     if (action === 'activate' && res.data.dispatched) {
       const d = res.data.dispatched
       toast.success(`Dispatched through the gate: ${d.sent} sent, ${d.suppressed} suppressed of ${d.audience}.${res.data.note ? ' ' + res.data.note : ''}`)
@@ -114,9 +121,44 @@ export function CampaignActivateControls({ id, status }: { id: string; status: s
     router.refresh()
   }
 
+  async function simulate() {
+    setBusy('simulate')
+    const res = await postJson<{ simulation: { summary: SimSummary } }>(`/api/comms/campaigns/${id}`, { action: 'simulate' })
+    setBusy(null)
+    if (!res.ok) { toast.error(firstFieldError(res.error).message); return }
+    const s = res.data.simulation.summary
+    setSim(s)
+    toast.success(`Simulation: ${s.wouldSend} would send, ${s.excluded} excluded of ${s.audience}. No messages were sent.`)
+    router.refresh()
+  }
+
   return (
-    <div className="flex gap-2">
-      {status !== 'active' ? <Button size="sm" onClick={() => act('activate')} disabled={busy}>Activate + dispatch</Button> : <Button size="sm" variant="outline" onClick={() => act('pause')} disabled={busy}>Pause</Button>}
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" onClick={simulate} disabled={busy !== null}>
+          {busy === 'simulate' ? 'Simulating…' : 'Run simulation (safe preview)'}
+        </Button>
+        {status !== 'active' ? (
+          <Button size="sm" onClick={() => act('activate')} disabled={busy !== null}>Activate + dispatch</Button>
+        ) : (
+          <Button size="sm" variant="outline" onClick={() => act('pause')} disabled={busy !== null}>Pause</Button>
+        )}
+      </div>
+      {sim && (
+        <div className="rounded-md border p-3 text-sm">
+          <p className="font-medium">Simulation preview (no messages sent)</p>
+          <p className="text-muted-foreground">
+            {sim.wouldSend} would send · {sim.excluded} excluded · {sim.audience} audience
+          </p>
+          {sim.excluded > 0 && (
+            <ul className="mt-1 list-inside list-disc text-xs text-muted-foreground">
+              {Object.entries(sim.excludedByStep).map(([step, n]) => (
+                <li key={step}>{step}: {n}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   )
 }

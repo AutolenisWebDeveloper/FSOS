@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
-import { parseConversionFile, summarizeConversions, type ConversionRecord } from '@/lib/import/conversionList'
+import { parseConversionFile, summarizeConversions, conversionAorHints, conversionSuppressions, type ConversionRecord, type SuppressionChannel } from '@/lib/import/conversionList'
 import { createBatch } from '@/lib/import/auditWriter'
 
 export const dynamic = 'force-dynamic'
@@ -17,11 +17,17 @@ const CHUNK = 500
 // commit  — idempotent enrichment along the aggregate-root spine:
 //   • POLICY: match household_policies by policy_number, set conversion_deadline
 //     (only when blank — no valid data overwritten), fill product/face if blank,
-//     and stash the conversion detail in source_data.
+//     stash the conversion detail in source_data, and backfill the Agent-of-Record
+//     hints ('Serving Agent Number' = series code, 'Agency Name') so the AOR
+//     resolver trigger links agency_partnership_id (only when unset — never
+//     overwrites a good one).
 //   • CONTACT: tag the linked household's owner contact 'term-conversion' (create
 //     it on the book provenance key if the book→contacts sync hasn't run yet, so
 //     it never duplicates), upgrading an 'unknown' type to 'client'.
 //   • MEMBER: ensure the named insured exists on the household (if different).
+//   • DNC: honor the file's channel opt-outs — write dnc_entries per contact+channel
+//     (DNC→call, PWC-Revoked→sms, Unsubscribed/Held→email) and hard-flag a matched
+//     litigator's household do_not_contact, so the §12 dispatcher never auto-sends.
 //   RBAC-gated + audited. GUARDRAILS: term products only — is_security stays
 //   false and nothing recommends a conversion (green-zone identify).
 
@@ -93,6 +99,14 @@ export async function POST(req: NextRequest) {
     return r.conversion_deadline && !p.conversion_deadline
   }).length
 
+  // Agent-of-Record hints: rows carrying a series code / agency name that the
+  // household_policies resolver (fsos_resolve_policy_agency) can link.
+  const aorHinted = matched.filter((r) => Object.keys(conversionAorHints(r)).length > 0).length
+
+  // Do-not-contact ledger entries derived from the channel indicators (every row,
+  // matched or not — an opt-out must be honored regardless of book membership).
+  const suppressionPlan = buildSuppressions(records)
+
   const plan = {
     total_rows: records.length,
     skipped_rows: skipped,
@@ -100,6 +114,10 @@ export async function POST(req: NextRequest) {
     policies_unmatched: unmatched.length,
     deadlines_to_set: deadlinesToSet,
     contacts_to_tag: householdIds.length,
+    aor_hints_to_apply: aorHinted,
+    dnc_entries_to_write: suppressionPlan.entries.length,
+    litigators_flagged: suppressionPlan.litigatorContacts.size,
+    suppressions_by_channel: suppressionPlan.byChannel,
   }
 
   if (mode !== 'commit') {
@@ -116,6 +134,8 @@ export async function POST(req: NextRequest) {
         product: r.product_type,
         convertible_amount: r.convertible_amount,
         conversion_deadline: r.conversion_deadline,
+        agent_of_record: r.agency_name || r.series_code || null,
+        do_not_contact: conversionSuppressions(r).map((s) => s.channel),
         matched: policyByNumber.has(r.policy_number),
       })),
     })
@@ -143,7 +163,10 @@ export async function POST(req: NextRequest) {
         conversion_deadline: r.conversion_deadline,
       }
       const existingData = (p.source_data && typeof p.source_data === 'object') ? p.source_data : {}
-      patch.source_data = { ...existingData, conversion: conv }
+      // AOR hints backfill source_data (existing keys win — never overwrite a good
+      // one); the BEFORE-UPDATE trigger resolves agency_partnership_id when unset.
+      const aor = conversionAorHints(r)
+      patch.source_data = { ...aor, ...existingData, conversion: conv }
       patch.is_with_us = true
       patch.is_security = false
       policyUpdates.push({ id: p.id, patch })
@@ -214,6 +237,35 @@ export async function POST(req: NextRequest) {
       membersAdded = newMembers.length
     }
 
+    // 4. Do-not-contact ledger — honor the file's channel opt-outs so the §12
+    //    dispatcher never auto-contacts an opted-out recipient. Fail-closed and
+    //    member-free: dnc_entries key on the raw contact string + channel; a known
+    //    litigator additionally hard-flags its matched household do_not_contact.
+    let dncWritten = 0
+    if (suppressionPlan.entries.length) {
+      for (let i = 0; i < suppressionPlan.entries.length; i += CHUNK) {
+        const { error } = await db.from('dnc_entries').upsert(suppressionPlan.entries.slice(i, i + CHUNK), { onConflict: 'contact,channel' })
+        if (error) throw new Error(`dnc write failed: ${error.message}`)
+      }
+      dncWritten = suppressionPlan.entries.length
+    }
+    let householdsDncFlagged = 0
+    if (suppressionPlan.litigatorContacts.size) {
+      const litigatorHouseholds = new Set<string>()
+      for (const r of matched) {
+        if (!r.pni_phone) continue
+        if (suppressionPlan.litigatorContacts.has(r.pni_phone.trim())) {
+          const hid = policyByNumber.get(r.policy_number)!.household_id
+          if (hid) litigatorHouseholds.add(hid)
+        }
+      }
+      const hids = Array.from(litigatorHouseholds)
+      for (let i = 0; i < hids.length; i += CHUNK) {
+        const results = await Promise.all(hids.slice(i, i + CHUNK).map((id) => db.from('households').update({ do_not_contact: true }).eq('id', id).is('deleted_at', null)))
+        for (const res of results) { if (res.error) throw new Error(`household DNC flag failed: ${res.error.message}`); householdsDncFlagged++ }
+      }
+    }
+
     const batchId = await createBatch(db, { source: 'conversion', filename: file.name, actor, stats: { plan, total_convertible: summary.total_convertible } })
 
     await writeAudit({ actor, action: 'import.committed', entity: 'conversion_list', entityId: batchId, diff: { filename: file.name, plan, total_convertible: summary.total_convertible } })
@@ -228,6 +280,8 @@ export async function POST(req: NextRequest) {
         contacts_created: contactInserts.length,
         contacts_tagged: contactsTagged,
         members_added: membersAdded,
+        dnc_entries_written: dncWritten,
+        households_dnc_flagged: householdsDncFlagged,
       },
     })
   } catch (e) {
@@ -268,6 +322,31 @@ async function loadContactsByBookKey(db: any, keys: string[]): Promise<ExistingC
   }
   return out
 }
+/**
+ * Dedupe the file's channel opt-outs into dnc_entries rows (one per contact+channel),
+ * the set of litigator contacts (for household hard-flagging), and per-channel counts.
+ */
+function buildSuppressions(records: ConversionRecord[]): {
+  entries: Array<{ contact: string; channel: SuppressionChannel; scope: string; reason: string }>
+  litigatorContacts: Set<string>
+  byChannel: Record<string, number>
+} {
+  const byKey = new Map<string, { contact: string; channel: SuppressionChannel; scope: string; reason: string }>()
+  const litigatorContacts = new Set<string>()
+  const byChannel: Record<string, number> = {}
+  for (const r of records) {
+    for (const s of conversionSuppressions(r)) {
+      if (s.litigator) litigatorContacts.add(s.contact.trim())
+      const key = `${s.contact}|${s.channel}`
+      if (!byKey.has(key)) {
+        byKey.set(key, { contact: s.contact, channel: s.channel, scope: 'external', reason: s.reason })
+        byChannel[s.channel] = (byChannel[s.channel] || 0) + 1
+      }
+    }
+  }
+  return { entries: Array.from(byKey.values()), litigatorContacts, byChannel }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function loadMemberPairs(db: any, householdIds: string[]): Promise<Set<string>> {
   const set = new Set<string>()

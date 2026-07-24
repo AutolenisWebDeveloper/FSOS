@@ -1,17 +1,26 @@
 // src/lib/import/conversionList.ts
 // Parser for a "Life Conversion Opportunities" list — FNWL TERM policies inside
-// their conversion window (a Salesforce export, cleaned). Each row is one policy
-// eligible to convert to permanent coverage: the conversion-expiry date, policy
-// number, owner, insured, product, and convertible amount.
+// their conversion window (a Salesforce/District export, cleaned). Each row is one
+// policy eligible to convert to permanent coverage: the conversion-expiry date,
+// policy number, owner, insured, product, convertible amount, the Agent of Record
+// (series code + agency name), and the recipient's channel consent indicators.
 //
 // The strongest match key is the POLICY NUMBER, which ties each row back to a
 // household_policies row already on the aggregate-root spine (from the District
-// Book). Importing sets the conversion_deadline the Term Conversion agent needs.
+// Book). Importing sets the conversion_deadline the Term Conversion agent needs,
+// hints the Agent-of-Record resolver (source_data → agency_partnership_id), and
+// feeds the do-not-contact ledger so the §12 dispatcher never auto-contacts an
+// opted-out recipient.
+//
+// The District export wraps some cells in HYPERLINKS (an Okta SSO launcher on the
+// policy number, a Salesforce record link on the insured, a mailto: on the email).
+// The DISPLAY text — not the URL — is the value we want; cellStr enforces that so
+// every policy number is its real number, not the identical Okta launch URL.
 //
 // GUARDRAILS: term products only — nothing here is a variable/security product
 // (is_security stays false) and no conversion is recommended (green-zone
-// "identify"). The insured birthday carries month/day only (no year in the
-// file); we store it verbatim and never fabricate a year.
+// "identify"). The insured birthday carries month/day only (the source masks the
+// birth year with a placeholder); we reduce it to MM/DD and never fabricate a year.
 
 import ExcelJS from 'exceljs'
 import { parseCsv } from '@/lib/csv'
@@ -21,12 +30,20 @@ export interface ConversionRecord {
   policy_number: string
   owner_name: string
   insured_name: string | null
-  insured_dob: string | null // month/day only, verbatim (no year in source)
+  insured_dob: string | null // month/day only, verbatim (source masks the year)
   product_type: string | null
   convertible_amount: number | null
   conversion_deadline: string | null // ISO date
   inception_date: string | null
   expiration_date: string | null
+  // Agent of Record (drives agency_partnership_id resolution).
+  series_code: string | null // Farmers serving-agent / series code, e.g. "19-41-594"
+  agency_name: string | null // e.g. "Horacio Villarreal Agency"
+  // Channel consent indicators (drive the do-not-contact ledger).
+  pni_email: string | null
+  pni_phone: string | null
+  email_indicator: string | null // e.g. "✅Unsubscribed", "✅Held", "Not Verified"
+  phone_indicator: string | null // e.g. "CELL, DNC", "PWC Revoked", "DNC Litigator"
   name_key: string
   conversion_key: string // = policy_number (idempotent provenance)
 }
@@ -37,7 +54,7 @@ export interface ConversionParseResult {
   total_convertible: number
 }
 
-// Header aliases (squashed to letters) → canonical field.
+// Header aliases (squashed to letters/digits) → canonical field.
 const ALIASES: Record<string, string> = {
   conversionexpirydate: 'deadline', conversiondeadline: 'deadline', expirydate: 'deadline',
   policynumber: 'policy', policyno: 'policy', policy: 'policy',
@@ -48,17 +65,31 @@ const ALIASES: Record<string, string> = {
   producttype: 'product', product: 'product',
   convertibleamount: 'amount', faceamount: 'amount', amount: 'amount',
   policyexpirationdate: 'expiration', expirationdate: 'expiration', expiration: 'expiration',
+  // Agent of Record.
+  aorwithseriescode: 'series', aor: 'series', seriescode: 'series',
+  servingagentnumber: 'series', servingagentno: 'series', agentnumber: 'series',
+  agentofrecord: 'agency', agencyname: 'agency', agency: 'agency', servingagentname: 'agency',
+  // Consent indicators.
+  pnipreferredemail: 'email', preferredemail: 'email', email: 'email', emailaddress: 'email',
+  pnipreferredphone: 'phone', preferredphone: 'phone', phone: 'phone', phonenumber: 'phone',
+  pniemailindicator: 'email_ind', emailindicator: 'email_ind',
+  pniphoneindicator: 'phone_ind', phoneindicator: 'phone_ind',
 }
 const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
 
+// Render a cell to its DISPLAY string. Hyperlink and rich-text cells carry the
+// human value in `.text`/`.richText` — NEVER return the hyperlink URL when a
+// display value exists (the District export links the policy number to an Okta
+// launch URL that is identical across every row).
 function cellStr(v: unknown): string {
   if (v == null) return ''
   if (typeof v === 'object') {
     if (v instanceof Date) return v.toISOString().slice(0, 10)
-    const o = v as { text?: string; result?: unknown; hyperlink?: string }
-    if (typeof o.text === 'string') return o.text
-    if (typeof o.result !== 'undefined') return String(o.result)
-    if (typeof o.hyperlink === 'string') return o.hyperlink
+    const o = v as { text?: unknown; result?: unknown; hyperlink?: string; richText?: Array<{ text?: string }> }
+    if (Array.isArray(o.richText)) return o.richText.map((t) => t?.text ?? '').join('').trim()
+    if (o.text != null) return typeof o.text === 'object' ? cellStr(o.text) : String(o.text).trim()
+    if (o.result != null) return typeof o.result === 'object' ? cellStr(o.result) : String(o.result).trim()
+    if (typeof o.hyperlink === 'string') return o.hyperlink.trim()
   }
   return String(v).trim()
 }
@@ -66,6 +97,7 @@ function cellStr(v: unknown): string {
 function toIsoDate(s: string): string | null {
   const t = (s || '').trim()
   if (!t) return null
+  if (/error/i.test(t)) return null // "#Error!" cells in the export
   if (/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10)
   const d = new Date(t)
   return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10)
@@ -92,66 +124,66 @@ function normalizeName(raw: string): string {
 
 const nameKey = (s: string) => (s || '').toLowerCase().replace(/[^a-z]/g, '')
 
-// Insured birthday in the source is MM/DD (no year). Keep it verbatim if it looks
-// like a partial date; never coerce a fake year onto it.
+// Insured birthday in the source is month/day only — the birth year is masked with
+// a placeholder (the export renders a current-year date). Reduce a full date to
+// MM/DD and keep a bare MM/DD verbatim; never coerce a fabricated year onto it.
 function normalizeDob(raw: string): string | null {
   const s = (raw || '').trim()
   if (!s) return null
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (iso) return `${Number(iso[2])}/${Number(iso[3])}` // drop the placeholder year
   const m = s.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/)
-  if (m) return m[3] ? `${m[1]}/${m[2]}/${m[3]}` : `${m[1]}/${m[2]}`
+  if (m) return `${Number(m[1])}/${Number(m[2])}` // month/day only
   return s
 }
 
-/** Turn any supported file into a raw string matrix, preserving column order. */
-async function fileToMatrix(buffer: Buffer, filename: string): Promise<string[][]> {
+/** Turn any supported file into raw string matrices (one per worksheet), preserving column order. */
+async function fileToMatrices(buffer: Buffer, filename: string): Promise<string[][][]> {
   const ext = extensionOf(filename)
   if (ext === 'csv' || ext === 'tsv' || ext === 'txt') {
     const text = buffer.toString('utf8')
-    if (ext === 'csv') return parseCsv(text)
-    return text.replace(/\r\n?/g, '\n').split('\n').filter((l) => l.length).map((l) => l.split('\t'))
+    if (ext === 'csv') return [parseCsv(text)]
+    return [text.replace(/\r\n?/g, '\n').split('\n').filter((l) => l.length).map((l) => l.split('\t'))]
   }
   if (ext === 'pdf') {
     const { extractPdfPages, pdfPagesToTable } = await import('@/lib/import/pdf')
     const t = pdfPagesToTable(await extractPdfPages(buffer))
-    return [t.headers, ...t.rows.map((r) => t.headers.map((h) => r[h] ?? ''))]
+    return [[t.headers, ...t.rows.map((r) => t.headers.map((h) => r[h] ?? ''))]]
   }
   if (ext === 'json') {
     const data = JSON.parse(buffer.toString('utf8'))
     const arr: Record<string, unknown>[] = Array.isArray(data) ? data : (data.records ?? data.data ?? [])
     const headers = Array.from(new Set(arr.flatMap((o) => Object.keys(o))))
-    return [headers, ...arr.map((o) => headers.map((h) => (o[h] == null ? '' : String(o[h]))))]
+    return [[headers, ...arr.map((o) => headers.map((h) => (o[h] == null ? '' : String(o[h]))))]]
   }
-  // xlsx (default): ExcelJS first; fall back to the namespace-tolerant reader for
-  // workbooks it can't parse (e.g. prefixed-namespace Salesforce exports).
+  // xlsx (default): ExcelJS first (ALL non-empty worksheets — the District export
+  // splits series codes and agency names across two sheets); fall back to the
+  // namespace-tolerant reader for workbooks ExcelJS can't parse.
   try {
     const wb = new ExcelJS.Workbook()
     await wb.xlsx.load(buffer as unknown as ArrayBuffer)
-    const ws = wb.worksheets.find((w) => w.rowCount > 0) || wb.worksheets[0]
-    if (!ws || ws.rowCount === 0) throw new Error('empty')
-    const matrix: string[][] = []
-    ws.eachRow({ includeEmpty: false }, (row) => {
-      const cells: string[] = []
-      row.eachCell({ includeEmpty: true }, (cell, col) => { cells[col - 1] = cellStr(cell.value) })
-      for (let i = 0; i < cells.length; i++) if (cells[i] === undefined) cells[i] = ''
-      matrix.push(cells)
-    })
-    if (matrix.length > 1) return matrix
+    const sheets: string[][][] = []
+    for (const ws of wb.worksheets) {
+      if (!ws || ws.rowCount === 0) continue
+      const matrix: string[][] = []
+      ws.eachRow({ includeEmpty: false }, (row) => {
+        const cells: string[] = []
+        row.eachCell({ includeEmpty: true }, (cell, col) => { cells[col - 1] = cellStr(cell.value) })
+        for (let i = 0; i < cells.length; i++) if (cells[i] === undefined) cells[i] = ''
+        matrix.push(cells)
+      })
+      if (matrix.length > 1) sheets.push(matrix)
+    }
+    if (sheets.length) return sheets
     throw new Error('no rows')
   } catch {
     const { xlsxToMatrix } = await import('@/lib/import/xlsxRaw')
-    return xlsxToMatrix(buffer)
+    return [await xlsxToMatrix(buffer)]
   }
 }
 
-/**
- * Parse a Life Conversion list. Finds the header row (the export prefixes a
- * title/notes block), maps columns, and drops rows without a policy number (the
- * preamble and the "Total Convertible Amount" footer). Deterministic.
- */
-export async function parseConversionFile(buffer: Buffer, filename: string): Promise<ConversionParseResult> {
-  const matrix = await fileToMatrix(buffer, filename)
-
-  // Locate the header row: the first row that maps at least a policy + one date.
+/** Parse one matrix into conversion records + skipped count, or null if no header row is present. */
+function parseMatrix(matrix: string[][]): { records: ConversionRecord[]; skipped: number } | null {
   let headerRow = -1
   let colMap: Record<string, number> = {}
   for (let r = 0; r < Math.min(matrix.length, 25); r++) {
@@ -160,15 +192,14 @@ export async function parseConversionFile(buffer: Buffer, filename: string): Pro
       const canon = ALIASES[squash(h)]
       if (canon && !(canon in map)) map[canon] = i
     })
-    if ('policy' in map && ('deadline' in map || 'owner' in map)) { headerRow = r; colMap = map; break }
+    if ('policy' in map && ('deadline' in map || 'owner' in map || 'agency' in map)) { headerRow = r; colMap = map; break }
   }
-  if (headerRow === -1) throw new Error('Could not find the conversion header row (need a "Policy Number" column).')
+  if (headerRow === -1) return null
 
   const at = (row: string[], field: string): string => (colMap[field] != null ? (row[colMap[field]] || '').trim() : '')
 
   const records: ConversionRecord[] = []
   let skipped = 0
-  let total = 0
   for (let r = headerRow + 1; r < matrix.length; r++) {
     const row = matrix[r]
     if (!row || row.every((c) => !c || !String(c).trim())) continue
@@ -176,23 +207,130 @@ export async function parseConversionFile(buffer: Buffer, filename: string): Pro
     if (!policy || !/\d/.test(policy)) { skipped++; continue } // preamble / total footer
     const owner = normalizeName(at(row, 'owner'))
     const insured = normalizeName(at(row, 'insured'))
-    const amount = toNum(at(row, 'amount'))
-    if (amount) total += amount
     records.push({
       policy_number: policy,
       owner_name: owner,
       insured_name: insured || null,
       insured_dob: normalizeDob(at(row, 'dob')),
       product_type: at(row, 'product') || null,
-      convertible_amount: amount,
+      convertible_amount: toNum(at(row, 'amount')),
       conversion_deadline: toIsoDate(at(row, 'deadline')),
       inception_date: toIsoDate(at(row, 'inception')),
       expiration_date: toIsoDate(at(row, 'expiration')),
+      series_code: at(row, 'series') || null,
+      agency_name: at(row, 'agency') || null,
+      pni_email: at(row, 'email').toLowerCase() || null,
+      pni_phone: at(row, 'phone') || null,
+      email_indicator: at(row, 'email_ind') || null,
+      phone_indicator: at(row, 'phone_ind') || null,
       name_key: nameKey(owner),
       conversion_key: policy,
     })
   }
-  return { records, skipped, total_convertible: total }
+  return { records, skipped }
+}
+
+// Fill blank fields on `into` from `from` (first non-null wins). Used to merge the
+// same policy across worksheets (Sheet1 carries series code + consent, Sheet2 the
+// agency name). String fields backfill; the primary sheet's value is never replaced.
+function mergeInto(into: ConversionRecord, from: ConversionRecord): void {
+  const keys: (keyof ConversionRecord)[] = [
+    'owner_name', 'insured_name', 'insured_dob', 'product_type', 'convertible_amount',
+    'conversion_deadline', 'inception_date', 'expiration_date', 'series_code', 'agency_name',
+    'pni_email', 'pni_phone', 'email_indicator', 'phone_indicator',
+  ]
+  for (const k of keys) {
+    const cur = into[k]
+    if ((cur == null || cur === '') && from[k] != null && from[k] !== '') {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(into as any)[k] = from[k]
+    }
+  }
+}
+
+/**
+ * Parse a Life Conversion list. Reads every worksheet, finds each header row (the
+ * export prefixes a title/notes block), maps columns, drops rows without a policy
+ * number (preamble + the "Total Convertible Amount" footer), and merges rows that
+ * share a policy number across sheets. Deterministic.
+ */
+export async function parseConversionFile(buffer: Buffer, filename: string): Promise<ConversionParseResult> {
+  const matrices = await fileToMatrices(buffer, filename)
+  const parsed = matrices.map(parseMatrix).filter((x): x is { records: ConversionRecord[]; skipped: number } => x !== null)
+  if (parsed.length === 0) throw new Error('Could not find the conversion header row (need a "Policy Number" column).')
+
+  const merged = new Map<string, ConversionRecord>()
+  let skipped = 0
+  for (const { records, skipped: s } of parsed) {
+    skipped += s
+    for (const rec of records) {
+      const existing = merged.get(rec.policy_number)
+      if (existing) mergeInto(existing, rec)
+      else merged.set(rec.policy_number, rec)
+    }
+  }
+  const records = Array.from(merged.values())
+  const total_convertible = records.reduce((sum, r) => sum + (r.convertible_amount || 0), 0)
+  return { records, skipped, total_convertible }
+}
+
+// ── Agent of Record ────────────────────────────────────────────────────────────
+/**
+ * Build the source_data hint keys the household_policies AOR resolver reads
+ * (fsos_resolve_policy_agency): the series code matches agency_partnerships
+ * .fnwl_serving_agent_no, the agency name matches agency_partnerships.agency_name.
+ * The DB trigger sets agency_partnership_id from these ONLY when it is unset, so
+ * these hints correct/complete the Agent of Record without overwriting a good one.
+ */
+export function conversionAorHints(r: Pick<ConversionRecord, 'series_code' | 'agency_name'>): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (r.series_code && r.series_code.trim()) out['Serving Agent Number'] = r.series_code.trim()
+  if (r.agency_name && r.agency_name.trim()) out['Agency Name'] = r.agency_name.trim()
+  return out
+}
+
+// ── Consent / do-not-contact ─────────────────────────────────────────────────────
+export type SuppressionChannel = 'call' | 'sms' | 'email' | 'all'
+export interface ConversionSuppression {
+  contact: string // phone (call/sms) or lowercased email (email)
+  channel: SuppressionChannel
+  reason: string
+  litigator: boolean // a known TCPA litigator → hard household do-not-contact
+}
+
+/**
+ * Derive do-not-contact ledger entries from a row's channel indicators. Faithful,
+ * conservative, and never fabricates positive consent:
+ *   • phone "DNC Litigator" → all-channel suppression + litigator flag (legal risk)
+ *   • phone "DNC"           → suppress calls (National DNC)
+ *   • phone "PWC Revoked"   → suppress SMS (prior written consent revoked)
+ *   • email "Unsubscribed"  → suppress email
+ *   • email "Held"          → suppress email (bounced / held)
+ * "CELL", "VOIP", "PWC" (still granted), "Not Verified", and "✅" are informational
+ * and never suppress. Emitted only when the channel's contact value is present.
+ */
+export function conversionSuppressions(
+  r: Pick<ConversionRecord, 'pni_phone' | 'pni_email' | 'phone_indicator' | 'email_indicator'>,
+): ConversionSuppression[] {
+  const out: ConversionSuppression[] = []
+  const phone = (r.pni_phone || '').trim()
+  const email = (r.pni_email || '').trim().toLowerCase()
+  const pind = (r.phone_indicator || '').toUpperCase()
+  const eind = (r.email_indicator || '').toUpperCase()
+
+  if (phone) {
+    if (pind.includes('LITIGATOR')) {
+      out.push({ contact: phone, channel: 'all', reason: 'district-file: DNC litigator', litigator: true })
+    } else {
+      if (pind.includes('DNC')) out.push({ contact: phone, channel: 'call', reason: 'district-file: DNC', litigator: false })
+      if (pind.includes('PWC REVOKED')) out.push({ contact: phone, channel: 'sms', reason: 'district-file: prior written consent revoked', litigator: false })
+    }
+  }
+  if (email) {
+    if (eind.includes('UNSUBSCRIBED')) out.push({ contact: email, channel: 'email', reason: 'district-file: unsubscribed', litigator: false })
+    else if (eind.includes('HELD')) out.push({ contact: email, channel: 'email', reason: 'district-file: email held/suppressed', litigator: false })
+  }
+  return out
 }
 
 export interface ConversionSummary {
@@ -200,6 +338,7 @@ export interface ConversionSummary {
   with_owner: number
   with_insured: number
   with_deadline: number
+  with_aor: number
   total_convertible: number
   expiring_12mo: number
   by_product: Record<string, number>
@@ -210,6 +349,7 @@ export function summarizeConversions(records: ConversionRecord[], now: string): 
   let with_owner = 0
   let with_insured = 0
   let with_deadline = 0
+  let with_aor = 0
   let total_convertible = 0
   let expiring_12mo = 0
   const horizon = new Date(now)
@@ -218,10 +358,11 @@ export function summarizeConversions(records: ConversionRecord[], now: string): 
     if (r.owner_name) with_owner++
     if (r.insured_name) with_insured++
     if (r.conversion_deadline) with_deadline++
+    if (r.series_code || r.agency_name) with_aor++
     if (r.convertible_amount) total_convertible += r.convertible_amount
     if (r.conversion_deadline && new Date(r.conversion_deadline) <= horizon) expiring_12mo++
     const p = r.product_type || 'Unknown'
     by_product[p] = (by_product[p] || 0) + 1
   }
-  return { total: records.length, with_owner, with_insured, with_deadline, total_convertible, expiring_12mo, by_product }
+  return { total: records.length, with_owner, with_insured, with_deadline, with_aor, total_convertible, expiring_12mo, by_product }
 }

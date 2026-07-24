@@ -11,6 +11,14 @@
 import { getDb } from '@/lib/supabase/client'
 import { getAdapter, type ChannelContext, type PublishInput } from './adapters'
 import { socialTokenKey } from './secrets'
+import {
+  parseCredential,
+  credentialNeedsRefresh,
+  serializeCredential,
+  isOAuthPlatform,
+  providerConfig,
+} from './oauth'
+import { refreshCredential } from './oauth-exchange'
 import { planAfterAttempt, isDue, type SocialScheduleStatus } from './scheduling'
 
 export interface PublishRunResult {
@@ -100,9 +108,30 @@ async function publishClaimed(
 
   const platform = channel?.platform as ChannelContext['platform']
   let accessToken: string | undefined
+  let tokenExpiresAt = channel?.token_expires_at ?? null
   if (channel?.has_credential) {
     const { data: secret } = await db.rpc('social_channel_secret', { p_channel: entry.channel_id, p_key: socialTokenKey() })
-    accessToken = (secret as string | null) ?? undefined
+    let envelope = parseCredential((secret as string | null) ?? null)
+    // Silently refresh an expiring credential before publishing (YouTube/Google).
+    if (
+      envelope &&
+      isOAuthPlatform(platform) &&
+      providerConfig(platform).supportsRefresh &&
+      credentialNeedsRefresh(envelope, nowMs)
+    ) {
+      const refreshed = await refreshCredential(platform, envelope)
+      if (refreshed) {
+        await db.rpc('social_channel_set_secret', {
+          p_channel: entry.channel_id,
+          p_secret: serializeCredential(refreshed),
+          p_key: socialTokenKey(),
+        })
+        await db.from('social_channels').update({ token_expires_at: refreshed.expiresAt ?? null }).eq('id', entry.channel_id)
+        envelope = refreshed
+        tokenExpiresAt = refreshed.expiresAt ?? null
+      }
+    }
+    accessToken = envelope?.accessToken
   }
 
   const snap = (version?.snapshot ?? {}) as { title?: string; body?: string; link?: string; media?: { url: string }[] }
@@ -116,7 +145,7 @@ async function publishClaimed(
     platform,
     externalAccountId: channel?.external_account_id ?? null,
     hasCredential: !!channel?.has_credential,
-    tokenExpiresAt: channel?.token_expires_at ?? null,
+    tokenExpiresAt,
     accessToken,
   }
 

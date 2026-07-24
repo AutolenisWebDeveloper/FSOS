@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState, useTransition } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Sparkles, Loader2, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -21,6 +22,106 @@ interface KnowledgeArticle {
   title: string
 }
 
+interface AttachedAsset {
+  asset_id: string
+  kind: string
+  file_name: string
+}
+
+interface LibraryAsset {
+  id: string
+  kind: string
+  file_name: string
+  alt_text: string | null
+  preview_url: string | null
+}
+
+// Attach reusable assets from the media library (item 2). Fetches on first open;
+// toggles asset references into the draft. The durable reference is the asset id —
+// the publish URL is minted fresh at publish time.
+function AttachMedia({ attached, onToggle }: { attached: AttachedAsset[]; onToggle: (a: AttachedAsset) => void }) {
+  const [open, setOpen] = useState(false)
+  const [assets, setAssets] = useState<LibraryAsset[] | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  async function openPicker() {
+    setOpen(true)
+    if (assets === null) {
+      setLoading(true)
+      try {
+        const resp = await fetch('/api/social/media')
+        const data = await resp.json().catch(() => ({}))
+        setAssets(resp.ok ? data.assets ?? [] : [])
+      } finally {
+        setLoading(false)
+      }
+    }
+  }
+
+  const isAttached = (id: string) => attached.some((a) => a.asset_id === id)
+
+  return (
+    <div className="rounded-lg border border-shell-border bg-card p-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium text-foreground">Media from library</p>
+        <Button type="button" variant="ghost" size="sm" onClick={open ? () => setOpen(false) : openPicker}>
+          {open ? 'Close' : 'Add from library'}
+        </Button>
+      </div>
+
+      {attached.length > 0 ? (
+        <ul className="mt-2 flex flex-wrap gap-2">
+          {attached.map((a) => (
+            <li key={a.asset_id} className="flex items-center gap-1 rounded-md border border-primary/30 bg-primary-soft px-2 py-0.5 text-xs text-primary">
+              {a.file_name}
+              <button type="button" onClick={() => onToggle(a)} aria-label={`Remove ${a.file_name}`} className="ml-0.5">
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-1 text-xs text-muted-foreground">No assets attached.</p>
+      )}
+
+      {open ? (
+        <div className="mt-3">
+          {loading ? (
+            <p className="text-xs text-muted-foreground">Loading library…</p>
+          ) : assets && assets.length > 0 ? (
+            <ul className="grid gap-2 sm:grid-cols-3">
+              {assets.map((a) => (
+                <li key={a.id}>
+                  <button
+                    type="button"
+                    onClick={() => onToggle({ asset_id: a.id, kind: a.kind, file_name: a.file_name })}
+                    aria-pressed={isAttached(a.id)}
+                    className={
+                      'w-full rounded-md border p-2 text-left text-xs ' +
+                      (isAttached(a.id) ? 'border-primary bg-primary-soft text-primary' : 'border-shell-border bg-background text-muted-foreground')
+                    }
+                  >
+                    <span className="block truncate font-medium">{a.file_name}</span>
+                    <span className="block text-[11px]">{a.kind}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              No assets yet.{' '}
+              <Link href="/app/social/media" className="text-primary hover:underline">
+                Upload to the media library
+              </Link>
+              .
+            </p>
+          )}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 export function DraftEditor({ knowledgeArticles = [] }: { knowledgeArticles?: KnowledgeArticle[] }) {
   const router = useRouter()
   const [title, setTitle] = useState('')
@@ -28,6 +129,7 @@ export function DraftEditor({ knowledgeArticles = [] }: { knowledgeArticles?: Kn
   const [platforms, setPlatforms] = useState<SocialPlatform[]>(['youtube'])
   const [campaignTag, setCampaignTag] = useState('')
   const [link, setLink] = useState('')
+  const [attached, setAttached] = useState<AttachedAsset[]>([])
 
   // AI assist state
   const [topic, setTopic] = useState('')
@@ -42,6 +144,10 @@ export function DraftEditor({ knowledgeArticles = [] }: { knowledgeArticles?: Kn
 
   function togglePlatform(p: SocialPlatform) {
     setPlatforms((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]))
+  }
+
+  function toggleAsset(a: AttachedAsset) {
+    setAttached((prev) => (prev.some((x) => x.asset_id === a.asset_id) ? prev.filter((x) => x.asset_id !== a.asset_id) : [...prev, a]))
   }
 
   async function draftWithAI() {
@@ -96,6 +202,7 @@ export function DraftEditor({ knowledgeArticles = [] }: { knowledgeArticles?: Kn
           platforms,
           campaign_tag: campaignTag || undefined,
           link: link || undefined,
+          media: attached.length ? attached.map((a) => ({ asset_id: a.asset_id, kind: a.kind })) : undefined,
         }),
       })
       const data = await resp.json()
@@ -237,6 +344,7 @@ export function DraftEditor({ knowledgeArticles = [] }: { knowledgeArticles?: Kn
               })}
             </div>
           </fieldset>
+          <AttachMedia attached={attached} onToggle={toggleAsset} />
           {error ? (
             <p className="text-sm text-status-lost" role="alert">
               {error}

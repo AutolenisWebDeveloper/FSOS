@@ -4,6 +4,7 @@ import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { ContentDraftSchema } from '@/lib/social/schema'
 import { listContent, createDraft } from '@/lib/social/content'
+import { incrementMediaUsage } from '@/lib/social/media-service'
 import { assertNotSecuritiesSystemOfRecord } from '@/lib/compliance/firewall'
 
 export const dynamic = 'force-dynamic'
@@ -48,6 +49,10 @@ export async function POST(req: NextRequest) {
   try {
     const res = await createDraft(v.data, { actor })
     if (!res.ok) return NextResponse.json({ error: res.message }, { status: 400 })
+    // Bump usage_count for any library assets this draft references (best-effort;
+    // a counter miss must never fail the draft save).
+    const assetIds = [...new Set((v.data.media ?? []).map((m) => m.asset_id).filter((x): x is string => !!x))]
+    await Promise.all(assetIds.map((id) => incrementMediaUsage(id).catch(() => undefined)))
     await writeAudit({
       actor,
       action: 'entity.created',

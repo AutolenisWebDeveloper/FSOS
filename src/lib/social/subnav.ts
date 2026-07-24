@@ -21,6 +21,7 @@ export const SOCIAL_SUBNAV_GROUPS: SocialSubnavGroup[] = [
     items: [
       { href: '/app/social/content', label: 'Content' },
       { href: '/app/social/content/new', label: 'New' },
+      { href: '/app/social/media', label: 'Media' },
     ],
   },
   {

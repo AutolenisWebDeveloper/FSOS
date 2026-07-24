@@ -13,11 +13,14 @@ export type GateStep =
   | 'consent' // 1
   | 'quiet_hours' // 2 — legal TCPA floor (9–20 recipient-local), non-negotiable
   | 'business_hours' // 2b — operator's hours of operation (can only tighten the floor)
+  | 'frequency' // 2d — per-recipient rate caps (operational deferral, §9)
+  | 'collision' // 2e — higher-priority campaign / active conversation underway (§10)
   | 'delegation' // 2c — FSA↔agency-owner on-behalf-of authority must be ACTIVE + in-scope
   | 'dnc' // 3
   | 'approved_template' // 4
   | 'recommendation' // 5
   | 'is_security' // 6
+  | 'data_confidence' // 6b — specific claim on unverified/conflicting data (§13)
   | 'other_rule' // 7
 
 export interface GateInput {
@@ -41,6 +44,22 @@ export interface GateInput {
   delegationValid?: boolean
   /** 2d — reason delegation failed (from delegation.ts, for escalation + audit). */
   delegationReason?: string
+  /**
+   * 2d(freq) — within the recipient's configured frequency caps (§9). Defaults to TRUE.
+   * A false is a non-escalating DEFERRAL/suppression (held or dropped this cycle), not a
+   * compliance violation — like business_hours, it does not escalate.
+   */
+  withinFrequencyCaps?: boolean
+  /** reason the frequency cap blocked (from frequency.ts). */
+  frequencyReason?: string
+  /**
+   * 2e — a higher-priority campaign or an active conversation is underway, so this
+   * (lower-priority/promotional) send should PAUSE (§10). Defaults to FALSE (no collision).
+   * A true is a non-escalating pause, not a compliance violation.
+   */
+  collisionPaused?: boolean
+  /** reason the send was paused (from frequency.ts evaluateCollision). */
+  collisionReason?: string
   /** 1 — valid channel consent on file. */
   hasConsent: boolean
   /** 2 — recipient-local hour (0–23). */
@@ -58,6 +77,14 @@ export interface GateInput {
   usesApprovedTemplateOrPolicy: boolean
   /** 6 — record/recipient securities-flagged. */
   isSecurity: boolean
+  /**
+   * 6b — the message's specific claims rest on VERIFIED/confident data (§13). Defaults to
+   * TRUE. A false HARD-blocks + escalates: the contact is excluded and a verification task
+   * is raised — never sent on unverified/conflicting data.
+   */
+  dataConfidenceOk?: boolean
+  /** 6b — reason data confidence failed (from data-confidence.ts, for the verification task). */
+  dataConfidenceReason?: string
   /** 7 — any FFS/Farmers/carrier/state/federal rule block. */
   otherRuleBlocked?: boolean
 }
@@ -72,6 +99,8 @@ export interface GateResult {
 
 const BLOCK: Record<GateStep, string> = {
   ownership: 'Ownership could not be resolved — routed to assignment review; not sent.',
+  frequency: 'Recipient frequency cap reached — held for a later cycle.',
+  collision: 'A higher-priority campaign or active conversation is underway — send paused.',
   delegation: 'No active, in-scope delegation to communicate on behalf of the agency owner.',
   consent: 'No valid channel consent on file.',
   quiet_hours: 'Outside permitted quiet hours (9:00–20:00 recipient-local).',
@@ -80,6 +109,7 @@ const BLOCK: Record<GateStep, string> = {
   approved_template: 'Message does not use an approved template or AI policy.',
   recommendation: 'Message contains individualized recommendation / call-to-action language.',
   is_security: 'Securities-flagged record — excluded from automation; route to FFS-supervised handling.',
+  data_confidence: 'Specific claim rests on unverified/conflicting data — excluded; verification task raised.',
   other_rule: 'Blocked by an FFS/Farmers/carrier/state/federal rule.',
 }
 
@@ -111,6 +141,15 @@ export function evaluateGate(input: GateInput): GateResult {
   if (!input.usesApprovedTemplateOrPolicy) return blocked('approved_template')
   if (containsRecommendationLanguage(input.draft)) return blocked('recommendation')
   if (input.isSecurity) return blocked('is_security')
+  // 6b — a specific claim on unverified/conflicting data (§13). Escalates: exclude the
+  // contact + raise a verification task; never send on a guess.
+  if (input.dataConfidenceOk === false) return blocked('data_confidence', true, input.dataConfidenceReason)
   if (input.otherRuleBlocked) return blocked('other_rule')
+  // 2d/2e — operational deferrals (rate caps + priority collision) are checked LAST, so
+  // they only ever defer a COMPLIANCE-CLEAN send: a message that should escalate for an
+  // invalid delegation / DNC / securities / recommendation surfaces + escalates first and
+  // is never masked by a non-escalating deferral (§9/§10; ADR-017).
+  if (input.withinFrequencyCaps === false) return blocked('frequency', false, input.frequencyReason)
+  if (input.collisionPaused === true) return blocked('collision', false, input.collisionReason)
   return { allowed: true, escalate: false }
 }

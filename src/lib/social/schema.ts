@@ -32,7 +32,22 @@ export const ContentDraftSchema = z.object({
   body: z.string().trim().min(1, 'Content body is required').max(10_000),
   content_type: z.enum(['text', 'image', 'video', 'link']).default('text'),
   platforms: z.array(platform).min(1, 'Choose at least one target platform').max(6),
-  media: z.array(z.object({ url: z.string().url(), kind: z.string().max(40).optional() })).max(20).default([]),
+  media: z
+    .array(
+      z
+        .object({
+          // A media item is EITHER an external URL or a reference to a library asset
+          // (asset_id). The library reference is durable; the URL is resolved fresh at
+          // publish time. At least one of the two must be present.
+          url: z.string().url().optional(),
+          asset_id: z.string().uuid().optional(),
+          kind: z.string().max(40).optional(),
+          alt: z.string().max(1000).optional(),
+        })
+        .refine((m) => !!m.url || !!m.asset_id, { message: 'A media item needs a url or an asset_id' }),
+    )
+    .max(20)
+    .default([]),
   link: z.string().url().max(2000).optional(),
   campaign_tag: z.string().trim().max(120).optional(),
   topic_tag: z.string().trim().max(120).optional(),
@@ -69,6 +84,17 @@ export type EngagementTask = z.infer<typeof EngagementTaskSchema>
 // Partial edit of a draft (all fields optional).
 export const ContentEditSchema = ContentDraftSchema.partial()
 export type ContentEdit = z.infer<typeof ContentEditSchema>
+
+// ── Media library (item 2) ───────────────────────────────────────────────────
+// Multipart metadata accompanying an uploaded file (the file itself is validated
+// separately). Client measures dimensions/duration in-browser and sends them.
+export const MediaUploadMetaSchema = z.object({
+  alt_text: z.string().trim().max(1000).optional(),
+  width: z.coerce.number().int().positive().max(100_000).optional(),
+  height: z.coerce.number().int().positive().max(100_000).optional(),
+  duration_seconds: z.coerce.number().nonnegative().max(200_000).optional(),
+})
+export type MediaUploadMeta = z.infer<typeof MediaUploadMetaSchema>
 
 // A reviewer decision on an in-review version.
 export const ReviewDecisionSchema = z.object({

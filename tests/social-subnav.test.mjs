@@ -46,10 +46,11 @@ t('the five mandated groups exist in order', () => {
   )
 })
 
-t('Content groups content + new', () => {
+t('Content groups content + new + media', () => {
   const items = groupOf('Content').items.map((i) => i.href)
   assert.ok(items.includes('/app/social/content'))
   assert.ok(items.includes('/app/social/content/new'))
+  assert.ok(items.includes('/app/social/media'))
 })
 
 t('Publishing groups calendar + queue', () => {
@@ -67,6 +68,7 @@ t('every social surface is reachable from the sub-nav (no orphans)', () => {
   for (const href of [
     '/app/social/content',
     '/app/social/content/new',
+    '/app/social/media',
     '/app/social/calendar',
     '/app/social/queue',
     '/app/social/engagement',

@@ -12,6 +12,7 @@ import { getDb } from '@/lib/supabase/client'
 import { getAdapter, type ChannelContext, type PublishInput } from './adapters'
 import { socialTokenKey } from './secrets'
 import { SCHEDULE_CHANNEL_SELECT } from './channel-view'
+import { signMediaUrl } from './media-service'
 import {
   parseCredential,
   credentialNeedsRefresh,
@@ -137,11 +138,32 @@ async function publishClaimed(
     accessToken = envelope?.accessToken
   }
 
-  const snap = (version?.snapshot ?? {}) as { title?: string; body?: string; link?: string; media?: { url: string }[] }
+  const snap = (version?.snapshot ?? {}) as {
+    title?: string
+    body?: string
+    link?: string
+    media?: { url?: string; asset_id?: string }[]
+  }
+  // Resolve each media item: an external URL as-is, or a library asset_id → a FRESH
+  // signed URL minted now (stored signed URLs expire, so never trust a snapshot URL).
+  const mediaItems = Array.isArray(snap.media) ? snap.media : []
+  const mediaUrls = (
+    await Promise.all(
+      mediaItems.map(async (m) => {
+        if (m.url) return m.url
+        if (m.asset_id) {
+          const { data } = await db.from('social_media_assets').select('storage_ref').eq('id', m.asset_id).is('deleted_at', null).maybeSingle()
+          const ref = (data as { storage_ref?: string } | null)?.storage_ref
+          return ref ? await signMediaUrl(ref) : null
+        }
+        return null
+      }),
+    )
+  ).filter((u): u is string => !!u)
   const input: PublishInput = {
     title: snap.title,
     body: snap.body ?? '',
-    mediaUrls: Array.isArray(snap.media) ? snap.media.map((m) => m.url).filter(Boolean) : [],
+    mediaUrls,
     link: snap.link,
   }
   const ctx: ChannelContext = {

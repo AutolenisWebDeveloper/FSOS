@@ -105,6 +105,15 @@ export default async function SocialCalendarPage({ searchParams }: { searchParam
       }
     >
       <Section title={monthLabel}>
+        {res.data.length === 0 ? (
+          <p className="mb-3 rounded-lg border border-dashed border-shell-border bg-muted/20 p-3 text-sm text-muted-foreground">
+            No posts scheduled this month. Approve content, then schedule it to a connected account from the{' '}
+            <Link href="/app/social/content" className="text-primary hover:underline">
+              content
+            </Link>{' '}
+            review screen.
+          </p>
+        ) : null}
         <div className="overflow-x-auto">
           <div className="min-w-[42rem]">
             <div className="grid grid-cols-7 gap-px border-b border-shell-border">

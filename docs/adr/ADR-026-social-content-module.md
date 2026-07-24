@@ -126,6 +126,48 @@ keeps social leads on the aggregate-root spine (ADR-001).
 - Per-platform adapters carry ongoing maintenance as platform APIs change.
 - Configured-but-inactive adapters add surface area that must be tested for safe inertness.
 
+## Addendum — Account connection (OAuth) at `/app/social/accounts` (Setup)
+
+The publish pipeline (immutable approved version → schedule → adapter) was complete before any
+account could hold a credential, so nothing could actually publish. This addendum closes that gap
+with a real OAuth connection flow for the two ACTIVE platforms (YouTube, Facebook Page). No change
+to the adapter/capability/`not_configured` contract above — this only populates the credential the
+adapters already expect.
+
+**Flow.** Two thin, session-guarded routes drive standard authorization-code OAuth:
+- `GET /api/social/oauth/[platform]/start` — builds the provider authorize URL and redirects the
+  FSA. CSRF is defended by a **signed, expiring `state`** (HMAC-SHA256) that is additionally bound
+  to a per-request **httpOnly nonce cookie**; the callback requires both to match.
+- `GET /api/social/oauth/[platform]/callback` — verifies `state` (constant-time) + nonce, exchanges
+  the code **server-side**, resolves the account identity (YouTube channel / Facebook Page), and
+  stores the credential.
+
+**Token handling.** The credential is a JSON envelope `{ access_token, refresh_token?, expires_at? }`
+encrypted at rest via the existing pgcrypto RPC `social_channel_set_secret` (app-supplied key, DOB
+precedent). `secret_enc` is never selected into any client-facing shape (unchanged from Slice 1) —
+the browser only ever sees `has_credential`, status, expiry, and capability flags. YouTube tokens
+refresh silently (Google refresh grant) at publish time and on the health check; Facebook uses a
+long-lived Page token (re-obtained by reconnecting). Legacy plain-string secrets still parse, so the
+publisher is backward compatible.
+
+**Connection health.** `POST /api/social/channels/[id]/verify` decrypts the credential, refreshes it
+when possible, pings the provider, and records `status` / `last_verified_at` / `last_error` — surfaced
+on each account card with **Check health**, **Reconnect**, and **Disconnect** actions.
+
+**Configuration (config defaults — §4.3).** OAuth is inert until per-environment credentials are set;
+absence degrades to a labeled `not_configured` state, never a crash or an invented integration:
+- YouTube: `SOCIAL_YOUTUBE_CLIENT_ID` / `SOCIAL_YOUTUBE_CLIENT_SECRET`
+- Facebook Page: `SOCIAL_FACEBOOK_APP_ID` / `SOCIAL_FACEBOOK_APP_SECRET`
+- Token encryption key: `SOCIAL_TOKEN_KEY` (reused); optional distinct state key `SOCIAL_OAUTH_STATE_KEY`
+- Redirect URI: `${NEXT_PUBLIC_APP_URL|APP_URL}/api/social/oauth/{platform}/callback` (must be
+  registered with the provider and identical between the start and callback legs).
+
+**Navigation.** A grouped sub-navigation (`SocialSubnav`, driven by the pure `lib/social/subnav`
+config: Content · Publishing · Engagement · Insight · Setup) wraps every social route via
+`(fsa)/app/social/layout.tsx`, mirroring the AI Communications Center — so Calendar and Accounts are
+no longer orphaned. The sidebar entry is **AI Social Media Center** (Overview group), after AI
+Communications Center.
+
 ## Related Documents
 - CLAUDE.md §4.1 (securities firewall), §6 (architecture preservation), §10 (aggregate root),
   §11 (background jobs / AI governance), §13 (fintech quality), §16 (error handling)

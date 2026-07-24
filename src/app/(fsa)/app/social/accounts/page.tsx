@@ -13,6 +13,7 @@ import {
 import { PLATFORM_LABELS, channelStatusBadge } from '@/lib/social/labels'
 import { SOCIAL_PLATFORMS, platformSupport, type SocialPlatform } from '@/lib/social/adapters'
 import { isOAuthPlatform, providerConfig, type OAuthPlatform } from '@/lib/social/oauth'
+import { connectionStatus, type ConnectionStatus } from '@/lib/social/onboarding'
 import { VerifyChannel, DisconnectChannel } from './accounts-client'
 
 export const dynamic = 'force-dynamic'
@@ -27,12 +28,22 @@ const reconnectClasses =
   'inline-flex items-center gap-1 rounded-md border border-shell-border px-2.5 py-1 text-sm font-medium text-foreground transition-colors hover:bg-muted'
 
 function ConnectLink({ platform, label, reconnect = false }: { platform: OAuthPlatform; label: string; reconnect?: boolean }) {
+  // Initial connect goes through the guided permissions step; reconnect (the user
+  // already knows the platform) launches OAuth directly.
+  const href = reconnect ? `/api/social/oauth/${platform}/start` : `/app/social/accounts/connect/${platform}`
   return (
-    <a href={`/api/social/oauth/${platform}/start`} className={reconnect ? reconnectClasses : connectClasses}>
+    <a href={href} className={reconnect ? reconnectClasses : connectClasses}>
       <Link2 className="h-4 w-4" aria-hidden />
       {reconnect ? 'Reconnect' : `Connect ${label}`}
     </a>
   )
+}
+
+const STATE_TONE: Record<ConnectionStatus['tone'], string> = {
+  success: 'text-status-won',
+  warning: 'text-gold-deep',
+  error: 'text-status-lost',
+  neutral: 'text-muted-foreground',
 }
 
 function connectBanner(sp: Record<string, string | string[] | undefined>): { tone: 'success' | 'warning' | 'error'; message: string } | null {
@@ -199,6 +210,19 @@ function ChannelCard({ channel }: { channel: ChannelView }) {
   const caps = channel.capabilities
   const oauth = isOAuthPlatform(channel.platform)
   const label = PLATFORM_LABELS[channel.platform]
+
+  // Honest, single-next-action connection state (denied/partial/expired/revoked/error/
+  // expiring/healthy) derived from the channel's status, expiry, granted scopes, error.
+  const state = connectionStatus({
+    platform: channel.platform,
+    status: channel.status,
+    hasCredential: channel.has_credential,
+    tokenExpiresAt: channel.token_expires_at,
+    lastError: channel.last_error,
+    grantedScopes: channel.scopes,
+  })
+  const needsReconnect = state.nextAction?.kind === 'reconnect'
+
   return (
     <li className="rounded-lg border border-shell-border bg-card p-4">
       <div className="flex items-start justify-between gap-3">
@@ -209,13 +233,14 @@ function ChannelCard({ channel }: { channel: ChannelView }) {
         <StatusBadge status={badge.key} label={badge.label} />
       </div>
 
+      <p className={'mt-2 text-sm ' + STATE_TONE[state.tone]}>{state.summary}</p>
+
       <div className="mt-3 flex flex-wrap gap-2">
         <CapabilityChip label="Post" on={caps.canPost} />
         <CapabilityChip label="Engagement" on={caps.canReadEngagement} />
         <CapabilityChip label="Analytics" on={caps.canReadAnalytics} />
       </div>
 
-      {!caps.configured && caps.reason ? <p className="mt-3 text-sm text-muted-foreground">{caps.reason}</p> : null}
       {channel.token_expires_at ? (
         <p className="mt-2 text-xs text-muted-foreground">
           Credential expires {new Date(channel.token_expires_at).toLocaleDateString()}
@@ -226,13 +251,15 @@ function ChannelCard({ channel }: { channel: ChannelView }) {
           Last verified {new Date(channel.last_verified_at).toLocaleString()}
         </p>
       ) : null}
-      {channel.last_error ? <p className="mt-2 text-xs text-status-lost">{channel.last_error}</p> : null}
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         {oauth ? <VerifyChannel id={channel.id} platformLabel={label} /> : null}
         {oauth ? <ConnectLink platform={channel.platform as OAuthPlatform} label={label} reconnect /> : null}
         <DisconnectChannel id={channel.id} platformLabel={label} />
       </div>
+      {needsReconnect ? (
+        <p className="mt-2 text-xs text-muted-foreground">Reconnecting restores publishing and refreshes permissions.</p>
+      ) : null}
     </li>
   )
 }

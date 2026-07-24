@@ -3,6 +3,10 @@
     "twilio": {
       "type": "http",
       "url": "https://mcp.twilio.com/docs"
+    },
+    "supabase": {
+      "type": "http",
+      "url": "https://mcp.supabase.com/mcp?project_ref=ynxaqeejjmeilpwmuuie"
     }
   }
 }

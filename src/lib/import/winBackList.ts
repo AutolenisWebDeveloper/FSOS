@@ -13,7 +13,7 @@
 // (is_security stays false everywhere) and no product/policy recommendation is
 // implied. Lines of business are captured for context, never as advice.
 
-import ExcelJS from 'exceljs'
+import { xlsxToMatrix } from '@/lib/import/xlsxRaw'
 import { parseCsv } from '@/lib/csv'
 import { extensionOf } from '@/lib/spreadsheet'
 import { emailLc, phoneDigits } from '@/lib/contacts/normalize'
@@ -87,19 +87,6 @@ const ALIASES: Record<string, string> = {
 const squash = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
 const nameKey = (name: string) => (name || '').toLowerCase().replace(/[^a-z]/g, '')
 
-function cellStr(v: unknown): string {
-  if (v == null) return ''
-  if (typeof v === 'object') {
-    if (v instanceof Date) return v.toISOString().slice(0, 10)
-    const o = v as { text?: string; result?: unknown; hyperlink?: string; richText?: Array<{ text?: string }> }
-    if (typeof o.text === 'string') return o.text
-    if (Array.isArray(o.richText)) return o.richText.map((r) => r.text || '').join('')
-    if (typeof o.result !== 'undefined') return String(o.result)
-    if (typeof o.hyperlink === 'string') return o.hyperlink
-  }
-  return String(v).trim()
-}
-
 function parseLob(raw: string): string[] {
   if (!raw) return []
   // Normalize a line-wrap artifact "Specialty- Dwelling" → "Specialty-Dwelling".
@@ -171,26 +158,9 @@ async function fileToMatrix(buffer: Buffer, filename: string): Promise<string[][
     const headers = Array.from(new Set(arr.flatMap((o) => Object.keys(o))))
     return [headers, ...arr.map((o) => headers.map((h) => (o[h] == null ? '' : String(o[h]))))]
   }
-  // xlsx (default): ExcelJS first; fall back to the namespace-tolerant reader for
-  // workbooks it can't parse (e.g. prefixed-namespace Salesforce exports).
-  try {
-    const wb = new ExcelJS.Workbook()
-    await wb.xlsx.load(buffer as unknown as ArrayBuffer)
-    const ws = wb.worksheets.find((w) => w.rowCount > 0) || wb.worksheets[0]
-    if (!ws || ws.rowCount === 0) throw new Error('empty')
-    const matrix: string[][] = []
-    ws.eachRow({ includeEmpty: false }, (row) => {
-      const cells: string[] = []
-      row.eachCell({ includeEmpty: true }, (cell, col) => { cells[col - 1] = cellStr(cell.value) })
-      for (let i = 0; i < cells.length; i++) if (cells[i] === undefined) cells[i] = ''
-      matrix.push(cells)
-    })
-    if (matrix.length > 1) return matrix
-    throw new Error('no rows')
-  } catch {
-    const { xlsxToMatrix } = await import('@/lib/import/xlsxRaw')
-    return xlsxToMatrix(buffer)
-  }
+  // xlsx (default): the namespace-tolerant raw reader (handles standard exports
+  // and prefixed-namespace Salesforce exports alike).
+  return xlsxToMatrix(buffer)
 }
 
 /**

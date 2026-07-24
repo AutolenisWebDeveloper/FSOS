@@ -347,7 +347,8 @@ builder/`.rpc()` only), no SSRF surface, service key never client-exposed, stron
 headers (HSTS/nosniff/frame/referrer).
 
 **Performance:** Strong RSC posture (**250 of 252 pages are server components**; heavy libs
-`exceljs`/`jszip`/`pdf2json` server-only, `pdf2json` dynamically imported + `serverExternalPackages`).
+`jszip`/`pdf2json` server-only, `pdf2json` dynamically imported + `serverExternalPackages`;
+`.xlsx` reading uses a small `jszip`-based reader rather than a full spreadsheet engine).
 Dashboard batches with `Promise.all` + nested selects (no N+1). Risks: **M-7** unindexed spine
 FKs; **L-2** no cursor pagination (fixed `.limit()` truncation on large tables); rate limiter
 weakness under serverless fan-out.

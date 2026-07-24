@@ -1,13 +1,22 @@
 // src/lib/import/xlsxRaw.ts
-// A minimal, namespace-tolerant .xlsx reader used as a fallback when ExcelJS
-// cannot parse a workbook. Some tools (e.g. certain Salesforce "cleaned" exports)
-// write the SpreadsheetML with a namespace prefix — `<x:workbook>`, `<x:sheet>` —
-// which ExcelJS's parser rejects. This reader strips prefixes and pulls cell
-// values straight from the zip, converting Excel date serials to ISO dates.
+// A minimal, namespace-tolerant .xlsx reader. It is the single .xlsx reader for
+// the contact/book import pipeline (it replaced the exceljs dependency, whose
+// transitive packages — glob@7, inflight, rimraf@2, fstream, uuid@8,
+// lodash.isequal — were all deprecated). Every importer only ever needs to read
+// a workbook into a cell matrix, so a small, dependency-light reader built on the
+// JSZip we already ship is a better fit than a full xlsx engine.
 //
-// Scope: reads the first worksheet into a string matrix (row-major, column order
-// preserved). Handles inline/shared strings, plain numbers, and date-formatted
-// numbers. It is deliberately small — not a general xlsx engine.
+// It is deliberately tolerant: some tools (e.g. certain Salesforce "cleaned"
+// exports) write the SpreadsheetML with a namespace prefix — `<x:workbook>`,
+// `<x:sheet>` — which stricter parsers reject. This reader strips prefixes and
+// pulls cell values straight from the zip, converting Excel date serials to ISO
+// dates.
+//
+// Scope: reads the first NON-EMPTY worksheet into a string matrix (row-major,
+// column order preserved). Handles inline/shared strings, plain numbers,
+// booleans, and date-formatted numbers. It is deliberately small — not a general
+// xlsx engine; it does not write workbooks or evaluate formulas (it reads a
+// formula cell's cached value, mirroring the prior exceljs behavior).
 
 import JSZip from 'jszip'
 
@@ -77,22 +86,9 @@ function parseDateStyles(stylesXml: string | undefined): boolean[] {
   return styleIsDate
 }
 
-export async function xlsxToMatrix(buffer: Buffer): Promise<string[][]> {
-  const zip = await JSZip.loadAsync(buffer)
-  const get = async (path: string) => {
-    const f = zip.file(path)
-    return f ? await f.async('string') : undefined
-  }
-  const shared = parseSharedStrings(await get('xl/sharedStrings.xml'))
-  const styleIsDate = parseDateStyles(await get('xl/styles.xml'))
-
-  // First worksheet (by path order).
-  const sheetPath = Object.keys(zip.files)
-    .filter((p) => /^xl\/worksheets\/sheet\d+\.xml$/.test(p))
-    .sort()[0]
-  if (!sheetPath) throw new Error('No worksheet found in the workbook.')
-  const sheetXml = (await get(sheetPath)) || ''
-
+// Parse one worksheet's XML into a string matrix (row-major, column order
+// preserved), resolving shared strings and date styles.
+function sheetToMatrix(sheetXml: string, shared: string[], styleIsDate: boolean[]): string[][] {
   const matrix: string[][] = []
   const rowRe = /<(?:\w+:)?row\b[^>]*>([\s\S]*?)<\/(?:\w+:)?row>/g
   const cellRe = /<(?:\w+:)?c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:\w+:)?c>)/g
@@ -119,6 +115,7 @@ export async function xlsxToMatrix(buffer: Buffer): Promise<string[][]> {
         if (v != null) {
           if (t === 's') value = shared[Number(v)] ?? ''
           else if (t === 'str' || t === 'e') value = xmlUnescape(v)
+          else if (t === 'b') value = v === '1' ? 'true' : 'false' // boolean → matches String(bool)
           else {
             // numeric — a date if its style says so, else the raw number.
             const isDate = s != null && styleIsDate[Number(s)]
@@ -132,4 +129,30 @@ export async function xlsxToMatrix(buffer: Buffer): Promise<string[][]> {
     matrix.push(cells)
   }
   return matrix
+}
+
+export async function xlsxToMatrix(buffer: Buffer): Promise<string[][]> {
+  const zip = await JSZip.loadAsync(buffer)
+  const get = async (path: string) => {
+    const f = zip.file(path)
+    return f ? await f.async('string') : undefined
+  }
+  const shared = parseSharedStrings(await get('xl/sharedStrings.xml'))
+  const styleIsDate = parseDateStyles(await get('xl/styles.xml'))
+
+  // Worksheets in path order (sheet1.xml, sheet2.xml, …).
+  const sheetPaths = Object.keys(zip.files)
+    .filter((p) => /^xl\/worksheets\/sheet\d+\.xml$/.test(p))
+    .sort()
+  if (sheetPaths.length === 0) throw new Error('No worksheet found in the workbook.')
+
+  // Return the first NON-EMPTY worksheet (a workbook can lead with a blank tab),
+  // matching the prior `worksheets.find(w => w.rowCount > 0) || worksheets[0]`.
+  let firstMatrix: string[][] | null = null
+  for (const path of sheetPaths) {
+    const matrix = sheetToMatrix((await get(path)) || '', shared, styleIsDate)
+    if (firstMatrix === null) firstMatrix = matrix
+    if (matrix.some((row) => row.some((c) => c.trim() !== ''))) return matrix
+  }
+  return firstMatrix ?? []
 }

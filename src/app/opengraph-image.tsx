@@ -2,9 +2,16 @@ import { ImageResponse } from 'next/og'
 import { BUSINESS, CONTACT } from '@/lib/site'
 
 // Branded social-share image for link unfurls (Open Graph + Twitter). Generated
-// at the edge from the brand palette — no binary asset to drift. Applies to the
-// homepage / root segment; Next injects it into og:image and twitter:image.
-export const runtime = 'nodejs'
+// from the brand palette — no binary asset to drift. Applies to the homepage /
+// root segment; Next injects it into og:image and twitter:image.
+//
+// No explicit `runtime` export: Next renders this metadata route on its default
+// (Node) runtime, same as robots.ts / sitemap.ts. Pinning `runtime = 'nodejs'`
+// made Vercel treat the generated `/opengraph-image/route` as an
+// explicitly-configured function and warn ("Unable to find source file for page
+// …") when reconciling it against vercel.json's `functions` block — the source is
+// opengraph-image.tsx, not opengraph-image/route.tsx. Omitting the redundant
+// default clears the warning with no behavior change.
 export const alt = `${BUSINESS.agent} — ${BUSINESS.title}, ${BUSINESS.carrier}`
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'

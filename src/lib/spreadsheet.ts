@@ -8,7 +8,7 @@
 // route rejects it with guidance to re-save as .xlsx or .csv.
 // ─────────────────────────────────────────────────────────────────────────
 
-import ExcelJS from 'exceljs'
+import { xlsxToMatrix } from './import/xlsxRaw'
 import { parseCsvRecords, matrixToTable, type CsvTable } from './csv'
 
 export type SpreadsheetKind = 'csv' | 'xlsx'
@@ -25,49 +25,15 @@ export function extensionOf(filename: string): string {
   return (filename.split('.').pop() || '').toLowerCase()
 }
 
-/** Coerce any ExcelJS cell value (string, number, date, formula, rich text, hyperlink) to text. */
-function cellToString(value: unknown): string {
-  if (value === null || value === undefined) return ''
-  if (typeof value === 'string') return value
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
-  if (value instanceof Date) return value.toISOString().slice(0, 10)
-  if (typeof value === 'object') {
-    const v = value as Record<string, unknown>
-    if (typeof v.text === 'string') return v.text // hyperlink cell { text, hyperlink }
-    if (Array.isArray(v.richText)) return v.richText.map((r) => (r as { text?: string }).text || '').join('')
-    if ('result' in v) return cellToString(v.result) // formula cell → its computed result
-    if ('error' in v) return '' // #REF! etc.
-    if (typeof v.hyperlink === 'string') return v.hyperlink
-  }
-  return String(value)
-}
-
 /**
  * Read an .xlsx workbook (first non-empty worksheet) into a cell matrix,
  * then fold it into the shared header-keyed table shape.
  */
 async function parseXlsx(buffer: Buffer): Promise<SpreadsheetTable> {
-  const wb = new ExcelJS.Workbook()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await wb.xlsx.load(buffer as any)
-
-  const ws = wb.worksheets.find((w) => w.rowCount > 0) || wb.worksheets[0]
-  if (!ws) return { kind: 'xlsx', headers: [], rows: [] }
-
-  const matrix: string[][] = []
-  ws.eachRow({ includeEmpty: false }, (row) => {
-    const cells: string[] = []
-    // colNumber is 1-based; fill gaps so column alignment is preserved.
-    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-      cells[colNumber - 1] = cellToString(cell.value)
-    })
-    for (let i = 0; i < cells.length; i++) if (cells[i] === undefined) cells[i] = ''
-    matrix.push(cells)
-  })
-
+  const matrix = await xlsxToMatrix(buffer)
   // Drop fully-blank leading/trailing rows so the header lands on row 0.
   const trimmed = matrix.filter((r) => r.some((c) => (c ?? '').trim() !== ''))
-  return { ...matrixToTable(trimmed), kind: 'xlsx', sheetName: ws.name }
+  return { ...matrixToTable(trimmed), kind: 'xlsx' }
 }
 
 /**

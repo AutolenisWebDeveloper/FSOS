@@ -1,9 +1,28 @@
 -- ═══════════════════════════════════════════════════════════════════
--- Rollback for 049_ghl_schema_retirement.   PREPARED ARTIFACT — NOT live.
--- Restores STRUCTURE (tables, indexes, comments-cleared). The dropped
--- table DATA is restored separately from the precondition-2 export /
--- verified backup (e.g. psql -f ghl_uploads_archive.sql). Test this on a
--- scratch DB before D4 is applied to production (ADR-014 D4 precondition 4).
+-- FSOS — ROLLBACK for GoHighLevel schema retirement (ADR-014 stage D4)
+-- PREPARED / STAGED ARTIFACT — pairs with 049_ghl_schema_retirement.sql.
+-- DO NOT PLACE IN supabase/migrations/. Promote/renumber alongside its
+-- forward file (see RENUMBER AT EXECUTION in the forward migration).
+--
+-- Status:  DRAFT — not applied. Must be applied-then-reverted on a scratch
+--          database as part of the D4 tested-rollback prerequisite
+--          (forward-migration EXECUTION PREREQUISITE 5).
+--
+-- SCOPE / LIMITS:
+--   • Recreates the 12 dropped indexes verbatim from their 002/003/004/023
+--     definitions (partial / unique predicates preserved exactly).
+--   • Recreates the two upload tables' STRUCTURE (columns, PK, FK, RLS) from
+--     their 004 definitions.
+--   • DATA IS NOT RESTORED BY THIS FILE. `ghl_upload_batches` /
+--     `ghl_upload_rows` rows come back only by re-importing the export taken
+--     under forward-migration EXECUTION PREREQUISITE 2, or from the verified
+--     backup. Structure-only recreate ≠ data recovery (see DATA RESTORE below).
+--   • The retained-provenance COMMENTs are cleared back to NULL (cosmetic;
+--     harmless if this block is skipped).
+--
+-- ESTIMATED DURATION: seconds on an empty/near-empty schema — index builds are
+--   the only real cost and both upload tables are low-cardinality. Re-measure on
+--   the scratch-DB rollback test and record the actual figure here before D4.
 -- ═══════════════════════════════════════════════════════════════════
 
 begin;
@@ -86,3 +105,35 @@ comment on column workshop_registrations.ghl_contact_id     is null;
 comment on column workshop_registrations.ghl_opportunity_id is null;
 
 commit;
+
+-- ── DATA RESTORE (manual, after this structural rollback) ──────────
+--   This file recreates STRUCTURE only. Re-import the row data from the export
+--   taken under forward-migration EXECUTION PREREQUISITE 2, e.g.:
+--     psql -f ghl_uploads_archive.sql                     -- from pg_dump --data-only
+--   -- or, for CSV exports:
+--     \copy ghl_upload_batches from 'ghl_upload_batches_export.csv' csv header
+--     \copy ghl_upload_rows     from 'ghl_upload_rows_export.csv'     csv header
+--   Then verify row-count + checksum against the pre-drop capture
+--   (forward-migration EXECUTION PREREQUISITE 4); any delta halts and is
+--   investigated before the rollback is considered complete.
+--
+-- ── ROLLBACK VERIFICATION (run after COMMIT) ───────────────────────
+--   • 12 indexes back (expect 12 rows):
+--       select indexname from pg_indexes
+--       where indexname in (
+--         'idx_customers_ghl_contact','idx_customers_ghl_opportunity',
+--         'idx_cases_ghl_opportunity','idx_activity_ghl','idx_agencies_ghl_contact',
+--         'idx_households_ghl_contact','idx_agency_partnerships_ghl_contact',
+--         'idx_ghl_batches_created','idx_ghl_batches_status','idx_ghl_rows_batch',
+--         'idx_ghl_rows_status','idx_ghl_rows_failed');
+--   • 2 tables back (expect 2 rows):
+--       select table_name from information_schema.tables
+--       where table_name in ('ghl_upload_batches','ghl_upload_rows');
+--   • provenance comments cleared (expect 0 rows):
+--       select (table_name || '.' || column_name)
+--       from information_schema.columns
+--       where column_name like 'ghl\_%' escape '\'
+--         and table_name in ('customers','agencies','commission_cases','activity',
+--                            'households','agency_partnerships','contacts',
+--                            'workshop_registrations')
+--         and col_description(('"'||table_name||'"')::regclass, ordinal_position) is not null;

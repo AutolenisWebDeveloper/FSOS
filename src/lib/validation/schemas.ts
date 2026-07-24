@@ -4,9 +4,14 @@
 // bad writes), and TS types are derived via z.infer — never hand-authored.
 
 import { z } from 'zod'
+// Relative (not @/) so the offline P0/P1 gate tests can compile this file with tsc.
+import { MESSAGE_PURPOSES } from '../comms/purpose'
+import { CLAIM_FIELD_KEYS } from '../comms/claims'
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 export const uuid = z.string().uuid()
+// Message purpose (§9/§10) — single source of truth is src/lib/comms/purpose.ts.
+export const messagePurpose = z.enum(MESSAGE_PURPOSES as [string, ...string[]])
 const optionalEmail = z
   .string()
   .trim()
@@ -456,7 +461,26 @@ export const CampaignCreateSchema = z.object({
     .default({ kind: 'all_consented' }),
   schedule_at: z.string().datetime().optional().or(z.literal('').transform(() => undefined)),
   quiet_hours_ack: z.boolean(),
+  // Slice 7 (§9/§10) — message purpose drives purpose-scoped consent + frequency + collision
+  // at dispatch. Optional: absent → channel-wide consent as before (default-permissive).
+  purpose: messagePurpose.optional(),
+  // Slice 7 (§7) — delegated on-behalf-of send. The represented agency owner and the
+  // authorizing delegation are set TOGETHER (enforced by the refine below). Absent → a
+  // direct FSA campaign (represented agency is still recorded per-recipient at dispatch).
+  represented_agency_owner_id: uuid.optional(),
+  delegation_id: uuid.optional(),
+  // Slice 8 §18 (§13) — specific per-recipient claim fields the message depends on.
+  // Resolved per recipient at dispatch; an unverified/conflicting one excludes the send.
+  claim_fields: z.array(z.enum(CLAIM_FIELD_KEYS as unknown as [string, ...string[]])).max(3).optional(),
 })
+  .refine((v) => !(v.delegation_id && !v.represented_agency_owner_id), {
+    message: 'A delegated campaign needs the represented agency owner.',
+    path: ['represented_agency_owner_id'],
+  })
+  .refine((v) => !(v.represented_agency_owner_id && !v.delegation_id), {
+    message: 'Sending on behalf of an owner needs an authorizing delegation.',
+    path: ['delegation_id'],
+  })
 export type CampaignCreate = z.infer<typeof CampaignCreateSchema>
 
 // ─── Documents (OS-13) ──────────────────────────────────────────────────────────
@@ -525,6 +549,8 @@ export const SequenceCreateSchema = z.object({
   description: z.string().trim().max(1000).optional(),
   channel: z.enum(['email', 'sms']).default('email'),
   category: z.string().trim().max(60).optional(),
+  // Slice 7 (§9/§10) — default message purpose for the drip; enrollments dispatch under it.
+  purpose: messagePurpose.optional(),
   steps: z
     .array(
       z.object({

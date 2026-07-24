@@ -18,6 +18,8 @@ interface RowResult {
   email: string | null
   status: string
   agency_id: string | null
+  contact_status: string | null
+  contact_id: string | null
   error_message: string | null
 }
 
@@ -25,6 +27,7 @@ interface UploadResult {
   filename: string
   total: number
   counts: { success: number; duplicate: number; invalid: number; failed: number }
+  contacts?: { created: number; merged: number; review: number; skipped: number }
   rows: RowResult[]
 }
 
@@ -40,6 +43,20 @@ const STATUS_STYLES: Record<string, string> = {
   duplicate: 'text-muted-foreground',
   invalid: 'text-amber-600 dark:text-amber-500',
   failed: 'text-destructive',
+}
+
+const CONTACT_STYLES: Record<string, string> = {
+  created: 'text-status-won',
+  merged: 'text-primary',
+  review: 'text-amber-600 dark:text-amber-500',
+  skipped: 'text-muted-foreground',
+}
+
+const CONTACT_LABEL: Record<string, string> = {
+  created: 'created',
+  merged: 'merged',
+  review: 'needs review',
+  skipped: '—',
 }
 
 export function AgencyImportForm() {
@@ -149,11 +166,27 @@ export function AgencyImportForm() {
             <CardContent className="space-y-4">
               <div className="flex flex-wrap gap-4 text-sm">
                 <span><strong>{result.counts.success}</strong> created</span>
-                <span className="text-muted-foreground"><strong>{result.counts.duplicate}</strong> duplicate</span>
+                <span className="text-muted-foreground"><strong>{result.counts.duplicate}</strong> already on file</span>
                 <span className="text-muted-foreground"><strong>{result.counts.invalid}</strong> invalid</span>
                 <span className={result.counts.failed ? 'text-destructive' : 'text-muted-foreground'}><strong>{result.counts.failed}</strong> failed</span>
                 <span className="text-muted-foreground">of {result.total} rows</span>
               </div>
+
+              {result.contacts ? (
+                <div className="rounded-lg border bg-muted/30 p-3 text-sm">
+                  <p className="mb-1 font-medium">Contact Center reconciliation</p>
+                  <div className="flex flex-wrap gap-4">
+                    <span><strong>{result.contacts.created}</strong> new contacts</span>
+                    <span className="text-primary"><strong>{result.contacts.merged}</strong> merged into existing</span>
+                    <span className={result.contacts.review ? 'text-amber-600 dark:text-amber-500' : 'text-muted-foreground'}><strong>{result.contacts.review}</strong> need review</span>
+                  </div>
+                  {result.contacts.review > 0 ? (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Ambiguous matches weren’t merged automatically — they’re queued so a person isn’t linked to the wrong record.
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
 
               <div className="overflow-x-auto rounded-lg border">
                 <Table>
@@ -163,7 +196,8 @@ export function AgencyImportForm() {
                       <TableHead>Agent code</TableHead>
                       <TableHead>Owner</TableHead>
                       <TableHead>Email</TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead>Agency</TableHead>
+                      <TableHead>Contact</TableHead>
                       <TableHead>Detail</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -180,7 +214,10 @@ export function AgencyImportForm() {
                           )}
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">{r.email ?? '—'}</TableCell>
-                        <TableCell className={`capitalize ${STATUS_STYLES[r.status] ?? ''}`}>{r.status}</TableCell>
+                        <TableCell className={`capitalize ${STATUS_STYLES[r.status] ?? ''}`}>{r.status === 'success' ? 'created' : r.status}</TableCell>
+                        <TableCell className={`text-xs ${CONTACT_STYLES[r.contact_status ?? ''] ?? 'text-muted-foreground'}`}>
+                          {r.contact_status ? (CONTACT_LABEL[r.contact_status] ?? r.contact_status) : '—'}
+                        </TableCell>
                         <TableCell className="text-xs text-muted-foreground">{r.error_message ?? '—'}</TableCell>
                       </TableRow>
                     ))}

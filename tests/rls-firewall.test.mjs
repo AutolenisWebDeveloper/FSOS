@@ -55,7 +55,7 @@ function psqlFile(path) {
   sh(`runuser -u postgres -- psql -h ${H} -p ${P} -U postgres -d fsos_test -v ON_ERROR_STOP=1 -q -f ${path}`)
 }
 // Run a statement as the postgres superuser; return true iff it raised an error.
-// Used to prove the fna_versions immutability trigger fires (mig 052).
+// Used to prove the fna_versions immutability trigger fires (mig 060).
 function psqlErrors(sql) {
   try {
     sh(`runuser -u postgres -- psql -h ${H} -p ${P} -U postgres -d fsos_test -v ON_ERROR_STOP=1 -q -c ${JSON.stringify(sql)}`)
@@ -100,14 +100,32 @@ try {
   psqlFile('supabase/migrations/012_p1_reviews_comms_commission.sql')
   psqlFile('supabase/migrations/013_p2_operational_enhancement.sql')
   psqlFile('supabase/migrations/015_security_invoker_views.sql')
+  // 033 creates comm_conversations/comm_message_events (needed by the Slice 2 identity
+  // columns in 051). Depends only on 009/013 tables already applied above.
+  psqlFile('supabase/migrations/033_comms_inbound_knowledge_campaigns.sql')
   // 049 adds the delegation + assignment-review tables (Slice 1). Both are back-office
   // only (no client policy) — the proof below asserts a client sees ZERO rows from each.
   psqlFile('supabase/migrations/049_comm_delegation_ownership.sql')
   // 050 tightens comm_assignment_reviews.channel/destination to NOT NULL (#107 follow-up).
   psqlFile('supabase/migrations/050_comm_assignment_review_notnull.sql')
-  // 052 adds the FNA data model (Slice 2). All fna_* tables are back-office only
+  // 053 adds the identity-disclosure config (Slice 2) — back-office, client sees 0 rows.
+  psqlFile('supabase/migrations/053_comm_identity_disclosure.sql')
+  // 054 adds the consent purpose axis + comm_frequency_policy (Slice 3) — back-office config.
+  psqlFile('supabase/migrations/054_comm_purpose_frequency.sql')
+  // 055 reconciles 054: restores consents unique(member,channel) + moves the purpose axis
+  // to the companion comm_consent_purposes table (upsert-safe). Both back-office.
+  psqlFile('supabase/migrations/055_comm_consent_purpose_reconcile.sql')
+  // 056 adds the conversation-mode pause status + comm_conversation_policy (Slice 4).
+  psqlFile('supabase/migrations/056_comm_conversation_mode.sql')
+  // 057 adds comm_campaigns.simulated_at + last_simulation (Slice 6 §14) — applies cleanly.
+  psqlFile('supabase/migrations/057_comm_campaign_simulation.sql')
+  // 058 adds campaign/sequence purpose + delegated-sender builder cols (Slice 7 §15/§16).
+  psqlFile('supabase/migrations/058_comm_builder_purpose_delegation.sql')
+  // 059 adds comm_campaigns.claim_fields (Slice 8 §18 data-confidence declaration).
+  psqlFile('supabase/migrations/059_comm_campaign_claim_fields.sql')
+  // 060 adds the FNA data model (Slice 2). All fna_* tables are back-office only
   // (no client policy) — the proof below asserts a client sees ZERO rows from them.
-  psqlFile('supabase/migrations/052_fna_data_model.sql')
+  psqlFile('supabase/migrations/060_fna_data_model.sql')
 
   // Seed: this client's household + a second household; a life + a securities policy.
   // conversion_deadline/is_with_us are set so every policy also surfaces in the
@@ -140,14 +158,26 @@ try {
       `('44444444-4444-4444-4444-444444444444','55555555-5555-5555-5555-555555555555','ACTIVE');\n` +
       `insert into comm_assignment_reviews(channel, destination, household_id, reason) values ` +
       `('sms','+15550100','22222222-2222-2222-2222-222222222222','ownership unresolved: no agency owner');\n` +
-      `grant select on agency_communication_delegations, comm_assignment_reviews to authenticated;\n` +
-      // Slice 2 (mig 052): an FNA plan + an immutable version on this client's household.
+      // Slice 3 hotfix (mig 055): PROVE the consents onConflict(member_id,channel) arbiter
+      // is restored — if 055 failed to re-add the unique constraint, this upsert errors and
+      // (ON_ERROR_STOP=1) the whole proof fails. Then a companion purpose row (back-office).
+      `insert into household_members(id, household_id, full_name) values ` +
+      `('66666666-6666-6666-6666-666666666666','22222222-2222-2222-2222-222222222222','Member One');\n` +
+      `insert into consents(member_id, household_id, channel, status) values ` +
+      `('66666666-6666-6666-6666-666666666666','22222222-2222-2222-2222-222222222222','sms','granted') ` +
+      `on conflict (member_id, channel) do update set status = excluded.status;\n` +
+      `insert into consents(member_id, household_id, channel, status) values ` +
+      `('66666666-6666-6666-6666-666666666666','22222222-2222-2222-2222-222222222222','sms','revoked') ` +
+      `on conflict (member_id, channel) do update set status = excluded.status;\n` +
+      `insert into comm_consent_purposes(member_id, channel, purpose, status) values ` +
+      `('66666666-6666-6666-6666-666666666666','sms','MARKETING_SMS','granted');\n` +
+      // Slice 2 (mig 060): an FNA plan + an immutable version on this client's household.
       // Both fna_* tables are back-office only; a client must see NEITHER even with grant.
       `insert into fna_plans(id, household_id, plan_type, status) values ` +
-      `('66666666-6666-6666-6666-666666666666','22222222-2222-2222-2222-222222222222','comprehensive','CALCULATED');\n` +
+      `('77777777-7777-7777-7777-777777777777','22222222-2222-2222-2222-222222222222','comprehensive','CALCULATED');\n` +
       `insert into fna_versions(plan_id, version_no, assumption_set_version, engine_version) values ` +
-      `('66666666-6666-6666-6666-666666666666', 1, 'default-v1', '1.0.0');\n` +
-      `grant select on fna_plans, fna_versions to authenticated;\n`,
+      `('77777777-7777-7777-7777-777777777777', 1, 'default-v1', '1.0.0');\n` +
+      `grant select on agency_communication_delegations, comm_assignment_reviews, comm_identity_config, comm_frequency_policy, comm_consent_purposes, comm_conversation_policy, fna_plans, fna_versions to authenticated;\n`,
   )
   psqlFile(`${L}/seed.sql`)
 
@@ -177,15 +207,27 @@ try {
   const visibleAssignments = psqlQuery(
     'set role authenticated; select count(*) from comm_assignment_reviews;',
   )
+  const visibleIdentityConfig = psqlQuery(
+    'set role authenticated; select count(*) from comm_identity_config;',
+  )
+  const visibleFrequencyPolicy = psqlQuery(
+    'set role authenticated; select count(*) from comm_frequency_policy;',
+  )
+  const visibleConsentPurposes = psqlQuery(
+    'set role authenticated; select count(*) from comm_consent_purposes;',
+  )
+  const visibleConversationPolicy = psqlQuery(
+    'set role authenticated; select count(*) from comm_conversation_policy;',
+  )
 
-  // Slice 2 (mig 052): client must see zero FNA plan / version rows.
+  // Slice 2 (mig 060): client must see zero FNA plan / version rows.
   const visibleFnaPlans = psqlQuery('set role authenticated; select count(*) from fna_plans;')
   const visibleFnaVersions = psqlQuery('set role authenticated; select count(*) from fna_versions;')
 
-  // Slice 2 (mig 052): fna_versions immutability trigger. As the superuser (RLS
+  // Slice 2 (mig 060): fna_versions immutability trigger. As the superuser (RLS
   // bypassed) prove: a snapshot column cannot be mutated; a lifecycle column
   // (status) can; and an APPROVED version cannot be deleted.
-  const V = "plan_id='66666666-6666-6666-6666-666666666666'"
+  const V = "plan_id='77777777-7777-7777-7777-777777777777'"
   const snapshotUpdateBlocked = psqlErrors(`update fna_versions set results = '{"x":1}'::jsonb where ${V};`)
   const statusUpdateAllowed = !psqlErrors(`update fna_versions set status='APPROVED' where ${V};`)
   const approvedDeleteBlocked = psqlErrors(`delete from fna_versions where ${V};`)
@@ -229,20 +271,32 @@ try {
   t('client CANNOT read comm_assignment_reviews (back-office default-deny, mig 049)', () => {
     assert.equal(visibleAssignments, '0', `expected 0 assignment reviews to a client, got: ${visibleAssignments}`)
   })
+  t('client CANNOT read comm_identity_config (back-office default-deny, mig 053)', () => {
+    assert.equal(visibleIdentityConfig, '0', `expected 0 identity-config rows to a client, got: ${visibleIdentityConfig}`)
+  })
+  t('client CANNOT read comm_frequency_policy (back-office default-deny, mig 054)', () => {
+    assert.equal(visibleFrequencyPolicy, '0', `expected 0 frequency-policy rows to a client, got: ${visibleFrequencyPolicy}`)
+  })
+  t('client CANNOT read comm_consent_purposes (back-office default-deny, mig 055)', () => {
+    assert.equal(visibleConsentPurposes, '0', `expected 0 consent-purpose rows to a client, got: ${visibleConsentPurposes}`)
+  })
+  t('client CANNOT read comm_conversation_policy (back-office default-deny, mig 056)', () => {
+    assert.equal(visibleConversationPolicy, '0', `expected 0 conversation-policy rows to a client, got: ${visibleConversationPolicy}`)
+  })
 
-  t('client CANNOT read fna_plans (back-office default-deny, mig 052)', () => {
+  t('client CANNOT read fna_plans (back-office default-deny, mig 060)', () => {
     assert.equal(visibleFnaPlans, '0', `expected 0 FNA plans to a client, got: ${visibleFnaPlans}`)
   })
-  t('client CANNOT read fna_versions (back-office default-deny, mig 052)', () => {
+  t('client CANNOT read fna_versions (back-office default-deny, mig 060)', () => {
     assert.equal(visibleFnaVersions, '0', `expected 0 FNA versions to a client, got: ${visibleFnaVersions}`)
   })
-  t('fna_versions snapshot columns are immutable (mig 052 trigger)', () => {
+  t('fna_versions snapshot columns are immutable (mig 060 trigger)', () => {
     assert.equal(snapshotUpdateBlocked, true, 'updating results on a frozen version must raise')
   })
   t('fna_versions lifecycle column (status) remains editable', () => {
     assert.equal(statusUpdateAllowed, true, 'advancing status must be allowed')
   })
-  t('an APPROVED fna_version cannot be deleted (mig 052 trigger)', () => {
+  t('an APPROVED fna_version cannot be deleted (mig 060 trigger)', () => {
     assert.equal(approvedDeleteBlocked, true, 'deleting an APPROVED version must raise')
   })
 

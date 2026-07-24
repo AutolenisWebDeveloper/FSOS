@@ -32,7 +32,7 @@ Forces:
   `is_super()`/`has_role()` RLS helpers.
 
 ## Decision
-Additive migration **052** (050 was the head when this slice began and 051 was
+Additive migration **060** (050 was the head when this slice began and 051 was
 taken by the agency-directory import merged from main — the build instruction's
 "start at 049" is stale) adds an `fna_*` table family. All money/rate values are
 stored as `numeric`; the engine (ADR-015) remains the only place math runs.

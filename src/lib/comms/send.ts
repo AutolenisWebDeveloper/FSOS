@@ -24,6 +24,13 @@ import { recordMessageEvent } from './events'
 import { personalize, type RecipientContext } from './personalize'
 import { instrumentEmailHtml } from './tracking'
 import { resolveDelegation, enqueueAssignmentReview } from './ownership'
+import { resolveIdentityDisclosure, type IdentityContext } from './identity-resolver'
+import { prependIdentityDisclosure } from './identity'
+import { resolveSendPolicy } from './policy-resolver'
+import type { MessagePurpose } from './purpose'
+import { evaluateOutboundMessage } from './evaluations'
+import type { AiMessageClass } from './ai-authority'
+import { evaluateDataConfidence, type ClaimField } from './data-confidence'
 
 export interface SendContext {
   channel: Channel
@@ -73,6 +80,14 @@ export interface SendContext {
    */
   aiAuthorAgentKey?: string
   /**
+   * The AI message CLASS (§11, Slice 5). When set on an aiGenerated send, the authority
+   * matrix + §12 evaluations run BEFORE dispatch: a draft-only/blocked class or any
+   * evaluation failure is NOT auto-sent — it is recorded as a draft on agent_actions and
+   * escalated to the licensed FSA. Absent → existing behavior (the gate's approved-AI-
+   * policy check still governs). Enforced through code + classification, not prompts.
+   */
+  aiMessageClass?: AiMessageClass | string
+  /**
    * A 1:1 reply personally typed by an authenticated, licensed operator (the FSA
    * inbox). The human IS the content approval for gate step 4 — but recommendation
    * (5), securities (6), consent (1), quiet-hours (2), and DNC (3) are STILL
@@ -113,6 +128,31 @@ export interface SendContext {
   ownershipResolved?: boolean
   /** Human-readable reason ownership is unresolved (surfaced in the review queue + audit). */
   ownershipConflict?: string
+  /**
+   * First-contact identity disclosure context (Slice 2, §8). When present, the PLATFORM
+   * decides whether a full introduction is required for this (channel, contact) and
+   * AUTO-PREPENDS the approved disclosure — the author never inserts it. Absent → no
+   * identity governance (existing callers unaffected). A full intro is only auto-inserted
+   * when an APPROVED comm_identity_config exists (never fabricates the Farmers wording).
+   */
+  identity?: IdentityContext
+  /**
+   * Message purpose (Slice 3, §9). When provided, the send path applies purpose-scoped
+   * consent + frequency caps + priority-collision (policy-resolver.ts) and records the
+   * purpose on the message. Absent → no purpose-policy governance (existing callers
+   * unaffected; channel-wide consent is used as today).
+   */
+  purpose?: MessagePurpose
+  /** The highest-priority OTHER campaign purpose active for this recipient (collision, §10). */
+  activeCampaignPurpose?: MessagePurpose | null
+  /**
+   * Data-confidence context (Slice 6, §13). Set when the message makes SPECIFIC claims
+   * (a conversion deadline, product ownership, lapse/age status, …): pass the fields those
+   * claims depend on. An unverified/conflicting field excludes the send (gate step
+   * data_confidence) and raises a verification task — never sent on a guess. Absent → no
+   * specific-claim constraint (generic invitations are unaffected).
+   */
+  dataConfidence?: { makesSpecificClaims: boolean; claims: ClaimField[]; minConfidence?: number }
 }
 
 export interface SendOutcome {
@@ -234,6 +274,31 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
   // Personalize merge tokens (safe substitution; the gate still checks the result).
   const personalized = personalize(ctx.body, ctx.recipientContext ?? {})
 
+  // First-contact identity disclosure (§8). The platform decides + auto-prepends the
+  // approved disclosure when a full introduction is required; the author never inserts
+  // it. The prepended text is included BEFORE the gate runs, so the full message (incl.
+  // disclosure) is compliance-checked. Absent ctx.identity → no change.
+  let identityFullIntro: boolean | null = null
+  let identityFirstTouch: boolean | null = null
+  let identityVersion: number | null = null
+  let identityReason: string | null = null
+  let identityBody = personalized
+  if (ctx.identity) {
+    const idr = await resolveIdentityDisclosure({
+      channel: ctx.channel,
+      conversationId,
+      ctx: ctx.identity,
+    })
+    // identity_full_intro records what was ACTUALLY prepended, not merely what was
+    // required: when no approved config exists, idr.disclosure is null and no full intro
+    // is sent — the (unmet) requirement is still captured in identityReason for audit.
+    identityFullIntro = idr.disclosure != null
+    identityFirstTouch = idr.isFirstChannelTouch
+    identityVersion = idr.disclosure != null ? idr.version : null
+    identityReason = idr.reason
+    if (idr.disclosure) identityBody = prependIdentityDisclosure(idr.disclosure, personalized)
+  }
+
   // Compute the gate context FRESH (send-time re-check — WF-9 invariant). Step 4
   // is satisfied by an approved template OR, for AI-authored replies with no
   // template, an approved AI policy (both AI kill switches on).
@@ -246,7 +311,46 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
   // Gate step 1: member-keyed consent OR a domain-owned durable per-channel grant
   // (workshops). The OR can only ADD consent an existing caller never asserted; it never
   // removes it. DNC/quiet-hours/recommendation/securities remain enforced below.
-  const consent = memberConsent || ctx.durableConsentGranted === true
+  let consent = memberConsent || ctx.durableConsentGranted === true
+
+  // Purpose policy (Slice 3, §9/§10): purpose-scoped consent + frequency caps + priority
+  // collision. Opt-in via ctx.purpose. Purpose-scoped consent (when a row exists) REPLACES
+  // the channel-wide check — a purpose-level revoke must win over a channel grant; a
+  // durable workshop grant can still OR in. Frequency/collision become non-escalating gate
+  // deferrals. Absent ctx.purpose → unchanged behavior.
+  let withinFrequencyCaps: boolean | undefined
+  let frequencyReason: string | undefined
+  let collisionPaused: boolean | undefined
+  let collisionReason: string | undefined
+  if (ctx.purpose) {
+    const policy = await resolveSendPolicy({
+      memberId: convMemberId,
+      channel: ctx.channel,
+      purpose: ctx.purpose,
+      conversationId,
+      activeCampaignPurpose: ctx.activeCampaignPurpose ?? null,
+    })
+    if (policy.consentForPurpose !== null) {
+      consent = policy.consentForPurpose || ctx.durableConsentGranted === true
+    }
+    withinFrequencyCaps = policy.frequency.allowed
+    frequencyReason = policy.frequency.reason
+    collisionPaused = !policy.collision.allowed
+    collisionReason = policy.collision.reason
+  }
+
+  // Data confidence (Slice 6, §13): a message making SPECIFIC claims on unverified/
+  // conflicting data is excluded (gate step data_confidence) and a verification task is
+  // raised. Opt-in via ctx.dataConfidence; a generic invitation passes.
+  let dataConfidenceOk: boolean | undefined
+  let dataConfidenceReason: string | undefined
+  let dataConfidenceUnverified: string[] = []
+  if (ctx.dataConfidence) {
+    const dc = evaluateDataConfidence(ctx.dataConfidence)
+    dataConfidenceOk = dc.allowed
+    dataConfidenceReason = dc.reason
+    dataConfidenceUnverified = dc.unverified
+  }
   // Operator hours of operation (business-local). A human-typed 1:1 reply from the
   // FSA inbox is NOT gated by business hours — the licensed operator is present and
   // choosing to send. Automated/AI/bulk sends ARE gated (held outside hours).
@@ -286,7 +390,7 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
         direction: 'outbound',
         recipient: to,
         subject: ctx.subject ?? null,
-        body: personalized,
+        body: identityBody,
         delivery_status: 'queued',
         template_id: ctx.templateId ?? null,
         campaign_id: ctx.campaignId ?? null,
@@ -314,6 +418,13 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
         communication_operator_id: ctx.ownership?.communicationOperatorId ?? null,
         book_of_business_ref: ctx.ownership?.bookOfBusinessRef ?? null,
         delegation_id: resolvedDelegationId,
+        // Slice 2 — what identity disclosure the platform applied to this send (§8).
+        identity_full_intro: identityFullIntro,
+        is_first_channel_touch: identityFirstTouch,
+        identity_disclosure_version: identityVersion,
+        identity_disclosure_reason: identityReason,
+        // Slice 3 — record the classified purpose (§9: frequency counting + analytics).
+        purpose: ctx.purpose ?? null,
         queued_at: new Date().toISOString(),
       })
       .select('id')
@@ -323,9 +434,10 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
     /* best-effort; dispatcher still writes the durable audit + escalation */
   }
 
-  // Instrument outbound email with open/click tracking (needs the message id).
+  // Instrument outbound email with open/click tracking (needs the message id). The body
+  // already includes any auto-prepended identity disclosure (identityBody).
   const sendBody =
-    ctx.channel === 'email' && messageId ? instrumentEmailHtml(personalized, messageId) : personalized
+    ctx.channel === 'email' && messageId ? instrumentEmailHtml(identityBody, messageId) : identityBody
 
   const req: DispatchRequest = {
     channel: ctx.channel,
@@ -340,12 +452,77 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
       hasConsent: consent,
       recipientLocalHour: recipientLocalHour(ctx.utcOffsetHours),
       withinBusinessHours,
+      withinFrequencyCaps,
+      frequencyReason,
+      collisionPaused,
+      collisionReason,
       delegationValid,
       delegationReason,
       onDNC: dnc,
       usesApprovedTemplateOrPolicy: approved,
       isSecurity: ctx.isSecurity === true,
+      dataConfidenceOk,
+      dataConfidenceReason,
     },
+  }
+
+  // AI authority matrix + §12 evaluations (Slice 5). For a CLASSIFIED AI send, evaluate
+  // before dispatch: a draft-only/blocked class or any evaluation failure is never
+  // auto-sent — it is recorded as a draft on agent_actions and escalated to the FSA.
+  if (ctx.aiGenerated === true && ctx.aiMessageClass) {
+    const identitySatisfied = !ctx.identity ? true : identityFirstTouch ? identityFullIntro === true : true
+    const evalResult = evaluateOutboundMessage({
+      draft: identityBody,
+      messageClass: ctx.aiMessageClass,
+      purposeClassified: !!ctx.purpose,
+      ownershipResolved: ctx.ownershipResolved !== false,
+      identityDisclosureSatisfied: identitySatisfied,
+      consentCompatible: consent,
+      templateApproved: approved,
+    })
+    if (!evalResult.mayAutoSend) {
+      // Hold as a human-review draft (not sent). Record the AI action + escalate.
+      try {
+        await db.from('agent_actions').insert({
+          kind: 'ai_draft',
+          actor: ctx.actor,
+          outcome: evalResult.authority === 'blocked' ? 'blocked' : 'drafted',
+          target_type: ctx.entity?.type ?? 'conversation',
+          target_id: ctx.entity?.id ?? convHouseholdId ?? conversationId,
+          reason: evalResult.failures.length ? evalResult.failures.join(',') : `authority:${evalResult.authority}`,
+          note: `ai message class "${ctx.aiMessageClass}" → ${evalResult.authority}; not auto-sent (§11/§12)`,
+          drafted_content: identityBody,
+        })
+      } catch {
+        /* best-effort; the message row below still records the hold */
+      }
+      if (messageId) {
+        try {
+          await db.from('comm_messages').update({
+            delivery_status: 'blocked',
+            blocked_step: 'ai_authority',
+            block_reason: evalResult.failures.length ? evalResult.failures.join(',') : `draft_only:${evalResult.authority}`,
+            updated_at: new Date().toISOString(),
+          }).eq('id', messageId)
+        } catch { /* best-effort */ }
+      }
+      await recordMessageEvent({
+        messageId,
+        conversationId,
+        campaignId: ctx.campaignId ?? null,
+        event: 'failed',
+        channel: ctx.channel,
+        detail: `ai_authority:${evalResult.authority}`,
+      })
+      return {
+        sent: false,
+        blocked: true,
+        gate: { allowed: false, escalate: true, reason: `AI message held for human review (${evalResult.authority}).` },
+        messageId,
+        conversationId: conversationId ?? undefined,
+        reason: `AI message class "${ctx.aiMessageClass}" is not auto-send (${evalResult.failures.join(',') || evalResult.authority}); drafted for the FSA.`,
+      }
+    }
   }
 
   const result = await dispatch(req)
@@ -384,6 +561,43 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
       reason: ctx.ownershipConflict ?? result.gate.reason ?? 'Ownership could not be resolved.',
       conflict: { ownershipConflict: ctx.ownershipConflict ?? null },
     })
+  }
+
+  // Data-confidence exclusion → raise a verification task (§13). The gate blocked the
+  // send; this is the recovery path (verify the field, then re-enable). Best-effort.
+  if (!result.sent && result.gate.blockedStep === 'data_confidence') {
+    try {
+      // The dispatcher already wrote the comms.blocked audit for this gate block; here we
+      // only add the operator-facing verification task (the §13 recovery path).
+      await db.from('work_tasks').insert({
+        title: `Verify data before sending: ${dataConfidenceUnverified.join(', ') || 'unverified claim'}`,
+        entity_type: convHouseholdId ? 'household' : 'conversation',
+        entity_id: convHouseholdId ?? conversationId,
+        source: 'workflow',
+      })
+    } catch {
+      /* best-effort — the gate has already blocked + escalated the send */
+    }
+  }
+
+  // Record the per-channel identity state on the thread once a FULL introduction has
+  // actually been sent (§8), so subsequent sends on this channel use the abbreviated form
+  // until a refresh condition (new sender/purpose, reassignment, inactivity) recurs.
+  if (result.sent && conversationId && identityFullIntro && ctx.identity) {
+    try {
+      await db
+        .from('comm_conversations')
+        .update({
+          identity_disclosed_at: new Date().toISOString(),
+          identity_disclosure_version: identityVersion,
+          identity_sender_user_id: ctx.identity.senderUserId ?? null,
+          identity_purpose: ctx.identity.purpose ?? null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', conversationId)
+    } catch {
+      /* best-effort — the message row already records what was disclosed */
+    }
   }
 
   // Record the lifecycle event + advance the thread recency.

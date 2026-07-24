@@ -35,6 +35,8 @@ export const JOBS: Record<string, JobHandler> = {
   'cross-sell-scan': async () => (await h()).crossSellScan(),
   'commission-reconcile': async () => (await h()).commissionReconcile(),
   'campaign-dispatch': async () => (await h()).campaignDispatch(),
+  // Resume enrollments paused by a customer reply once §10 conditions are met (Slice 4).
+  'resume-paused': async () => (await h()).resumePausedEnrollments(),
   // The AI workforce daily run — builds the prioritized outreach queue and dispatches
   // every enabled outreach agent up to its quota, all through the compliance gate.
   'workforce-orchestrator': async () => (await h()).workforceOrchestrator(),

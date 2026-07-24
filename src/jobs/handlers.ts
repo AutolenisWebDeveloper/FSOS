@@ -5,8 +5,11 @@
 // the securities firewall. Read-only detection jobs create tasks/escalations only.
 import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
-import { dispatchCampaign, refreshCampaignMetrics } from '@/lib/comms/campaign'
+import { dispatchCampaign, refreshCampaignMetrics, campaignDispatchContext, type CampaignDispatchContext } from '@/lib/comms/campaign'
+import { buildDataConfidence } from '@/lib/comms/claims'
+import { resolveClaimFields } from '@/lib/comms/claim-resolver'
 import { sendThroughGate, isTemplateApproved } from '@/lib/comms/send'
+import { evaluateResume } from '@/lib/comms/conversation-mode'
 import type { JobResult } from './index'
 
 const SYSTEM = 'system'
@@ -154,17 +157,21 @@ export async function dripAdvance(): Promise<JobResult> {
   // Due enrollments across all active drip campaigns.
   const { data: enrollments } = await db
     .from('comm_campaign_enrollments')
-    .select('id, campaign_id, member_id, household_id, agency_id, current_step, comm_campaigns!inner(id, type, channel, sequence_id, status, archived_at)')
+    .select('id, campaign_id, member_id, household_id, agency_id, current_step, comm_campaigns!inner(id, type, channel, sequence_id, status, archived_at, purpose, represented_agency_owner_id, delegation_id, claim_fields)')
     .eq('status', 'enrolled')
     .lte('next_send_at', nowISO)
     .limit(1000)
 
+  // Slice 7 — resolve each drip campaign's purpose + delegated-sender context once, cached
+  // by campaign id (most campaigns aren't delegated; a delegated one loads its row once).
+  const ctxCache = new Map<string, CampaignDispatchContext>()
+
   let handled = 0
-  for (const e of (enrollments ?? []) as unknown as Array<{ id: string; campaign_id: string; member_id: string; household_id: string; agency_id: string | null; current_step: number; comm_campaigns: { type: string; channel: string; sequence_id: string | null; status: string; archived_at: string | null } }>) {
+  for (const e of (enrollments ?? []) as unknown as Array<{ id: string; campaign_id: string; member_id: string; household_id: string; agency_id: string | null; current_step: number; comm_campaigns: { id: string; type: string; channel: string; sequence_id: string | null; status: string; archived_at: string | null; purpose: string | null; represented_agency_owner_id: string | null; delegation_id: string | null; claim_fields: string[] | null } }>) {
     const camp = e.comm_campaigns
     if (!camp || camp.type !== 'drip' || camp.status !== 'active' || camp.archived_at || !camp.sequence_id) continue
 
-    const { data: seq } = await db.from('comm_sequences').select('steps, status').eq('id', camp.sequence_id).maybeSingle()
+    const { data: seq } = await db.from('comm_sequences').select('steps, status, purpose').eq('id', camp.sequence_id).maybeSingle()
     const steps = (seq?.steps ?? []) as Array<{ delay_days: number; template_id?: string; subject?: string }>
     if (!seq || seq.status !== 'active' || e.current_step >= steps.length) {
       await db.from('comm_campaign_enrollments').update({ status: 'completed' }).eq('id', e.id)
@@ -182,6 +189,22 @@ export async function dripAdvance(): Promise<JobResult> {
     const to = camp.channel === 'email' ? member?.email : member?.phone
     if (to) {
       const { data: tpl } = await db.from('comm_templates').select('body').eq('id', step.template_id).maybeSingle()
+      // Slice 7 — purpose (campaign, else sequence default) + delegated-sender context.
+      let campCtx = ctxCache.get(camp.id)
+      if (!campCtx) {
+        campCtx = await campaignDispatchContext({
+          id: camp.id,
+          type: camp.type,
+          purpose: camp.purpose,
+          delegation_id: camp.delegation_id,
+          represented_agency_owner_id: camp.represented_agency_owner_id,
+          sequencePurpose: (seq?.purpose as string | null) ?? null,
+        })
+        ctxCache.set(camp.id, campCtx)
+      }
+      // Slice 8 §18 — resolve declared claims for this recipient; unverified/conflicting
+      // excludes the step + raises a verification task (§13). Absent claim_fields → no-op.
+      const claims = await resolveClaimFields(camp.claim_fields, { householdId: e.household_id })
       await sendThroughGate({
         channel: camp.channel as 'sms' | 'email',
         to,
@@ -197,6 +220,10 @@ export async function dripAdvance(): Promise<JobResult> {
         sequenceStep: e.current_step,
         isSecurity: false,
         recipientContext: { full_name: member?.full_name ?? null },
+        purpose: campCtx.purpose,
+        delegation: campCtx.delegation,
+        ownership: campCtx.ownership ?? { representedAgencyId: e.agency_id },
+        dataConfidence: claims.length > 0 ? buildDataConfidence(claims) : undefined,
       })
       handled++
     }
@@ -212,6 +239,51 @@ export async function dripAdvance(): Promise<JobResult> {
     }
   }
   return { ok: true, handled, note: `drip-advance: ${handled} steps sent through the gate` }
+}
+
+// resume-paused — resume enrollments paused by a customer reply (§10) once resume is
+// allowed: the conversation is resolved/closed, or the customer has been quiet for the
+// configured period (comm_conversation_policy). The pause happens in inbound.ts; this is
+// the deferred resume. Never resumes into a live, recently-active conversation.
+export async function resumePausedEnrollments(): Promise<JobResult> {
+  const db = getDb()
+  const nowISO = new Date().toISOString()
+  const { data: pol } = await db.from('comm_conversation_policy').select('resume_quiet_days').eq('id', 'global').maybeSingle()
+  const quietDays = pol?.resume_quiet_days ?? 5
+
+  const { data: paused } = await db
+    .from('comm_campaign_enrollments')
+    .select('id, member_id')
+    .eq('status', 'paused_for_conversation')
+    .limit(1000)
+
+  let handled = 0
+  for (const e of (paused ?? []) as Array<{ id: string; member_id: string | null }>) {
+    if (!e.member_id) continue
+    const [{ data: conv }, { data: lastInbound }] = await Promise.all([
+      db.from('comm_conversations').select('status, last_message_at').eq('member_id', e.member_id).order('last_message_at', { ascending: false }).limit(1).maybeSingle(),
+      db.from('comm_messages').select('created_at').eq('member_id', e.member_id).eq('direction', 'inbound').order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    ])
+    const minutesSinceLastInbound = lastInbound?.created_at
+      ? Math.floor((Date.now() - Date.parse(lastInbound.created_at)) / 60000)
+      : null
+    const decision = evaluateResume({
+      conversationStatus: conv?.status ?? 'open',
+      minutesSinceLastInbound,
+      resumeQuietDays: quietDays,
+    })
+    if (decision.resume) {
+      // Re-check the paused status in the UPDATE filter (idempotent against a concurrent run).
+      await db
+        .from('comm_campaign_enrollments')
+        .update({ status: 'enrolled', resumed_at: nowISO, next_send_at: nowISO })
+        .eq('id', e.id)
+        .eq('status', 'paused_for_conversation')
+      await writeAudit({ actor: SYSTEM, action: 'entity.updated', entity: 'comm_campaign_enrollment', entityId: e.id, diff: { resumed: true, reason: decision.reason } })
+      handled++
+    }
+  }
+  return { ok: true, handled, note: `resume-paused: ${handled} enrollment(s) resumed` }
 }
 
 // workforce-orchestrator — the AI workforce's daily run. Builds the prioritized
@@ -230,11 +302,31 @@ export async function workforceOrchestrator(): Promise<JobResult> {
   return { ok: true, handled: result.totalSent, note: `workforce: ${result.built.queued} queued; ${parts}` }
 }
 
-// data-quality — flag households/members missing contact info.
+// data-quality — reconcile unlinked agency owners into the unified Contact Center
+// (merge/create/link via the shared resolution engine, non-destructive), then flag
+// (not collapse) remaining data gaps: members missing contact info + duplicate
+// contact groups. Idempotent: linked owners are skipped on the next run.
 export async function dataQuality(): Promise<JobResult> {
   const db = getDb()
-  const { count } = await db.from('household_members').select('id', { count: 'exact', head: true }).is('email', null).is('phone', null)
-  return { ok: true, handled: count ?? 0, note: `data-quality: ${count ?? 0} members missing contact info` }
+  const { reconcileAgencyOwnerContacts, countContactDuplicates } = await import('@/lib/services/dataQualityReconcile')
+  const rec = await reconcileAgencyOwnerContacts()
+  const { count: membersMissing } = await db.from('household_members').select('id', { count: 'exact', head: true }).is('email', null).is('phone', null)
+  const duplicates = await countContactDuplicates()
+
+  if (rec.scanned > 0) {
+    await writeAudit({
+      actor: SYSTEM,
+      action: 'ai.run',
+      entity: 'data_quality',
+      diff: { owners: rec, members_missing_contact: membersMissing ?? 0, duplicate_contact_groups: duplicates },
+    })
+  }
+
+  return {
+    ok: true,
+    handled: rec.linked,
+    note: `data-quality: reconciled ${rec.scanned} owners → ${rec.merged} merged / ${rec.created} created / ${rec.review} need review; ${membersMissing ?? 0} members missing contact info; ${duplicates} duplicate contact groups flagged`,
+  }
 }
 
 // backup-verify — record a backup-verification heartbeat (independent pg_dump is external).

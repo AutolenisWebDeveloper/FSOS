@@ -430,6 +430,15 @@ The identity is consistent across homepage, public pages, login, forgot-password
 | ADR-013 | Canonical `comm_*` communications data model (reconcile the 006 duplication) |
 | ADR-014 | GoHighLevel decommission (ordered, data-preservation-first) |
 | ADR-015 | Delegated agency-communication authority + actual-sender/represented-party model |
+| ADR-016 | First-contact identity disclosure engine |
+| ADR-017 | Policy-engine extensions: purpose classification, frequency caps, priority collision |
+| ADR-018 | Conversation mode: a customer reply pauses promotional automation |
+| ADR-019 | AI authority matrix + communication evaluations (code-enforced, not prompt-enforced) |
+| ADR-020 | Data confidence & source verification (no specific claim on unverified data) |
+| ADR-021 | Simulation mode (safe dry-run; required before campaign activation) |
+| ADR-022 | Campaign + sequence builder config: message purpose + delegated-sender |
+| ADR-023 | Campaign library (pre-built, compliance-ready blueprints; §17) |
+| ADR-024 | Data-confidence claim wiring for campaigns (§18) |
 
 New architectural decisions get a new ADR using `docs/adr/ADR-000-template.md`. Status values: Proposed → Accepted → Superseded (link the superseding ADR).
 

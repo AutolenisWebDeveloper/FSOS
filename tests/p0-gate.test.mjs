@@ -28,7 +28,7 @@ process.on('exit', () => {
   }
 })
 execSync(
-  `npx tsc src/lib/comms/gate.ts src/lib/compliance/firewall.ts src/lib/validation/schemas.ts ` +
+  `npx tsc src/lib/comms/gate.ts src/lib/comms/purpose.ts src/lib/compliance/firewall.ts src/lib/validation/schemas.ts ` +
     `--outDir ${out} --module commonjs --target es2020 --moduleResolution node --skipLibCheck --esModuleInterop`,
   { stdio: 'inherit' },
 )

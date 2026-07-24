@@ -1,5 +1,5 @@
 -- ─────────────────────────────────────────────────────────────────────────────
--- Migration: 052_fna_data_model  (FNA Overhaul — Slice 2, ADR-016)
+-- Migration: 060_fna_data_model  (FNA Overhaul — Slice 2, ADR-016)
 --
 -- The FNA had NO structured data model — only reviews / review_types existed, and
 -- generated analyses were AI prose saved as a document. This slice adds the
@@ -10,7 +10,7 @@
 --
 -- (050 is the current migration head; the build instruction's "start at 049" is
 --  stale because the comms slice already added 049/050, and the agency-directory
---  import (merged from main) took 051. This is 052.)
+--  import (merged from main) took 051. This is 060 (051/052 were taken by the agency-directory + agency-owner-contact work, and 053–059 by the comms platform, all merged from main).)
 --
 -- Additive · idempotent · forward-only. Reuses is_super()/has_role() (mig 010),
 -- update_updated_at() (mig 012), and the append-only audit_log via app-level

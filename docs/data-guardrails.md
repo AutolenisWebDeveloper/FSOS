@@ -15,7 +15,9 @@ agency_partnerships (ROOT)  -- agency_name, owner_name, district_id, status
                             -- fnwl_serving_agent_no (Farmers agent number; directory
                             -- import natural key), office_address/city/state/zip,
                             -- existing_leads_user, interested (directory prospecting flags)
-agency_owners               -- contact info (email, phone=business, mobile_phone), portal access
+agency_owners               -- contact info (email, phone=business, mobile_phone), portal access,
+                            -- contact_id → contacts (reconciled unified-book row; set by the
+                            -- agency importer / Data Quality reconciler via resolution.ts)
 referrals                   -- referring_agency_id, household_id?, engagement
                             -- (warm_handoff|co_sell|direct), status, received_at,
                             -- first_touch_at, sla_due_at, consent captured

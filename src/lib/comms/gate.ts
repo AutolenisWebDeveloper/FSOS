@@ -124,10 +124,6 @@ export function evaluateGate(input: GateInput): GateResult {
   if (!input.hasConsent) return blocked('consent')
   if (!withinQuietHours(input.recipientLocalHour)) return blocked('quiet_hours')
   if (input.withinBusinessHours === false) return blocked('business_hours', false)
-  // 2d/2e — operational deferrals (rate caps + priority collision). Non-escalating: the
-  // send is held/paused for a later cycle, not a compliance violation (§9/§10).
-  if (input.withinFrequencyCaps === false) return blocked('frequency', false, input.frequencyReason)
-  if (input.collisionPaused === true) return blocked('collision', false, input.collisionReason)
   // 2c — on-behalf-of authority. Checked before content approval / recommendation:
   // a message the FSA is not authorized to send at all must never reach content checks.
   if (input.delegationValid === false) return blocked('delegation', true, input.delegationReason)
@@ -136,5 +132,11 @@ export function evaluateGate(input: GateInput): GateResult {
   if (containsRecommendationLanguage(input.draft)) return blocked('recommendation')
   if (input.isSecurity) return blocked('is_security')
   if (input.otherRuleBlocked) return blocked('other_rule')
+  // 2d/2e — operational deferrals (rate caps + priority collision) are checked LAST, so
+  // they only ever defer a COMPLIANCE-CLEAN send: a message that should escalate for an
+  // invalid delegation / DNC / securities / recommendation surfaces + escalates first and
+  // is never masked by a non-escalating deferral (§9/§10; ADR-017).
+  if (input.withinFrequencyCaps === false) return blocked('frequency', false, input.frequencyReason)
+  if (input.collisionPaused === true) return blocked('collision', false, input.collisionReason)
   return { allowed: true, escalate: false }
 }

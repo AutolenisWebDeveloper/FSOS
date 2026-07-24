@@ -58,6 +58,10 @@ const NAV: NavItem[] = [
   { href: '/app/forecasts', label: 'Forecasts', icon: TrendingUp, group: 'Overview' },
   { href: '/app/executive/briefing', label: 'Briefing', icon: Newspaper, group: 'Overview' },
   { href: '/app/ai/workforce', label: 'AI Command Center', icon: Gauge, group: 'Overview' },
+  // Slice 8 — planning is now a cross-cutting Overview command center (moved from
+  // Pipeline, renamed from "FNA Generator"): it feeds Opportunities, Reviews,
+  // Forecasts, Cases, and Revenue, not a single pipeline task.
+  { href: '/app/fna', label: 'AI FNA Command Center', icon: FileSignature, group: 'Overview' },
   // Slice 9A — the communications hub is an Overview command center (renamed from "Comms",
   // moved out of Engage). Its /app/comms/inbox shortcut intentionally stays in Engage.
   { href: '/app/comms', label: 'AI Communications Center', icon: Radio, group: 'Overview' },
@@ -84,7 +88,6 @@ const NAV: NavItem[] = [
   { href: '/app/contacts/review', label: 'Import Review', icon: ClipboardCheck, group: 'Book' },
 
   { href: '/app/reviews', label: 'Reviews', icon: ClipboardCheck, group: 'Pipeline' },
-  { href: '/app/fna', label: 'FNA Generator', icon: FileSignature, group: 'Pipeline' },
   { href: '/app/opportunities', label: 'Opportunities', icon: Target, group: 'Pipeline' },
   { href: '/app/opra', label: 'OPRA Transfers', icon: ArrowLeftRight, group: 'Pipeline' },
   { href: '/app/cases', label: 'Cases', icon: Briefcase, group: 'Pipeline' },

@@ -100,6 +100,8 @@ try {
   psqlFile('supabase/migrations/050_comm_assignment_review_notnull.sql')
   // 053 adds the identity-disclosure config (Slice 2) — back-office, client sees 0 rows.
   psqlFile('supabase/migrations/053_comm_identity_disclosure.sql')
+  // 054 adds the consent purpose axis + comm_frequency_policy (Slice 3) — back-office config.
+  psqlFile('supabase/migrations/054_comm_purpose_frequency.sql')
 
   // Seed: this client's household + a second household; a life + a securities policy.
   // conversion_deadline/is_with_us are set so every policy also surfaces in the
@@ -132,7 +134,7 @@ try {
       `('44444444-4444-4444-4444-444444444444','55555555-5555-5555-5555-555555555555','ACTIVE');\n` +
       `insert into comm_assignment_reviews(channel, destination, household_id, reason) values ` +
       `('sms','+15550100','22222222-2222-2222-2222-222222222222','ownership unresolved: no agency owner');\n` +
-      `grant select on agency_communication_delegations, comm_assignment_reviews, comm_identity_config to authenticated;\n`,
+      `grant select on agency_communication_delegations, comm_assignment_reviews, comm_identity_config, comm_frequency_policy to authenticated;\n`,
   )
   psqlFile(`${L}/seed.sql`)
 
@@ -164,6 +166,9 @@ try {
   )
   const visibleIdentityConfig = psqlQuery(
     'set role authenticated; select count(*) from comm_identity_config;',
+  )
+  const visibleFrequencyPolicy = psqlQuery(
+    'set role authenticated; select count(*) from comm_frequency_policy;',
   )
 
   let passed = 0
@@ -207,6 +212,9 @@ try {
   })
   t('client CANNOT read comm_identity_config (back-office default-deny, mig 053)', () => {
     assert.equal(visibleIdentityConfig, '0', `expected 0 identity-config rows to a client, got: ${visibleIdentityConfig}`)
+  })
+  t('client CANNOT read comm_frequency_policy (back-office default-deny, mig 054)', () => {
+    assert.equal(visibleFrequencyPolicy, '0', `expected 0 frequency-policy rows to a client, got: ${visibleFrequencyPolicy}`)
   })
 
   console.log(`\nCase 7: all ${passed} RLS firewall assertions passed.`)

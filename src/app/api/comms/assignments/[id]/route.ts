@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 
@@ -21,7 +21,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   const auth = await requireApiRole('fsa')
   if (!auth.ok) return auth.response
   // Ownership resolution is a back-office authorization decision (§21 roles).
-  const denied = requirePermission(auth.session, ['fsa', 'licensed_staff', 'admin', 'super_admin'])
+  const denied = requirePermission(auth.session, ['fsa', 'licensed_staff', 'super_admin'])
   if (denied) return denied
 
   const parsed = await readJson<unknown>(req)
@@ -55,7 +55,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       .eq('id', id)
       .eq('status', 'open') // optimistic guard against a concurrent resolve
       .select('id')
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('comms/assignments/[id]', error)
     // No row updated → another request resolved it between the pre-check and the update.
     // Report the conflict rather than a false success (and write no audit row).
     if (!Array.isArray(updated) || updated.length === 0) {

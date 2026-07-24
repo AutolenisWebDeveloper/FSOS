@@ -6,6 +6,12 @@
 // This is content substitution only — it CANNOT introduce recommendation language
 // (the gate still runs containsRecommendationLanguage on the final body), so
 // personalization can never smuggle a red-line message past the guardrail.
+//
+// On the EMAIL channel the body is HTML, so recipient-controlled merge values are
+// HTML-escaped before substitution (opts.escapeHtml) — a name/city containing markup
+// can never inject into the delivered email or the stored comm_messages.body that the
+// operator console later renders (stored-XSS defense, §13.8). SMS + plaintext parts
+// substitute verbatim.
 
 export interface RecipientContext {
   first_name?: string | null
@@ -31,8 +37,23 @@ function firstNameOf(ctx: RecipientContext): string {
   return full ? full.split(/\s+/)[0] : ''
 }
 
+/** Escape a merge VALUE for safe interpolation into an HTML body (not the template). */
+function escapeHtmlValue(v: string): string {
+  return v
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+export interface PersonalizeOptions {
+  /** HTML-escape each substituted value (set for the email HTML channel; never for SMS/plaintext). */
+  escapeHtml?: boolean
+}
+
 /** Replace every {{token}} in `body` using the recipient context + safe defaults. */
-export function personalize(body: string, ctx: RecipientContext): string {
+export function personalize(body: string, ctx: RecipientContext, opts: PersonalizeOptions = {}): string {
   const values: Record<string, string> = {
     first_name: firstNameOf(ctx) || DEFAULTS.first_name,
     last_name: (ctx.last_name || '').trim() || DEFAULTS.last_name,
@@ -43,7 +64,8 @@ export function personalize(body: string, ctx: RecipientContext): string {
   }
   return body.replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (_m, token: string) => {
     const key = token.toLowerCase()
-    return key in values ? values[key] : key in DEFAULTS ? DEFAULTS[key] : ''
+    const raw = key in values ? values[key] : key in DEFAULTS ? DEFAULTS[key] : ''
+    return opts.escapeHtml ? escapeHtmlValue(raw) : raw
   })
 }
 

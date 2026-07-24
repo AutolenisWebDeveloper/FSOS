@@ -10,10 +10,11 @@ const p: React.CSSProperties = { color: '#1a1a1a', fontSize: '15px', lineHeight:
 export function TermConversionWindowInvite() {
   return (
     <EmailLayout preview="A time-sensitive option on your term policy">
-      <Heading style={h}>A time-sensitive option worth reviewing, {'{{first_name}}'}</Heading>
+      <Heading style={h}>A time-sensitive option worth understanding, {'{{first_name}}'}</Heading>
       <Text style={p}>
-        Hi {'{{first_name}}'}, your term life policy has a conversion window that may be closing before long. It
-        can be worth understanding what options are available to you while the window is open.
+        Hi {'{{first_name}}'}, many term life policies include a conversion window — a limited period when you may
+        be able to convert term coverage to a permanent policy without new medical underwriting. If your coverage
+        includes one, it can be worth understanding your options while the window is open.
       </Text>
       <Text style={p}>
         Would you like to set up a brief call to walk through what this means for your household? Reply any time

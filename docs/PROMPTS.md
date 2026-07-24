@@ -43,7 +43,7 @@ Build entities in dependency (spine) order: Agency Network → Referral → Clie
 
 For each page, meet the Definition of Done in docs/archetypes.md (data wired, validation, permissions/403, empty+loading+error+success states, archived/deleted behavior, responsive, accessibility, audit events, related-record links per docs/sitemap.md §5). Enforce the RBAC matrix (docs/specs/rbac-matrix.md) and wire each screen to its tables/APIs/jobs per docs/specs/data-api-map.md.
 
-Guardrails apply everywhere they touch: securities firewall, the 7-step comms gate, the AI red-line, and audit on every mutation.
+Guardrails apply everywhere they touch: securities firewall, the 13-step comms gate (`docs/data-guardrails.md` §5), the AI red-line, and audit on every mutation.
 
 Stop condition: the P0 gate in docs/specs/acceptance-checklist.md §2 passes — a referral flows Agency→Referral→Household→Opportunity with audit at each step, no is_security record can be sent to, and every P0 page meets Definition of Done. Run npm run build, fix all errors, and report the P0 gate as pass/fail with evidence.
 ```
@@ -58,7 +58,7 @@ Include: Financial Review OS (the review spine), Term Conversion OS, Cross-Sell 
 
 Critical compliance requirements (verify in code, not just UI):
 - Term Conversion and Cross-Sell expose only identify/educate/invite/schedule/remind/follow-up/escalate. There is NO "recommend product" action anywhere.
-- Every automated send passes the 7-step dispatcher gate at send time.
+- Every automated send passes the 13-step dispatcher gate at send time (`docs/data-guardrails.md` §5).
 - Template approval is limited to compliance/supervisor/super; unapproved templates are unusable.
 - Client/partner portals are column-allowlisted and can never render securities fields.
 

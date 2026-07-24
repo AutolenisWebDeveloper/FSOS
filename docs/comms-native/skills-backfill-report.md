@@ -89,7 +89,72 @@ Per the standing requirement, feature-specific state does **not** go into skills
 - **PR-review fixes** (e.g. #108/#110/#115/#119 hotfix details) — captured as the *generalized* invariant
   in the skill (fail-closed resolvers, gate ordering, upsert-arbiter hazard), not as PR notes.
 
+---
+
+## Slices 7–9 backfill (added later)
+
+> The Slices 1–6 report above covered through migration 057 / ADR-021. Slices 7–9 shipped the
+> builder config, the campaign library, data-confidence claim wiring, email rendering, and the
+> Slice-9A AI Communications Center. This section records the durable knowledge captured into the
+> two owning skills for that work.
+
+### Scope reviewed (Slices 7–9)
+
+| Slice | Feature | ADR / migration |
+|---|---|---|
+| 7 | Campaign + sequence builder config: message `purpose` + delegated-sender storage | ADR-022 / migration 058 |
+| 8 | Campaign library (pre-built compliance-ready blueprints); data-confidence **claim wiring** (declaration + resolver) | ADR-023, ADR-024 / migration 059 |
+| 9 | AI Communications Center (Slice 9A overview + `CommsSubnav`); email rendering (author-time React → stored immutable HTML+plaintext) | ADR-025 / migration 061 |
+
+### Skills changed
+
+**1. `fsos-crm-workflows` (OWNS campaigns / enrollments) — extended.** Added to the "Native
+communications" section (CRM-side, non-send-path):
+
+- **Builder config (ADR-022, `campaign-config.ts`):** the builder stores a message `purpose` and an
+  optional delegated-sender pairing (`represented_agency_owner_id` + `delegation_id`); both
+  default-permissive; a partially-configured delegation is NOT delegated; the delegation row is
+  resolved fresh at dispatch (`ownership.ts`), never trusted from the snapshot.
+- **Campaign library (ADR-023, `library.ts`; `/app/comms/library`):** version-controlled, green-zone,
+  footer-free, purpose-tagged blueprints; "Add to templates" seeds a DRAFT that still passes human
+  approval — the gate is never bypassed. Reuse `listBlueprints`; don't hardcode a second set.
+- **Claim-field wiring (ADR-024, `claims.ts` + `claim-resolver.ts`):** a campaign declares the
+  per-recipient claim fields (`conversion_deadline`, `policy_status`, `appointment_at`); the read-only
+  resolver derives verified/conflicting state fail-closed; `buildDataConfidence` feeds the gate's
+  `data_confidence` step. No declared claims ⇒ never blocked by that step.
+- Updated authoritative-sources: migrations `049–061`; ADRs `013–025`; the `library.ts` / `claims.ts` /
+  `claim-resolver.ts` / `campaign-config.ts` modules and the `library/`, `assignments/`, `identity/`,
+  `inbox/` surfaces.
+
+**2. `twilio-a2p-compliance` (OWNS the gate / send path) — extended.**
+
+- **Corrected the gate order** to match the current `evaluateGate`: `business_hours` moved out of the
+  early escalating block and down to the trailing **operational deferrals** (now steps 11–13:
+  business_hours → frequency → collision), so an escalating compliance trip evaluated outside operating
+  hours can never be masked as a benign "held for hours" deferral. Fixed the two off-by-one step numbers
+  in the A2P rules (`is_security` = step 8, recommendation = step 7). Pointed the skill at
+  `docs/data-guardrails.md` §5 as the canonical enumeration.
+- **Added a data-confidence claim-gate section** (declaration `claims.ts` → resolver `claim-resolver.ts`
+  fail-closed → `data_confidence` gate input; library blueprints declare, wiring resolves).
+- **Added an email-rendering section (ADR-025):** author-time-only react-email (devDependency); the send
+  path never renders React; deterministic stored HTML + plaintext (`render_sha` / `body_text`,
+  `npm run templates:build`); the immutable-approval contract (changed bytes bump `version` + reset to
+  draft); multipart send via `ctx.bodyText`.
+- Extended the Authoritative Sources / Schema / Tests lists through **ADR-025 / migration 061**, and
+  added the `comms-campaign-config`, `comms-claims`, `comms-library`, and `email-determinism` tests.
+
+### Left in code / docs, not skills (Slices 7–9)
+
+- **Migrations 058–061** and **ADR-022…ADR-025** — schema + the *why*; the skills link to them.
+- **The blueprint bodies / claim-field derivation logic / email components (`src/emails/*`)** — feature
+  code; skills point to the module rather than restating it.
+- **Slice-9A overview page + `CommsSubnav`** — a UI surface; the reusable design rule (in-hub grouped
+  sub-navigation, fully token-based, no new variant) was recorded in `DESIGN.md` §12, not a skill.
+
+---
+
 ## Verification
 
 Skills + docs only — no source, schema, or test behavior changed. `npm run build`, `type-check`, `lint`,
-`npm test`, and `npm run test:rls` remain green (unchanged from #124).
+`npm test`, and `npm run test:rls` remain green (unchanged from #124 for Slices 1–6; Slices 7–9 doc/skill
+edits change no source, schema, or test).

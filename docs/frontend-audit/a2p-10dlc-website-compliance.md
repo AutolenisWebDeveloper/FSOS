@@ -55,7 +55,7 @@ business-specific value is required. No approver gate.
 
 ## Backend — verify-but-do-not-modify (status only; all appear PRESENT & wired)
 
-- **7-step gate** `src/lib/comms/gate.ts` — ordered, blocks on first failure, escalates.
+- **13-step gate** `src/lib/comms/gate.ts` (`../data-guardrails.md` §5) — ordered, blocks on first failure, escalates.
 - **STOP/HELP** `src/lib/comms/keywords.ts` + `inbound.ts applyOptOut` (revokes consent + inserts `dnc_entries` on STOP). ⚠️ **Confirm an explicit approved HELP auto-reply** is emitted — `processInbound` branches `stop`/`start` explicitly; `help` falls through to auto-reply/escalate (carriers test HELP).
 - **Consent capture/storage** `consents` upsert; forms post `consent_sms`/`consent_email`; `workshop_consent_events`.
 - **DNC suppression** `dnc_entries` + gate step 3, re-checked at send (`send.ts`).

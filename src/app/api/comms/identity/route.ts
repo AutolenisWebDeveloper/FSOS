@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 
@@ -37,7 +37,7 @@ export async function GET() {
   if (denied) return denied
   try {
     const { data, error } = await getDb().from('comm_identity_config').select('*').eq('id', 'global').maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('comms/identity', error)
     return NextResponse.json({ config: data ?? null })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed' }, { status: 500 })
@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
         .from('comm_identity_config')
         .update({ approval_status: 'approved', approved_at: new Date().toISOString(), approved_by: actor, updated_at: new Date().toISOString() })
         .eq('id', 'global')
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      if (error) return dbErrorResponse('comms/identity', error)
       await writeAudit({ actor, action: 'approval.decided', entity: 'comm_identity_config', entityId: 'global', diff: { approval_status: 'approved' } })
       return NextResponse.json({ ok: true, approval_status: 'approved' })
     }
@@ -99,8 +99,10 @@ export async function POST(req: NextRequest) {
     // Editing the wording is the FSA asserting their real terms → clear the assumption
     // badge only when they explicitly mark it verified.
     if (body.data.markVerified) patch.is_assumption = false
-    const { error } = await db.from('comm_identity_config').update(patch).eq('id', 'global')
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    // Upsert (not update) so the FIRST save creates the singleton — an UPDATE on a missing
+    // 'global' row would affect 0 rows and falsely report success while saving nothing.
+    const { error } = await db.from('comm_identity_config').upsert({ id: 'global', ...patch }, { onConflict: 'id' })
+    if (error) return dbErrorResponse('comms/identity', error)
     await writeAudit({ actor, action: 'config.changed', entity: 'comm_identity_config', entityId: 'global', diff: { version: nextVersion, approval_status: 'draft' } })
     return NextResponse.json({ ok: true, version: nextVersion, approval_status: 'draft' })
   } catch (e) {

@@ -14,7 +14,7 @@
 - [ ] **No automated action without audit.** Every mutation, send, block, AI action, stage change writes `audit_log` (Part 4 taxonomy).
 - [ ] **No AI agent exceeds permissions.** Green-zone tools only; red-line recommendation hard-blocked in eval (a slip = build-blocking defect).
 - [ ] **No securities workflow crosses the firewall.** `is_security` never auto-sent; client/partner portals never expose securities fields; suitability is a pointer, not stored.
-- [ ] **No communication bypasses consent + suppression.** 7-step dispatcher gate at send time; no "force send" control exists.
+- [ ] **No communication bypasses consent + suppression.** 13-step dispatcher gate at send time (`../data-guardrails.md` §5); no "force send" control exists.
 - [ ] **No page complete without responsive + empty + loading + error + success states** (+ archived/deleted where applicable).
 - [ ] **No feature complete unless wired to real data and tested.**
 - [ ] **No invented Farmers data.** Every split/window/product-availability/carrier-rule value is an assumption-flagged, editable config default with a "verify" badge.
@@ -39,7 +39,7 @@
 
 **P1 gate:**
 - [ ] Financial Review spine live (schedule→prep→outcome→opportunity origination).
-- [ ] Every automated send passes the 7-step gate; every agent run logs confidence + cost.
+- [ ] Every automated send passes the 13-step gate (`../data-guardrails.md` §5); every agent run logs confidence + cost.
 - [ ] Compliance, Partner, Client portals enforce scope + column allowlists.
 - [ ] Template approval limited to compliance/supervisor/super; unapproved templates unusable.
 

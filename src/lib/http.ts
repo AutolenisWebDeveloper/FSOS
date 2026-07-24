@@ -19,6 +19,21 @@ export function configErrorResponse(err: unknown): NextResponse | null {
 }
 
 /**
+ * Safe response for an unexpected data-layer error. Logs the full detail
+ * server-side for diagnosis (§16.2) and returns a GENERIC message to the client —
+ * never the raw DB/provider error string, SQL, or internals (§13.5/§16.1). Use for
+ * `if (error) …` branches on Supabase results instead of returning `error.message`.
+ */
+export function dbErrorResponse(
+  context: string,
+  error?: { message?: string; code?: string; details?: string } | null,
+): NextResponse {
+  // eslint-disable-next-line no-console
+  console.error(`[api] ${context}`, error?.code ? `[${error.code}]` : '', error?.message ?? error ?? '')
+  return NextResponse.json({ error: 'Something went wrong. Please try again.' }, { status: 500 })
+}
+
+/**
  * Parse a `limit` query param safely. Never returns NaN, always capped.
  */
 export function parseLimit(raw: string | null, fallback = 50, max = 200): number {

@@ -38,12 +38,15 @@ async function main() {
   let unchanged = 0
   for (const tpl of EMAIL_TEMPLATES) {
     const { html, text, sha } = await renderEmailTemplate(tpl.element)
-    const { data: existing } = await db
+    const { data: existing, error: selectError } = await db
       .from('comm_templates')
       .select('id, version, render_sha')
       .eq('source_key', tpl.sourceKey)
       .is('archived_at', null)
       .maybeSingle()
+    // Never treat a failed lookup as "not found" — that would INSERT a duplicate of an
+    // existing template on a transient read error. Abort loudly so the run can be retried.
+    if (selectError) throw new Error(`Lookup failed for ${tpl.sourceKey}: ${selectError.message}`)
 
     if (!existing) {
       const { error } = await db.from('comm_templates').insert({

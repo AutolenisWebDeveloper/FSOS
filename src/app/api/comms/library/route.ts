@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { containsRecommendationLanguage } from '@/lib/compliance/guardrail'
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
       .insert({ name: draft.name, channel: draft.channel, category: draft.category, body: draft.body, approval_status: 'draft', version: 1, updated_by: actor })
       .select('*')
       .single()
-    if (error || !data) return NextResponse.json({ error: error?.message ?? 'Insert failed' }, { status: 500 })
+    if (error || !data) return dbErrorResponse('comms/library', error)
     await writeAudit({ actor, action: 'entity.created', entity: 'comm_template', entityId: data.id, diff: { name: data.name, from_blueprint: bp.key } })
     return NextResponse.json(
       {

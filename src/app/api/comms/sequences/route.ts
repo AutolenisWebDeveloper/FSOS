@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { SequenceCreateSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
@@ -20,7 +20,7 @@ export async function GET() {
       .from('comm_sequences')
       .select('*')
       .order('updated_at', { ascending: false })
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('comms/sequences', error)
     return NextResponse.json({ sequences: data ?? [] })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed' }, { status: 500 })
@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
       })
       .select('*')
       .single()
-    if (error || !data) return NextResponse.json({ error: error?.message ?? 'Insert failed' }, { status: 500 })
+    if (error || !data) return dbErrorResponse('comms/sequences', error)
     await writeAudit({ actor, action: 'entity.created', entity: 'comm_sequence', entityId: data.id, diff: { name: data.name, channel: data.channel } })
     return NextResponse.json({ sequence: data }, { status: 201 })
   } catch (e) {

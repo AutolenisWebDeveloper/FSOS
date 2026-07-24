@@ -21,7 +21,7 @@ financial-services operating system: **166 API routes, 252 pages (250 server com
 41 migrations, 20 behavioral test suites, 6 authenticated portals + a public surface, one
 unified Next.js 15 app.** The aggregate-root spine (Agency Partnership → Referral →
 Household → Review → Opportunity → Case → Commission) is implemented exactly as specified,
-with a genuinely disciplined design-token system, a pure/tested 7-step communications gate,
+with a genuinely disciplined design-token system, a pure/tested 13-step communications gate (`data-guardrails.md` §5),
 an append-only tamper-evident `audit_log`, pgcrypto DOB encryption, a model-agnostic AI
 gateway with a dual kill switch, and a correctly-isolated Compliance Intelligence module.
 
@@ -84,7 +84,7 @@ The UI is aggregate-root-first: `src/app/(fsa)/app/agencies/page.tsx:11` selects
   account-number/order columns exist anywhere**. Write-time `assertNotSecuritiesSystemOfRecord()`
   (`src/lib/compliance/firewall.ts:71`) blocks substantive securities fields. RLS row rule:
   a client role *can never load a security policy* (`010_rls_guardrails.sql:139`).
-- **AI green-zone / red-line.** Every client-facing send funnels through the pure 7-step gate
+- **AI green-zone / red-line.** Every client-facing send funnels through the pure 13-step gate (`data-guardrails.md` §5)
   `evaluateGate()` (`src/lib/comms/gate.ts:77-87`); recommendation language blocked via
   `RECOMMENDATION_PATTERNS` (`src/lib/compliance/guardrail.ts:46-58`); roster has deliberately
   no recommend/advise tool (`src/lib/ai/roster.ts`, `assertGreenZoneOnly`).
@@ -159,7 +159,7 @@ skip**. (Closes prior-audit C2 and H7.)
 | Data client | `src/lib/supabase/client.ts` | `getDb()` (service-role, **bypasses RLS**) + `getBrowserDb()` (anon). |
 | Auth/RBAC | `src/lib/auth/{rbac,session,api,config-gate}.ts` | Pure `evaluateAccess`, role/scope resolution, fail-closed gate. |
 | Scope | `src/lib/portal/scope.ts` | `agencyIdsFor`/`householdIdFor` — the **actual** row-isolation layer for API routes. |
-| Comms | `src/lib/comms/{send,dispatcher,gate,inbound,keywords}.ts` + `messaging.ts` | 7-step gate → provider send. |
+| Comms | `src/lib/comms/{send,dispatcher,gate,inbound,keywords}.ts` + `messaging.ts` | 13-step gate (`data-guardrails.md` §5) → provider send. |
 | Compliance | `src/lib/compliance/{compliance,guardrail,firewall}.ts` | Red-line validator + firewall field gate. |
 | AI | `src/lib/ai/{gateway,roster,workforce,outreach}.ts` + `anthropic.ts` | Model-agnostic gateway + agent workforce. |
 | Knowledge | `src/lib/knowledge/`, `src/lib/compliance/intelligence.ts` | Retrieval + citation grounding. |
@@ -359,7 +359,7 @@ weakness under serverless fan-out.
 | Integration | Current implementation | Classification | Rationale |
 |---|---|---|---|
 | **Supabase** | `@supabase/supabase-js` (`client.ts`) | **Should remain custom** | Core data path; RLS-bypass service-role + typed queries need in-app control. Supabase MCP useful for *dev/migration ops*, not runtime. |
-| **Twilio (SMS)** | Direct REST (`messaging.ts`) | **Should remain custom** | Sends must pass the 7-step gate; an MCP that can send bypasses the firewall. Keep custom; MCP only for *read/lookup* (already gated by unauth in this session). |
+| **Twilio (SMS)** | Direct REST (`messaging.ts`) | **Should remain custom** | Sends must pass the 13-step gate (`data-guardrails.md` §5); an MCP that can send bypasses the firewall. Keep custom; MCP only for *read/lookup* (already gated by unauth in this session). |
 | **Resend (email)** | SDK (`messaging.ts`) | **Should remain custom** | Same gate-enforcement reason. |
 | **GoHighLevel** | Full REST client (`ghl.ts`) | **Partially MCP-serviceable** | Inbound webhooks stay custom; outbound contact/opportunity sync could use an MCP, but existing client is mature — low ROI to migrate. |
 | **Google Calendar** | **Not built** (Calendly is actual) | **Better served by MCP** (net-new) | No existing code to replace; a Calendar MCP would be additive capability. Evaluate against Calendly. |
@@ -426,7 +426,7 @@ graph LR
   scope --> supa
 ```
 
-### 9.3 Communication flow (the 7-step gate)
+### 9.3 Communication flow (the 13-step gate — `data-guardrails.md` §5)
 ```mermaid
 flowchart TD
   A[Any automated send] --> B{sendThroughGate}
@@ -466,7 +466,7 @@ graph TD
   KS[Dual kill switch] --> RUN[agent-runner → agent_runs]
   RUN --> G1[GREEN: triage · dormancy · data-quality · commission-recon]
   RUN --> Y1[YELLOW: outreach drafts · marketing · FNA · compliance drafting]
-  Y1 --> GATE[7-step gate / human+FFS approval]
+  Y1 --> GATE[13-step gate / human+FFS approval]
   GATE --> RED[RED blocked: product rec · suitability · unsupervised securities comms]
   subgraph proposed["Proposed (roster-only, no handler)"]
     P1[executive-intel]; P2[pipeline]; P3[case-mgmt]; P4[document-intel]; P5[agency-growth]

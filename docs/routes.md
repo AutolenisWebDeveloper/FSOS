@@ -125,9 +125,11 @@ commissions/pending/page.tsx  commissions/splits/page.tsx  commissions/reconcili
 commissions/discrepancies/page.tsx  commissions/chargebacks/page.tsx  commissions/trails/page.tsx
 commissions/adjustments/page.tsx  commissions/statements/page.tsx  commissions/[id]/page.tsx
 
-comms/page.tsx  comms/sms/page.tsx  comms/email/page.tsx  comms/templates/page.tsx
-comms/templates/[id]/page.tsx  comms/campaigns/page.tsx  comms/campaigns/new/page.tsx
-comms/campaigns/[id]/page.tsx  comms/sequences/page.tsx  comms/audience/page.tsx
+comms/layout.tsx (CommsSubnav)  comms/page.tsx  comms/inbox/page.tsx  comms/inbox/[id]/page.tsx
+comms/sms/page.tsx  comms/email/page.tsx  comms/templates/page.tsx  comms/templates/[id]/page.tsx
+comms/campaigns/page.tsx  comms/campaigns/new/page.tsx  comms/campaigns/[id]/page.tsx
+comms/sequences/page.tsx  comms/audience/page.tsx  comms/library/page.tsx
+comms/assignments/page.tsx  comms/identity/page.tsx (+ identity-editor.tsx)
 comms/suppression/page.tsx  comms/delivery/page.tsx  comms/analytics/page.tsx
 
 documents/page.tsx  documents/upload/page.tsx  documents/requests/page.tsx

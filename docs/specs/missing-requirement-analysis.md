@@ -41,7 +41,7 @@
 |---|---|---|---|
 | D1 | AI could produce a product recommendation | S1 | Resolved — red-line guardrail hard-block; no "recommend" action exists (CLAUDE.md §2.2, WF-8) |
 | D2 | Securities data leaking into automation/portals | S1 | Resolved — firewall: `is_security` excluded from sends; client/partner column allowlist (§2.1) |
-| D3 | Sends bypassing consent/quiet-hours/DNC | S1 | Resolved — 7-step dispatcher gate at send time (WF-5/WF-9) |
+| D3 | Sends bypassing consent/quiet-hours/DNC | S1 | Resolved — 13-step dispatcher gate at send time (WF-5/WF-9; `../data-guardrails.md` §5) |
 | D4 | Audit trail incomplete | S1 | Resolved — append-only `audit_log` on every mutation/send/block/AI action (Part 4 taxonomy) |
 | D5 | Permission bypass via deep link | S1 | Resolved — middleware coarse gate + RLS + rbac; 403 not blank (Part 1/4) |
 | D6 | Invented Farmers splits/windows/products/APIs | S1 | Config — assumption-flagged editable defaults + "verify" badge; no invented integrations |

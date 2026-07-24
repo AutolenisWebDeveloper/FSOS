@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { configErrorResponse } from '@/lib/http'
+import { configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole } from '@/lib/auth/api'
 
 export const dynamic = 'force-dynamic'
@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     let builder = db.from('v_campaign_metrics').select('*')
     if (campaignId) builder = builder.eq('campaign_id', campaignId)
     const { data, error } = await builder
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('comms/analytics', error)
 
     const rows = (data ?? []) as Array<{
       campaign_id: string

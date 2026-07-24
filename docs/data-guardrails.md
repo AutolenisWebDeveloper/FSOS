@@ -96,10 +96,27 @@ validateAIClientMessage(draft, context) -> {allow|block, reasons[]}:
 Escalation triggers (route to human FSA): client requests advice/recommendation · securities discussion needs FFS channel · consent unclear · compliance rule triggered · replacement/suitability/best-interest/supervision issue · conflicting/incomplete case info · high-value/urgent opportunity.
 Green-zone (allowed autonomously): identify · educate · invite · schedule · remind · follow up · run approved/consented campaigns · draft internal · assemble data · log.
 
-## 5. GUARDRAIL 3 — Communications gate (`lib/comms/dispatcher.ts`)
-Every automated SMS/email passes, in order, blocking on any failure and logging the block:
-1 valid channel consent · 2 within quiet hours (recipient-local) · 3 not on internal/external DNC · 4 approved template or approved AI policy · 5 not an individualized securities recommendation · 6 not `is_security` · 7 not otherwise blocked by FFS/Farmers/carrier/state/federal rule.
-Blocked sends → `compliance_events` + escalation; never silently dropped. All sends (and blocks) audited.
+## 5. GUARDRAIL 3 — Communications gate (`lib/comms/gate.ts` → `lib/comms/dispatcher.ts`)
+
+> **Canonical enumeration.** This section is the single source of truth for the gate's steps and order. Other docs cite it rather than re-listing the steps. The pure decision core is `evaluateGate` in `src/lib/comms/gate.ts`; `dispatcher.ts` wires it to consent/DNC lookups, audit, escalation, and the actual senders. The original gate had **7 checks**; as the native communications platform was built (Slices 1–8) it grew to **13 ordered steps**.
+
+Every automated SMS/email passes these **13 steps in order, blocking on the first failure** and logging the block. Steps 1–10 are **escalating compliance blocks** (a block escalates to the human FSA); steps 11–13 are **non-escalating operational deferrals** (held/dropped for this cycle, not a compliance violation), checked LAST so a real compliance failure can never be masked by a benign deferral:
+
+1. **ownership** — authoritative ownership (agency / agency-owner / represented-agent / actual sender) must resolve; unresolved → assignment-review queue. *Escalates.*
+2. **consent** — valid channel consent on file. *Escalates.*
+3. **quiet_hours** — recipient-local **9:00–20:00** TCPA floor (non-negotiable). *Escalates.*
+4. **delegation** — the FSA↔agency-owner on-behalf-of authority is ACTIVE and in-scope. *Escalates.*
+5. **dnc** — not on internal/external do-not-contact. *Escalates.*
+6. **approved_template** — approved template or approved AI policy. *Escalates.*
+7. **recommendation** — no individualized product/investment/replacement/allocation call-to-action. *Escalates.*
+8. **is_security** — record/recipient not securities-flagged. *Escalates → FFS-supervised handling.*
+9. **data_confidence** — a *specific* claim (deadline, ownership, lapse/age/appointment status) rests on verified, non-conflicting, above-threshold data. *Escalates → verification task; never sent on a guess.*
+10. **other_rule** — any FFS/Farmers/carrier/state/federal rule block. *Escalates.*
+11. **business_hours** — within the operator's configured hours of operation (can only tighten the legal floor). *Operational deferral — does NOT escalate* (held for the next in-hours cycle).
+12. **frequency** — within the recipient's configured rate caps. *Operational deferral — does NOT escalate.*
+13. **collision** — a higher-priority campaign or active conversation is underway, so this promotional send pauses. *Operational deferral — does NOT escalate.*
+
+Blocked (escalating) sends → `compliance_events` + escalation; never silently dropped. All sends (and blocks) audited. New gate inputs are default-permissive, so an existing call site that does not set a new dimension keeps its prior behavior.
 
 ## 6. GUARDRAIL 4 — No invented Farmers data (config-default pattern)
 Any value that is not publicly documented ships as an editable default with `is_assumption = true` and a UI **"config default — verify"** badge (archetype A10). Applies to: commission splits (`commission_splits`), FNWL term-conversion windows (`products.conversion_window_*`), product availability (`products.active`), carrier rules, and any Farmers/FFS API availability.

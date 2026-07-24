@@ -38,7 +38,7 @@ the `x-vercel-cron` header **or** `Authorization: Bearer ${CRON_SECRET}`, then r
 
 ## 3. What gates outbound — the AI kill switch and its default
 
-- **Per-message gate (always on):** the 7-step `evaluateGate` (consent, quiet hours, DNC,
+- **Per-message gate (always on):** the 13-step `evaluateGate` (`../data-guardrails.md` §5) (consent, quiet hours, DNC,
   approved template, recommendation, `is_security`, other-rule). This blocks individual messages;
   it is not an on/off switch.
 - **AI gateway kill switch:** `ai_policies.gateway_enabled`.

@@ -320,6 +320,7 @@ Navigation is core to enterprise usability. It must be predictable, persistent, 
 - **Deep links & URL persistence:** every meaningful view state (selected record, tab, filters, sort, saved view, search query, pagination) lives in the URL — bookmarkable, shareable, reloadable without loss.
 - **Browser back:** the back button navigates as expected and never exits the app or resets to a default screen. (Legacy `useState`-based navigation is a known debt, §30 / `CLAUDE.md` build reality.)
 - **Command palette:** `⌘K` for keyboard-first navigation and actions across the app (§8).
+- **In-hub sub-navigation:** a hub with many sibling routes (e.g. the AI Communications Center, `CommsSubnav` rendered by `comms/layout.tsx`) may carry a grouped in-hub sub-nav so every sibling surface is reachable without leaving the hub. It is a bordered `bg-card` bar of labeled groups (mono uppercase group headings under `text-muted-foreground`, links as `NavLink`-style pills), fully token-based and composed from existing primitives (`Link`, `cn`, the same active-state rules as §12 "Active navigation") — it introduces **no** new token or component variant. Active state derives from the URL (`usePathname`), sets `aria-current="page"`, and a list route must not swallow a sibling detail/`/new` route's active state. It supplements — never replaces — breadcrumbs and the primary sidebar.
 
 ---
 

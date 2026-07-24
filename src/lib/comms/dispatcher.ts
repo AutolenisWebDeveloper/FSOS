@@ -38,6 +38,13 @@ export interface DispatchResult {
   escalated: boolean
   providerId?: string
   error?: string
+  /**
+   * The EXACT body transmitted (SMS carries the appended TRAIGA AI-disclosure/opt-out
+   * footer). Returned so the caller can persist what was actually sent — the stored/
+   * audited body must include the compliance disclosure that went out (§13.9). Present
+   * only when sent.
+   */
+  sentBody?: string
 }
 
 // Side-effects the dispatcher performs. Defaults write to Supabase / send via the
@@ -144,5 +151,5 @@ export async function dispatch(req: DispatchRequest, deps: DispatchDeps = defaul
     diff: { channel: req.channel, to: req.to, ok: result.ok, providerId: result.id, error: result.error },
   })
 
-  return { sent: result.ok, gate, escalated: false, providerId: result.id, error: result.error }
+  return { sent: result.ok, gate, escalated: false, providerId: result.id, error: result.error, sentBody: result.ok ? body : undefined }
 }

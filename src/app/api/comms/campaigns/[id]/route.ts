@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { dispatchCampaign } from '@/lib/comms/campaign'
@@ -16,7 +16,7 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
   if (!auth.ok) return auth.response
   try {
     const { data, error } = await getDb().from('comm_campaigns').select('*').eq('id', params.id).maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('comms/campaigns/[id]', error)
     if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     return NextResponse.json({ campaign: data })
   } catch (e) {
@@ -61,14 +61,21 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     }
 
     if (action === 'activate') {
+      const { data: c } = await db.from('comm_campaigns').select('status, simulated_at').eq('id', params.id).maybeSingle()
+      if (!c) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      // Idempotency guard: never re-activate/re-dispatch a campaign that is already active
+      // (per-recipient enrollment is also unique, so this only avoids a redundant scan).
+      if (c.status === 'active') return NextResponse.json({ error: 'Campaign is already active.', reason: 'already_active' }, { status: 409 })
       // §14 — a simulation/preview pass is REQUIRED before activation.
-      const { data: c } = await db.from('comm_campaigns').select('simulated_at').eq('id', params.id).maybeSingle()
-      const gate = simulationSatisfiesActivation(c?.simulated_at ?? null, new Date().toISOString())
+      const gate = simulationSatisfiesActivation(c.simulated_at ?? null, new Date().toISOString())
       if (!gate.ok) return NextResponse.json({ error: gate.reason, reason: 'simulation_required' }, { status: 422 })
-      await db.from('comm_campaigns').update({ status: 'active', activated_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', params.id)
-      await writeAudit({ actor, action: 'entity.updated', entity: 'comm_campaign', entityId: params.id, diff: { status: 'active' } })
+      // Dispatch FIRST; mark the campaign active only after a successful dispatch, so a
+      // dispatch failure never leaves the campaign 'active' with nothing sent. dispatchCampaign
+      // reads the row by id (it does not require status='active'), so ordering is safe.
       const result = await dispatchCampaign(params.id, actor)
       if ('error' in result) return NextResponse.json({ error: result.error }, { status: 422 })
+      await db.from('comm_campaigns').update({ status: 'active', activated_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', params.id)
+      await writeAudit({ actor, action: 'entity.updated', entity: 'comm_campaign', entityId: params.id, diff: { status: 'active' } })
       if (result.audience === 0) {
         // Empty audience → activation is a no-op; report it (never a silent success).
         return NextResponse.json({ ok: true, status: 'active', dispatched: result, note: 'No eligible recipients.' })

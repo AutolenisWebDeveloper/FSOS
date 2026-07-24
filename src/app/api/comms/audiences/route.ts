@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { AudienceCreateSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
@@ -18,7 +18,7 @@ export async function GET() {
       .from('comm_audiences')
       .select('*')
       .order('updated_at', { ascending: false })
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('comms/audiences', error)
     return NextResponse.json({ audiences: data ?? [] })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed' }, { status: 500 })
@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
       })
       .select('*')
       .single()
-    if (error || !data) return NextResponse.json({ error: error?.message ?? 'Insert failed' }, { status: 500 })
+    if (error || !data) return dbErrorResponse('comms/audiences', error)
     await writeAudit({ actor, action: 'entity.created', entity: 'comm_audience', entityId: data.id, diff: { name: data.name, base: v.data.definition.base } })
     return NextResponse.json({ audience: data }, { status: 201 })
   } catch (e) {

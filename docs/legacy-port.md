@@ -88,7 +88,7 @@ The client intake portal (you had 8 pending responses).
 - **Content:** workshop/seminar list, detail, registrations, attendance, → convert attendee to referral/household.
 - **Public:** existing `/events/[id]/register` restyled; **consent captured at registration**.
 - **Data:** `workshops`, `workshop_registrations`; links to `fsos_referrals`.
-- **🛡 Compliance:** invitations run through the 7-step gate. Educational/event content only — no product pitch in automated invites.
+- **🛡 Compliance:** invitations run through the 13-step comms gate (`docs/data-guardrails.md` §5). Educational/event content only — no product pitch in automated invites.
 
 ### 2.6 Contact Upload (GHL) — `/admin/data/imports/ghl` **[A6]** *(P2)*
 Folds into the existing Admin import wizard rather than a separate uploader.

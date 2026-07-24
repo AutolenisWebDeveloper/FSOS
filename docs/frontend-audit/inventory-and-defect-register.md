@@ -85,7 +85,7 @@ Severity = user/business impact. **Status:** `FIXED` (this session, Slice 0), `S
 - Auth forms (`LoginForm`, `ForgotPasswordForm` with no-enumeration copy, `ResetPasswordForm` with expired/used branch, `MfaForm`) have full loading/error/success states. **Only invite/verify are stubs (C1/C2).**
 - Homepage images use `next/image` (`fill`+`sizes`+`priority` hero; sized bio image) with descriptive alt.
 - A2P core pages (Privacy no-3rd-party clause, SMS Terms, Terms) present & carrier-compliant; `SiteContactForm` is a gold-standard opt-in CTA. (Details: `a2p-10dlc-website-compliance.md`.)
-- Backend comms compliance (7-step gate, STOP/HELP, DNC, quiet hours, is_security firewall, Twilio signature verify) present & wired — unchanged.
+- Backend comms compliance (13-step gate — `../data-guardrails.md` §5 — STOP/HELP, DNC, quiet hours, is_security firewall, Twilio signature verify) present & wired — unchanged.
 
 ## 4. Fixed this session (Slice 0)
 

@@ -33,7 +33,19 @@ const at = async (name, fn) => { await fn(); passed++; console.log('  ✓', name
 
 console.log('Email render determinism (ADR-025)')
 
-assert.ok(Array.isArray(EMAIL_TEMPLATES) && EMAIL_TEMPLATES.length >= 1, 'registry is non-empty')
+assert.ok(Array.isArray(EMAIL_TEMPLATES), 'registry is an array')
+// Lock the full library size so a dropped/duplicated registry entry fails the build.
+assert.equal(EMAIL_TEMPLATES.length, 30, 'registry has all 30 templates')
+// source_key is the stable identity that ties a stored template to its component — must be unique.
+const sourceKeys = EMAIL_TEMPLATES.map((t) => t.sourceKey)
+assert.equal(new Set(sourceKeys).size, sourceKeys.length, 'every source_key is unique')
+// Every entry is a well-formed email registry row (channel + a known category + an element).
+const CATEGORIES = new Set(['policy_review', 'term_conversion', 'educational', 'event', 'referral', 'agency', 'appointment'])
+for (const tpl of EMAIL_TEMPLATES) {
+  assert.equal(tpl.channel, 'email', `${tpl.sourceKey} is an email template`)
+  assert.ok(CATEGORIES.has(tpl.category), `${tpl.sourceKey} has a known category (${tpl.category})`)
+  assert.ok(tpl.element, `${tpl.sourceKey} has a React element`)
+}
 
 for (const tpl of EMAIL_TEMPLATES) {
   await at(`[${tpl.sourceKey}] renders byte-identical HTML + text across runs`, async () => {

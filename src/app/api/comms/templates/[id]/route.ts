@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { TemplatePatchSchema, TemplateApprovalSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
@@ -41,7 +41,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     update.approved_by = null
 
     const { error } = await db.from('comm_templates').update(update).eq('id', params.id)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('comms/templates/[id]', error)
     await writeAudit({ actor, action: 'entity.updated', entity: 'comm_template', entityId: params.id, diff: { version: update.version, reset_to_draft: true } })
     return NextResponse.json({ ok: true, version: update.version })
   } catch (e) {
@@ -79,8 +79,11 @@ async function handleApproval(req: NextRequest, id: string, userId: string, role
       if (!roles.some((r) => ['fsa', 'licensed_staff', 'super_admin', 'compliance', 'supervisor'].includes(r))) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       }
-      const { error } = await db.from('comm_templates').update({ approval_status: 'submitted', submitted_at: new Date().toISOString() }).eq('id', id).eq('approval_status', 'draft')
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      const { data: rows, error } = await db.from('comm_templates').update({ approval_status: 'submitted', submitted_at: new Date().toISOString() }).eq('id', id).eq('approval_status', 'draft').select('id')
+      if (error) return dbErrorResponse('comms/templates/[id]', error)
+      // 0 rows affected → the template isn't in draft (already submitted/approved) or doesn't
+      // exist. Report it rather than a false success (the filter guards the state transition).
+      if (!rows || rows.length === 0) return NextResponse.json({ error: 'Template is not in draft status (or was not found).', reason: 'invalid_state' }, { status: 409 })
       await writeAudit({ actor, action: 'approval.decided', entity: 'comm_template', entityId: id, diff: { action: 'submitted' } })
       return NextResponse.json({ ok: true, status: 'submitted' })
     }
@@ -92,8 +95,9 @@ async function handleApproval(req: NextRequest, id: string, userId: string, role
     const status = v.data.action === 'approve' ? 'approved' : 'draft'
     const patch: Record<string, unknown> = { approval_status: status }
     if (v.data.action === 'approve') { patch.approved_at = new Date().toISOString(); patch.approved_by = actor }
-    const { error } = await db.from('comm_templates').update(patch).eq('id', id)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    const { data: rows, error } = await db.from('comm_templates').update(patch).eq('id', id).select('id')
+    if (error) return dbErrorResponse('comms/templates/[id]', error)
+    if (!rows || rows.length === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     await writeAudit({ actor, action: 'approval.decided', entity: 'comm_template', entityId: id, diff: { action: v.data.action, status } })
     return NextResponse.json({ ok: true, status })
   } catch (e) {

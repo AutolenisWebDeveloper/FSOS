@@ -66,7 +66,7 @@ Detects approaching term-expiration/conversion deadlines and launches outreach t
 - **Compliance:** the ONLY client-facing content permitted is neutral education + review invitation. A "recommend product X" control does not exist. If the client asks which product → escalate to FSA. Conversion that discontinues an existing policy → replacement-notice flag.
 - **AI:** agent runs the cadence + drafts educational/invite messages (validated by guardrail; blocked on recommendation/consent/quiet-hours/securities).
 - **Audit:** enrollment, sends, responses, outcome logged. **Related links:** policy · household · resulting opportunity/case · educational materials · appointment.
-- **Acceptance:** every outbound message passes the 7-step gate; no message names/steers to a specific permanent product; escalation path present and used for advice requests.
+- **Acceptance:** every outbound message passes the 13-step gate (`../data-guardrails.md` §5); no message names/steers to a specific permanent product; escalation path present and used for advice requests.
 
 ### Conversion Analytics
 - **Route/Archetype:** `/app/conversions/analytics` · A11

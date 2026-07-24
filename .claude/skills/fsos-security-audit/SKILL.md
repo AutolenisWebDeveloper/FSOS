@@ -25,7 +25,7 @@ Every table with client/agency data carries an owner/tenant key and RLS keyed to
 - **No invented Farmers data (§2.3):** commission splits, conversion windows, product/carrier rules, and API availability ship as editable config with `is_assumption = true` and a "config default — verify" badge — never as hardcoded facts.
 
 ### 3. Communications compliance (§7)
-The 7-step gate (consent → quiet hours → DNC → approved template → not-a-recommendation → not-`is_security` → no other rule) blocks on first failure and escalates; blocked sends are never silently dropped. See **twilio-a2p-compliance** for the mechanics; audit that nothing sends around the gate.
+The 13-step gate (ownership → consent → quiet_hours → delegation → dnc → approved_template → recommendation → is_security → data_confidence → other_rule → business_hours → frequency → collision) blocks on first failure; steps 1–10 escalate, the trailing three are non-escalating operational deferrals. Blocked sends are never silently dropped. Canonical enumeration: `docs/data-guardrails.md` §5. See **twilio-a2p-compliance** for the mechanics; audit that nothing sends around the gate.
 
 ### 4. PII & audit integrity
 - PII encrypted at rest (Supabase default; `pgcrypto` column encryption for DOB) — CLAUDE.md §5.

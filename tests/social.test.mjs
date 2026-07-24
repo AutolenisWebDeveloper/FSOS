@@ -129,9 +129,14 @@ t('content status transitions enforce the lifecycle', () => {
 })
 
 // ── Secret is NEVER serialized into a channel view ───────────────────────────
-t('CHANNEL_COLUMNS never selects secret_enc; it uses a presence boolean', () => {
-  assert.ok(!CHANNEL_COLUMNS.includes('secret_enc,'), 'secret_enc must not be a selected column')
-  assert.match(CHANNEL_COLUMNS, /\(secret_enc is not null\) as has_credential/)
+t('CHANNEL_COLUMNS never selects secret_enc; has_credential is a plain (generated) column', () => {
+  // secret_enc (the ciphertext) must never be selected into a client-facing shape.
+  assert.ok(!CHANNEL_COLUMNS.includes('secret_enc'), 'secret_enc must not appear in the select at all')
+  // has_credential is a REAL generated column (mig 067) selected as a bare name — NOT a
+  // SQL expression. A raw expression here is what 500'd the accounts page; guard against it.
+  assert.ok(/(^|,\s*)has_credential(\s*,|$)/.test(CHANNEL_COLUMNS), 'has_credential must be a plain selected column')
+  assert.ok(!/\bas\b/.test(CHANNEL_COLUMNS), 'no "as" alias/expression allowed in the select string')
+  assert.ok(!CHANNEL_COLUMNS.includes('('), 'no SQL expression (parentheses) allowed in the select string')
 })
 
 t('toChannelView exposes has_credential but no token/secret material', () => {

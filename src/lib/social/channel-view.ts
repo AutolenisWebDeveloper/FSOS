@@ -5,12 +5,21 @@
 
 import { capabilitiesFor, type PublisherCapabilities, type SocialPlatform } from './adapters'
 
-// Explicit column list — NOTE: secret_enc is intentionally ABSENT. We select a
-// boolean presence expression (has_credential) instead of the ciphertext.
+// Explicit column list — NOTE: secret_enc is intentionally ABSENT. `has_credential`
+// is a REAL generated boolean column (migration 067) that reflects secret_enc's
+// presence; the ciphertext is never selected. It must be a plain column name here —
+// PostgREST does NOT support SQL expressions in a select string (that bug 500'd the
+// accounts page). Any addition here must be a bare column/embed, never an expression.
 export const CHANNEL_COLUMNS =
   'id, platform, external_account_id, display_name, status, token_ref, token_expires_at, ' +
   'scopes, can_post, can_read_engagement, can_read_analytics, connected_by, connected_at, ' +
-  'last_verified_at, last_error, created_at, updated_at, (secret_enc is not null) as has_credential'
+  'last_verified_at, last_error, created_at, updated_at, has_credential'
+
+// The publish pipeline reads a narrower channel projection; it also relies on the
+// generated has_credential column (never the raw secret_enc). Exported so the
+// PostgREST-safety test can exercise the exact string the publisher passes to select().
+export const SCHEDULE_CHANNEL_SELECT =
+  'id, platform, external_account_id, status, token_expires_at, has_credential'
 
 export interface ChannelRow {
   id: string

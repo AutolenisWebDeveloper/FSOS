@@ -16,11 +16,12 @@
 
 import { BaseSocialPublisher } from './base'
 import { YouTubePublisher } from './youtube'
+import { FacebookPagePublisher } from './facebook'
 import type { PlatformSupport, SocialPlatform } from './types'
 
 export const PLATFORM_SUPPORT: Record<SocialPlatform, PlatformSupport> = {
   youtube: { canPost: true, canReadEngagement: true, canReadAnalytics: true, active: true }, // slice 3 — ACTIVE
-  facebook_page: { canPost: true, canReadEngagement: true, canReadAnalytics: true, active: false }, // slice 4
+  facebook_page: { canPost: true, canReadEngagement: true, canReadAnalytics: true, active: true }, // slice 4 — ACTIVE
   instagram: { canPost: true, canReadEngagement: true, canReadAnalytics: true, active: false }, // slice 7
   linkedin_company: { canPost: true, canReadEngagement: true, canReadAnalytics: true, active: false }, // slice 7
   x: { canPost: true, canReadEngagement: true, canReadAnalytics: true, active: false }, // slice 7
@@ -39,7 +40,7 @@ class PlatformPublisher extends BaseSocialPublisher {
 
 export const SOCIAL_ADAPTERS: Record<SocialPlatform, BaseSocialPublisher> = {
   youtube: new YouTubePublisher(),
-  facebook_page: new PlatformPublisher('facebook_page'),
+  facebook_page: new FacebookPagePublisher(),
   instagram: new PlatformPublisher('instagram'),
   linkedin_company: new PlatformPublisher('linkedin_company'),
   x: new PlatformPublisher('x'),

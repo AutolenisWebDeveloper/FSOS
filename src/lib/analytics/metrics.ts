@@ -106,6 +106,12 @@ async function computeOne(key: string): Promise<number | null> {
       if (!res.ok) return null
       return Math.round(res.data.reduce((a, r) => a + (Number(r.fsa_amount) || 0), 0))
     }
+    case 'social_pending_approval':
+      return countOf((db) => db.from('social_content').select('id').eq('status', 'IN_REVIEW').is('deleted_at', null))
+    case 'social_scheduled':
+      return countOf((db) => db.from('social_schedule_entries').select('id').eq('status', 'pending').is('deleted_at', null))
+    case 'social_engagement_review':
+      return countOf((db) => db.from('social_engagement').select('id').eq('resolution_status', 'unmatched'))
     default:
       return null
   }

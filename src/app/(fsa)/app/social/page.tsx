@@ -78,7 +78,7 @@ export default async function SocialOverviewPage() {
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-5">
         <StatTile label="Pending approval" value={pendingApproval} href="/app/social/content" icon={FileEdit} tone={pendingApproval > 0 ? 'attention' : 'neutral'} />
         <StatTile label="Scheduled" value={scheduled} href="/app/social/queue" icon={CalendarClock} tone="brand" />
-        <StatTile label="Published" value={published} icon={Send} />
+        <StatTile label="Published" value={published} href="/app/social/analytics" icon={Send} />
         <StatTile label="Failures" value={failures} href="/app/social/queue" icon={AlertTriangle} tone={failures > 0 ? 'attention' : 'neutral'} />
         <StatTile label="Engagement" value={0} href="/app/social/engagement" icon={MessageSquare} hint="awaiting response" />
       </div>

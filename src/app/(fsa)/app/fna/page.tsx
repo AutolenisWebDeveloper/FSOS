@@ -118,6 +118,10 @@ export default async function FnaOverviewPage() {
             { href: '/app/fna/business-owner', label: 'Business owner' },
             { href: '/app/fna/tax-aware', label: 'Tax-aware' },
             { href: '/app/fna/assumptions', label: 'Assumptions' },
+            { href: '/app/fna/recommendations', label: 'Recommendations' },
+            { href: '/app/fna/formulas', label: 'Formula explorer' },
+            { href: '/app/fna/timeline', label: 'Timeline' },
+            { href: '/app/fna/audit', label: 'Cross-plan audit' },
             { href: '/app/fna/generate', label: 'Generate narrative' },
           ].map((m) => (
             <Link key={m.href} href={m.href} className="rounded-md border p-3 text-sm font-medium transition-colors hover:bg-muted/40">

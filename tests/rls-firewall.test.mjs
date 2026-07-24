@@ -129,6 +129,8 @@ try {
   // 061 adds comm_templates.body_text/render_sha/source_key (Slice 9B hybrid render).
   // Renumbered from 060 after main merged 060_fna_data_model (migration numbers are unique).
   psqlFile('supabase/migrations/061_comm_template_render.sql')
+  // 062 adds fna_recommendations (Slice 9) — back-office only; a client sees ZERO rows.
+  psqlFile('supabase/migrations/062_fna_recommendations.sql')
 
   // Seed: this client's household + a second household; a life + a securities policy.
   // conversion_deadline/is_with_us are set so every policy also surfaces in the
@@ -180,7 +182,10 @@ try {
       `('77777777-7777-7777-7777-777777777777','22222222-2222-2222-2222-222222222222','comprehensive','CALCULATED');\n` +
       `insert into fna_versions(plan_id, version_no, assumption_set_version, engine_version) values ` +
       `('77777777-7777-7777-7777-777777777777', 1, 'default-v1', '1.0.0');\n` +
-      `grant select on agency_communication_delegations, comm_assignment_reviews, comm_identity_config, comm_frequency_policy, comm_consent_purposes, comm_conversation_policy, fna_plans, fna_versions to authenticated;\n`,
+      // Slice 9 (mig 062): a human recommendation on this plan — back-office only.
+      `insert into fna_recommendations(plan_id, household_id, objective, authored_by) values ` +
+      `('77777777-7777-7777-7777-777777777777','22222222-2222-2222-2222-222222222222','Review protection gap','fsa');\n` +
+      `grant select on agency_communication_delegations, comm_assignment_reviews, comm_identity_config, comm_frequency_policy, comm_consent_purposes, comm_conversation_policy, fna_plans, fna_versions, fna_recommendations to authenticated;\n`,
   )
   psqlFile(`${L}/seed.sql`)
 
@@ -226,6 +231,7 @@ try {
   // Slice 2 (mig 060): client must see zero FNA plan / version rows.
   const visibleFnaPlans = psqlQuery('set role authenticated; select count(*) from fna_plans;')
   const visibleFnaVersions = psqlQuery('set role authenticated; select count(*) from fna_versions;')
+  const visibleFnaRecs = psqlQuery('set role authenticated; select count(*) from fna_recommendations;')
 
   // Slice 2 (mig 060): fna_versions immutability trigger. As the superuser (RLS
   // bypassed) prove: a snapshot column cannot be mutated; a lifecycle column
@@ -292,6 +298,9 @@ try {
   })
   t('client CANNOT read fna_versions (back-office default-deny, mig 060)', () => {
     assert.equal(visibleFnaVersions, '0', `expected 0 FNA versions to a client, got: ${visibleFnaVersions}`)
+  })
+  t('client CANNOT read fna_recommendations (back-office default-deny, mig 062)', () => {
+    assert.equal(visibleFnaRecs, '0', `expected 0 FNA recommendations to a client, got: ${visibleFnaRecs}`)
   })
   t('fna_versions snapshot columns are immutable (mig 060 trigger)', () => {
     assert.equal(snapshotUpdateBlocked, true, 'updating results on a frozen version must raise')

@@ -48,6 +48,7 @@ export async function POST(req: NextRequest) {
         description: v.data.description ?? null,
         channel: v.data.channel,
         category: v.data.category ?? null,
+        purpose: v.data.purpose ?? null, // Slice 7 (§9/§10) — default drip purpose.
         steps: v.data.steps,
         status: 'draft',
         requires_optout: true,

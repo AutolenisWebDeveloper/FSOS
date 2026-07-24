@@ -10,16 +10,24 @@ import { Field } from '@/components/forms/Field'
 import { WizardShell } from '@/components/archetypes'
 import { TEMPLATE_CATEGORY } from '@/lib/validation/schemas'
 import { postJson, firstFieldError } from '@/lib/client/api'
+import { MESSAGE_PURPOSES } from '@/lib/comms/purpose'
 
 const STEPS = ['Audience', 'Template', 'Schedule', 'Confirm', 'Review']
 
+/** An ACTIVE delegation the FSA may send under, paired with its represented agency owner. */
+export interface DelegationOption {
+  id: string
+  ownerId: string
+  ownerName: string
+}
+
 // A6 builder: audience → approved template → schedule → consent/quiet-hours ack → review.
 // Only APPROVED templates are selectable — an unapproved template cannot be attached.
-export function CampaignBuilder({ templates }: { templates: { id: string; name: string; channel: string; category: string }[] }) {
+export function CampaignBuilder({ templates, delegations = [] }: { templates: { id: string; name: string; channel: string; category: string }[]; delegations?: DelegationOption[] }) {
   const router = useRouter()
   const [step, setStep] = React.useState(0)
   const [saving, setSaving] = React.useState(false)
-  const [form, setForm] = React.useState({ name: '', channel: 'email', category: 'educational', template_id: '', audience: 'all_consented', schedule_at: '', ack: false })
+  const [form, setForm] = React.useState({ name: '', channel: 'email', category: 'educational', template_id: '', audience: 'all_consented', schedule_at: '', ack: false, purpose: '', delegation_id: '' })
 
   function set<K extends keyof typeof form>(k: K, val: (typeof form)[K]) { setForm((f) => ({ ...f, [k]: val })) }
   const channelTemplates = templates.filter((t) => t.channel === form.channel)
@@ -28,9 +36,13 @@ export function CampaignBuilder({ templates }: { templates: { id: string; name: 
     if (!form.ack) { toast.error('Confirm consent + quiet-hours to continue.'); return }
     if (!form.template_id) { toast.error('Select an approved template.'); return }
     setSaving(true)
+    // Slice 7 — a chosen delegation carries its represented agency owner (set together).
+    const chosen = delegations.find((d) => d.id === form.delegation_id)
     const res = await postJson<{ campaign: { id: string } }>('/api/comms/campaigns', {
       name: form.name, channel: form.channel, category: form.category, template_id: form.template_id,
       audience: { kind: form.audience }, schedule_at: form.schedule_at || undefined, quiet_hours_ack: form.ack,
+      ...(form.purpose ? { purpose: form.purpose } : {}),
+      ...(chosen ? { delegation_id: chosen.id, represented_agency_owner_id: chosen.ownerId } : {}),
     })
     setSaving(false)
     if (!res.ok) {
@@ -62,6 +74,20 @@ export function CampaignBuilder({ templates }: { templates: { id: string; name: 
           <Field id="name" label="Campaign name" required><Input id="name" value={form.name} onChange={(e) => set('name', e.target.value)} /></Field>
           <Field id="channel" label="Channel"><Select id="channel" value={form.channel} onChange={(e) => { set('channel', e.target.value); set('template_id', '') }}><option value="email">email</option><option value="sms">sms</option></Select></Field>
           <Field id="audience" label="Audience" hint="The gate re-checks every recipient at send time"><Select id="audience" value={form.audience} onChange={(e) => set('audience', e.target.value)}><option value="all_consented">All consented members</option><option value="cross_sell">Cross-sell gap households</option><option value="conversion">Conversion-due households</option></Select></Field>
+          <Field id="purpose" label="Message purpose" hint="Drives purpose-scoped consent, frequency caps + priority collision at dispatch">
+            <Select id="purpose" value={form.purpose} onChange={(e) => set('purpose', e.target.value)}>
+              <option value="">— None (channel-wide consent) —</option>
+              {MESSAGE_PURPOSES.map((p) => (<option key={p} value={p}>{p.replace(/_/g, ' ').toLowerCase()}</option>))}
+            </Select>
+          </Field>
+          {delegations.length > 0 ? (
+            <Field id="delegation" label="Send on behalf of (delegated)" hint="Only ACTIVE delegations appear. The gate re-verifies the delegation per send.">
+              <Select id="delegation" value={form.delegation_id} onChange={(e) => set('delegation_id', e.target.value)}>
+                <option value="">— None (direct FSA send) —</option>
+                {delegations.map((d) => (<option key={d.id} value={d.id}>On behalf of {d.ownerName}</option>))}
+              </Select>
+            </Field>
+          ) : null}
         </div>
       ) : null}
       {step === 1 ? (
@@ -82,7 +108,7 @@ export function CampaignBuilder({ templates }: { templates: { id: string; name: 
       {step === 3 ? (
         <label className="flex items-start gap-2 rounded-md border border-status-pending/30 bg-status-pending/10 p-3 text-sm">
           <input type="checkbox" checked={form.ack} onChange={(e) => set('ack', e.target.checked)} className="mt-1" />
-          <span>I confirm this campaign only targets consented recipients within quiet hours, and every send passes the 7-step gate. There is no force-send.</span>
+          <span>I confirm this campaign only targets consented recipients within quiet hours, and every send passes the full compliance gate. There is no force-send.</span>
         </label>
       ) : null}
       {step === 4 ? (
@@ -91,6 +117,8 @@ export function CampaignBuilder({ templates }: { templates: { id: string; name: 
           <p><span className="text-muted-foreground">Channel:</span> {form.channel}</p>
           <p><span className="text-muted-foreground">Template:</span> {templates.find((t) => t.id === form.template_id)?.name ?? '—'}</p>
           <p><span className="text-muted-foreground">Audience:</span> {form.audience}</p>
+          <p><span className="text-muted-foreground">Purpose:</span> {form.purpose ? form.purpose.replace(/_/g, ' ').toLowerCase() : 'none (channel-wide consent)'}</p>
+          <p><span className="text-muted-foreground">On behalf of:</span> {delegations.find((d) => d.id === form.delegation_id)?.ownerName ?? 'direct FSA send'}</p>
           <p><span className="text-muted-foreground">Consent/quiet-hours confirmed:</span> {form.ack ? 'yes' : 'no'}</p>
         </div>
       ) : null}

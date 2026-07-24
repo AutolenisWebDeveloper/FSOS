@@ -19,7 +19,7 @@ const out = mkdtempSync(join(process.cwd(), '.p1-out-'))
 process.on('exit', () => { try { rmSync(out, { recursive: true, force: true }) } catch { /* best-effort */ } })
 
 execSync(
-  `npx tsc src/lib/comms/gate.ts src/lib/compliance/firewall.ts src/lib/compliance/guardrail.ts ` +
+  `npx tsc src/lib/comms/gate.ts src/lib/comms/purpose.ts src/lib/compliance/firewall.ts src/lib/compliance/guardrail.ts ` +
     `src/lib/validation/schemas.ts src/lib/portal/allowlist.ts src/lib/ai/roster.ts ` +
     `--outDir ${out} --module commonjs --target es2020 --moduleResolution node --skipLibCheck --esModuleInterop`,
   { stdio: 'inherit' },

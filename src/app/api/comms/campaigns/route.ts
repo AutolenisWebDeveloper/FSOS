@@ -61,6 +61,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'A drip campaign requires a sequence.', reason: 'missing_sequence' }, { status: 400 })
     }
 
+    // Slice 7 (§7) — a delegated campaign: the delegation + represented owner must exist AND
+    // belong to the SAME agency. The delegation's ACTIVE/in-scope status is re-checked FRESH
+    // at send time by the gate; here we only verify the config is internally consistent so a
+    // mismatched pairing can't be stored. (Zod already enforces the two fields set together.)
+    if (v.data.delegation_id && v.data.represented_agency_owner_id) {
+      const [{ data: del }, { data: owner }] = await Promise.all([
+        db.from('agency_communication_delegations').select('id, agency_id').eq('id', v.data.delegation_id).maybeSingle(),
+        db.from('agency_owners').select('id, agency_id').eq('id', v.data.represented_agency_owner_id).maybeSingle(),
+      ])
+      if (!del) return NextResponse.json({ error: 'Delegation not found.', reason: 'delegation_not_found' }, { status: 404 })
+      if (!owner) return NextResponse.json({ error: 'Represented agency owner not found.', reason: 'owner_not_found' }, { status: 404 })
+      if (del.agency_id !== owner.agency_id) {
+        return NextResponse.json({ error: 'The delegation and the represented owner belong to different agencies.', reason: 'delegation_agency_mismatch' }, { status: 422 })
+      }
+    }
+
     const { data, error } = await db
       .from('comm_campaigns')
       .insert({
@@ -77,6 +93,10 @@ export async function POST(req: NextRequest) {
         schedule_at: v.data.schedule_at ? new Date(v.data.schedule_at).toISOString() : null,
         quiet_hours_ack: true,
         status: 'draft',
+        // Slice 7 builder config (§9/§10, §7).
+        purpose: v.data.purpose ?? null,
+        represented_agency_owner_id: v.data.represented_agency_owner_id ?? null,
+        delegation_id: v.data.delegation_id ?? null,
       })
       .select('*')
       .single()

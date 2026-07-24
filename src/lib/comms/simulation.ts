@@ -10,11 +10,13 @@
 
 import { getDb } from '@/lib/supabase/client'
 import { evaluateGate } from './gate'
-import { resolveAudience, templateBody } from './campaign'
+import { resolveAudience, templateBody, campaignDispatchContext } from './campaign'
 import { isTemplateApproved } from './send'
 import { personalize } from './personalize'
 import { loadHoursPolicy, isWithinOperatingHours } from './hours'
 import { conversationIsSecurity, normalizeContact } from './conversations'
+import { resolveDelegation } from './ownership'
+import { resolveSendPolicy } from './policy-resolver'
 import { verdictFromGate, summarizeSimulation, type SimulationEntry, type SimulationSummary } from './simulation-core'
 
 const DEFAULT_UTC_OFFSET = -6
@@ -68,6 +70,25 @@ export async function simulateCampaign(campaignId: string, sampleLimit = 200): P
   const withinBusinessHours = await isWithinOperatingHours(hoursPolicy)
   const localHour = recipientLocalHour()
 
+  // Slice 7 — resolve the campaign-level purpose + delegated-sender context ONCE, so the
+  // preview exercises the SAME purpose / delegation gate dimensions the real send does
+  // (ADR-021: the richer dimensions "light up once the builder adds them"). For a drip
+  // campaign the sequence's default purpose applies.
+  let sequencePurpose: string | null = null
+  if (campaign.sequence_id) {
+    const { data: seq } = await db.from('comm_sequences').select('purpose').eq('id', campaign.sequence_id).maybeSingle()
+    sequencePurpose = (seq?.purpose as string | null) ?? null
+  }
+  const campCtx = await campaignDispatchContext({
+    id: campaignId,
+    type: campaign.type,
+    purpose: campaign.purpose ?? null,
+    delegation_id: campaign.delegation_id ?? null,
+    represented_agency_owner_id: campaign.represented_agency_owner_id ?? null,
+    sequencePurpose,
+  })
+  const purpose = campCtx.purpose
+
   const audience = await resolveAudience({ channel, audience: campaign.audience ?? {} })
   const entries: SimulationEntry[] = []
   let audienceCount = 0
@@ -77,40 +98,83 @@ export async function simulateCampaign(campaignId: string, sampleLimit = 200): P
     audienceCount++
     const to = normalizeContact(channel, channel === 'email' ? r.email ?? '' : r.phone ?? '')
     const rendered = personalize(body, { full_name: r.full_name })
-    const [consent, dnc, isSecurity] = await Promise.all([
+    const [channelConsent, dnc, isSecurity] = await Promise.all([
       memberConsentGranted(r.member_id, channel),
       onDnc(to, channel),
       conversationIsSecurity(r.household_id),
     ])
+
+    // Purpose policy (§9/§10): purpose-scoped consent REPLACES channel-wide when a row
+    // exists; frequency/collision become non-escalating deferrals — mirrors send.ts.
+    let hasConsent = channelConsent
+    let withinFrequencyCaps: boolean | undefined
+    let collisionPaused: boolean | undefined
+    let purposeDecision = ''
+    if (purpose) {
+      const pol = await resolveSendPolicy({ memberId: r.member_id, channel, purpose, conversationId: null, activeCampaignPurpose: null })
+      if (pol.consentForPurpose !== null) hasConsent = pol.consentForPurpose
+      withinFrequencyCaps = pol.frequency.allowed
+      collisionPaused = !pol.collision.allowed
+      purposeDecision = pol.consentForPurpose === false ? `${purpose} — purpose consent revoked` : purpose
+    }
+
+    // Delegated on-behalf-of authority (§7): resolved per recipient (contact-agency aware),
+    // mirroring send.ts. Absent delegation context → the delegation step is a no-op.
+    let delegationValid: boolean | undefined
+    let delegationReason: string | undefined
+    if (campCtx.delegation) {
+      const dec = await resolveDelegation({
+        agencyId: campCtx.delegation.agencyId,
+        channel,
+        campaignType: campCtx.delegation.campaignType ?? null,
+        senderUserId: campCtx.delegation.senderUserId ?? null,
+        contactAgencyId: r.agency_id,
+      })
+      delegationValid = dec.valid
+      delegationReason = dec.valid ? undefined : dec.reason
+    }
+
     const gate = evaluateGate({
       draft: rendered,
       channel,
-      hasConsent: consent,
+      hasConsent,
       recipientLocalHour: localHour,
       withinBusinessHours,
       onDNC: dnc,
       usesApprovedTemplateOrPolicy: templateApproved,
       isSecurity,
+      delegationValid,
+      delegationReason,
+      withinFrequencyCaps,
+      collisionPaused,
     })
     const verdict = verdictFromGate(gate)
     const entry: SimulationEntry = {
       memberId: r.member_id,
       channel,
       to,
-      representedAgencyId: r.agency_id,
-      representedAgencyOwnerId: null, // resolved by the delegated-campaign path (later slice)
+      representedAgencyId: campCtx.ownership?.representedAgencyId ?? r.agency_id,
+      representedAgencyOwnerId: campCtx.ownership?.representedAgencyOwnerId ?? null,
       templateVersion: campaign.version ?? null,
       renderedBody: rendered,
       scheduledAt: campaign.schedule_at ?? null,
       wouldSend: verdict.wouldSend,
       excludedReason: verdict.excludedReason,
       decisions: {
-        consent: consent ? 'pass' : 'no consent on channel',
+        consent: hasConsent ? 'pass' : 'no consent on channel',
         quiet_hours: 'pass (recipient-local floor)',
         business_hours: withinBusinessHours ? 'pass' : 'outside operating hours (deferred)',
+        ...(campCtx.delegation ? { delegation: delegationValid ? 'pass (active, in-scope)' : `blocked: ${delegationReason ?? 'invalid delegation'}` } : {}),
         dnc: dnc ? 'on DNC' : 'pass',
         approved_template: templateApproved ? 'pass' : 'template not approved',
         is_security: isSecurity ? 'securities-flagged (excluded)' : 'pass',
+        ...(purpose
+          ? {
+              purpose: purposeDecision,
+              frequency: withinFrequencyCaps === false ? 'cap reached (deferred)' : 'pass',
+              collision: collisionPaused ? 'paused (higher-priority / active conversation)' : 'pass',
+            }
+          : {}),
       },
     }
     fullEntries.push(entry)

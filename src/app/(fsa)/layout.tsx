@@ -66,6 +66,7 @@ const NAV: NavItem[] = [
   // Slice 9A — the communications hub is an Overview command center (renamed from "Comms",
   // moved out of Engage). Its /app/comms/inbox shortcut intentionally stays in Engage.
   { href: '/app/comms', label: 'AI Communications Center', icon: Radio, group: 'Overview' },
+  { href: '/app/social', label: 'AI Social Media Center', icon: Share2, group: 'Overview' },
   { href: '/app/revenue', label: 'Revenue Center', icon: Wallet, group: 'Overview' },
   { href: '/app/notifications', label: 'Notifications', icon: Bell, group: 'Overview' },
 
@@ -96,7 +97,6 @@ const NAV: NavItem[] = [
 
   // Inbox stays in Engage as a daily-use shortcut (the hub itself lives in Overview).
   { href: '/app/comms/inbox', label: 'Inbox', icon: MessageSquare, group: 'Engage' },
-  { href: '/app/social', label: 'Social', icon: Share2, group: 'Engage' },
   { href: '/app/knowledge', label: 'Knowledge Library', icon: BookOpen, group: 'Engage' },
   { href: '/app/contacts/upload', label: 'Contact Upload', icon: Upload, group: 'Engage' },
   { href: '/app/forms', label: 'Client Forms', icon: ClipboardList, group: 'Engage' },

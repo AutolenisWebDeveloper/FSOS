@@ -4,6 +4,7 @@ import { readJson, configErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { screenFnaReport, withDisclaimer, type FnaReport } from '@/lib/fna/screen'
+import { persistNarrativeSnapshot } from '@/lib/fna/store'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -86,7 +87,30 @@ export async function POST(req: NextRequest) {
       diff: { event: 'document.created', classification: 'fna_report', household_id: householdId },
     })
 
-    return NextResponse.json({ document_id: doc.id, title }, { status: 201 })
+    // Additionally persist a STRUCTURED FNA record (ADR-016): a plan + an immutable
+    // version snapshotting this narrative + the active assumption-set. Best-effort —
+    // a failure here must NEVER break the document save above (build instruction §4),
+    // so it is isolated and only augments the response.
+    let structured: { plan_id: string; version_id: string } | null = null
+    try {
+      const snap = await persistNarrativeSnapshot(householdId, report as Record<string, unknown>, actor, { title })
+      if (snap.ok) {
+        structured = snap.data
+        await writeAudit({
+          actor,
+          action: 'entity.created',
+          entity: 'fna_version',
+          entityId: snap.data.version_id,
+          diff: { event: 'fna.version.snapshot', plan_id: snap.data.plan_id, from: 'narrative_save', document_id: doc.id },
+        })
+      } else {
+        console.error('[fna] structured snapshot skipped:', snap.message)
+      }
+    } catch (e) {
+      console.error('[fna] structured snapshot failed (document save unaffected):', e)
+    }
+
+    return NextResponse.json({ document_id: doc.id, title, ...(structured ?? {}) }, { status: 201 })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed to save FNA' }, { status: 500 })
   }

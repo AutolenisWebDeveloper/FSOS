@@ -39,3 +39,43 @@ export const ContentDraftSchema = z.object({
   household_id: z.string().uuid().optional(),
 })
 export type ContentDraft = z.infer<typeof ContentDraftSchema>
+
+// Partial edit of a draft (all fields optional).
+export const ContentEditSchema = ContentDraftSchema.partial()
+export type ContentEdit = z.infer<typeof ContentEditSchema>
+
+// A reviewer decision on an in-review version.
+export const ReviewDecisionSchema = z.object({
+  version_id: z.string().uuid(),
+  decision: z.enum(['approved', 'changes_requested', 'rejected']),
+  notes: z.string().trim().max(2000).optional(),
+})
+export type ReviewDecision = z.infer<typeof ReviewDecisionSchema>
+
+// AI drafting request (Content Drafter). Grounds in a topic/campaign/knowledge doc.
+export const DraftRequestSchema = z.object({
+  topic: z.string().trim().min(1).max(500),
+  platforms: z.array(platform).min(1).max(6),
+  knowledge_document_id: z.string().uuid().optional(),
+  campaign_tag: z.string().trim().max(120).optional(),
+  tone: z.enum(['professional', 'educational', 'friendly']).default('educational'),
+})
+export type DraftRequest = z.infer<typeof DraftRequestSchema>
+
+// The structured shape the AI must return — validated with Zod before any use.
+// A validation failure fails safe (no draft created) and is surfaced to the FSA.
+export const AIDraftOutputSchema = z.object({
+  variants: z
+    .array(
+      z.object({
+        platform,
+        body: z.string().trim().min(1).max(5000),
+        hashtags: z.array(z.string().trim().max(80)).max(30).default([]),
+      }),
+    )
+    .min(1)
+    .max(6),
+  needs_review_flags: z.array(z.string().trim().max(200)).max(20).default([]),
+  confidence: z.number().min(0).max(1),
+})
+export type AIDraftOutput = z.infer<typeof AIDraftOutputSchema>

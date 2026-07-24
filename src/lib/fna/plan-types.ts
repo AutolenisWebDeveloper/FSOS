@@ -59,6 +59,7 @@ const EDUCATION: PlanField[] = [
   { key: 'years_until_college', section: 'education', label: 'Years until college', unit: 'years' },
   { key: 'annual_college_cost_today', section: 'education', label: 'Annual college cost (today $)', unit: 'usd' },
   { key: 'education_current_savings', section: 'education', label: 'Current education savings', unit: 'usd' },
+  { key: 'education_annual_contribution', section: 'education', label: 'Annual education contribution', unit: 'usd' },
 ]
 const SURVIVOR: PlanField[] = [
   { key: 'survivor_annual_need', section: 'survivor', label: "Survivor's annual income need (today $)", unit: 'usd' },

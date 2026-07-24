@@ -116,6 +116,7 @@ check('comprehensive adds retirement/education/survivor when those inputs presen
     years_until_college: 10,
     annual_college_cost_today: 30000,
     education_current_savings: 20000,
+    education_annual_contribution: 2000,
     survivor_annual_need: 60000,
     survivor_years_needed: 20,
   }

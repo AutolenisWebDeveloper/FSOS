@@ -13,25 +13,38 @@ import { AGENT_ROSTER } from '@/lib/ai/roster'
 import { containsRecommendationLanguage } from '@/lib/compliance/guardrail'
 import { searchKnowledge, renderKnowledgeContext, recordCitations } from '@/lib/knowledge/library'
 import { AIDraftOutputSchema, type AIDraftOutput, type DraftRequest } from './schema'
-import { PLATFORM_LABELS } from './labels'
+import { PLATFORM_LABELS, PLATFORM_BODY_LIMITS } from './labels'
+import { SOCIAL_BRAND_VOICE, disclaimerFor, ensureDisclaimer } from './brand'
+import type { SocialPlatform } from './adapters/types'
 
 // Pinned in one place for migration (the roster/model-anchor convention).
 export const CONTENT_DRAFTER_MODEL = DEFAULT_MODEL
 // Prompt versioned as a repo artifact; the version is recorded on agent_runs.input.
-export const CONTENT_DRAFTER_PROMPT_VERSION = 'content_drafter@v1'
+// v2: brand-voice grounding, per-platform character budgets, mandatory disclaimer.
+export const CONTENT_DRAFTER_PROMPT_VERSION = 'content_drafter@v2'
 
 const CONTENT_DRAFTER_SYSTEM = [
   'You are the FSOS Social Content Drafter for a licensed Farmers Financial Services Agent.',
   'You DRAFT educational, compliant social posts for the agent to review — you never publish and never approve.',
+  'BRAND VOICE:',
+  ...SOCIAL_BRAND_VOICE.map((v) => `• ${v}`),
   'HARD RULES (a violation must never appear in output):',
   '• Never make an individualized product, policy, investment, replacement, allocation, or transaction recommendation.',
   '• Never make a suitability/best-interest determination or a securities "call to action".',
   '• Never invent statistics, testimonials, client outcomes, product facts, or guarantees.',
   '• Only use facts present in the provided knowledge context; if a needed fact is absent, insert a clearly-marked [PLACEHOLDER] instead of inventing it.',
+  '• Respect each platform\'s character budget given below — the disclaimer is appended automatically, so stay within the stated body budget.',
   'Educate and invite; do not steer to a product. Keep claims general and informational.',
   'Reply with STRICT JSON ONLY, matching:',
   '{"variants":[{"platform":"<platform>","body":"<text>","hashtags":["#..."]}],"needs_review_flags":["..."],"confidence":<0..1>}',
 ].join('\n')
+
+// Body budget the model should target = platform limit minus the disclaimer that
+// gets appended after generation (plus a 2-char separator).
+function bodyBudget(platform: SocialPlatform): number {
+  const limit = PLATFORM_BODY_LIMITS[platform] ?? 0
+  return Math.max(0, limit - disclaimerFor(platform).length - 2)
+}
 
 export interface DrafterResult {
   ok: boolean
@@ -63,8 +76,13 @@ export async function draftContent(req: DraftRequest, actor: string): Promise<Dr
   const db = getDb()
   const threshold = AGENT_ROSTER.content_drafter?.confidenceThreshold ?? 0.8
 
-  // Ground in the knowledge library (client-safe docs only).
-  const chunks = await searchKnowledge(req.topic, { limit: 5, clientSafeOnly: true })
+  // Ground in the knowledge library (client-safe docs only). When a specific
+  // knowledge article is chosen, ground on THAT article; otherwise retrieve by topic.
+  const chunks = await searchKnowledge(req.knowledge_document_id ? '' : req.topic, {
+    limit: 5,
+    clientSafeOnly: true,
+    documentId: req.knowledge_document_id,
+  })
   const knowledge = renderKnowledgeContext(chunks)
 
   // Open the run.
@@ -81,12 +99,14 @@ export async function draftContent(req: DraftRequest, actor: string): Promise<Dr
     .maybeSingle()
   const runId = (runRow as { id: string } | null)?.id ?? null
 
-  const platformList = req.platforms
-    .map((p) => PLATFORM_LABELS[p as keyof typeof PLATFORM_LABELS] ?? p)
-    .join(', ')
+  // Per-platform body budget line so the model targets each platform's limit.
+  const platformBudgets = req.platforms
+    .map((p) => `${PLATFORM_LABELS[p as keyof typeof PLATFORM_LABELS] ?? p}: up to ${bodyBudget(p as SocialPlatform)} characters of body`)
+    .join('; ')
   const user = [
     knowledge ? knowledge + '\n\n' : '',
-    `Draft ${req.platforms.length} social post variant(s) — one per platform: ${platformList}.`,
+    `Draft ${req.platforms.length} social post variant(s) — one per platform.`,
+    `Platforms and body budgets — ${platformBudgets}.`,
     `Topic: ${req.topic}.`,
     req.campaign_tag ? `Campaign: ${req.campaign_tag}.` : '',
     `Tone: ${req.tone}. Keep it educational and compliant. Return ONLY the JSON described.`,
@@ -125,10 +145,18 @@ export async function draftContent(req: DraftRequest, actor: string): Promise<Dr
     return { ok: false, runId, output: null, needsReview: true, flags: ['invalid_output'], message: 'The drafter returned output that failed validation. Escalated for manual drafting.' }
   }
 
-  // Red-line screening — flag any variant containing recommendation language.
+  // Deterministically append the mandatory educational disclaimer to every variant
+  // (never trust the model to include it), then screen for red-line language and
+  // per-platform overflow. The disclaimer is part of what gets screened/measured.
+  for (const v of output.variants) {
+    v.body = ensureDisclaimer(v.body, v.platform as SocialPlatform)
+  }
+
   const flags = [...output.needs_review_flags]
   for (const v of output.variants) {
     if (containsRecommendationLanguage(v.body)) flags.push(`recommendation_language:${v.platform}`)
+    const limit = PLATFORM_BODY_LIMITS[v.platform as SocialPlatform]
+    if (limit && v.body.length > limit) flags.push(`over_limit:${v.platform}`)
   }
   const needsReview = flags.length > 0 || output.confidence < threshold
 

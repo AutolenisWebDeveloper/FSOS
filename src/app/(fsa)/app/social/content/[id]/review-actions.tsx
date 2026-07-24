@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2, CheckCircle2, Send, RotateCcw } from 'lucide-react'
+import { Loader2, CheckCircle2, Send, RotateCcw, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 export function ContentReviewActions({
@@ -17,10 +17,12 @@ export function ContentReviewActions({
   const router = useRouter()
   const [pending, start] = useTransition()
   const [error, setError] = useState<string | null>(null)
+  const [blocks, setBlocks] = useState<{ code: string; message: string }[]>([])
   const [notes, setNotes] = useState('')
 
   function call(path: string, body?: unknown) {
     setError(null)
+    setBlocks([])
     start(async () => {
       const resp = await fetch(path, {
         method: 'POST',
@@ -29,7 +31,12 @@ export function ContentReviewActions({
       })
       if (!resp.ok) {
         const data = await resp.json().catch(() => ({}))
-        setError(data.error || 'Action failed. Please try again.')
+        if (data.code === 'precheck_failed' && Array.isArray(data.issues)) {
+          setBlocks(data.issues)
+          setError('This draft cannot move to review until the compliance checks below pass.')
+        } else {
+          setError(data.error || 'Action failed. Please try again.')
+        }
         return
       }
       router.refresh()
@@ -42,7 +49,9 @@ export function ContentReviewActions({
 
       {status === 'DRAFT' ? (
         <div className="space-y-2">
-          <p className="text-sm text-muted-foreground">Submitting freezes an immutable version for a human reviewer to approve.</p>
+          <p className="text-sm text-muted-foreground">
+            Submitting runs the securities &amp; claims pre-check, then freezes an immutable version for a human reviewer to approve.
+          </p>
           <Button size="sm" onClick={() => call(`/api/social/content/${id}/submit`)} disabled={pending}>
             {pending ? <Loader2 className="mr-1 h-4 w-4 animate-spin" aria-hidden /> : <Send className="mr-1 h-4 w-4" aria-hidden />}
             Submit for review
@@ -112,9 +121,19 @@ export function ContentReviewActions({
       {status === 'ARCHIVED' ? <p className="text-sm text-muted-foreground">This content was rejected and archived.</p> : null}
 
       {error ? (
-        <p className="mt-3 text-sm text-status-lost" role="alert">
-          {error}
-        </p>
+        <div className="mt-3" role="alert">
+          <p className="text-sm text-status-lost">{error}</p>
+          {blocks.length ? (
+            <ul className="mt-2 space-y-1">
+              {blocks.map((b, i) => (
+                <li key={i} className="flex items-start gap-2 rounded-md border border-status-lost/30 bg-status-lost/5 p-2 text-xs text-status-lost">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                  <span>{b.message}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
       ) : null}
     </div>
   )

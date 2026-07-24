@@ -17,6 +17,17 @@ export async function POST(_req: NextRequest, props: { params: Promise<{ id: str
   try {
     const res = await submitForReview(id, actor)
     if (!res.ok) {
+      if (res.kind === 'precheck_failed') {
+        // Terminal compliance block (§4.2) — record the escalation, return the reasons.
+        await writeAudit({
+          actor,
+          action: 'stage.changed',
+          entity: 'social_content',
+          entityId: id,
+          diff: { event: 'social.content.precheck_blocked', reasons: res.issues.map((i) => i.code) },
+        })
+        return NextResponse.json({ error: res.message, code: 'precheck_failed', issues: res.issues }, { status: 422 })
+      }
       const status = res.kind === 'not_found' ? 404 : res.kind === 'invalid_transition' ? 409 : 400
       return NextResponse.json({ error: res.message }, { status })
     }

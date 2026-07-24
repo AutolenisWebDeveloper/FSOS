@@ -168,6 +168,35 @@ config: Content · Publishing · Engagement · Insight · Setup) wraps every soc
 no longer orphaned. The sidebar entry is **AI Social Media Center** (Overview group), after AI
 Communications Center.
 
+## Addendum — AI drafting from `/content/new` (item 6)
+
+Extends the EXISTING Content Drafter (no new studio) so the drafter reachable from the
+content editor is compliant and useful end to end:
+
+- **Grounding.** Drafts from a topic/campaign or a specific **knowledge article**
+  (`knowledge_document_id` wired through `searchKnowledge({ documentId })`); the editor
+  offers a client-safe article picker. Tone is grounded in the **farmers-brand-website**
+  voice (`lib/social/brand.ts` `SOCIAL_BRAND_VOICE`, from CLAUDE.md §17.3 / §4.2).
+- **Per-platform variants + limits.** The drafter prompt states each platform's body
+  budget (limit minus the appended disclaimer); over-budget variants are flagged
+  `over_limit:<platform>` for review. Prompt version bumped to `content_drafter@v2`.
+- **Mandatory disclaimer.** The canonical `FINRA_DISCLAIMER` is appended deterministically
+  to every variant (short form on X), never trusted to the model, never double-stamped.
+- **Securities / claims pre-check GATE.** `lib/social/precheck.ts` (pure, reuses the
+  firewall §4.1 + red-line §4.2 checks) runs inside `submitForReview`: a draft cannot
+  enter IN_REVIEW while it is empty, `is_security`-flagged, carries recommendation/claims
+  language, embeds a forbidden securities field, or overflows a selected platform's limit.
+  The route returns HTTP 422 with the block reasons and audits `precheck_blocked`; the
+  reviewer UI lists the reasons. Enforced in code at the transition, not just the UI.
+- **Never auto-publishes** — unchanged; the AI only drafts.
+- **Suggested hashtags + posting times are STATIC heuristics, labeled as such**
+  (`lib/social/suggestions.ts` + the "not based on your audience data yet" label). No
+  trend/time-prediction model is built until analytics has real historical data.
+
+Tests: `tests/social-precheck.test.mjs` (pre-check gate, brand/disclaimer, heuristic
+labels). Model access stays behind the AI gateway; kill switch, `agent_runs`/`agent_actions`,
+Zod validation, and confidence gating are unchanged (§11.1).
+
 ## Related Documents
 - CLAUDE.md §4.1 (securities firewall), §6 (architecture preservation), §10 (aggregate root),
   §11 (background jobs / AI governance), §13 (fintech quality), §16 (error handling)

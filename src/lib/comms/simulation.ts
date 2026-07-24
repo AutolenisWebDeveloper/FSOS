@@ -17,6 +17,9 @@ import { loadHoursPolicy, isWithinOperatingHours } from './hours'
 import { conversationIsSecurity, normalizeContact } from './conversations'
 import { resolveDelegation } from './ownership'
 import { resolveSendPolicy } from './policy-resolver'
+import { campaignClaimKeys, buildDataConfidence } from './claims'
+import { resolveClaimFields } from './claim-resolver'
+import { evaluateDataConfidence } from './data-confidence'
 import { verdictFromGate, summarizeSimulation, type SimulationEntry, type SimulationSummary } from './simulation-core'
 
 const DEFAULT_UTC_OFFSET = -6
@@ -88,6 +91,8 @@ export async function simulateCampaign(campaignId: string, sampleLimit = 200): P
     sequencePurpose,
   })
   const purpose = campCtx.purpose
+  // Slice 8 §18 — declared specific-claim fields (resolved per recipient below).
+  const declaredClaims = campaignClaimKeys(campaign.claim_fields)
 
   const audience = await resolveAudience({ channel, audience: campaign.audience ?? {} })
   const entries: SimulationEntry[] = []
@@ -134,6 +139,19 @@ export async function simulateCampaign(campaignId: string, sampleLimit = 200): P
       delegationReason = dec.valid ? undefined : dec.reason
     }
 
+    // Data confidence (§13/§18): resolve the declared claims for this recipient read-only,
+    // mirroring dispatch. An unverified/conflicting field excludes the send in the preview.
+    let dataConfidenceOk: boolean | undefined
+    let dataConfidenceReason: string | undefined
+    let dataConfidenceDecision = ''
+    if (declaredClaims.length > 0) {
+      const claims = await resolveClaimFields(campaign.claim_fields, { householdId: r.household_id })
+      const dc = evaluateDataConfidence(buildDataConfidence(claims))
+      dataConfidenceOk = dc.allowed
+      dataConfidenceReason = dc.reason
+      dataConfidenceDecision = dc.allowed ? 'pass (claims verified)' : `blocked: unverified ${dc.unverified.join(', ')}`
+    }
+
     const gate = evaluateGate({
       draft: rendered,
       channel,
@@ -147,6 +165,8 @@ export async function simulateCampaign(campaignId: string, sampleLimit = 200): P
       delegationReason,
       withinFrequencyCaps,
       collisionPaused,
+      dataConfidenceOk,
+      dataConfidenceReason,
     })
     const verdict = verdictFromGate(gate)
     const entry: SimulationEntry = {
@@ -168,6 +188,7 @@ export async function simulateCampaign(campaignId: string, sampleLimit = 200): P
         dnc: dnc ? 'on DNC' : 'pass',
         approved_template: templateApproved ? 'pass' : 'template not approved',
         is_security: isSecurity ? 'securities-flagged (excluded)' : 'pass',
+        ...(declaredClaims.length > 0 ? { data_confidence: dataConfidenceDecision } : {}),
         ...(purpose
           ? {
               purpose: purposeDecision,

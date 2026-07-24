@@ -111,6 +111,8 @@ try {
   psqlFile('supabase/migrations/057_comm_campaign_simulation.sql')
   // 058 adds campaign/sequence purpose + delegated-sender builder cols (Slice 7 §15/§16).
   psqlFile('supabase/migrations/058_comm_builder_purpose_delegation.sql')
+  // 059 adds comm_campaigns.claim_fields (Slice 8 §18 data-confidence declaration).
+  psqlFile('supabase/migrations/059_comm_campaign_claim_fields.sql')
 
   // Seed: this client's household + a second household; a life + a securities policy.
   // conversion_deadline/is_with_us are set so every policy also surfaces in the

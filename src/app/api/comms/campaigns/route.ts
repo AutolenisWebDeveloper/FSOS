@@ -97,6 +97,8 @@ export async function POST(req: NextRequest) {
         purpose: v.data.purpose ?? null,
         represented_agency_owner_id: v.data.represented_agency_owner_id ?? null,
         delegation_id: v.data.delegation_id ?? null,
+        // Slice 8 §18 (§13) — declared specific-claim fields (resolved per recipient).
+        claim_fields: v.data.claim_fields && v.data.claim_fields.length > 0 ? v.data.claim_fields : null,
       })
       .select('*')
       .single()

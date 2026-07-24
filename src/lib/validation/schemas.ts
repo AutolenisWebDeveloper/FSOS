@@ -683,6 +683,7 @@ export const DASHBOARD_WIDGET_KEYS = [
   'agency_partnerships', 'open_opportunities', 'households', 'policies',
   'referrals_awaiting', 'ai_escalations', 'overdue_tasks', 'conversions_due',
   'cross_sell_targets', 'expected_commission_open', 'weighted_pipeline', 'commission_ytd',
+  'social_pending_approval', 'social_scheduled', 'social_engagement_review',
 ] as const
 export const DashboardCreateSchema = z.object({
   name: z.string().trim().min(1, 'Name is required').max(160),

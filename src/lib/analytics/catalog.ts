@@ -38,6 +38,9 @@ export const DASHBOARD_WIDGETS = [
   { key: 'expected_commission_open', label: 'Expected commission (open)', kind: 'currency', href: '/app/opportunities', hint: 'Un-weighted pipeline' },
   { key: 'weighted_pipeline', label: 'Weighted pipeline forecast', kind: 'currency', href: '/app/forecasts', hint: 'Probability-weighted' },
   { key: 'commission_ytd', label: 'FSA commission YTD', kind: 'currency', href: '/app/commissions', hint: 'Reconciled to date' },
+  { key: 'social_pending_approval', label: 'Social awaiting approval', kind: 'count', href: '/app/social/content', hint: 'Draft review', attention: true },
+  { key: 'social_scheduled', label: 'Social posts scheduled', kind: 'count', href: '/app/social/queue', hint: 'Awaiting publish' },
+  { key: 'social_engagement_review', label: 'Social engagement to review', kind: 'count', href: '/app/social/engagement', hint: 'Inbound triage', attention: true },
 ] as const satisfies readonly WidgetDef[]
 
 export type WidgetKey = (typeof DASHBOARD_WIDGETS)[number]['key']

@@ -361,6 +361,77 @@ export async function persistNarrativeSnapshot(
   return { ok: true, data: { plan_id: planId, version_id: version.data.id } }
 }
 
+// ── Recommendations (human-authored; build instruction §1) ───────────────────
+export const RecommendationSchema = z.object({
+  plan_id: z.string().uuid(),
+  version_id: z.string().uuid().nullable().optional(),
+  household_id: z.string().uuid(),
+  objective: z.string().min(1).max(2000),
+  // CATEGORY only — never a specific product/carrier (§1 red line).
+  product_category: z.string().max(120).nullable().optional(),
+  facts_relied_on: z.string().max(8000).nullable().optional(),
+  assumptions: z.string().max(8000).nullable().optional(),
+  methodology: z.string().max(8000).nullable().optional(),
+  alternatives: z.string().max(8000).nullable().optional(),
+  advantages: z.string().max(8000).nullable().optional(),
+  disadvantages: z.string().max(8000).nullable().optional(),
+  costs: z.string().max(8000).nullable().optional(),
+  risks: z.string().max(8000).nullable().optional(),
+  liquidity: z.string().max(8000).nullable().optional(),
+  limitations: z.string().max(8000).nullable().optional(),
+  missing_information: z.string().max(8000).nullable().optional(),
+  rationale: z.string().max(8000).nullable().optional(),
+})
+export type RecommendationWrite = z.infer<typeof RecommendationSchema>
+
+export interface FnaRecommendationRow {
+  id: string
+  plan_id: string
+  household_id: string
+  status: string
+  objective: string
+  product_category: string | null
+  authored_by: string | null
+  approved_by: string | null
+  approved_at: string | null
+  created_at: string
+}
+
+/** Persist a HUMAN-authored recommendation (the system never generates one). */
+export async function createRecommendation(input: RecommendationWrite, actor: string): Promise<StoreResult<FnaRecommendationRow>> {
+  const { data, error } = await getDb()
+    .from('fna_recommendations')
+    .insert({ ...input, status: 'DRAFT', authored_by: actor })
+    .select('id, plan_id, household_id, status, objective, product_category, authored_by, approved_by, approved_at, created_at')
+    .single()
+  if (error) return { ok: false, kind: 'error', message: error.message }
+  return { ok: true, data: data as FnaRecommendationRow }
+}
+
+/** Approve a recommendation (records reviewer + timestamp). */
+export async function approveRecommendation(id: string, actor: string): Promise<StoreResult<FnaRecommendationRow>> {
+  const { data, error } = await getDb()
+    .from('fna_recommendations')
+    .update({ status: 'APPROVED', approved_by: actor, approved_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('status', 'DRAFT')
+    .select('id, plan_id, household_id, status, objective, product_category, authored_by, approved_by, approved_at, created_at')
+    .maybeSingle()
+  if (error) return { ok: false, kind: 'error', message: error.message }
+  if (!data) return { ok: false, kind: 'not_found', message: 'Recommendation not found or not in DRAFT' }
+  return { ok: true, data: data as FnaRecommendationRow }
+}
+
+export async function listRecommendations(planId: string): Promise<StoreResult<FnaRecommendationRow[]>> {
+  const { data, error } = await getDb()
+    .from('fna_recommendations')
+    .select('id, plan_id, household_id, status, objective, product_category, authored_by, approved_by, approved_at, created_at')
+    .eq('plan_id', planId)
+    .order('created_at', { ascending: false })
+  if (error) return { ok: false, kind: 'error', message: error.message }
+  return { ok: true, data: (data ?? []) as FnaRecommendationRow[] }
+}
+
 /** Load a version's frozen snapshot (values + assumption set) for scenarios. */
 export async function getVersionSnapshot(
   versionId: string,

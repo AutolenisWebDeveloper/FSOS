@@ -1,5 +1,5 @@
 // Per-platform adapters + the single source of truth for platform API support
-// (ADR-025).
+// (ADR-026).
 //
 // Slice 1 ships the interface and the registry with every adapter
 // configured-but-INACTIVE (`active: false`) — there is no publishing yet

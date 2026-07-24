@@ -1,4 +1,4 @@
-// Social publishing adapter contract (ADR-025).
+// Social publishing adapter contract (ADR-026).
 //
 // Every platform implements `SocialPublisher`. Platforms are added behind this
 // interface as API access is obtained. An adapter WITHOUT valid credentials returns
@@ -25,7 +25,7 @@ export const SOCIAL_PLATFORMS: readonly SocialPlatform[] = [
 ] as const
 
 // What a platform's official API supports at all (the platform-API reality from
-// ADR-025), independent of whether a given channel is connected. LinkedIn personal
+// ADR-026), independent of whether a given channel is connected. LinkedIn personal
 // and personal-account posting are intentionally absent — there is no API path and
 // browser automation is prohibited.
 export interface PlatformSupport {
@@ -78,7 +78,7 @@ export type NormalizedErrorCode =
   | 'network'
   | 'unsupported'
 
-// Every platform error normalizes to this common shape (ADR-025 error normalization).
+// Every platform error normalizes to this common shape (ADR-026 error normalization).
 export interface NormalizedError {
   code: NormalizedErrorCode
   message: string

@@ -1,4 +1,4 @@
-// Zod schemas for the social module (ADR-025). Zod is the single source of truth
+// Zod schemas for the social module (ADR-026). Zod is the single source of truth
 // for every social API input; TS types are derived via z.infer, never hand-authored.
 // Relative imports (not `@/`) so the offline gate tests compile with plain tsc.
 

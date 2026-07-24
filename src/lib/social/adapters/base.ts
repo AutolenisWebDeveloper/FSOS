@@ -1,4 +1,4 @@
-// Base adapter behavior shared by every platform (ADR-025).
+// Base adapter behavior shared by every platform (ADR-026).
 //
 // Encapsulates the two invariants every adapter must honor:
 //   1. Capability discovery reflects BOTH the platform's static API support AND

@@ -1,6 +1,6 @@
 # FSOS Social Content Module — Implementation Plan
 
-**ADR:** `docs/adr/ADR-025-social-content-module.md` (Accepted)
+**ADR:** `docs/adr/ADR-026-social-content-module.md` (Accepted)
 **Authority:** CLAUDE.md + /docs → DESIGN.md → accepted ADRs → live repo → skills → build instruction.
 **Prohibited paths (never touched):** `lib/comms/`, `/app/comms/`. **No browser automation anywhere.**
 **Migration head at plan time:** `060_fna_data_model.sql` → social starts at `061`.

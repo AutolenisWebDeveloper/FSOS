@@ -1,5 +1,5 @@
 -- ─────────────────────────────────────────────────────────────────────────────
--- Migration: 061_social_content  (Social Content Module — Slice 1, ADR-025)
+-- Migration: 062_social_content  (Social Content Module — Slice 1, ADR-026)
 --
 -- There is NO existing Social Engine (repo-wide search confirms only footer icons
 -- and the legacy command center match "social"). This is a greenfield module INSIDE
@@ -386,6 +386,6 @@ begin
   end loop;
 end $$;
 
-comment on table social_channels is 'Connected social platform accounts (ADR-025). Tokens never plaintext: token_ref pointer + encrypted secret_enc; never client-exposed.';
-comment on table social_content_versions is 'Immutable frozen content snapshots (ADR-025). Approving freezes a version; edits create a new one.';
-comment on table social_publish_log is 'Append-only social publish attempt log (ADR-025).';
+comment on table social_channels is 'Connected social platform accounts (ADR-026). Tokens never plaintext: token_ref pointer + encrypted secret_enc; never client-exposed.';
+comment on table social_content_versions is 'Immutable frozen content snapshots (ADR-026). Approving freezes a version; edits create a new one.';
+comment on table social_publish_log is 'Append-only social publish attempt log (ADR-026).';

@@ -1,4 +1,4 @@
-// Adapter registry (ADR-025). Single lookup keyed by platform; the rest of the
+// Adapter registry (ADR-026). Single lookup keyed by platform; the rest of the
 // module never instantiates an adapter directly.
 
 import { SOCIAL_ADAPTERS, PLATFORM_SUPPORT } from './platforms'

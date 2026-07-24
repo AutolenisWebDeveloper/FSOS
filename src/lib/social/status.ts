@@ -1,4 +1,4 @@
-// Social content lifecycle — pure transition logic (ADR-025).
+// Social content lifecycle — pure transition logic (ADR-026).
 //
 //   DRAFT → IN_REVIEW → APPROVED → SCHEDULED → PUBLISHING → PUBLISHED → FAILED → ARCHIVED
 //

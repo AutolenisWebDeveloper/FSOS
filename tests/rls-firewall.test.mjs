@@ -126,10 +126,10 @@ try {
   // 060 adds the FNA data model (Slice 2). All fna_* tables are back-office only
   // (no client policy) — the proof below asserts a client sees ZERO rows from them.
   psqlFile('supabase/migrations/060_fna_data_model.sql')
-  // 061 adds the Social Content Module (ADR-025). All social_* tables are
+  // 062 adds the Social Content Module (ADR-026). All social_* tables are
   // back-office only (no client policy) — the proof below asserts a client sees
   // ZERO rows, and that the approval gate + immutability + append-only triggers fire.
-  psqlFile('supabase/migrations/061_social_content.sql')
+  psqlFile('supabase/migrations/062_social_content.sql')
 
   // Seed: this client's household + a second household; a life + a securities policy.
   // conversion_deadline/is_with_us are set so every policy also surfaces in the

@@ -1,4 +1,4 @@
-// Social Content Module — Slice 1 unit gate (ADR-025).
+// Social Content Module — Slice 1 unit gate (ADR-026).
 //
 // Compiles the PURE social modules (adapters, status, channel-view, labels) plus
 // the reused compliance firewall/guardrail in isolation and asserts the Slice-1

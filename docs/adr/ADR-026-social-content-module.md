@@ -1,4 +1,4 @@
-# ADR-025 — Social Content Module (draft→approve→publish→track)
+# ADR-026 — Social Content Module (draft→approve→publish→track)
 
 **Status:** Accepted
 **Date:** 2026-07-24

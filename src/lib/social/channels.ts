@@ -1,4 +1,4 @@
-// Social channels service (ADR-025). Domain logic for connected accounts.
+// Social channels service (ADR-026). Domain logic for connected accounts.
 //
 // Thin routes call these; getDb() is resolved INSIDE each function (never at module
 // level). Audit is written by the route (single writeAudit path), not here.

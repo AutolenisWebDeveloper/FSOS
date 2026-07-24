@@ -1,4 +1,4 @@
-// Pure channel view-mapping (ADR-025). No data-access imports so it is unit
+// Pure channel view-mapping (ADR-026). No data-access imports so it is unit
 // testable in isolation. The critical security property lives here: secret_enc is
 // NEVER part of the selected columns or the returned view — token material never
 // leaves Postgres and never reaches the browser (build instruction §9).

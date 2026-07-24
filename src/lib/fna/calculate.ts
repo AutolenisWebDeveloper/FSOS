@@ -171,6 +171,7 @@ export function calculatePlan(
                 yearsUntilCollege: values.years_until_college,
                 annualCostToday: values.annual_college_cost_today,
                 currentSavings: has(values, 'education_current_savings') ? values.education_current_savings : undefined,
+                annualContribution: has(values, 'education_annual_contribution') ? values.education_annual_contribution : 0,
               },
               assumptions,
               ctx,

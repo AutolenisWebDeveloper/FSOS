@@ -361,13 +361,83 @@ export async function persistNarrativeSnapshot(
   return { ok: true, data: { plan_id: planId, version_id: version.data.id } }
 }
 
+/** Load a version's frozen snapshot (values + assumption set) for scenarios. */
+export async function getVersionSnapshot(
+  versionId: string,
+): Promise<StoreResult<{ id: string; plan_id: string; values: Record<string, number>; assumptionSet: AssumptionSet }>> {
+  const { data, error } = await getDb()
+    .from('fna_versions')
+    .select('id, plan_id, inputs_snapshot, assumption_set')
+    .eq('id', versionId)
+    .maybeSingle()
+  if (error) return { ok: false, kind: 'error', message: error.message }
+  if (!data) return { ok: false, kind: 'not_found', message: 'Version not found' }
+  const snapshot = (data.inputs_snapshot ?? {}) as { values?: Record<string, number> }
+  return {
+    ok: true,
+    data: {
+      id: data.id,
+      plan_id: data.plan_id,
+      values: snapshot.values ?? {},
+      assumptionSet: (data.assumption_set ?? DEFAULT_ASSUMPTIONS) as AssumptionSet,
+    },
+  }
+}
+
+export interface FnaScenarioRow {
+  id: string
+  plan_id: string
+  base_version_id: string
+  name: string
+  scenario_type: string
+  overrides: Record<string, unknown>
+  results: Record<string, unknown>
+  created_at: string
+}
+
+/** Create a scenario branched from a frozen version (never mutates the base). */
+export async function createScenario(
+  planId: string,
+  args: { baseVersionId: string; name: string; scenarioType: string; overrides: Record<string, unknown>; results: Record<string, unknown>; actor: string },
+): Promise<StoreResult<FnaScenarioRow>> {
+  const { data, error } = await getDb()
+    .from('fna_scenarios')
+    .insert({
+      plan_id: planId,
+      base_version_id: args.baseVersionId,
+      name: args.name,
+      scenario_type: args.scenarioType,
+      overrides: args.overrides,
+      results: args.results,
+      created_by: args.actor,
+    })
+    .select('id, plan_id, base_version_id, name, scenario_type, overrides, results, created_at')
+    .single()
+  if (error) return { ok: false, kind: 'error', message: error.message }
+  return { ok: true, data: data as FnaScenarioRow }
+}
+
+export async function listScenarios(planId: string): Promise<StoreResult<FnaScenarioRow[]>> {
+  const { data, error } = await getDb()
+    .from('fna_scenarios')
+    .select('id, plan_id, base_version_id, name, scenario_type, overrides, results, created_at')
+    .eq('plan_id', planId)
+    .order('created_at', { ascending: false })
+  if (error) return { ok: false, kind: 'error', message: error.message }
+  return { ok: true, data: (data ?? []) as FnaScenarioRow[] }
+}
+
 /** Mark a version APPROVED and stamp the approver (only from UNDER_REVIEW). */
 export async function approveVersion(versionId: string, actor: string): Promise<StoreResult<FnaVersionRow>> {
   const db = getDb()
   const { data: v, error } = await db.from('fna_versions').select('id, plan_id, status').eq('id', versionId).maybeSingle()
   if (error) return { ok: false, kind: 'error', message: error.message }
   if (!v) return { ok: false, kind: 'not_found', message: 'Version not found' }
-  if (!canTransition(v.status as FnaStatus, 'APPROVED')) {
+  // A solo licensed FSA reviewing IS the approval step, so a CALCULATED version may
+  // be approved directly (the review + approval collapse); UNDER_REVIEW also
+  // approves. Any other status (DRAFT/SUPERSEDED/ARCHIVED/already APPROVED) is
+  // rejected (build instruction §0.B — no review the app doesn't require).
+  if (v.status !== 'CALCULATED' && v.status !== 'UNDER_REVIEW') {
     return { ok: false, kind: 'invalid_transition', message: `cannot approve from ${v.status}` }
   }
   const { data: updated, error: uErr } = await db

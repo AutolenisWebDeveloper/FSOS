@@ -3,7 +3,7 @@ const nextConfig = {
   reactStrictMode: true,
   // pdf2json is a CommonJS package that reads its own files at runtime; keep it
   // external so Next doesn't bundle it into the serverless function.
-  serverExternalPackages: ['pdf2json'],
+  serverExternalPackages: ['pdf2json', '@react-pdf/renderer'],
   async redirects() {
     // The workshop hub moved from /events to /workshops (spec §3). Keep the old
     // index link alive with a permanent redirect; per-event /events/[id] pages keep

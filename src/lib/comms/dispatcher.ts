@@ -20,6 +20,8 @@ export interface DispatchRequest {
   /** email only */
   subject?: string
   body: string
+  /** email only — the stored plaintext part (multipart). Absent → single-part HTML send. */
+  bodyText?: string
   /** Gate context (computed by the caller/job from consents/DNC/state rules). */
   gate: Omit<GateInput, 'draft' | 'channel'>
   /** Who/what initiated (user id, "agent:pipeline", "system"). */
@@ -44,7 +46,7 @@ export interface DispatchDeps {
   recordComplianceEvent(req: DispatchRequest, gate: GateResult): Promise<void>
   createEscalation(req: DispatchRequest, gate: GateResult): Promise<void>
   writeAudit(entry: AuditEntry): Promise<void>
-  send(channel: 'sms' | 'email', to: string, body: string, subject?: string): Promise<SendResult>
+  send(channel: 'sms' | 'email', to: string, body: string, subject?: string, bodyText?: string): Promise<SendResult>
 }
 
 // Real deps. Heavy modules are imported lazily (relative) so this file is
@@ -95,9 +97,9 @@ export const defaultDeps: DispatchDeps = {
     const { writeAudit } = await import('../audit/log')
     await writeAudit(entry)
   },
-  async send(channel, to, body, subject) {
+  async send(channel, to, body, subject, bodyText) {
     const { sendSms, sendEmail } = await import('../messaging')
-    return channel === 'sms' ? sendSms(to, body) : sendEmail(to, subject ?? '', body)
+    return channel === 'sms' ? sendSms(to, body) : sendEmail(to, subject ?? '', body, bodyText)
   },
 }
 
@@ -131,7 +133,8 @@ export async function dispatch(req: DispatchRequest, deps: DispatchDeps = defaul
 
   // Passed the gate → send. SMS carries the required AI-disclosure/opt-out footer.
   const body = req.channel === 'sms' ? `${req.body}\n\n${TRAIGA_SMS_FOOTER}` : req.body
-  const result = await deps.send(req.channel, req.to, body, req.subject)
+  // Email multipart: pass the stored plaintext part when present (SMS is single-part).
+  const result = await deps.send(req.channel, req.to, body, req.subject, req.channel === 'email' ? req.bodyText : undefined)
 
   await deps.writeAudit({
     actor: req.actor,

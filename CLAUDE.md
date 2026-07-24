@@ -436,6 +436,7 @@ The identity is consistent across homepage, public pages, login, forgot-password
 | ADR-019 | AI authority matrix + communication evaluations (code-enforced, not prompt-enforced) |
 | ADR-020 | Data confidence & source verification (no specific claim on unverified data) |
 | ADR-021 | Simulation mode (safe dry-run; required before campaign activation) |
+| ADR-022 | Campaign + sequence builder config: message purpose + delegated-sender |
 
 New architectural decisions get a new ADR using `docs/adr/ADR-000-template.md`. Status values: Proposed → Accepted → Superseded (link the superseding ADR).
 

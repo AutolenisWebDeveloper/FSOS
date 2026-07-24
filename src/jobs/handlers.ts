@@ -5,7 +5,7 @@
 // the securities firewall. Read-only detection jobs create tasks/escalations only.
 import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
-import { dispatchCampaign, refreshCampaignMetrics } from '@/lib/comms/campaign'
+import { dispatchCampaign, refreshCampaignMetrics, campaignDispatchContext, type CampaignDispatchContext } from '@/lib/comms/campaign'
 import { sendThroughGate, isTemplateApproved } from '@/lib/comms/send'
 import { evaluateResume } from '@/lib/comms/conversation-mode'
 import type { JobResult } from './index'
@@ -155,17 +155,21 @@ export async function dripAdvance(): Promise<JobResult> {
   // Due enrollments across all active drip campaigns.
   const { data: enrollments } = await db
     .from('comm_campaign_enrollments')
-    .select('id, campaign_id, member_id, household_id, agency_id, current_step, comm_campaigns!inner(id, type, channel, sequence_id, status, archived_at)')
+    .select('id, campaign_id, member_id, household_id, agency_id, current_step, comm_campaigns!inner(id, type, channel, sequence_id, status, archived_at, purpose, represented_agency_owner_id, delegation_id)')
     .eq('status', 'enrolled')
     .lte('next_send_at', nowISO)
     .limit(1000)
 
+  // Slice 7 — resolve each drip campaign's purpose + delegated-sender context once, cached
+  // by campaign id (most campaigns aren't delegated; a delegated one loads its row once).
+  const ctxCache = new Map<string, CampaignDispatchContext>()
+
   let handled = 0
-  for (const e of (enrollments ?? []) as unknown as Array<{ id: string; campaign_id: string; member_id: string; household_id: string; agency_id: string | null; current_step: number; comm_campaigns: { type: string; channel: string; sequence_id: string | null; status: string; archived_at: string | null } }>) {
+  for (const e of (enrollments ?? []) as unknown as Array<{ id: string; campaign_id: string; member_id: string; household_id: string; agency_id: string | null; current_step: number; comm_campaigns: { id: string; type: string; channel: string; sequence_id: string | null; status: string; archived_at: string | null; purpose: string | null; represented_agency_owner_id: string | null; delegation_id: string | null } }>) {
     const camp = e.comm_campaigns
     if (!camp || camp.type !== 'drip' || camp.status !== 'active' || camp.archived_at || !camp.sequence_id) continue
 
-    const { data: seq } = await db.from('comm_sequences').select('steps, status').eq('id', camp.sequence_id).maybeSingle()
+    const { data: seq } = await db.from('comm_sequences').select('steps, status, purpose').eq('id', camp.sequence_id).maybeSingle()
     const steps = (seq?.steps ?? []) as Array<{ delay_days: number; template_id?: string; subject?: string }>
     if (!seq || seq.status !== 'active' || e.current_step >= steps.length) {
       await db.from('comm_campaign_enrollments').update({ status: 'completed' }).eq('id', e.id)
@@ -183,6 +187,19 @@ export async function dripAdvance(): Promise<JobResult> {
     const to = camp.channel === 'email' ? member?.email : member?.phone
     if (to) {
       const { data: tpl } = await db.from('comm_templates').select('body').eq('id', step.template_id).maybeSingle()
+      // Slice 7 — purpose (campaign, else sequence default) + delegated-sender context.
+      let campCtx = ctxCache.get(camp.id)
+      if (!campCtx) {
+        campCtx = await campaignDispatchContext({
+          id: camp.id,
+          type: camp.type,
+          purpose: camp.purpose,
+          delegation_id: camp.delegation_id,
+          represented_agency_owner_id: camp.represented_agency_owner_id,
+          sequencePurpose: (seq?.purpose as string | null) ?? null,
+        })
+        ctxCache.set(camp.id, campCtx)
+      }
       await sendThroughGate({
         channel: camp.channel as 'sms' | 'email',
         to,
@@ -198,6 +215,9 @@ export async function dripAdvance(): Promise<JobResult> {
         sequenceStep: e.current_step,
         isSecurity: false,
         recipientContext: { full_name: member?.full_name ?? null },
+        purpose: campCtx.purpose,
+        delegation: campCtx.delegation,
+        ownership: campCtx.ownership ?? { representedAgencyId: e.agency_id },
       })
       handled++
     }

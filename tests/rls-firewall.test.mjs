@@ -109,6 +109,8 @@ try {
   psqlFile('supabase/migrations/056_comm_conversation_mode.sql')
   // 057 adds comm_campaigns.simulated_at + last_simulation (Slice 6 §14) — applies cleanly.
   psqlFile('supabase/migrations/057_comm_campaign_simulation.sql')
+  // 058 adds campaign/sequence purpose + delegated-sender builder cols (Slice 7 §15/§16).
+  psqlFile('supabase/migrations/058_comm_builder_purpose_delegation.sql')
 
   // Seed: this client's household + a second household; a life + a securities policy.
   // conversion_deadline/is_with_us are set so every policy also surfaces in the

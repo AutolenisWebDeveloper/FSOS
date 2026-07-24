@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Field } from '@/components/forms/Field'
 import { SequenceCreateSchema, AudienceCreateSchema } from '@/lib/validation/schemas'
 import { postJson, firstFieldError } from '@/lib/client/api'
+import { MESSAGE_PURPOSES } from '@/lib/comms/purpose'
 
 // OS-13 — create a sequence (green-zone education/invitation drip). Minimal step
 // model: one initial step at delay_days 0. Every enrolled send still passes the
@@ -23,11 +24,14 @@ export function SequenceCreateForm() {
     e.preventDefault()
     setErrors({})
     const fd = new FormData(e.currentTarget)
+    const purpose = String(fd.get('purpose') ?? '')
     const raw = {
       name: String(fd.get('name') ?? ''),
       description: String(fd.get('description') ?? ''),
       channel: String(fd.get('channel') ?? 'email'),
       category: String(fd.get('category') ?? ''),
+      // Slice 7 — a drip's default message purpose (§9/§10). Omit when unset.
+      ...(purpose ? { purpose } : {}),
       steps: [{ delay_days: 0 }],
     }
     const parsed = SequenceCreateSchema.safeParse(raw)
@@ -57,6 +61,12 @@ export function SequenceCreateForm() {
           <Select id="seq-channel" name="channel" defaultValue="email"><option value="email">email</option><option value="sms">sms</option></Select>
         </Field>
         <Field id="seq-category" label="Category" error={errors.category}><Input id="seq-category" name="category" placeholder="e.g. term_conversion" /></Field>
+        <Field id="seq-purpose" label="Message purpose" hint="Drives purpose-scoped consent, frequency caps + collision at dispatch." error={errors.purpose}>
+          <Select id="seq-purpose" name="purpose" defaultValue="">
+            <option value="">— None (channel-wide consent) —</option>
+            {MESSAGE_PURPOSES.map((p) => (<option key={p} value={p}>{p.replace(/_/g, ' ').toLowerCase()}</option>))}
+          </Select>
+        </Field>
       </div>
       <Field id="seq-description" label="Description" hint="Education/invitation only. Enrolled sends are still gated per recipient." error={errors.description}>
         <Textarea id="seq-description" name="description" rows={3} placeholder="What this drip educates on / invites to. Opt-out honored." />

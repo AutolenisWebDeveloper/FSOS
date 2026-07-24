@@ -14,6 +14,21 @@ export default async function NewCampaignPage() {
   )
   const list = (templates.ok ? templates.data : []).map((t) => ({ id: t.id, name: t.name, channel: t.channel, category: t.category ?? 'educational' }))
 
+  // Slice 7 — ACTIVE delegations WITH a represented agency owner (the on-behalf-of picker).
+  // Only real, active delegations are offered; the gate re-verifies per send. No invented data.
+  const delegations = await load<{ id: string; agency_owner_id: string; agency_owners: { full_name: string } | null }[]>(
+    (db) => db
+      .from('agency_communication_delegations')
+      .select('id, agency_owner_id, agency_owners!inner(full_name)')
+      .eq('status', 'ACTIVE')
+      .not('agency_owner_id', 'is', null)
+      .order('created_at', { ascending: false }),
+    [],
+  )
+  const delegationOptions = (delegations.ok ? delegations.data : [])
+    .filter((d) => d.agency_owner_id && d.agency_owners?.full_name)
+    .map((d) => ({ id: d.id, ownerId: d.agency_owner_id, ownerName: d.agency_owners!.full_name }))
+
   if (list.length === 0) {
     return (
       <div className="mx-auto max-w-2xl">
@@ -26,5 +41,5 @@ export default async function NewCampaignPage() {
     )
   }
 
-  return <CampaignBuilder templates={list} />
+  return <CampaignBuilder templates={list} delegations={delegationOptions} />
 }

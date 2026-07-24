@@ -15,6 +15,8 @@ import { sendThroughGate } from './send'
 import { isTemplateApproved } from './send'
 import { writeAudit } from '@/lib/audit/log'
 import type { RecipientContext } from './personalize'
+import type { MessagePurpose } from './purpose'
+import { campaignSendConfig, delegationSendContext } from './campaign-config'
 
 export interface DispatchCounts {
   audience: number
@@ -105,6 +107,59 @@ export async function templateBody(templateId: string): Promise<string> {
   return data?.body ?? ''
 }
 
+/** The campaign-level send config (purpose + delegated-sender) the gate reads (Slice 7). */
+export interface CampaignDispatchContext {
+  purpose?: MessagePurpose
+  delegation?: { agencyId: string; campaignType?: string | null; senderUserId?: string | null }
+  ownership?: { representedAgencyId?: string | null; representedAgencyOwnerId?: string | null; delegationId?: string | null }
+}
+
+/**
+ * Resolve the campaign-level dispatch context ONCE per campaign (Slice 7, §7/§9/§10):
+ *  • purpose — from the campaign, falling back to the drip sequence's default purpose;
+ *  • delegated-sender — for an on-behalf-of campaign, load the delegation row to attribute
+ *    the represented agency/owner + the actual sender. The delegation's ACTIVE/in-scope
+ *    status is re-checked FRESH per send by the gate (send.ts → resolveDelegation); this
+ *    only supplies the identifying context. A missing/deleted delegation degrades safely to
+ *    a non-delegated send (represented agency = the recipient's referring agency).
+ */
+export async function campaignDispatchContext(campaign: {
+  id: string
+  type?: string | null
+  purpose?: string | null
+  delegation_id?: string | null
+  represented_agency_owner_id?: string | null
+  sequencePurpose?: string | null
+}): Promise<CampaignDispatchContext> {
+  const cfg = campaignSendConfig({
+    purpose: campaign.purpose ?? campaign.sequencePurpose ?? null,
+    delegation_id: campaign.delegation_id,
+    represented_agency_owner_id: campaign.represented_agency_owner_id,
+  })
+  const ctx: CampaignDispatchContext = { purpose: cfg.purpose }
+  if (cfg.delegated && cfg.delegationId && cfg.representedAgencyOwnerId) {
+    const { data: del } = await getDb()
+      .from('agency_communication_delegations')
+      .select('id, agency_id, representative_user_id')
+      .eq('id', cfg.delegationId)
+      .maybeSingle()
+    if (del) {
+      const built = delegationSendContext(
+        {
+          agencyId: del.agency_id,
+          representativeUserId: del.representative_user_id ?? null,
+          representedAgencyOwnerId: cfg.representedAgencyOwnerId,
+          delegationId: del.id,
+        },
+        { campaignType: campaign.type ?? null },
+      )
+      ctx.delegation = built.delegation
+      ctx.ownership = built.ownership
+    }
+  }
+  return ctx
+}
+
 function recipientContext(r: Recipient): RecipientContext {
   return { full_name: r.full_name }
 }
@@ -135,6 +190,9 @@ export async function dispatchCampaign(campaignId: string, actor: string): Promi
   const audience = await resolveAudience(campaign)
   const counts: DispatchCounts = { audience: audience.length, sent: 0, suppressed: 0, blocked: 0 }
 
+  // Slice 7 — resolve the campaign-level purpose + delegated-sender context ONCE.
+  const campCtx = await campaignDispatchContext(campaign)
+
   for (const r of audience) {
     const to = channel === 'email' ? r.email! : r.phone!
     const variant = pickVariant(variants, r.member_id)
@@ -160,10 +218,14 @@ export async function dispatchCampaign(campaignId: string, actor: string): Promi
       campaignVariant: variant.key,
       isSecurity: false,
       recipientContext: recipientContext(r),
-      // Slice 1 — record the represented agency on every campaign message (§7). The
-      // represented agency owner / delegation are attached by the delegated-campaign
-      // path (later slice); a plain FSA broadcast records the represented agency only.
-      ownership: { representedAgencyId: r.agency_id },
+      // Slice 7 — message purpose drives purpose-scoped consent + frequency + collision.
+      purpose: campCtx.purpose,
+      // Slice 1/7 — record the represented party (§7). A delegated campaign attributes the
+      // represented agency owner + the authorizing delegation and passes the on-behalf-of
+      // delegation context (re-checked fresh by the gate); a plain FSA broadcast records
+      // only the recipient's represented agency.
+      delegation: campCtx.delegation,
+      ownership: campCtx.ownership ?? { representedAgencyId: r.agency_id },
     })
 
     if (outcome.sent) {

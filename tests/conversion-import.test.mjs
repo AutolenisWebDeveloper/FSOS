@@ -138,5 +138,43 @@ t('summary counts AOR coverage', () => {
   assert.equal(sum.total, 3)
 })
 
+// A later export renamed/typo'd headers, dropped the consent columns, put the AOR
+// code + agency name on one sheet, and mislabeled the Policy Owner column as a
+// second "Policy Number". The parser must still map every essential field.
+async function synthVariantWorkbook() {
+  const wb = new ExcelJS.Workbook()
+  const s = wb.addWorksheet('Sheet1')
+  s.addRow([]); s.addRow([]); s.addRow([]) // 3-row preamble
+  s.addRow(['Conversion Expiring Date', 'Policy Number', 'Policy Number', 'Primary Name Insurance', 'Inception Date', 'Product Type', 'Coverage Amount', 'Expiration Date', 'AOR code', 'Preffered email', 'Preffered Phone Number', 'Agent of Record'])
+  const r1 = s.addRow([new Date(Date.UTC(2026, 6, 28)), null, 'MARTA L SALAZAR', 'MARTA L SALAZAR', new Date(Date.UTC(2006, 6, 28)), '10 Yr Term', 150000, new Date(Date.UTC(2062, 6, 28)), '19-41-594', null, null, 'Horacio Villarreal Agency'])
+  r1.getCell(2).value = { text: 7764583, hyperlink: 'https://farmersinsurance.okta.com/home/okta_org2org/x/51975' }
+  const r2 = s.addRow([new Date(Date.UTC(2026, 6, 28)), null, 'DELFINO ORNELAS', 'DELFINO ORNELAS', new Date(Date.UTC(2006, 6, 28)), '10 Yr Term', 250000, new Date(Date.UTC(2070, 6, 28)), '19-41-319', 'dornelas3@yahoo.com', '(210) 710-9625', 'Stephanie Waterman Agency'])
+  r2.getCell(2).value = { text: 7814352, hyperlink: 'https://farmersinsurance.okta.com/home/okta_org2org/x/51975' }
+  return Buffer.from(await wb.xlsx.writeBuffer())
+}
+
+const vparsed = await mod.parseConversionFile(await synthVariantWorkbook(), 'Disctrict_life_conversion_01.xlsx')
+const vByPolicy = Object.fromEntries(vparsed.records.map((r) => [r.policy_number, r]))
+
+t('renamed/typo headers still map every essential field', () => {
+  assert.equal(vparsed.records.length, 2)
+  const r = vByPolicy['7814352']
+  assert.equal(r.conversion_deadline, '2026-07-28', 'Conversion Expiring Date → deadline')
+  assert.equal(r.convertible_amount, 250000, 'Coverage Amount → amount')
+  assert.equal(r.series_code, '19-41-319', 'AOR code → series')
+  assert.equal(r.agency_name, 'Stephanie Waterman Agency', 'Agent of Record → agency')
+  assert.equal(r.pni_email, 'dornelas3@yahoo.com', 'Preffered email → email')
+  assert.equal(r.pni_phone, '(210) 710-9625', 'Preffered Phone Number → phone')
+})
+
+t('the duplicate "Policy Number" column is recovered as the owner', () => {
+  assert.equal(vByPolicy['7764583'].owner_name, 'Marta L Salazar')
+  assert.equal(vByPolicy['7764583'].insured_name, 'Marta L Salazar')
+})
+
+t('hyperlinked policy numbers stay correct in the variant layout', () => {
+  for (const r of vparsed.records) assert.ok(!/okta|https?:/i.test(r.policy_number))
+})
+
 if (process.exitCode) { console.error('\nconversion-import.test.mjs FAILED'); process.exit(1) }
 console.log(`\nconversion-import.test.mjs: ${passed} passed`)

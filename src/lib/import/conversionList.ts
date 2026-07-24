@@ -54,24 +54,33 @@ export interface ConversionParseResult {
   total_convertible: number
 }
 
-// Header aliases (squashed to letters/digits) → canonical field.
+// Header aliases (squashed to letters/digits) → canonical field. The District
+// export's column labels drift between runs (renames + typos: "Conversion Expiry"
+// vs "Conversion Expiring", "Convertible" vs "Coverage" amount, "AOR with Series
+// Code" vs "AOR code", "Preferred" vs "Preffered"), so several spellings map to
+// each canonical field.
 const ALIASES: Record<string, string> = {
-  conversionexpirydate: 'deadline', conversiondeadline: 'deadline', expirydate: 'deadline',
+  conversionexpirydate: 'deadline', conversionexpiringdate: 'deadline', conversiondeadline: 'deadline',
+  expirydate: 'deadline', expiringdate: 'deadline', conversiondate: 'deadline',
   policynumber: 'policy', policyno: 'policy', policy: 'policy',
-  policyowner: 'owner', owner: 'owner', accountname: 'owner',
-  primarynamedinsured: 'insured', insured: 'insured', namedinsured: 'insured',
+  policyowner: 'owner', owner: 'owner', accountname: 'owner', ownername: 'owner',
+  primarynamedinsured: 'insured', primarynameinsurance: 'insured', primarynameinsured: 'insured',
+  primaryinsured: 'insured', nameinsurance: 'insured', insured: 'insured', namedinsured: 'insured',
   insuredbirthday: 'dob', insureddob: 'dob', dob: 'dob', birthday: 'dob',
   inceptiondate: 'inception', issuedate: 'inception', inception: 'inception',
   producttype: 'product', product: 'product',
-  convertibleamount: 'amount', faceamount: 'amount', amount: 'amount',
+  convertibleamount: 'amount', coverageamount: 'amount', faceamount: 'amount', amount: 'amount',
   policyexpirationdate: 'expiration', expirationdate: 'expiration', expiration: 'expiration',
   // Agent of Record.
-  aorwithseriescode: 'series', aor: 'series', seriescode: 'series',
-  servingagentnumber: 'series', servingagentno: 'series', agentnumber: 'series',
+  aorwithseriescode: 'series', aorcode: 'series', aor: 'series', seriescode: 'series',
+  servingagentnumber: 'series', servingagentno: 'series', agentnumber: 'series', agentcode: 'series',
   agentofrecord: 'agency', agencyname: 'agency', agency: 'agency', servingagentname: 'agency',
   // Consent indicators.
-  pnipreferredemail: 'email', preferredemail: 'email', email: 'email', emailaddress: 'email',
-  pnipreferredphone: 'phone', preferredphone: 'phone', phone: 'phone', phonenumber: 'phone',
+  pnipreferredemail: 'email', preferredemail: 'email', prefferedemail: 'email',
+  preferedemail: 'email', email: 'email', emailaddress: 'email',
+  pnipreferredphone: 'phone', preferredphone: 'phone', preferredphonenumber: 'phone',
+  prefferedphonenumber: 'phone', prefferedphone: 'phone', preferedphonenumber: 'phone',
+  phone: 'phone', phonenumber: 'phone',
   pniemailindicator: 'email_ind', emailindicator: 'email_ind',
   pniphoneindicator: 'phone_ind', phoneindicator: 'phone_ind',
 }
@@ -190,7 +199,15 @@ function parseMatrix(matrix: string[][]): { records: ConversionRecord[]; skipped
     const map: Record<string, number> = {}
     matrix[r].forEach((h, i) => {
       const canon = ALIASES[squash(h)]
-      if (canon && !(canon in map)) map[canon] = i
+      if (!canon) return
+      // The export sometimes mislabels the Policy Owner column "Policy Number" too;
+      // a second policy-labeled column with no owner mapped is the owner.
+      if (canon === 'policy') {
+        if (!('policy' in map)) map.policy = i
+        else if (!('owner' in map)) map.owner = i
+        return
+      }
+      if (!(canon in map)) map[canon] = i
     })
     if ('policy' in map && ('deadline' in map || 'owner' in map || 'agency' in map)) { headerRow = r; colMap = map; break }
   }

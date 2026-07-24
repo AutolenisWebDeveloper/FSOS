@@ -49,11 +49,11 @@ export default async function SocialOverviewPage() {
     ),
   ])
 
-  const breadcrumb = [{ label: 'FSA', href: '/app' }, { label: 'Social' }]
+  const breadcrumb = [{ label: 'FSA', href: '/app' }, { label: 'AI Social Media Center' }]
   const err = [inReview, queue, recent].find((r) => !r.ok)
   if (err && !err.ok) {
     return (
-      <ListShell title="Social" description="Draft, approve, schedule, and publish social content." breadcrumb={breadcrumb}>
+      <ListShell title="AI Social Media Center" description="Draft, approve, schedule, and publish social content." breadcrumb={breadcrumb}>
         {err.kind === 'not_configured' ? (
           <EmptyState icon={Radio} title="Database not configured" description="Set the Supabase environment variables to load the social overview." />
         ) : (
@@ -71,7 +71,7 @@ export default async function SocialOverviewPage() {
 
   return (
     <ListShell
-      title="Social"
+      title="AI Social Media Center"
       description="Draft, approve, schedule, and publish social content. Every published post keeps its approved version, approver, and timestamp."
       breadcrumb={breadcrumb}
     >

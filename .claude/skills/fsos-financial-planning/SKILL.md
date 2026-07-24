@@ -66,6 +66,20 @@ the non-negotiable architecture principle.
   · Imported · Calculated · Estimated · Assumption-based · Incomplete · Unavailable
   · Needs confirmation. Engine outputs are `calculated`. Render via
   `src/components/fna/value-label.tsx`.
+- **Deterministic input resolution** (`normalizeInputs` in `calculate.ts`): `fna_inputs`
+  can hold more than one row for the same key (different sources → a real conflict to
+  surface). The value the engine uses is picked deterministically: **highest source
+  authority** (verified > client_supplied > needs_confirmation > imported > estimated >
+  assumption_based > calculated), then **most recent** (`created_at`), then a stable
+  numeric tie-break — never "whatever row the DB returned last." Reads that feed it
+  (`getPlanInputs`, the intake page) select `created_at` and order by it; the intake
+  form shows the same winner the engine will use. `saveInputs` **replaces** same
+  `(key, member, source)` rows (no proliferation, no false self-conflict) while
+  preserving other sources for genuine conflict detection.
+- **Server derives record identity** (never trust the client): `createRecommendation`
+  derives `household_id` from the plan and validates any `version_id` belongs to that
+  plan — a client can't pin a governance record to another tenant's household (getDb()
+  bypasses RLS, so identity integrity is enforced in the service layer).
 
 ## How to add things
 
@@ -89,7 +103,7 @@ the non-negotiable architecture principle.
 ## Tests (the pure-core offline pattern)
 
 `tests/fna-engine.test.mjs` (30), `tests/fna-plan-lifecycle.test.mjs` (10),
-`tests/fna-calculate.test.mjs` (9) compile the pure modules standalone with `tsc`
+`tests/fna-calculate.test.mjs` (13, incl. input-resolution determinism) compile the pure modules standalone with `tsc`
 into a temp dir under cwd (so `decimal.js` resolves) and assert. `tests/rls-firewall.test.mjs`
 proves `fna_*` RLS default-deny + version immutability against ephemeral Postgres.
 Golden values are hand-computed and pinned — never let them drift silently.

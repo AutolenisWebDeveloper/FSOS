@@ -4,6 +4,7 @@ import { PageHeader, ErrorState } from '@/components/archetypes'
 import { load } from '@/lib/data/query'
 import { InputsForm } from '@/components/fna/InputsForm'
 import { planTypeDef } from '@/lib/fna/plan-types'
+import { normalizeInputs } from '@/lib/fna/calculate'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -27,14 +28,14 @@ export default async function FnaPlanInputsPage(props: { params: Promise<{ id: s
   const plan = planRes.data
   const def = planTypeDef(plan.plan_type)
 
-  const inputsRes = await load<Array<{ key: string; value_numeric: number | null }>>(
-    (db) => db.from('fna_inputs').select('key, value_numeric').eq('plan_id', params.id),
+  const inputsRes = await load<Array<{ key: string; value_numeric: number | null; source_label: string | null; created_at: string }>>(
+    (db) => db.from('fna_inputs').select('key, value_numeric, source_label, created_at').eq('plan_id', params.id).order('created_at', { ascending: true }),
     [],
   )
-  const initial: Record<string, number> = {}
-  for (const row of inputsRes.ok ? inputsRes.data : []) {
-    if (typeof row.value_numeric === 'number') initial[row.key] = row.value_numeric
-  }
+  // Show the same deterministic winner the engine will calculate from (highest
+  // source authority, then most recent), not whatever row the DB happens to return
+  // last — so the form never shows a value the calculation won't use.
+  const initial: Record<string, number> = normalizeInputs(inputsRes.ok ? inputsRes.data : [])
 
   return (
     <div className="space-y-6">

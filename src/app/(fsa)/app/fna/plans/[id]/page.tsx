@@ -94,6 +94,7 @@ export default async function FnaPlanWorkspacePage(props: { params: Promise<{ id
             <ul className="space-y-1">
               <li><Link href={`/app/fna/plans/${plan.id}/inputs`} className="text-primary hover:underline">Inputs</Link></li>
               <li><Link href={`/app/fna/plans/${plan.id}/results`} className="text-primary hover:underline">Results</Link></li>
+              <li><Link href={`/app/fna/plans/${plan.id}/audit`} className="text-primary hover:underline">Audit trail</Link></li>
               <li><Link href="/app/fna/assumptions" className="text-primary hover:underline">Assumptions</Link></li>
             </ul>
           </div>

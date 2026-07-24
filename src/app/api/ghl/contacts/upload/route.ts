@@ -16,6 +16,7 @@ import {
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+export const maxDuration = 60
 
 // Guardrails for the serverless function. A single invocation processes one
 // file; very large books should be split so each import finishes inside the

@@ -6,6 +6,7 @@ import { generateFNAReport } from '@/lib/fna'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+export const maxDuration = 60
 
 // POST /api/forms/submit — public (client portal). Saves a response by token.
 export async function POST(req: NextRequest) {

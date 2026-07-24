@@ -5,6 +5,7 @@ import { generateFNAReport } from '@/lib/fna'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+export const maxDuration = 60
 
 // POST /api/forms/fna — generate (or return cached) FNA for a submission.
 export async function POST(req: NextRequest) {

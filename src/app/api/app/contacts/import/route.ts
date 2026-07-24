@@ -13,6 +13,7 @@ import { createBatch, writeRecords, loadContactCandidates, type RecordInput } fr
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+export const maxDuration = 60
 
 const MAX_FILE_BYTES = 8 * 1024 * 1024
 const MAX_ROWS = 2000

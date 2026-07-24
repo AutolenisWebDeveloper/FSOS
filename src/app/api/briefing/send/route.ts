@@ -7,6 +7,7 @@ import { runGateway } from '@/lib/ai/gateway'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+export const maxDuration = 60
 
 // POST /api/briefing/send  (internal)  body: { to? }
 // Assembles today's operational snapshot (overdue/today tasks, week's renewals,

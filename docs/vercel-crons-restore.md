@@ -46,5 +46,6 @@ commission-reconcile, workforce-orchestrator, data-quality, backup-verify,
 workshop-reminders.
 
 > Preferred fix: restore the project to **Pro** and re-add all 12 crons above. The
-> `functions` block (maxDuration 60) is within Hobby's limit; if a deploy still fails
-> after this trim, the next suspect is build-minutes/billing, not the cron config.
+> per-route `maxDuration = 60` segment exports (colocated in each long-running route,
+> not a `vercel.json` `functions` block) are within Hobby's limit; if a deploy still
+> fails after this trim, the next suspect is build-minutes/billing, not the cron config.

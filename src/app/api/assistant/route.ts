@@ -6,6 +6,7 @@ import { FINRA_DISCLAIMER, AI_PROHIBITED_ACTIONS } from '@/lib/compliance'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+export const maxDuration = 60
 
 const MAX_TURNS = 20
 

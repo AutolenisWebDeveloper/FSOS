@@ -39,7 +39,7 @@ interface Variant {
   weight: number
 }
 
-async function resolveAudience(campaign: { channel: string; audience: { kind?: string; household_ids?: string[] } }): Promise<Recipient[]> {
+export async function resolveAudience(campaign: { channel: string; audience: { kind?: string; household_ids?: string[] } }): Promise<Recipient[]> {
   const db = getDb()
   const kind = campaign.audience?.kind ?? 'all_consented'
   const channel = campaign.channel as 'sms' | 'email'
@@ -100,7 +100,7 @@ function pickVariant(variants: Variant[], memberId: string): Variant {
   return variants[0]
 }
 
-async function templateBody(templateId: string): Promise<string> {
+export async function templateBody(templateId: string): Promise<string> {
   const { data } = await getDb().from('comm_templates').select('body').eq('id', templateId).maybeSingle()
   return data?.body ?? ''
 }

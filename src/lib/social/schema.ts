@@ -40,6 +40,20 @@ export const ContentDraftSchema = z.object({
 })
 export type ContentDraft = z.infer<typeof ContentDraftSchema>
 
+// ── Scheduling (Slice 3) ─────────────────────────────────────────────────────
+export const ScheduleCreateSchema = z.object({
+  version_id: z.string().uuid(),
+  channel_id: z.string().uuid(),
+  scheduled_at: z.string().datetime({ offset: true }),
+  timezone: z.string().trim().min(1).max(64).default('America/Chicago'),
+})
+export type ScheduleCreate = z.infer<typeof ScheduleCreateSchema>
+
+export const RescheduleSchema = z.object({
+  scheduled_at: z.string().datetime({ offset: true }),
+})
+export type Reschedule = z.infer<typeof RescheduleSchema>
+
 // Partial edit of a draft (all fields optional).
 export const ContentEditSchema = ContentDraftSchema.partial()
 export type ContentEdit = z.infer<typeof ContentEditSchema>

@@ -134,6 +134,8 @@ try {
   // back-office only (no client policy) — the proof below asserts a client sees
   // ZERO rows, and that the approval gate + immutability + append-only triggers fire.
   psqlFile('supabase/migrations/063_social_content.sql')
+  // 064 adds social_schedule_entries.next_attempt_at (Slice 3 retry/backoff).
+  psqlFile('supabase/migrations/064_social_schedule_retry.sql')
 
   // Seed: this client's household + a second household; a life + a securities policy.
   // conversion_deadline/is_with_us are set so every policy also surfaces in the
@@ -284,6 +286,19 @@ try {
     "update social_publish_log set attempt=2 where id='dddddddd-dddd-dddd-dddd-dddddddddddd';",
   )
 
+  // Slice 3 EXACTLY-ONCE claim: the publish job flips pending → publishing with a
+  // conditional update. Two racing claims on the same pending entry: the first wins
+  // (1 row), the second sees no pending row (0 rows) — so a queued item publishes
+  // at most once. The seed's schedule entry (cccc…) is pending.
+  const CLAIM =
+    "update social_schedule_entries set status='publishing' where id='cccccccc-cccc-cccc-cccc-cccccccccccc' and status='pending';"
+  const socialClaimFirst = psqlQuery(CLAIM) // → 'UPDATE 1'
+  const socialClaimSecond = psqlQuery(CLAIM) // → 'UPDATE 0' (already publishing)
+  // next_attempt_at column exists (mig 064) and is nullable/back-office.
+  const socialNextAttemptExists = !psqlErrors(
+    "select next_attempt_at from social_schedule_entries where id='cccccccc-cccc-cccc-cccc-cccccccccccc';",
+  )
+
   let passed = 0
   const t = (name, fn) => { fn(); passed++; console.log('  ✓', name) }
 
@@ -378,6 +393,13 @@ try {
   })
   t('social_publish_log is append-only (mig 063 trigger)', () => {
     assert.equal(socialPublishLogAppendOnly, true, 'updating an immutable publish-log row must raise')
+  })
+  t('social publish claim is EXACTLY-ONCE: first claim wins, second is a no-op (mig 064)', () => {
+    assert.equal(socialClaimFirst, 'UPDATE 1', `first claim must affect exactly 1 row, got: ${socialClaimFirst}`)
+    assert.equal(socialClaimSecond, 'UPDATE 0', `second claim must affect 0 rows, got: ${socialClaimSecond}`)
+  })
+  t('social_schedule_entries.next_attempt_at exists (mig 064)', () => {
+    assert.equal(socialNextAttemptExists, true, 'next_attempt_at column must exist')
   })
 
   console.log(`\nCase 7: all ${passed} RLS firewall assertions passed.`)

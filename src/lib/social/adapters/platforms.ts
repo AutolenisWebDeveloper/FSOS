@@ -17,6 +17,9 @@
 import { BaseSocialPublisher } from './base'
 import { YouTubePublisher } from './youtube'
 import { FacebookPagePublisher } from './facebook'
+import { InstagramPublisher } from './instagram'
+import { LinkedInCompanyPublisher } from './linkedin'
+import { XPublisher } from './x'
 import type { PlatformSupport, SocialPlatform } from './types'
 
 export const PLATFORM_SUPPORT: Record<SocialPlatform, PlatformSupport> = {
@@ -41,8 +44,8 @@ class PlatformPublisher extends BaseSocialPublisher {
 export const SOCIAL_ADAPTERS: Record<SocialPlatform, BaseSocialPublisher> = {
   youtube: new YouTubePublisher(),
   facebook_page: new FacebookPagePublisher(),
-  instagram: new PlatformPublisher('instagram'),
-  linkedin_company: new PlatformPublisher('linkedin_company'),
-  x: new PlatformPublisher('x'),
+  instagram: new InstagramPublisher(),
+  linkedin_company: new LinkedInCompanyPublisher(),
+  x: new XPublisher(),
   tiktok: new PlatformPublisher('tiktok'),
 }

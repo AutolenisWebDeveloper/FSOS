@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, storeErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { getPlan, getVersionSnapshot, createScenario } from '@/lib/fna/store'
@@ -40,13 +40,13 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   const actor = actorOf(auth.session)
   try {
     const plan = await getPlan(params.id)
-    if (!plan.ok) return NextResponse.json({ error: plan.message }, { status: plan.kind === 'not_found' ? 404 : 500 })
+    if (!plan.ok) return storeErrorResponse(plan, 'fna.scenarios.getPlan')
     if (!plan.data.current_version_id) {
       return NextResponse.json({ error: 'Calculate the plan first — a scenario branches from a frozen version.' }, { status: 422 })
     }
 
     const snap = await getVersionSnapshot(plan.data.current_version_id)
-    if (!snap.ok) return NextResponse.json({ error: snap.message }, { status: snap.kind === 'not_found' ? 404 : 500 })
+    if (!snap.ok) return storeErrorResponse(snap, 'fna.scenarios.snapshot')
 
     const preset = scenarioPreset(body.data.scenario_type)
     // Merge preset override with any custom override (custom wins per field).
@@ -71,11 +71,13 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       results: { results: calc.results, completeness: calc.completeness },
       actor,
     })
-    if (!res.ok) return NextResponse.json({ error: res.message }, { status: 500 })
+    if (!res.ok) return storeErrorResponse(res, 'fna.scenarios.create')
 
     await writeAudit({
       actor,
-      action: 'ai.run',
+      // Deterministic scenario engine — no model call. Audit as entity.created, not
+      // ai.run, so this doesn't pollute the AI-governance audit trail (§13.9).
+      action: 'entity.created',
       entity: 'fna_scenario',
       entityId: res.data.id,
       diff: { event: 'fna.scenario.created', plan_id: params.id, base_version_id: plan.data.current_version_id, scenario_type: body.data.scenario_type },

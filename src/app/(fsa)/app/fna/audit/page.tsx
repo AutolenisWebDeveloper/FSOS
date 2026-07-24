@@ -1,6 +1,8 @@
+import Link from 'next/link'
 import { requireRole } from '@/lib/auth/session'
 import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { load } from '@/lib/data/query'
+import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 
@@ -45,7 +47,15 @@ export default async function FnaAuditPage() {
       breadcrumb={breadcrumb}
     >
       {res.data.length === 0 ? (
-        <EmptyState title="No FNA audit events yet" description="Creating, calculating, approving, or recommending on any plan records an event here." />
+        <EmptyState
+          title="No FNA audit events yet"
+          description="Creating, calculating, approving, or recommending on any plan records an event here."
+          action={
+            <Button asChild variant="outline">
+              <Link href="/app/fna/plans">View plans</Link>
+            </Button>
+          }
+        />
       ) : (
         <Card>
           <CardContent className="p-0">

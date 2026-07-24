@@ -9,17 +9,24 @@ import { CURRENCY, type Currency } from './money'
 /**
  * How a value shown to a user is sourced (build instruction §1). Engine OUTPUTS
  * are always 'calculated'; INPUTS carry one of these so the UI can label them.
+ * This tuple is the SINGLE source of the provenance vocabulary — the Zod enum
+ * (store.ts), the source-priority rank (calculate.ts), and the UI badge map
+ * (value-label.tsx) all derive from it, so a label can't be added in one place
+ * and silently missed in another.
  */
-export type ValueLabel =
-  | 'verified'
-  | 'client_supplied'
-  | 'imported'
-  | 'calculated'
-  | 'estimated'
-  | 'assumption_based'
-  | 'incomplete'
-  | 'unavailable'
-  | 'needs_confirmation'
+export const VALUE_LABELS = [
+  'verified',
+  'client_supplied',
+  'imported',
+  'calculated',
+  'estimated',
+  'assumption_based',
+  'incomplete',
+  'unavailable',
+  'needs_confirmation',
+] as const
+
+export type ValueLabel = (typeof VALUE_LABELS)[number]
 
 /** A single input value with its provenance label and optional source pointer. */
 export interface Labeled<T = number> {

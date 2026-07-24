@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { configErrorResponse } from '@/lib/http'
+import { configErrorResponse, storeErrorResponse, internalErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { getPlan, saveInputs } from '@/lib/fna/store'
@@ -24,13 +24,17 @@ export async function POST(_req: NextRequest, props: { params: Promise<{ id: str
   const actor = actorOf(auth.session)
   try {
     const plan = await getPlan(params.id)
-    if (!plan.ok) return NextResponse.json({ error: plan.message }, { status: plan.kind === 'not_found' ? 404 : 500 })
+    if (!plan.ok) return storeErrorResponse(plan, 'fna.prefill.getPlan')
 
     const ctx = await loadFnaContext(plan.data.household_id)
     if ('error' in ctx) {
       const e = ctx.error
-      if (e.ok) return NextResponse.json({ error: 'context unavailable' }, { status: 500 })
-      const status = e.kind === 'not_found' ? 404 : e.kind === 'error' ? 500 : 422
+      // Raw DB/context failures (kind:'error') carry a PostgREST message — log it
+      // server-side and return a generic 500 (§16.1). App-authored 4xx (not_found,
+      // no_data/ai_error/blocked) keep their safe message + status.
+      if (e.ok) return internalErrorResponse('unexpected context result', { label: 'fna.prefill.context' })
+      if (e.kind === 'error') return internalErrorResponse(e.message, { label: 'fna.prefill.context' })
+      const status = e.kind === 'not_found' ? 404 : 422
       const message = 'message' in e ? e.message : 'context unavailable'
       return NextResponse.json({ error: message }, { status })
     }
@@ -41,7 +45,7 @@ export async function POST(_req: NextRequest, props: { params: Promise<{ id: str
     }
 
     const res = await saveInputs(params.id, suggestions, actor)
-    if (!res.ok) return NextResponse.json({ error: res.message }, { status: 500 })
+    if (!res.ok) return storeErrorResponse(res, 'fna.prefill.save')
 
     await writeAudit({
       actor,

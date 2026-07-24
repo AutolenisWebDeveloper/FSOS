@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { requireRole } from '@/lib/auth/session'
 import { PageHeader, ErrorState, EmptyState } from '@/components/archetypes'
 import { load } from '@/lib/data/query'
+import { RetryButton } from '@/components/ui/RetryButton'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { FormulaResultCard } from '@/components/fna/FormulaResultCard'
@@ -23,20 +24,6 @@ export default async function FnaPlanResultsPage(props: { params: Promise<{ id: 
   const params = await props.params
   await requireRole('fsa', `/app/fna/plans/${params.id}/results`)
 
-  const planRes = await load<{ id: string; plan_type: string; current_version_id: string | null } | null>(
-    (db) => db.from('fna_plans').select('id, plan_type, current_version_id').eq('id', params.id).is('deleted_at', null).maybeSingle(),
-    null,
-  )
-  if (!planRes.ok) {
-    return (
-      <div className="space-y-6">
-        {planRes.kind === 'not_configured' ? <ErrorState title="Database not configured" /> : <ErrorState description={planRes.message} />}
-      </div>
-    )
-  }
-  if (!planRes.data) notFound()
-  const plan = planRes.data
-
   const breadcrumb = [
     { label: 'FSA', href: '/app' },
     { label: 'AI FNA Command Center', href: '/app/fna' },
@@ -44,6 +31,28 @@ export default async function FnaPlanResultsPage(props: { params: Promise<{ id: 
     { label: 'Workspace', href: `/app/fna/plans/${params.id}` },
     { label: 'Results' },
   ]
+
+  const planRes = await load<{ id: string; plan_type: string; current_version_id: string | null } | null>(
+    (db) => db.from('fna_plans').select('id, plan_type, current_version_id').eq('id', params.id).is('deleted_at', null).maybeSingle(),
+    null,
+  )
+  if (!planRes.ok) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Results" breadcrumb={breadcrumb} />
+        {planRes.kind === 'not_configured' ? (
+          <ErrorState title="Database not configured" />
+        ) : (
+          <div className="space-y-3">
+            <ErrorState description={planRes.message} />
+            <RetryButton />
+          </div>
+        )}
+      </div>
+    )
+  }
+  if (!planRes.data) notFound()
+  const plan = planRes.data
 
   const versionRes = await load<{ id: string; version_no: number; inputs_snapshot: { completeness?: number; missingFields?: string[] } | null } | null>(
     (db) => db.from('fna_versions').select('id, version_no, inputs_snapshot').eq('plan_id', params.id).order('version_no', { ascending: false }).limit(1).maybeSingle(),

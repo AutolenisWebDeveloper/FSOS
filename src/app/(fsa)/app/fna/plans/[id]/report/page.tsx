@@ -2,7 +2,8 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { requireRole } from '@/lib/auth/session'
 import { PageHeader, ErrorState, EmptyState } from '@/components/archetypes'
-import { load } from '@/lib/data/query'
+import { load, unwrapOne } from '@/lib/data/query'
+import { RetryButton } from '@/components/ui/RetryButton'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -18,22 +19,6 @@ export default async function FnaPlanReportPage(props: { params: Promise<{ id: s
   const params = await props.params
   await requireRole('fsa', `/app/fna/plans/${params.id}/report`)
 
-  const planRes = await load<{ id: string; plan_type: string; status: string; current_version_id: string | null; households: { primary_name: string } | { primary_name: string }[] | null } | null>(
-    (db) => db.from('fna_plans').select('id, plan_type, status, current_version_id, households(primary_name)').eq('id', params.id).is('deleted_at', null).maybeSingle(),
-    null,
-  )
-  if (!planRes.ok) {
-    return (
-      <div className="space-y-6">
-        {planRes.kind === 'not_configured' ? <ErrorState title="Database not configured" /> : <ErrorState description={planRes.message} />}
-      </div>
-    )
-  }
-  if (!planRes.data) notFound()
-  const plan = planRes.data
-  const hh = Array.isArray(plan.households) ? plan.households[0] : plan.households
-  const approved = plan.status === 'APPROVED'
-
   const breadcrumb = [
     { label: 'FSA', href: '/app' },
     { label: 'AI FNA Command Center', href: '/app/fna' },
@@ -41,6 +26,30 @@ export default async function FnaPlanReportPage(props: { params: Promise<{ id: s
     { label: 'Workspace', href: `/app/fna/plans/${params.id}` },
     { label: 'Report' },
   ]
+
+  const planRes = await load<{ id: string; plan_type: string; status: string; current_version_id: string | null; households: { primary_name: string } | { primary_name: string }[] | null } | null>(
+    (db) => db.from('fna_plans').select('id, plan_type, status, current_version_id, households(primary_name)').eq('id', params.id).is('deleted_at', null).maybeSingle(),
+    null,
+  )
+  if (!planRes.ok) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Report" breadcrumb={breadcrumb} />
+        {planRes.kind === 'not_configured' ? (
+          <ErrorState title="Database not configured" />
+        ) : (
+          <div className="space-y-3">
+            <ErrorState description={planRes.message} />
+            <RetryButton />
+          </div>
+        )}
+      </div>
+    )
+  }
+  if (!planRes.data) notFound()
+  const plan = planRes.data
+  const hh = unwrapOne(plan.households)
+  const approved = plan.status === 'APPROVED'
 
   if (!plan.current_version_id) {
     return (

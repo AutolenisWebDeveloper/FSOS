@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { configErrorResponse } from '@/lib/http'
+import { configErrorResponse, storeErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { getPlan, getPlanInputs, getActiveAssumptionSet, createVersion } from '@/lib/fna/store'
@@ -22,10 +22,10 @@ export async function POST(_req: NextRequest, props: { params: Promise<{ id: str
   const actor = actorOf(auth.session)
   try {
     const plan = await getPlan(params.id)
-    if (!plan.ok) return NextResponse.json({ error: plan.message }, { status: plan.kind === 'not_found' ? 404 : 500 })
+    if (!plan.ok) return storeErrorResponse(plan, 'calculate:getPlan')
 
     const inputsRes = await getPlanInputs(params.id)
-    if (!inputsRes.ok) return NextResponse.json({ error: inputsRes.message }, { status: 500 })
+    if (!inputsRes.ok) return storeErrorResponse(inputsRes, 'calculate:getPlanInputs')
 
     const assumptions = await getActiveAssumptionSet(plan.data.household_id)
     const values = normalizeInputs(inputsRes.data)
@@ -44,11 +44,13 @@ export async function POST(_req: NextRequest, props: { params: Promise<{ id: str
       status: 'CALCULATED',
       actor,
     })
-    if (!version.ok) return NextResponse.json({ error: version.message }, { status: 500 })
+    if (!version.ok) return storeErrorResponse(version, 'calculate:createVersion')
 
+    // The engine is DETERMINISTIC (no model), so this is an entity mutation, not an
+    // AI run — logging it as ai.run would pollute the AI-governance audit trail (§13.9).
     await writeAudit({
       actor,
-      action: 'ai.run',
+      action: 'entity.created',
       entity: 'fna_version',
       entityId: version.data.id,
       diff: { event: 'fna.plan.calculated', plan_id: params.id, version_no: version.data.version_no, formulas: calc.results.length, completeness: calc.completeness },

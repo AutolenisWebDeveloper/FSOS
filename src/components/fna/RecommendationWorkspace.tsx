@@ -55,10 +55,15 @@ export function RecommendationWorkspace({ plans, recommendations }: { plans: Pla
   const [category, setCategory] = React.useState('')
   const [fields, setFields] = React.useState<Record<string, string>>({})
   const [busy, setBusy] = React.useState<false | 'save' | string>(false)
+  // Tracks whether a save was attempted, so the required fields can surface a
+  // visible invalid state (aria-invalid) rather than only a transient toast.
+  const [attempted, setAttempted] = React.useState(false)
 
   const plan = plans.find((p) => p.id === planId)
+  const objectiveMissing = attempted && !objective.trim()
 
   async function onSave() {
+    setAttempted(true)
     if (!plan || !objective.trim()) {
       toast.error('Pick a plan and enter the objective.')
       return
@@ -110,8 +115,10 @@ export function RecommendationWorkspace({ plans, recommendations }: { plans: Pla
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="rec-plan">Plan</Label>
-              <Select id="rec-plan" value={planId} onChange={(e) => setPlanId(e.target.value)} disabled={busy !== false}>
+              <Label htmlFor="rec-plan">
+                Plan <span aria-hidden="true" className="text-destructive">*</span>
+              </Label>
+              <Select id="rec-plan" value={planId} onChange={(e) => setPlanId(e.target.value)} disabled={busy !== false} aria-required={true}>
                 {plans.map((p) => (
                   <option key={p.id} value={p.id}>{p.name}</option>
                 ))}
@@ -123,8 +130,19 @@ export function RecommendationWorkspace({ plans, recommendations }: { plans: Pla
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="rec-obj">Objective</Label>
-            <Textarea id="rec-obj" value={objective} onChange={(e) => setObjective(e.target.value)} disabled={busy !== false} rows={2} placeholder="What is this recommendation intended to achieve?" />
+            <Label htmlFor="rec-obj">
+              Objective <span aria-hidden="true" className="text-destructive">*</span>
+            </Label>
+            <Textarea
+              id="rec-obj"
+              value={objective}
+              onChange={(e) => setObjective(e.target.value)}
+              disabled={busy !== false}
+              rows={2}
+              placeholder="What is this recommendation intended to achieve?"
+              aria-required={true}
+              aria-invalid={objectiveMissing || undefined}
+            />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             {TEXT_FIELDS.map((f) => (

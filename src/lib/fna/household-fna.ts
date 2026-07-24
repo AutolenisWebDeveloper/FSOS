@@ -17,7 +17,7 @@
 import { getDb } from '@/lib/supabase/client'
 import { dobKey } from '@/lib/data/query'
 import { runGateway } from '@/lib/ai/gateway'
-import { FNA_DISCLAIMER, screenFnaReport, withDisclaimer, type FnaReport, type FnaBlockReason } from './screen'
+import { screenFnaReport, withDisclaimer, type FnaReport, type FnaBlockReason } from './screen'
 
 export interface FnaContextMember {
   full_name: string
@@ -87,18 +87,21 @@ export async function loadFnaContext(householdId: string): Promise<FnaContext | 
     .is('deleted_at', null)
 
   const key = dobKey()
-  const members: FnaContextMember[] = []
-  for (const m of memberRows ?? []) {
-    // DOB via the SECURITY DEFINER RPC — the app never selects dob_enc directly.
-    let age: number | null = null
-    try {
-      const { data: dob } = await db.rpc('member_dob', { p_id: m.id, p_key: key })
-      age = ageFromDob(typeof dob === 'string' ? dob : null)
-    } catch {
-      /* DOB unavailable → age stays null; the FNA still runs on the rest. */
-    }
-    members.push({ full_name: m.full_name, relationship: m.relationship ?? null, age })
-  }
+  // Decrypt each member's DOB via the SECURITY DEFINER RPC (the app never selects
+  // dob_enc directly), CONCURRENTLY — the calls are independent, so we don't
+  // serialize one round-trip per member on the generation path.
+  const members: FnaContextMember[] = await Promise.all(
+    (memberRows ?? []).map(async (m) => {
+      let age: number | null = null
+      try {
+        const { data: dob } = await db.rpc('member_dob', { p_id: m.id, p_key: key })
+        age = ageFromDob(typeof dob === 'string' ? dob : null)
+      } catch {
+        /* DOB unavailable → age stays null; the FNA still runs on the rest. */
+      }
+      return { full_name: m.full_name, relationship: m.relationship ?? null, age }
+    }),
+  )
 
   const { data: policyRows } = await db
     .from('household_policies')
@@ -165,9 +168,9 @@ Return ONLY valid JSON (no markdown fences, no preamble). Use this exact shape:
   ],
   "next_steps": ["Concrete agenda item for the FSA meeting", "step 2", "step 3"],
   "risk_profile": "Conservative|Moderate|Aggressive|Unknown",
-  "urgency": "High|Medium|Low",
-  "key_metrics": { "life_coverage_gap": 0, "retirement_shortfall_monthly": 0 }
-}`
+  "urgency": "High|Medium|Low"
+}
+Do NOT include any calculated dollar figures, gaps, or shortfalls as numbers — those come from the deterministic engine, never from you.`
 
 /**
  * Generate an FNA for a household. Routes through the gateway, forces the FINRA
@@ -226,9 +229,16 @@ export async function generateHouseholdFna(
     return { ok: false, kind: 'ai_error', message: 'Failed to parse AI response' }
   }
 
-  // Force the disclaimer verbatim, mark the securities firewall, then screen.
+  // The AI is NEVER the source of an authoritative figure (§0/§1). Drop any numeric
+  // estimate fields the model may have emitted so no unlabeled AI number is screened,
+  // returned, or persisted — authoritative numbers come only from the deterministic
+  // engine (fna_results), never the narrative.
+  delete (parsed as Record<string, unknown>).key_metrics
+  delete (parsed as Record<string, unknown>).monthly_retirement_gap
+
+  // Force the disclaimer verbatim (withDisclaimer sets it) and mark the securities
+  // firewall, then screen.
   const report = withDisclaimer({ ...parsed, ffs_managed: ctx.hasSecurities })
-  report.compliance_disclaimer = FNA_DISCLAIMER
 
   const screen = screenFnaReport(report)
   if (!screen.allow) {

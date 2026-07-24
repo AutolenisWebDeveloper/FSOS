@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, storeErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { createRecommendation, RecommendationSchema } from '@/lib/fna/store'
@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
   const actor = actorOf(auth.session)
   try {
     const res = await createRecommendation(body.data, actor)
-    if (!res.ok) return NextResponse.json({ error: res.message }, { status: 500 })
+    if (!res.ok) return storeErrorResponse(res, 'fna.recommendations.create')
     await writeAudit({
       actor,
       action: 'entity.created',

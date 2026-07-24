@@ -9,6 +9,33 @@ import { emailLc, phoneDigits, deriveFullName } from '@/lib/contacts/normalize'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
+// Contact Center — search existing contacts (typeahead). RBAC-gated; read-only.
+// `?q=` matches full_name / email (case-insensitive). Reused by the social
+// engagement review queue to resolve an author to an EXISTING contact.
+export async function GET(req: NextRequest) {
+  const auth = await requireApiRole('fsa')
+  if (!auth.ok) return auth.response
+  const denied = requirePermission(auth.session, ['fsa', 'licensed_staff', 'admin', 'super_admin'])
+  if (denied) return denied
+
+  const q = (req.nextUrl.searchParams.get('q') || '').trim()
+  if (q.length < 2) return NextResponse.json({ contacts: [] }, { status: 200 })
+  const like = `%${q.replace(/[%_,]/g, '')}%`
+  try {
+    const { data, error } = await getDb()
+      .from('contacts')
+      .select('id, full_name, email, phone')
+      .or(`full_name.ilike.${like},email.ilike.${like}`)
+      .is('deleted_at', null)
+      .order('full_name', { ascending: true })
+      .limit(10)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ contacts: data ?? [] }, { status: 200 })
+  } catch (e) {
+    return configErrorResponse(e) ?? NextResponse.json({ error: 'Search failed' }, { status: 500 })
+  }
+}
+
 // Contact Center — manually add a contact, stored natively in App B. RBAC-gated +
 // audited. Duplicate detection: a matching email/phone returns 409 with the
 // existing contact unless `force: true` is passed (the UI offers "add anyway").

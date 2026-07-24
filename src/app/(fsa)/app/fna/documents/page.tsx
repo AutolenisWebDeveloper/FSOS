@@ -1,7 +1,8 @@
 import Link from 'next/link'
 import { requireRole } from '@/lib/auth/session'
 import { PageHeader, ErrorState, EmptyState, Section } from '@/components/archetypes'
-import { load } from '@/lib/data/query'
+import { load, unwrapOne } from '@/lib/data/query'
+import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 
@@ -71,14 +72,22 @@ export default async function FnaDocumentsPage() {
 
       <Section title="Data quality" description="Unresolved exceptions across plans. Warnings never block an analysis — they lower its confidence.">
         {dq.data.length === 0 ? (
-          <EmptyState title="No open data-quality exceptions" description="Conflicting or missing inputs surface here as plans capture data." />
+          <EmptyState
+            title="No open data-quality exceptions"
+            description="Conflicting or missing inputs surface here as plans capture data."
+            action={
+              <Button asChild variant="outline">
+                <Link href="/app/fna/plans">View plans</Link>
+              </Button>
+            }
+          />
         ) : (
           <Card>
             <CardContent className="p-0">
               <ul className="divide-y">
                 {dq.data.map((r) => {
-                  const plan = Array.isArray(r.fna_plans) ? r.fna_plans[0] : r.fna_plans
-                  const hh = plan ? (Array.isArray(plan.households) ? plan.households[0] : plan.households) : null
+                  const plan = unwrapOne(r.fna_plans)
+                  const hh = plan ? unwrapOne(plan.households) : null
                   return (
                     <li key={r.id} className="flex items-start justify-between gap-3 px-4 py-3">
                       <div className="min-w-0">
@@ -105,7 +114,15 @@ export default async function FnaDocumentsPage() {
 
       <Section title="FNA documents" description="Saved to Document OS from the narrative generator.">
         {!docs.ok || docs.data.length === 0 ? (
-          <EmptyState title="No FNA documents yet" description="Generate a narrative FNA and save it to Document OS to see it here." />
+          <EmptyState
+            title="No FNA documents yet"
+            description="Generate a narrative FNA and save it to Document OS to see it here."
+            action={
+              <Button asChild variant="outline">
+                <Link href="/app/fna/generate">Generate narrative</Link>
+              </Button>
+            }
+          />
         ) : (
           <Card>
             <CardContent className="p-0">

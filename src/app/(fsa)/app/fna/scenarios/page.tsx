@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { requireRole } from '@/lib/auth/session'
 import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
-import { load } from '@/lib/data/query'
+import { load, unwrapOne } from '@/lib/data/query'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
@@ -70,7 +70,7 @@ export default async function FnaScenarioCenterPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {res.data.map((p) => {
-            const hh = Array.isArray(p.households) ? p.households[0] : p.households
+            const hh = unwrapOne(p.households)
             const count = p.fna_scenarios?.[0]?.count ?? 0
             return (
               <Link key={p.id} href={`/app/fna/plans/${p.id}/scenarios`}>

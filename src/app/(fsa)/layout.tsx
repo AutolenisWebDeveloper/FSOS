@@ -42,6 +42,7 @@ import {
   FileUp,
   LifeBuoy,
   Settings as SettingsIcon,
+  Share2,
 } from 'lucide-react'
 import { requireRole } from '@/lib/auth/session'
 import { PortalShell, type NavItem } from '@/components/portal/PortalShell'
@@ -65,6 +66,7 @@ const NAV: NavItem[] = [
   // Slice 9A — the communications hub is an Overview command center (renamed from "Comms",
   // moved out of Engage). Its /app/comms/inbox shortcut intentionally stays in Engage.
   { href: '/app/comms', label: 'AI Communications Center', icon: Radio, group: 'Overview' },
+  { href: '/app/social', label: 'AI Social Media Center', icon: Share2, group: 'Overview' },
   { href: '/app/revenue', label: 'Revenue Center', icon: Wallet, group: 'Overview' },
   { href: '/app/notifications', label: 'Notifications', icon: Bell, group: 'Overview' },
 

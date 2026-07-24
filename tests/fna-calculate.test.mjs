@@ -69,6 +69,46 @@ check('normalizeInputs keeps only finite numerics', () => {
   assert.ok(!('bad' in v))
 })
 
+check('normalizeInputs: a client value beats an imported (prefill) value for the same key', () => {
+  // Regression: prefill (imported) must never override what the client/FSA entered.
+  const v = normalizeInputs([
+    { key: 'monthly_income', value_numeric: 4000, source_label: 'imported', created_at: '2026-07-24T10:00:00Z' },
+    { key: 'monthly_income', value_numeric: 9000, source_label: 'client_supplied', created_at: '2026-07-24T09:00:00Z' },
+  ])
+  assert.equal(v.monthly_income, 9000) // client_supplied wins despite being older
+})
+
+check('normalizeInputs: verified beats client_supplied beats imported', () => {
+  const v = normalizeInputs([
+    { key: 'total_assets', value_numeric: 100, source_label: 'imported', created_at: '2026-07-24T12:00:00Z' },
+    { key: 'total_assets', value_numeric: 200, source_label: 'client_supplied', created_at: '2026-07-24T11:00:00Z' },
+    { key: 'total_assets', value_numeric: 300, source_label: 'verified', created_at: '2026-07-24T10:00:00Z' },
+  ])
+  assert.equal(v.total_assets, 300) // verified is most authoritative
+})
+
+check('normalizeInputs: within the same source, the most recent value wins', () => {
+  const v = normalizeInputs([
+    { key: 'liquid_assets', value_numeric: 5000, source_label: 'client_supplied', created_at: '2026-07-24T08:00:00Z' },
+    { key: 'liquid_assets', value_numeric: 7000, source_label: 'client_supplied', created_at: '2026-07-24T09:30:00Z' },
+  ])
+  assert.equal(v.liquid_assets, 7000)
+})
+
+check('normalizeInputs: deterministic regardless of row order (unordered DB read)', () => {
+  const rows = [
+    { key: 'monthly_income', value_numeric: 4000, source_label: 'imported', created_at: '2026-07-24T10:00:00Z' },
+    { key: 'monthly_income', value_numeric: 9000, source_label: 'client_supplied', created_at: '2026-07-24T09:00:00Z' },
+    { key: 'total_assets', value_numeric: 200, source_label: 'client_supplied', created_at: '2026-07-24T11:00:00Z' },
+    { key: 'total_assets', value_numeric: 300, source_label: 'verified', created_at: '2026-07-24T10:00:00Z' },
+  ]
+  const forward = normalizeInputs(rows)
+  const reversed = normalizeInputs([...rows].reverse())
+  assert.deepEqual(forward, reversed)
+  assert.equal(forward.monthly_income, 9000)
+  assert.equal(forward.total_assets, 300)
+})
+
 check('express runs its six analyses on complete data', () => {
   const calc = calculatePlan('express', fullExpress, DEFAULT_ASSUMPTIONS, CTX)
   const ids = calc.results.map((r) => r.formula_id).sort()

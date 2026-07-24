@@ -11,6 +11,7 @@
 import { getDb } from '@/lib/supabase/client'
 import { getAdapter, type ChannelContext, type PublishInput } from './adapters'
 import { socialTokenKey } from './secrets'
+import { SCHEDULE_CHANNEL_SELECT } from './channel-view'
 import {
   parseCredential,
   credentialNeedsRefresh,
@@ -91,10 +92,12 @@ async function publishClaimed(
     .maybeSingle()
 
   // Load the channel and decrypt its OAuth secret SERVER-SIDE (never logged/exposed).
-  // The computed presence column defeats the typed builder's parser, so cast.
+  // has_credential is a REAL generated column (mig 067) — a bare column, never a SQL
+  // expression in the select string (PostgREST rejects expressions). secret_enc is
+  // still never selected; the secret is read only via the pgcrypto RPC below.
   const { data: channelData } = await db
     .from('social_channels')
-    .select('id, platform, external_account_id, status, token_expires_at, (secret_enc is not null) as has_credential')
+    .select(SCHEDULE_CHANNEL_SELECT)
     .eq('id', entry.channel_id)
     .maybeSingle()
   const channel = channelData as unknown as {

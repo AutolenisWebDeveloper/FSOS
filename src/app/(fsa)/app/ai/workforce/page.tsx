@@ -5,6 +5,7 @@ import { SecuritiesChip } from '@/components/ui/securities'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
 import { RunWorkforceButton } from '@/components/app/RunWorkforceButton'
+import { FnaPlanningIntelligence } from '@/components/fna/FnaPlanningIntelligence'
 import {
   executiveStatus,
   resultsToday,
@@ -324,6 +325,8 @@ export default async function CommandCenterPage() {
             </Table>
           </div>
         )}
+        {/* Slice 10 — planning intelligence on the existing command center. */}
+        <FnaPlanningIntelligence />
       </div>
     </DashboardShell>
   )

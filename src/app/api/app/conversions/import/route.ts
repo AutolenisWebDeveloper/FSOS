@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
-import { parseConversionFile, summarizeConversions, conversionAorHints, conversionSuppressions, type ConversionRecord, type SuppressionChannel } from '@/lib/import/conversionList'
+import { parseConversionFile, summarizeConversions, conversionAorHints, conversionSuppressions, deriveConversionSpine, conversionOwnerKey, type ConversionRecord, type SuppressionChannel } from '@/lib/import/conversionList'
 import { createBatch } from '@/lib/import/auditWriter'
+import { existingKeys, existingPairs, insertChunked, mapIds, mapIdsByLowerName } from '@/lib/import/spine'
+import { emailLc, phoneDigits } from '@/lib/contacts/normalize'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -13,8 +15,12 @@ const MAX_ROWS = 20000
 const CHUNK = 500
 
 // Life Conversion import (FNWL term policies inside their conversion window).
+// The list mixes clients already on the book with clients not yet in FSOS, so the
+// commit is CREATE-OR-ENRICH: matched policies are enriched, unmatched policies
+// create the full spine (agency → household → members → policy → owner contact),
+// resolving each owner to an existing household first so nothing duplicates.
 // preview — parse + match each policy number against the book; NO writes.
-// commit  — idempotent enrichment along the aggregate-root spine:
+// commit  — idempotent create-or-enrich along the aggregate-root spine:
 //   • POLICY: match household_policies by policy_number, set conversion_deadline
 //     (only when blank — no valid data overwritten), fill product/face if blank,
 //     stash the conversion detail in source_data, and backfill the Agent-of-Record
@@ -107,6 +113,27 @@ export async function POST(req: NextRequest) {
   // matched or not — an opt-out must be honored regardless of book membership).
   const suppressionPlan = buildSuppressions(records)
 
+  // Clients NOT yet on the book → create them (agency → household → members →
+  // policy → owner contact). Resolve each unmatched owner to an existing household
+  // first (by provenance key, then by name) so we never duplicate a client already
+  // in FSOS under a different policy.
+  const spine = deriveConversionSpine(unmatched)
+  const spineSeries = spine.agencies.map((a) => a.series_code)
+  const spineHhKeys = spine.households.map((h) => h.book_owner_key)
+  const spineOwnerNames = spine.households.map((h) => h.owner_name)
+  let existingAgencySeries: Set<string>, existingHhByKey: Set<string>, existingHhByName: Map<string, string>
+  try {
+    ;[existingAgencySeries, existingHhByKey, existingHhByName] = await Promise.all([
+      existingKeys(db, 'agency_partnerships', 'fnwl_serving_agent_no', spineSeries),
+      existingKeys(db, 'households', 'book_owner_key', spineHhKeys),
+      mapIdsByLowerName(db, 'households', 'primary_name', 'id', spineOwnerNames),
+    ])
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'Could not read existing records.' }, { status: 500 })
+  }
+  const newAgencies = spine.agencies.filter((a) => !existingAgencySeries.has(a.series_code))
+  const newHouseholds = spine.households.filter((h) => !existingHhByKey.has(h.book_owner_key) && !existingHhByName.has(h.owner_name.toLowerCase()))
+
   const plan = {
     total_rows: records.length,
     skipped_rows: skipped,
@@ -118,6 +145,11 @@ export async function POST(req: NextRequest) {
     dnc_entries_to_write: suppressionPlan.entries.length,
     litigators_flagged: suppressionPlan.litigatorContacts.size,
     suppressions_by_channel: suppressionPlan.byChannel,
+    create: {
+      new_clients: newHouseholds.length,
+      new_policies: spine.policies.length,
+      new_agencies: newAgencies.length,
+    },
   }
 
   if (mode !== 'commit') {
@@ -225,9 +257,9 @@ export async function POST(req: NextRequest) {
     let membersAdded = 0
     if (desiredMembers.length) {
       const hids = Array.from(new Set(desiredMembers.map((m) => m.household_id)))
-      const existingPairs = await loadMemberPairs(db, hids)
+      const memberPairs = await loadMemberPairs(db, hids)
       const newMembers = desiredMembers
-        .filter((m) => !existingPairs.has(`${m.household_id}|${m.full_name.toLowerCase()}`))
+        .filter((m) => !memberPairs.has(`${m.household_id}|${m.full_name.toLowerCase()}`))
         .filter((m, i, a) => a.findIndex((x) => x.household_id === m.household_id && x.full_name.toLowerCase() === m.full_name.toLowerCase()) === i)
         .map((m) => ({ household_id: m.household_id, full_name: m.full_name, relationship: 'insured' }))
       for (let i = 0; i < newMembers.length; i += CHUNK) {
@@ -235,6 +267,71 @@ export async function POST(req: NextRequest) {
         if (error) throw new Error(`member insert failed: ${error.message}`)
       }
       membersAdded = newMembers.length
+    }
+
+    // 3b. Create clients not yet on the book (unmatched policies) along the whole
+    //     spine: agency → household → members → policy → owner contact. Idempotent
+    //     (re-running finds them matched and enriches instead). The policy's
+    //     source_data carries the AOR hints so the trigger links agency + owner.
+    let agenciesCreated = 0, householdsCreated = 0, policiesCreated = 0, membersCreatedNew = 0, ownerContactsCreated = 0
+    if (spine.policies.length) {
+      // Agencies (serving-agent series not yet a partnership).
+      const newAgencyRows = newAgencies.map((a) => ({ fnwl_serving_agent_no: a.series_code, agency_name: a.agency_name, owner_name: a.agency_name, status: 'producing' }))
+      await insertChunked(db, 'agency_partnerships', newAgencyRows)
+      agenciesCreated = newAgencyRows.length
+      const agencyIdBySeries = await mapIds(db, 'agency_partnerships', 'fnwl_serving_agent_no', 'id', spineSeries)
+
+      // Households (owner not resolvable to an existing one by key or name).
+      const newHouseholdRows = newHouseholds.map((h) => ({
+        book_owner_key: h.book_owner_key, primary_name: h.owner_name, state: 'TX',
+        referring_agency_id: h.series_code ? agencyIdBySeries.get(h.series_code) ?? null : null,
+      }))
+      await insertChunked(db, 'households', newHouseholdRows)
+      householdsCreated = newHouseholdRows.length
+      const createdKeys = new Set(newHouseholds.map((h) => h.book_owner_key))
+
+      const hidByKey = await mapIds(db, 'households', 'book_owner_key', 'id', spineHhKeys)
+      const ownerNameByKey = new Map(spine.households.map((h) => [h.book_owner_key, h.owner_name]))
+      const resolveHid = (key: string): string | null => hidByKey.get(key) ?? existingHhByName.get((ownerNameByKey.get(key) || '').toLowerCase()) ?? null
+
+      // Policies (BEFORE-INSERT trigger resolves agency_partnership_id + contact_id).
+      const policyRows = spine.policies.map((p) => {
+        const hid = resolveHid(p.book_owner_key)
+        if (!hid) return null
+        const aor = conversionAorHints(p)
+        return {
+          household_id: hid, policy_number: p.policy_number, product_name: p.product_type,
+          face_amount: p.convertible_amount, conversion_deadline: p.conversion_deadline, status: 'active',
+          is_with_us: true, is_security: false, source_system: 'conversion_list',
+          source_data: { ...aor, conversion: { source: 'conversion_list', convertible_amount: p.convertible_amount, product_type: p.product_type, insured: p.insured_name, insured_dob: p.insured_dob, inception_date: p.inception_date, expiration_date: p.expiration_date, conversion_deadline: p.conversion_deadline } },
+        }
+      }).filter((r): r is NonNullable<typeof r> => r !== null)
+      await insertChunked(db, 'household_policies', policyRows)
+      policiesCreated = policyRows.length
+
+      // Members (owner + insured), idempotent per household.
+      const desiredSpineMembers = spine.members.map((m) => ({ household_id: resolveHid(m.book_owner_key), full_name: m.full_name, relationship: m.relationship })).filter((m): m is { household_id: string; full_name: string; relationship: 'owner' | 'insured' } => !!m.household_id)
+      const spineMemberHids = Array.from(new Set(desiredSpineMembers.map((m) => m.household_id)))
+      const existingSpinePairs = await existingPairs(db, 'household_members', 'household_id', 'full_name', spineMemberHids)
+      const seenMember = new Set<string>()
+      const newSpineMembers = desiredSpineMembers.filter((m) => {
+        const k = `${m.household_id}|${m.full_name.toLowerCase()}`
+        if (existingSpinePairs.has(k) || seenMember.has(k)) return false
+        seenMember.add(k); return true
+      })
+      await insertChunked(db, 'household_members', newSpineMembers)
+      membersCreatedNew = newSpineMembers.length
+
+      // Owner contacts — only for households we created (existing ones already have
+      // their contact); keyed owner:<book_owner_key> so nothing duplicates.
+      const ownerContactRows = spine.ownerContacts.filter((c) => createdKeys.has(c.book_owner_key)).map((c) => {
+        const nm = c.owner_name.trim().split(/\s+/)
+        return { book_key: `owner:${c.book_owner_key}`, full_name: c.owner_name, first_name: nm[0] || c.owner_name, last_name: nm.slice(1).join(' ') || null, contact_type: 'client', source: 'conversion_list', status: 'active', created_by: actor, tags: ['term-conversion', 'fnwl-book'], email: c.email, email_lc: emailLc(c.email), phone: c.phone, phone_digits: phoneDigits(c.phone), household_id: hidByKey.get(c.book_owner_key) ?? null }
+      })
+      const existingOwnerContacts = await existingKeys(db, 'contacts', 'book_key', ownerContactRows.map((r) => r.book_key))
+      const newOwnerContacts = ownerContactRows.filter((r) => !existingOwnerContacts.has(r.book_key))
+      await insertChunked(db, 'contacts', newOwnerContacts)
+      ownerContactsCreated = newOwnerContacts.length
     }
 
     // 4. Do-not-contact ledger — honor the file's channel opt-outs so the §12
@@ -282,6 +379,11 @@ export async function POST(req: NextRequest) {
         members_added: membersAdded,
         dnc_entries_written: dncWritten,
         households_dnc_flagged: householdsDncFlagged,
+        agencies_created: agenciesCreated,
+        clients_created: householdsCreated,
+        policies_created: policiesCreated,
+        spine_members_created: membersCreatedNew,
+        owner_contacts_created: ownerContactsCreated,
       },
     })
   } catch (e) {

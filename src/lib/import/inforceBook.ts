@@ -91,7 +91,9 @@ export function isSecurityProduct(productName: string): boolean {
   return /variable/i.test(productName)
 }
 
-function ownerKey(name: string, zip: string): string {
+// Deterministic household provenance key: normalized owner name + 5-digit zip.
+// Shared with the conversion importer so both land on the same household.
+export function ownerKey(name: string, zip: string): string {
   const n = name.trim().toLowerCase().replace(/\s+/g, ' ')
   const z = (zip || '').replace(/\D/g, '').slice(0, 5)
   return `${n}|${z}`

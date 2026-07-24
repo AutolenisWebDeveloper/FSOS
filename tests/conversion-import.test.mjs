@@ -176,5 +176,30 @@ t('hyperlinked policy numbers stay correct in the variant layout', () => {
   for (const r of vparsed.records) assert.ok(!/okta|https?:/i.test(r.policy_number))
 })
 
+// ── Spine creation (clients not yet on the book) ────────────────────────────────
+const spineRecs = [
+  { policy_number: '1', owner_name: 'Marta L Salazar', insured_name: 'Marta L Salazar', series_code: '19-41-594', agency_name: 'Horacio Villarreal Agency', product_type: '10 Yr Term', convertible_amount: 150000, conversion_deadline: '2026-07-28', inception_date: null, expiration_date: null, insured_dob: null, pni_email: 'marta@x.com', pni_phone: '(210) 555-1000' },
+  { policy_number: '2', owner_name: 'Marta L Salazar', insured_name: 'Marta L Salazar', series_code: '19-41-594', agency_name: 'Horacio Villarreal Agency', product_type: '20 Yr Term', convertible_amount: 100000, conversion_deadline: '2027-01-01', inception_date: null, expiration_date: null, insured_dob: null, pni_email: 'marta@x.com', pni_phone: '(210) 555-1000' },
+  { policy_number: '3', owner_name: 'James Rodriguez', insured_name: 'Bianca Rodriguez', series_code: '19-41-340', agency_name: 'Victor Gonzalez Ins Agency Inc', product_type: '30 Yr Term', convertible_amount: 250000, conversion_deadline: '2026-09-01', inception_date: null, expiration_date: null, insured_dob: null, pni_email: null, pni_phone: null },
+]
+
+t('deriveConversionSpine dedupes households/agencies and expands members', () => {
+  const s = mod.deriveConversionSpine(spineRecs)
+  assert.equal(s.households.length, 2, 'two distinct owners (Marta appears twice)')
+  assert.equal(s.agencies.length, 2, 'two distinct series codes')
+  assert.equal(s.policies.length, 3, 'one spine policy per record')
+  assert.equal(s.ownerContacts.length, 2, 'one owner contact per household')
+  // Marta: owner member only (insured == owner). James: owner + distinct insured.
+  const jamesKey = mod.conversionOwnerKey('James Rodriguez')
+  const jamesMembers = s.members.filter((m) => m.book_owner_key === jamesKey)
+  assert.deepEqual(jamesMembers.map((m) => m.relationship).sort(), ['insured', 'owner'])
+  const martaKey = mod.conversionOwnerKey('Marta L Salazar')
+  assert.deepEqual(s.members.filter((m) => m.book_owner_key === martaKey).map((m) => m.relationship), ['owner'])
+})
+
+t('conversionOwnerKey is book-compatible (name|zip with blank zip)', () => {
+  assert.equal(mod.conversionOwnerKey('Marta L Salazar'), 'marta l salazar|')
+})
+
 if (process.exitCode) { console.error('\nconversion-import.test.mjs FAILED'); process.exit(1) }
 console.log(`\nconversion-import.test.mjs: ${passed} passed`)

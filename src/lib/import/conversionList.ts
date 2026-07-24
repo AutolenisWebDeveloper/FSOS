@@ -25,6 +25,7 @@
 import ExcelJS from 'exceljs'
 import { parseCsv } from '@/lib/csv'
 import { extensionOf } from '@/lib/spreadsheet'
+import { ownerKey } from '@/lib/import/inforceBook'
 
 export interface ConversionRecord {
   policy_number: string
@@ -348,6 +349,79 @@ export function conversionSuppressions(
     else if (eind.includes('HELD')) out.push({ contact: email, channel: 'email', reason: 'district-file: email held/suppressed', litigator: false })
   }
   return out
+}
+
+// ── Spine creation (for policies not yet in the book) ───────────────────────────
+// The District list mixes clients already on the book with clients who are not yet
+// in FSOS. For the latter, these are the distinct aggregate-root rows to CREATE —
+// derived purely from the records; the route resolves/creates each against existing
+// provenance keys so nothing duplicates.
+export interface ConversionSpineAgency { series_code: string; agency_name: string }
+export interface ConversionSpineHousehold { book_owner_key: string; owner_name: string; series_code: string | null }
+export interface ConversionSpinePolicy {
+  policy_number: string; book_owner_key: string; product_type: string | null; convertible_amount: number | null
+  conversion_deadline: string | null; inception_date: string | null; expiration_date: string | null
+  insured_name: string | null; insured_dob: string | null; series_code: string | null; agency_name: string | null
+}
+export interface ConversionSpineMember { book_owner_key: string; full_name: string; relationship: 'owner' | 'insured' }
+export interface ConversionSpineContact { book_owner_key: string; owner_name: string; email: string | null; phone: string | null; series_code: string | null }
+export interface ConversionSpine {
+  agencies: ConversionSpineAgency[]
+  households: ConversionSpineHousehold[]
+  policies: ConversionSpinePolicy[]
+  members: ConversionSpineMember[]
+  ownerContacts: ConversionSpineContact[]
+}
+
+/** The provenance key that ties a conversion owner to a household (shared with the book importer, zip unknown). */
+export function conversionOwnerKey(ownerName: string): string {
+  return ownerKey(ownerName || '', '')
+}
+
+/**
+ * Derive the distinct aggregate-root rows to create from a set of conversion
+ * records (pass the rows whose policy is NOT already on the book). Pure and
+ * deterministic; the route diffs these against existing provenance keys before
+ * inserting, so re-running creates nothing new.
+ */
+export function deriveConversionSpine(records: ConversionRecord[]): ConversionSpine {
+  const agencies = new Map<string, ConversionSpineAgency>()
+  const households = new Map<string, ConversionSpineHousehold>()
+  const policies: ConversionSpinePolicy[] = []
+  const memberSet = new Set<string>()
+  const members: ConversionSpineMember[] = []
+  const ownerContacts = new Map<string, ConversionSpineContact>()
+
+  for (const r of records) {
+    if (r.series_code && !agencies.has(r.series_code)) {
+      agencies.set(r.series_code, { series_code: r.series_code, agency_name: r.agency_name || r.series_code })
+    }
+    if (!r.owner_name) continue
+    const key = conversionOwnerKey(r.owner_name)
+    if (!households.has(key)) households.set(key, { book_owner_key: key, owner_name: r.owner_name, series_code: r.series_code })
+    if (!ownerContacts.has(key)) ownerContacts.set(key, { book_owner_key: key, owner_name: r.owner_name, email: r.pni_email, phone: r.pni_phone, series_code: r.series_code })
+
+    policies.push({
+      policy_number: r.policy_number, book_owner_key: key, product_type: r.product_type, convertible_amount: r.convertible_amount,
+      conversion_deadline: r.conversion_deadline, inception_date: r.inception_date, expiration_date: r.expiration_date,
+      insured_name: r.insured_name, insured_dob: r.insured_dob, series_code: r.series_code, agency_name: r.agency_name,
+    })
+
+    const ownerMemberKey = `${key}|${r.owner_name.toLowerCase()}`
+    if (!memberSet.has(ownerMemberKey)) { memberSet.add(ownerMemberKey); members.push({ book_owner_key: key, full_name: r.owner_name, relationship: 'owner' }) }
+    if (r.insured_name && r.insured_name.toLowerCase() !== r.owner_name.toLowerCase()) {
+      const im = `${key}|${r.insured_name.toLowerCase()}`
+      if (!memberSet.has(im)) { memberSet.add(im); members.push({ book_owner_key: key, full_name: r.insured_name, relationship: 'insured' }) }
+    }
+  }
+
+  return {
+    agencies: Array.from(agencies.values()),
+    households: Array.from(households.values()),
+    policies,
+    members,
+    ownerContacts: Array.from(ownerContacts.values()),
+  }
 }
 
 export interface ConversionSummary {

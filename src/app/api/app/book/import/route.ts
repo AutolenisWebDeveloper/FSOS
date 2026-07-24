@@ -4,13 +4,13 @@ import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { parseInforceBook, summarizeBook, type InforcePolicy } from '@/lib/import/inforceBook'
 import { emailLc, phoneDigits } from '@/lib/contacts/normalize'
+import { existingKeys, existingPairs, insertChunked, mapIds } from '@/lib/import/spine'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 const MAX_FILE_BYTES = 12 * 1024 * 1024
 const MAX_ROWS = 20000
-const CHUNK = 500
 
 // In-Force Book import (FNWL district review → App B aggregate root + Contacts).
 // preview — parse + summarize + count new-vs-existing per entity; NO writes.
@@ -173,44 +173,3 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// ── helpers ────────────────────────────────────────────────────────────────
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function existingKeys(db: any, table: string, keyCol: string, values: string[], fnwlOnly = false): Promise<Set<string>> {
-  const set = new Set<string>()
-  for (let i = 0; i < values.length; i += CHUNK) {
-    let q = db.from(table).select(keyCol).in(keyCol, values.slice(i, i + CHUNK))
-    if (fnwlOnly) q = q.eq('source_system', 'fnwl')
-    const { data } = await q
-    for (const r of data || []) if (r[keyCol] != null) set.add(String(r[keyCol]))
-  }
-  return set
-}
-
-// Set of "col1|lower(col2)" pairs that already exist among the given col1 values.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function existingPairs(db: any, table: string, col1: string, col2: string, col1Values: string[]): Promise<Set<string>> {
-  const set = new Set<string>()
-  for (let i = 0; i < col1Values.length; i += CHUNK) {
-    const { data } = await db.from(table).select(`${col1}, ${col2}`).in(col1, col1Values.slice(i, i + CHUNK))
-    for (const r of data || []) if (r[col1] != null && r[col2] != null) set.add(`${r[col1]}|${String(r[col2]).toLowerCase()}`)
-  }
-  return set
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function insertChunked(db: any, table: string, rows: any[]): Promise<void> {
-  for (let i = 0; i < rows.length; i += CHUNK) {
-    const { error } = await db.from(table).insert(rows.slice(i, i + CHUNK))
-    if (error) throw new Error(`${table} insert failed: ${error.message}`)
-  }
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function mapIds(db: any, table: string, keyCol: string, idCol: string, keys: string[]): Promise<Map<string, string>> {
-  const map = new Map<string, string>()
-  for (let i = 0; i < keys.length; i += CHUNK) {
-    const { data } = await db.from(table).select(`${idCol}, ${keyCol}`).in(keyCol, keys.slice(i, i + CHUNK))
-    for (const r of data || []) if (r[keyCol] != null) map.set(String(r[keyCol]), String(r[idCol]))
-  }
-  return map
-}

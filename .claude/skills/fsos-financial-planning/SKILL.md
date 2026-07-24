@@ -78,6 +78,13 @@ the non-negotiable architecture principle.
 - **A calculation surface:** wire it in `calculate.ts` by mapping normalized input
   keys to the formula's input shape; guard optional analyses on their required
   keys so absent inputs skip cleanly.
+- **Prefill from FSOS data:** `prefill.ts` is a PURE mapper from a household context
+  (`loadFnaContext`) to suggested inputs, each labeled `imported` (a starting value
+  the FSA confirms) and firewall-safe (securities policies excluded). The
+  `/api/fna/plans/[id]/prefill` route loads the context, maps, and saves; the intake
+  form merges suggestions into EMPTY fields only (never clobbers a user entry). Add
+  new derivations to `mapContextToInputs`, keep it pure, and cover them in
+  `tests/fna-prefill.test.mjs`.
 
 ## Tests (the pure-core offline pattern)
 

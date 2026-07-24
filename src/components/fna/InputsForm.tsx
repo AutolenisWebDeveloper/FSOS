@@ -48,7 +48,25 @@ export function InputsForm({
     for (const f of fields) v[f.key] = initial[f.key] != null ? String(initial[f.key]) : ''
     return v
   })
-  const [busy, setBusy] = React.useState<false | 'save' | 'calc'>(false)
+  const [busy, setBusy] = React.useState<false | 'save' | 'calc' | 'prefill'>(false)
+
+  async function onPrefill() {
+    setBusy('prefill')
+    const res = await postJson<{ written?: number; values?: Record<string, number>; note?: string }>(`/api/fna/plans/${planId}/prefill`, {})
+    setBusy(false)
+    if (!res.ok) {
+      toast.error(firstFieldError(res.error).message)
+      return
+    }
+    const vals = res.data.values ?? {}
+    // Merge prefilled values into EMPTY fields only — never clobber a user's entry.
+    setValues((prev) => {
+      const next = { ...prev }
+      for (const [k, v] of Object.entries(vals)) if (!next[k]) next[k] = String(v)
+      return next
+    })
+    toast.success(res.data.written ? `Prefilled ${res.data.written} value(s) from the household — confirm before calculating.` : res.data.note ?? 'Nothing to prefill.')
+  }
 
   const sections = React.useMemo(() => {
     const map = new Map<string, Field[]>()
@@ -108,6 +126,10 @@ export function InputsForm({
             <p className="mt-1 text-xs text-muted-foreground">Missing values lower analytical confidence — they never block the analysis.</p>
           </div>
           <div className="flex items-center gap-2">
+            <Button variant="ghost" onClick={onPrefill} disabled={busy !== false}>
+              {busy === 'prefill' ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+              Prefill from household
+            </Button>
             <Button variant="outline" onClick={() => save()} disabled={busy !== false}>
               {busy === 'save' ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
               Save

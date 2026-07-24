@@ -54,6 +54,16 @@ const UID = '11111111-1111-1111-1111-111111111111'
 function psqlFile(path) {
   sh(`runuser -u postgres -- psql -h ${H} -p ${P} -U postgres -d fsos_test -v ON_ERROR_STOP=1 -q -f ${path}`)
 }
+// Run a statement as the postgres superuser; return true iff it raised an error.
+// Used to prove the fna_versions immutability trigger fires (mig 060).
+function psqlErrors(sql) {
+  try {
+    sh(`runuser -u postgres -- psql -h ${H} -p ${P} -U postgres -d fsos_test -v ON_ERROR_STOP=1 -q -c ${JSON.stringify(sql)}`)
+    return false
+  } catch {
+    return true
+  }
+}
 function psqlQuery(sql) {
   const raw = sh(
     `runuser -u postgres -- psql -h ${H} -p ${P} -U postgres -d fsos_test -v ON_ERROR_STOP=1 -t -A -c ${JSON.stringify(sql)}`,
@@ -115,6 +125,9 @@ try {
   psqlFile('supabase/migrations/059_comm_campaign_claim_fields.sql')
   // 060 adds comm_templates.body_text/render_sha/source_key (Slice 9B hybrid render).
   psqlFile('supabase/migrations/060_comm_template_render.sql')
+  // 060 adds the FNA data model (Slice 2). All fna_* tables are back-office only
+  // (no client policy) — the proof below asserts a client sees ZERO rows from them.
+  psqlFile('supabase/migrations/060_fna_data_model.sql')
 
   // Seed: this client's household + a second household; a life + a securities policy.
   // conversion_deadline/is_with_us are set so every policy also surfaces in the
@@ -160,7 +173,13 @@ try {
       `on conflict (member_id, channel) do update set status = excluded.status;\n` +
       `insert into comm_consent_purposes(member_id, channel, purpose, status) values ` +
       `('66666666-6666-6666-6666-666666666666','sms','MARKETING_SMS','granted');\n` +
-      `grant select on agency_communication_delegations, comm_assignment_reviews, comm_identity_config, comm_frequency_policy, comm_consent_purposes, comm_conversation_policy to authenticated;\n`,
+      // Slice 2 (mig 060): an FNA plan + an immutable version on this client's household.
+      // Both fna_* tables are back-office only; a client must see NEITHER even with grant.
+      `insert into fna_plans(id, household_id, plan_type, status) values ` +
+      `('77777777-7777-7777-7777-777777777777','22222222-2222-2222-2222-222222222222','comprehensive','CALCULATED');\n` +
+      `insert into fna_versions(plan_id, version_no, assumption_set_version, engine_version) values ` +
+      `('77777777-7777-7777-7777-777777777777', 1, 'default-v1', '1.0.0');\n` +
+      `grant select on agency_communication_delegations, comm_assignment_reviews, comm_identity_config, comm_frequency_policy, comm_consent_purposes, comm_conversation_policy, fna_plans, fna_versions to authenticated;\n`,
   )
   psqlFile(`${L}/seed.sql`)
 
@@ -202,6 +221,18 @@ try {
   const visibleConversationPolicy = psqlQuery(
     'set role authenticated; select count(*) from comm_conversation_policy;',
   )
+
+  // Slice 2 (mig 060): client must see zero FNA plan / version rows.
+  const visibleFnaPlans = psqlQuery('set role authenticated; select count(*) from fna_plans;')
+  const visibleFnaVersions = psqlQuery('set role authenticated; select count(*) from fna_versions;')
+
+  // Slice 2 (mig 060): fna_versions immutability trigger. As the superuser (RLS
+  // bypassed) prove: a snapshot column cannot be mutated; a lifecycle column
+  // (status) can; and an APPROVED version cannot be deleted.
+  const V = "plan_id='77777777-7777-7777-7777-777777777777'"
+  const snapshotUpdateBlocked = psqlErrors(`update fna_versions set results = '{"x":1}'::jsonb where ${V};`)
+  const statusUpdateAllowed = !psqlErrors(`update fna_versions set status='APPROVED' where ${V};`)
+  const approvedDeleteBlocked = psqlErrors(`delete from fna_versions where ${V};`)
 
   let passed = 0
   const t = (name, fn) => { fn(); passed++; console.log('  ✓', name) }
@@ -253,6 +284,22 @@ try {
   })
   t('client CANNOT read comm_conversation_policy (back-office default-deny, mig 056)', () => {
     assert.equal(visibleConversationPolicy, '0', `expected 0 conversation-policy rows to a client, got: ${visibleConversationPolicy}`)
+  })
+
+  t('client CANNOT read fna_plans (back-office default-deny, mig 060)', () => {
+    assert.equal(visibleFnaPlans, '0', `expected 0 FNA plans to a client, got: ${visibleFnaPlans}`)
+  })
+  t('client CANNOT read fna_versions (back-office default-deny, mig 060)', () => {
+    assert.equal(visibleFnaVersions, '0', `expected 0 FNA versions to a client, got: ${visibleFnaVersions}`)
+  })
+  t('fna_versions snapshot columns are immutable (mig 060 trigger)', () => {
+    assert.equal(snapshotUpdateBlocked, true, 'updating results on a frozen version must raise')
+  })
+  t('fna_versions lifecycle column (status) remains editable', () => {
+    assert.equal(statusUpdateAllowed, true, 'advancing status must be allowed')
+  })
+  t('an APPROVED fna_version cannot be deleted (mig 060 trigger)', () => {
+    assert.equal(approvedDeleteBlocked, true, 'deleting an APPROVED version must raise')
   })
 
   console.log(`\nCase 7: all ${passed} RLS firewall assertions passed.`)

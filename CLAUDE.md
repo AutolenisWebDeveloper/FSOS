@@ -439,6 +439,7 @@ The identity is consistent across homepage, public pages, login, forgot-password
 | ADR-022 | Campaign + sequence builder config: message purpose + delegated-sender |
 | ADR-023 | Campaign library (pre-built, compliance-ready blueprints; §17) |
 | ADR-024 | Data-confidence claim wiring for campaigns (§18) |
+| ADR-025 | Email rendering: hybrid React → stored, immutable, deterministic HTML + plaintext |
 
 New architectural decisions get a new ADR using `docs/adr/ADR-000-template.md`. Status values: Proposed → Accepted → Superseded (link the superseding ADR).
 

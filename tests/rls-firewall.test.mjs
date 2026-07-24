@@ -113,6 +113,8 @@ try {
   psqlFile('supabase/migrations/058_comm_builder_purpose_delegation.sql')
   // 059 adds comm_campaigns.claim_fields (Slice 8 §18 data-confidence declaration).
   psqlFile('supabase/migrations/059_comm_campaign_claim_fields.sql')
+  // 060 adds comm_templates.body_text/render_sha/source_key (Slice 9B hybrid render).
+  psqlFile('supabase/migrations/060_comm_template_render.sql')
 
   // Seed: this client's household + a second household; a life + a securities policy.
   // conversion_deadline/is_with_us are set so every policy also surfaces in the

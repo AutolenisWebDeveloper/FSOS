@@ -184,9 +184,12 @@ export async function dispatchCampaign(campaignId: string, actor: string): Promi
   for (const v of variants) {
     if (!(await isTemplateApproved(v.template_id))) return { error: `Campaign variant "${v.key}" template is not approved.` }
   }
-  // Pre-load bodies once.
-  const bodies = new Map<string, string>()
-  for (const v of variants) bodies.set(v.template_id, await templateBody(v.template_id))
+  // Pre-load bodies (+ the stored plaintext part, Slice 9B) once.
+  const bodies = new Map<string, { body: string; bodyText: string | null }>()
+  for (const v of variants) {
+    const { data } = await getDb().from('comm_templates').select('body, body_text').eq('id', v.template_id).maybeSingle()
+    bodies.set(v.template_id, { body: data?.body ?? '', bodyText: (data?.body_text as string | null) ?? null })
+  }
 
   const channel = campaign.channel as 'sms' | 'email'
   const audience = await resolveAudience(campaign)
@@ -215,7 +218,8 @@ export async function dispatchCampaign(campaignId: string, actor: string): Promi
       channel,
       to,
       subject: channel === 'email' ? variant.subject ?? campaign.subject ?? 'A note from your Farmers FSA' : undefined,
-      body: bodies.get(variant.template_id) ?? '',
+      body: bodies.get(variant.template_id)?.body ?? '',
+      bodyText: bodies.get(variant.template_id)?.bodyText ?? undefined,
       actor,
       memberId: r.member_id,
       householdId: r.household_id,

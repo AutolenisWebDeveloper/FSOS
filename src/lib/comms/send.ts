@@ -38,6 +38,12 @@ export interface SendContext {
   to: string
   subject?: string
   body: string
+  /**
+   * Email plaintext part (Slice 9B, ADR-025) — the template's STORED body_text. Personalized
+   * with the same merge tokens as the HTML and sent as the multipart text part. Absent → the
+   * email is single-part HTML (existing behavior). Ignored for SMS.
+   */
+  bodyText?: string
   actor: string
   /** The member this send targets (for consent lookup). */
   memberId?: string | null
@@ -273,6 +279,8 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
 
   // Personalize merge tokens (safe substitution; the gate still checks the result).
   const personalized = personalize(ctx.body, ctx.recipientContext ?? {})
+  // Slice 9B — the stored plaintext part, personalized the same way (email multipart).
+  const personalizedText = ctx.bodyText ? personalize(ctx.bodyText, ctx.recipientContext ?? {}) : undefined
 
   // First-contact identity disclosure (§8). The platform decides + auto-prepends the
   // approved disclosure when a full introduction is required; the author never inserts
@@ -283,6 +291,7 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
   let identityVersion: number | null = null
   let identityReason: string | null = null
   let identityBody = personalized
+  let identityText = personalizedText
   if (ctx.identity) {
     const idr = await resolveIdentityDisclosure({
       channel: ctx.channel,
@@ -296,7 +305,10 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
     identityFirstTouch = idr.isFirstChannelTouch
     identityVersion = idr.disclosure != null ? idr.version : null
     identityReason = idr.reason
-    if (idr.disclosure) identityBody = prependIdentityDisclosure(idr.disclosure, personalized)
+    if (idr.disclosure) {
+      identityBody = prependIdentityDisclosure(idr.disclosure, personalized)
+      if (personalizedText) identityText = prependIdentityDisclosure(idr.disclosure, personalizedText)
+    }
   }
 
   // Compute the gate context FRESH (send-time re-check — WF-9 invariant). Step 4
@@ -444,6 +456,8 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
     to,
     subject: ctx.subject,
     body: sendBody,
+    // Plaintext part is NOT instrumented (open/click tracking is HTML-only).
+    bodyText: ctx.channel === 'email' ? identityText : undefined,
     actor: ctx.actor,
     entity: ctx.entity ?? (conversationId ? { type: 'conversation', id: conversationId } : undefined),
     gate: {

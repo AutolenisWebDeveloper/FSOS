@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Radio, PlugZap, CheckCircle2, CircleSlash, AlertTriangle, Link2 } from 'lucide-react'
+import { Radio, PlugZap, CheckCircle2, CircleSlash, AlertTriangle, Link2, Settings2 } from 'lucide-react'
 import { requireRole } from '@/lib/auth/session'
 import { load } from '@/lib/data/query'
 import { ListShell, Section, StatTile, EmptyState, ErrorState, StatusBadge } from '@/components/archetypes'
@@ -12,7 +12,7 @@ import {
 } from '@/lib/social/channels'
 import { PLATFORM_LABELS, channelStatusBadge } from '@/lib/social/labels'
 import { SOCIAL_PLATFORMS, platformSupport, type SocialPlatform } from '@/lib/social/adapters'
-import { isOAuthPlatform, providerConfig, type OAuthPlatform } from '@/lib/social/oauth'
+import { isOAuthPlatform, providerConfig, appBaseUrl, SOCIAL_OAUTH_PROVIDERS, type OAuthPlatform } from '@/lib/social/oauth'
 import { connectionStatus, type ConnectionStatus } from '@/lib/social/onboarding'
 import { VerifyChannel, DisconnectChannel } from './accounts-client'
 
@@ -127,6 +127,14 @@ export default async function SocialAccountsPage(props: {
   const channels: ChannelView[] = res.data.map(toChannelView)
   const connected = channels.filter((c) => c.capabilities.configured).length
 
+  // Which OAuth providers are actually configured for this environment. When none are,
+  // there is NO Connect button to show — that is a required SETUP step (register the
+  // OAuth apps + set credentials), not a broken feature. Surface it prominently so it
+  // isn't mistaken for a bug.
+  const oauthPlatforms = SOCIAL_PLATFORMS.filter((p) => isOAuthPlatform(p))
+  const unconfigured = oauthPlatforms.filter((p) => !oauthUi[p]?.configured)
+  const anyConfigured = oauthPlatforms.some((p) => oauthUi[p]?.configured)
+
   return (
     <ListShell
       title="Social Accounts"
@@ -141,12 +149,18 @@ export default async function SocialAccountsPage(props: {
         <StatTile label="Platforms available" value={SOCIAL_PLATFORMS.length} icon={PlugZap} />
       </div>
 
+      {!anyConfigured ? <SetupRequiredPanel platforms={unconfigured} /> : null}
+
       <Section title="Connected accounts" description="Accounts registered to this workspace and their live capabilities.">
         {channels.length === 0 ? (
           <EmptyState
             icon={Radio}
             title="No accounts connected yet"
-            description="Connect a YouTube channel or Facebook Page below to start publishing. Other platforms activate as their API access is obtained."
+            description={
+              anyConfigured
+                ? 'Connect a YouTube channel or Facebook Page below to start publishing. Other platforms activate as their API access is obtained.'
+                : 'Connecting an account first requires one-time OAuth setup — see “Set up account connections” above. Until then there is nothing to connect.'
+            }
           />
         ) : (
           <ul className="grid gap-3 sm:grid-cols-2">
@@ -169,6 +183,51 @@ export default async function SocialAccountsPage(props: {
         </ul>
       </Section>
     </ListShell>
+  )
+}
+
+// Shown when NO OAuth provider is configured for this environment — so an operator
+// understands the missing Connect button is a required one-time SETUP step, not a bug,
+// and knows exactly what to configure. Never exposes or requests any secret value.
+function SetupRequiredPanel({ platforms }: { platforms: SocialPlatform[] }) {
+  const base = appBaseUrl() || 'https://<your-app-url>'
+  return (
+    <div className="mb-6 rounded-lg border border-gold/30 bg-gold/10 p-4" role="note">
+      <p className="flex items-center gap-2 text-sm font-semibold text-gold-deep">
+        <Settings2 className="h-4 w-4" aria-hidden />
+        Set up account connections
+      </p>
+      <p className="mt-1 text-sm text-muted-foreground">
+        There&apos;s no <strong>Connect</strong> button yet because these platforms&apos; OAuth apps aren&apos;t configured for this
+        environment. This is a one-time admin setup — register each app with the provider, then set its credentials as environment
+        variables. FSOS can&apos;t create the apps or hold the secrets for you.
+      </p>
+      <ul className="mt-3 space-y-2">
+        {platforms.map((p) => {
+          const def = isOAuthPlatform(p) ? SOCIAL_OAUTH_PROVIDERS[p as OAuthPlatform] : null
+          if (!def) return null
+          return (
+            <li key={p} className="rounded-md border border-shell-border bg-card p-3 text-xs">
+              <p className="font-medium text-foreground">{PLATFORM_LABELS[p]}</p>
+              <p className="mt-1 text-muted-foreground">
+                Set <code className="rounded bg-muted px-1">{def.clientIdEnv[0]}</code> and{' '}
+                <code className="rounded bg-muted px-1">{def.clientSecretEnv[0]}</code>.
+              </p>
+              <p className="mt-1 text-muted-foreground">
+                Register this redirect URI with the provider:{' '}
+                <code className="rounded bg-muted px-1 break-all">{`${base}/api/social/oauth/${p}/callback`}</code>
+              </p>
+            </li>
+          )
+        })}
+      </ul>
+      <p className="mt-3 text-xs text-muted-foreground">
+        Also set <code className="rounded bg-muted px-1">SOCIAL_TOKEN_KEY</code> (a stable high-entropy secret that encrypts stored
+        tokens). Full reference: <code className="rounded bg-muted px-1">.env.local.example</code> and{' '}
+        <code className="rounded bg-muted px-1">docs/adr/ADR-026</code>. Only YouTube and Facebook Page support connection today; other
+        platforms activate once their API access is obtained.
+      </p>
+    </div>
   )
 }
 

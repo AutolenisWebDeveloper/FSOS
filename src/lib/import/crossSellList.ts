@@ -11,8 +11,15 @@
 // cross-sell target (they have Auto/Home/Umbrella but no life) — a green-zone
 // "identify" signal, not advice.
 
-import type { ParsedContactTable } from '@/lib/contacts/parseFile'
-import { emailLc, phoneDigits } from '@/lib/contacts/normalize'
+import { emailLc, phoneDigits } from '../contacts/normalize'
+
+// The minimal header-keyed table this parser consumes. A ParsedContactTable
+// (from parseContactsFile) structurally satisfies it; declaring it locally keeps
+// this module dependency-free so it stays unit-testable in isolation.
+export interface CrossSellSourceTable {
+  headers: string[]
+  rows: Array<Record<string, string>>
+}
 
 export interface CrossSellRecord {
   full_name: string
@@ -78,15 +85,32 @@ const HEADER_ALIASES: Record<string, string> = {
   emailunsub: 'email_unsub', unsubscribed: 'email_unsub', emailunsubscribed: 'email_unsub',
 }
 
-const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+const squash = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
 
-function buildColumnMap(headers: string[]): Record<string, string> {
-  const map: Record<string, string> = {}
-  for (const h of headers) {
-    const canon = HEADER_ALIASES[squash(h)]
-    if (canon && !(canon in map)) map[canon] = h
+// Fields that, alongside a name column, confirm a row is the real header.
+const CORROBORATING_FIELDS = ['lob', 'street', 'city', 'state', 'zip', 'zip5', 'phone', 'email'] as const
+
+/**
+ * Locate the header row within the first rows of the sheet and map each canonical
+ * field to its column index. The Farmers/Salesforce export of this list prefixes
+ * a banner title row and a "Households: N …" summary line above the real header,
+ * so the header is rarely row 0. We take the first row that maps a name column
+ * plus at least one corroborating field (LOB / address / phone / email). When no
+ * such row exists, we fall back to row 0 with an empty map — every row then lacks
+ * a usable name and the route reports "No usable rows found in the file."
+ */
+function findHeaderRow(matrix: string[][]): { headerRow: number; colMap: Record<string, number> } {
+  const limit = Math.min(matrix.length, 25)
+  for (let r = 0; r < limit; r++) {
+    const map: Record<string, number> = {}
+    matrix[r].forEach((cell, i) => {
+      const canon = HEADER_ALIASES[squash(cell)]
+      if (canon && !(canon in map)) map[canon] = i
+    })
+    const hasName = 'full_name' in map || 'first_name' in map || 'last_name' in map
+    if (hasName && CORROBORATING_FIELDS.some((k) => k in map)) return { headerRow: r, colMap: map }
   }
-  return map
+  return { headerRow: 0, colMap: {} }
 }
 
 function truthy(v: string | undefined): boolean {
@@ -148,44 +172,54 @@ function splitName(full: string): { first: string; last: string } {
 }
 
 /**
- * Normalize a parsed cross-sell table into CrossSellRecords. Rows without a
- * usable name are skipped (counted in `skipped`). Deterministic — same input
- * always yields the same records and keys.
+ * Normalize a parsed cross-sell table into CrossSellRecords. The header may not
+ * be row 0 (this export prefixes a banner title + a "Households: N …" summary),
+ * so we reconstruct a positional matrix, locate the real header row, and parse
+ * the data region below it. Rows without a usable name — the preamble is above
+ * the header and never reached; footers/blanks below are skipped (counted in
+ * `skipped`). Deterministic — same input always yields the same records and keys.
  */
-export function parseCrossSellTable(table: ParsedContactTable): CrossSellParseResult {
-  const col = buildColumnMap(table.headers)
-  const get = (row: Record<string, string>, field: string): string =>
-    col[field] ? (row[col[field]] || '').trim() : ''
+export function parseCrossSellTable(table: CrossSellSourceTable): CrossSellParseResult {
+  // Rebuild a positional cell matrix from the header-keyed table so header
+  // detection can scan across the preamble rows. Row 0 is the table's headers;
+  // each subsequent row is its cells in that same column order.
+  const matrix: string[][] = [table.headers, ...table.rows.map((row) => table.headers.map((h) => row[h] ?? ''))]
+
+  const { headerRow, colMap } = findHeaderRow(matrix)
+  const at = (row: string[], field: string): string =>
+    colMap[field] != null ? (row[colMap[field]] || '').trim() : ''
 
   const records: CrossSellRecord[] = []
   let skipped = 0
 
-  for (const row of table.rows) {
-    let full = get(row, 'full_name')
+  for (let i = headerRow + 1; i < matrix.length; i++) {
+    const row = matrix[i]
+    if (!row || row.every((c) => !c || !String(c).trim())) continue // ignore fully-blank rows
+
+    let full = at(row, 'full_name')
     if (!full) {
-      const combined = [get(row, 'first_name'), get(row, 'last_name')].filter(Boolean).join(' ').trim()
-      full = combined
+      full = [at(row, 'first_name'), at(row, 'last_name')].filter(Boolean).join(' ').trim()
     }
     full = full.replace(/\s+Household\s*$/i, '').replace(/\s+/g, ' ').trim()
-    if (!full) {
+    // A usable row needs a real name (a person's name always has letters);
+    // footer/total lines carry none.
+    if (!full || !/[A-Za-z]/.test(full) || /^total\b/i.test(full)) {
       skipped++
       continue
     }
 
-    const lines_of_business = parseLob(get(row, 'lob'))
-    const street = get(row, 'street') || null
-    const city = get(row, 'city') || null
-    const state = normState(get(row, 'state'))
-    const zipSrc = get(row, 'zip') || get(row, 'zip5')
+    const lines_of_business = parseLob(at(row, 'lob'))
+    const street = at(row, 'street') || null
+    const city = at(row, 'city') || null
+    const state = normState(at(row, 'state'))
+    const zipSrc = at(row, 'zip') || at(row, 'zip5')
     const { zip, zip5 } = normZip(zipSrc)
 
-    const phoneRaw = get(row, 'phone')
-    const { phone, dncFromFlags } = extractPhone(phoneRaw)
-    const emailRaw = get(row, 'email')
-    const { email, unsubFromFlags } = extractEmail(emailRaw)
+    const { phone, dncFromFlags } = extractPhone(at(row, 'phone'))
+    const { email, unsubFromFlags } = extractEmail(at(row, 'email'))
 
-    const phone_dnc = col['phone_dnc'] ? truthy(get(row, 'phone_dnc')) : dncFromFlags
-    const email_unsub = col['email_unsub'] ? truthy(get(row, 'email_unsub')) : unsubFromFlags
+    const phone_dnc = colMap['phone_dnc'] != null ? truthy(at(row, 'phone_dnc')) : dncFromFlags
+    const email_unsub = colMap['email_unsub'] != null ? truthy(at(row, 'email_unsub')) : unsubFromFlags
 
     const { first, last } = splitName(full)
     const nk = nameKey(full)

@@ -27,6 +27,10 @@ export interface ConversionRecord {
   conversion_deadline: string | null // ISO date
   inception_date: string | null
   expiration_date: string | null
+  preferred_email: string | null // owner contact point (District export column)
+  preferred_phone: string | null // owner contact point (District export column)
+  agent_of_record: string | null // servicing Farmers agency / agent of record
+  aor_code: string | null // agent-of-record code (provenance only)
   name_key: string
   conversion_key: string // = policy_number (idempotent provenance)
 }
@@ -37,27 +41,52 @@ export interface ConversionParseResult {
   total_convertible: number
 }
 
-// Header aliases (squashed to letters) → canonical field.
+// Header aliases (squashed to letters) → canonical field. Covers the cleaned
+// Salesforce export variants AND the raw "District Life Conversion" report
+// (headers like "Conversion Expiring Date", "Policy Holder Name", "Coverage
+// Amount", "Preferred Email/Phone", "Agent of Record").
 const ALIASES: Record<string, string> = {
-  conversionexpirydate: 'deadline', conversiondeadline: 'deadline', expirydate: 'deadline',
+  conversionexpirydate: 'deadline', conversionexpiringdate: 'deadline', conversiondeadline: 'deadline',
+  expirydate: 'deadline', expiringdate: 'deadline',
   policynumber: 'policy', policyno: 'policy', policy: 'policy',
-  policyowner: 'owner', owner: 'owner', accountname: 'owner',
-  primarynamedinsured: 'insured', insured: 'insured', namedinsured: 'insured',
+  policyowner: 'owner', policyholdername: 'owner', policyholder: 'owner', owner: 'owner', accountname: 'owner',
+  primarynamedinsured: 'insured', primaryinsuredname: 'insured', insured: 'insured', namedinsured: 'insured',
   insuredbirthday: 'dob', insureddob: 'dob', dob: 'dob', birthday: 'dob',
   inceptiondate: 'inception', issuedate: 'inception', inception: 'inception',
   producttype: 'product', product: 'product',
-  convertibleamount: 'amount', faceamount: 'amount', amount: 'amount',
+  convertibleamount: 'amount', coverageamount: 'amount', faceamount: 'amount', amount: 'amount',
   policyexpirationdate: 'expiration', expirationdate: 'expiration', expiration: 'expiration',
+  preferredemail: 'email', emailaddress: 'email', email: 'email',
+  preferredphonenumber: 'phone', preferredphone: 'phone', phonenumber: 'phone', mobile: 'phone', phone: 'phone',
+  agentofrecord: 'agent', writingagent: 'agent', servicingagent: 'agent',
+  aorcode: 'aor',
 }
 const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+
+// ExcelJS cell display text: strings/numbers pass through; rich text is joined.
+function asText(t: unknown): string {
+  if (t == null) return ''
+  if (typeof t === 'string') return t
+  if (typeof t === 'number' || typeof t === 'boolean') return String(t)
+  if (typeof t === 'object') {
+    const rt = (t as { richText?: Array<{ text?: string }> }).richText
+    if (Array.isArray(rt)) return rt.map((r) => r.text || '').join('')
+  }
+  return String(t)
+}
 
 function cellStr(v: unknown): string {
   if (v == null) return ''
   if (typeof v === 'object') {
     if (v instanceof Date) return v.toISOString().slice(0, 10)
-    const o = v as { text?: string; result?: unknown; hyperlink?: string }
-    if (typeof o.text === 'string') return o.text
-    if (typeof o.result !== 'undefined') return String(o.result)
+    const o = v as { text?: unknown; richText?: Array<{ text?: string }>; result?: unknown; hyperlink?: string }
+    // Hyperlink/formula/rich-text cell: prefer the human-readable DISPLAY text
+    // over the link target. The Policy Number column is a hyperlink whose text
+    // is the numeric policy number and whose href is an Okta URL — returning the
+    // href here would break the policy match key for the whole import.
+    if (Array.isArray(o.richText)) return asText({ richText: o.richText })
+    if (o.text != null && !(typeof o.text === 'string' && o.text === '')) return asText(o.text)
+    if (typeof o.result !== 'undefined') return asText(o.result)
     if (typeof o.hyperlink === 'string') return o.hyperlink
   }
   return String(v).trim()
@@ -160,7 +189,9 @@ export async function parseConversionFile(buffer: Buffer, filename: string): Pro
       const canon = ALIASES[squash(h)]
       if (canon && !(canon in map)) map[canon] = i
     })
-    if ('policy' in map && ('deadline' in map || 'owner' in map)) { headerRow = r; colMap = map; break }
+    // A policy column plus any one supporting column marks the header. The list
+    // always pairs the policy number with an owner and/or a conversion date.
+    if ('policy' in map && ('deadline' in map || 'owner' in map || 'insured' in map)) { headerRow = r; colMap = map; break }
   }
   if (headerRow === -1) throw new Error('Could not find the conversion header row (need a "Policy Number" column).')
 
@@ -188,6 +219,10 @@ export async function parseConversionFile(buffer: Buffer, filename: string): Pro
       conversion_deadline: toIsoDate(at(row, 'deadline')),
       inception_date: toIsoDate(at(row, 'inception')),
       expiration_date: toIsoDate(at(row, 'expiration')),
+      preferred_email: at(row, 'email') || null,
+      preferred_phone: at(row, 'phone') || null,
+      agent_of_record: at(row, 'agent') || null,
+      aor_code: at(row, 'aor') || null,
       name_key: nameKey(owner),
       conversion_key: policy,
     })

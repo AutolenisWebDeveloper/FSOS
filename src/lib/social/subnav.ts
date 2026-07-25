@@ -46,6 +46,10 @@ export const SOCIAL_SUBNAV_GROUPS: SocialSubnavGroup[] = [
     label: 'Setup',
     items: [{ href: '/app/social/accounts', label: 'Accounts' }],
   },
+  {
+    label: 'Operate',
+    items: [{ href: '/app/social/health', label: 'Health' }],
+  },
 ]
 
 // Active-state resolution shared by the component and its test. The content list

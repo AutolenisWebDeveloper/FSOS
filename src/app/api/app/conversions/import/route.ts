@@ -4,6 +4,7 @@ import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { parseConversionFile, summarizeConversions, type ConversionRecord } from '@/lib/import/conversionList'
 import { createBatch } from '@/lib/import/auditWriter'
+import { emailLc, phoneDigits } from '@/lib/contacts/normalize'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -36,7 +37,7 @@ interface ExistingPolicy {
   source_data: Record<string, unknown> | null
 }
 interface ExistingHousehold { id: string; book_owner_key: string | null; primary_name: string }
-interface ExistingContact { id: string; book_key: string | null; contact_type: string; tags: string[] | null; household_id: string | null }
+interface ExistingContact { id: string; book_key: string | null; contact_type: string; tags: string[] | null; household_id: string | null; email: string | null; phone: string | null }
 
 export async function POST(req: NextRequest) {
   const auth = await requireApiRole('fsa')
@@ -89,6 +90,20 @@ export async function POST(req: NextRequest) {
   const households = await loadHouseholds(db, householdIds)
   const householdById = new Map(households.map((h) => [h.id, h]))
 
+  // Owner contact points behind each household (first non-empty across its
+  // policies) — the District export carries a preferred email + phone we use to
+  // make the term-conversion owner contact reachable. Storing (not sending) has
+  // no consent implication; the §12 dispatcher still gates any outreach.
+  const contactInfoByHousehold = new Map<string, { email: string | null; phone: string | null }>()
+  for (const r of matched) {
+    const hid = policyByNumber.get(r.policy_number)!.household_id
+    if (!hid) continue
+    const cur = contactInfoByHousehold.get(hid) || { email: null, phone: null }
+    if (!cur.email && r.preferred_email) cur.email = r.preferred_email
+    if (!cur.phone && r.preferred_phone) cur.phone = r.preferred_phone
+    contactInfoByHousehold.set(hid, cur)
+  }
+
   const deadlinesToSet = matched.filter((r) => {
     const p = policyByNumber.get(r.policy_number)!
     return r.conversion_deadline && !p.conversion_deadline
@@ -117,6 +132,9 @@ export async function POST(req: NextRequest) {
         product: r.product_type,
         convertible_amount: r.convertible_amount,
         conversion_deadline: r.conversion_deadline,
+        email: r.preferred_email,
+        phone: r.preferred_phone,
+        agent_of_record: r.agent_of_record,
         matched: policyByNumber.has(r.policy_number),
       })),
     })
@@ -142,6 +160,10 @@ export async function POST(req: NextRequest) {
         inception_date: r.inception_date,
         expiration_date: r.expiration_date,
         conversion_deadline: r.conversion_deadline,
+        preferred_email: r.preferred_email,
+        preferred_phone: r.preferred_phone,
+        agent_of_record: r.agent_of_record,
+        aor_code: r.aor_code,
       }
       const existingData = (p.source_data && typeof p.source_data === 'object') ? p.source_data : {}
       patch.source_data = { ...existingData, conversion: conv }
@@ -165,6 +187,7 @@ export async function POST(req: NextRequest) {
     for (const h of households) {
       if (!h.book_owner_key) continue
       const key = `owner:${h.book_owner_key}`
+      const info = contactInfoByHousehold.get(h.id) || { email: null, phone: null }
       const existing = contactByKey.get(key)
       if (existing) {
         const tags = Array.from(new Set([...(existing.tags || []), 'term-conversion', 'fnwl-book']))
@@ -172,6 +195,9 @@ export async function POST(req: NextRequest) {
         if (tags.length !== (existing.tags || []).length) patch.tags = tags
         if (existing.contact_type === 'unknown') patch.contact_type = 'client'
         if (!existing.household_id) patch.household_id = h.id
+        // Fill contact points only when blank — never overwrite existing data.
+        if (!existing.email && info.email) { patch.email = info.email; patch.email_lc = emailLc(info.email) }
+        if (!existing.phone && info.phone) { patch.phone = info.phone; patch.phone_digits = phoneDigits(info.phone) }
         if (Object.keys(patch).length) contactPatches.push({ id: existing.id, patch })
       } else {
         const nm = h.primary_name.trim().split(/\s+/)
@@ -179,6 +205,7 @@ export async function POST(req: NextRequest) {
           book_key: key, full_name: h.primary_name, first_name: nm[0] || h.primary_name, last_name: nm.slice(1).join(' ') || null,
           contact_type: 'client', source: 'conversion_list', status: 'active', created_by: actor,
           tags: ['term-conversion', 'fnwl-book'], household_id: h.id,
+          email: info.email, email_lc: emailLc(info.email), phone: info.phone, phone_digits: phoneDigits(info.phone),
         })
       }
     }
@@ -263,7 +290,7 @@ async function loadHouseholds(db: any, ids: string[]): Promise<ExistingHousehold
 async function loadContactsByBookKey(db: any, keys: string[]): Promise<ExistingContact[]> {
   const out: ExistingContact[] = []
   for (let i = 0; i < keys.length; i += CHUNK) {
-    const { data, error } = await db.from('contacts').select('id, book_key, contact_type, tags, household_id').in('book_key', keys.slice(i, i + CHUNK)).is('deleted_at', null)
+    const { data, error } = await db.from('contacts').select('id, book_key, contact_type, tags, household_id, email, phone').in('book_key', keys.slice(i, i + CHUNK)).is('deleted_at', null)
     if (error) throw new Error(error.message)
     out.push(...((data || []) as ExistingContact[]))
   }

@@ -48,7 +48,10 @@ export const SOCIAL_SUBNAV_GROUPS: SocialSubnavGroup[] = [
   },
   {
     label: 'Operate',
-    items: [{ href: '/app/social/health', label: 'Health' }],
+    items: [
+      { href: '/app/social/health', label: 'Health' },
+      { href: '/app/social/automation', label: 'Automation' },
+    ],
   },
 ]
 

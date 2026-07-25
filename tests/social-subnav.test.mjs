@@ -62,7 +62,7 @@ t('Engagement, Insight, Setup route to engagement / analytics+attribution / acco
   assert.deepEqual(groupOf('Engagement').items.map((i) => i.href), ['/app/social/engagement'])
   assert.deepEqual(groupOf('Insight').items.map((i) => i.href), ['/app/social/analytics', '/app/social/attribution'])
   assert.deepEqual(groupOf('Setup').items.map((i) => i.href), ['/app/social/accounts'])
-  assert.deepEqual(groupOf('Operate').items.map((i) => i.href), ['/app/social/health'])
+  assert.deepEqual(groupOf('Operate').items.map((i) => i.href), ['/app/social/health', '/app/social/automation'])
 })
 
 t('every social surface is reachable from the sub-nav (no orphans)', () => {

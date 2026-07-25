@@ -39,10 +39,10 @@ t('the overview href is the social hub root', () => {
   assert.equal(SOCIAL_OVERVIEW_HREF, '/app/social')
 })
 
-t('the five mandated groups exist in order', () => {
+t('the mandated groups exist in order (+ Operate for the operational surfaces)', () => {
   assert.deepEqual(
     SOCIAL_SUBNAV_GROUPS.map((g) => g.label),
-    ['Content', 'Publishing', 'Engagement', 'Insight', 'Setup'],
+    ['Content', 'Publishing', 'Engagement', 'Insight', 'Setup', 'Operate'],
   )
 })
 
@@ -62,6 +62,7 @@ t('Engagement, Insight, Setup route to engagement / analytics+attribution / acco
   assert.deepEqual(groupOf('Engagement').items.map((i) => i.href), ['/app/social/engagement'])
   assert.deepEqual(groupOf('Insight').items.map((i) => i.href), ['/app/social/analytics', '/app/social/attribution'])
   assert.deepEqual(groupOf('Setup').items.map((i) => i.href), ['/app/social/accounts'])
+  assert.deepEqual(groupOf('Operate').items.map((i) => i.href), ['/app/social/health'])
 })
 
 t('every social surface is reachable from the sub-nav (no orphans)', () => {

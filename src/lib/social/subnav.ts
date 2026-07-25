@@ -37,7 +37,10 @@ export const SOCIAL_SUBNAV_GROUPS: SocialSubnavGroup[] = [
   },
   {
     label: 'Insight',
-    items: [{ href: '/app/social/analytics', label: 'Analytics' }],
+    items: [
+      { href: '/app/social/analytics', label: 'Analytics' },
+      { href: '/app/social/attribution', label: 'Attribution' },
+    ],
   },
   {
     label: 'Setup',

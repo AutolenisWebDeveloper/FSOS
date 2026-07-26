@@ -77,9 +77,9 @@ export function dashboardUrl(): string {
   return `${authBaseUrl()}/app`
 }
 
-/** The booking URL. Falls back to the on-page contact section when unset. */
+/** The booking URL — the native FSOS scheduler (Calendly replacement, ADR-027). */
 export function bookingUrl(): string {
-  return process.env.NEXT_PUBLIC_CALENDLY_URL || '/#contact'
+  return '/schedule'
 }
 
 /** Canonical site origin for metadata / structured data. */

@@ -47,19 +47,32 @@ export const SOCIAL: { label: string; href: string }[] = [
 ]
 
 /**
- * A2P 10DLC consent copy — a MIXED program (account/service + marketing). The
- * `version` is stored with every captured consent so we can prove exactly which
- * wording a contact agreed to. The sending number placeholder must be replaced
- * with the registered A2P number before launch (NEXT_PUBLIC_SMS_FROM).
+ * Registered A2P 10DLC sending number for the SMS program. This is the origination
+ * number ("Messages originate from …") and is DISTINCT from the office/contact
+ * number (CONTACT.phoneDisplay). It appears only in SMS-origination disclosures.
+ */
+const SMS_FROM_NUMBER = '469-625-4987'
+
+/**
+ * A2P 10DLC consent copy — a purely INFORMATIONAL customer-care program (no
+ * marketing or promotional messages; that requires separate consent per carrier
+ * 30913). The `version` is stored with every captured consent, and `disclosure`
+ * is the exact plain-text wording shown at the checkbox — the canonical record
+ * persisted with each consent so we can prove exactly what the contact agreed to.
+ * Keep `disclosure` verbatim-synced with the JSX label in SiteContactForm.
  */
 export const SMS_CONSENT = {
-  version: 'a2p-10dlc-2026-07-frisco',
+  version: '2026-07-A-info',
   program: 'Markist Athelus — Farmers Insurance — Customer & Account Messaging',
-  // Registered A2P 10DLC sending number. Set NEXT_PUBLIC_SMS_FROM to the approved
-  // campaign number before launch. Until then, fall back to the real, reachable
-  // office number so compliance-critical consent copy never renders a literal
-  // "(XXX) XXX-XXXX" placeholder to the public.
-  from: process.env.NEXT_PUBLIC_SMS_FROM || CONTACT.phoneDisplay,
+  // Registered A2P 10DLC origination number (see SMS_FROM_NUMBER).
+  from: SMS_FROM_NUMBER,
+  // Canonical source of the captured consent record's sourceUrl (the homepage
+  // contact anchor where the checkbox lives).
+  sourceUrl: 'https://www.markistfsa.com/#contact',
+  // Exact plain-text of the checkbox label shown to the user (informational,
+  // customer-care only). MUST stay verbatim-synced with the rendered JSX label.
+  disclosure:
+    `By checking this box, I agree to receive recurring account and customer-service text messages from ${BUSINESS.brand} at the mobile number provided — including appointment scheduling and reminders, policy and account service updates, document or information requests, and replies to my inquiries. Messages originate from ${SMS_FROM_NUMBER}. Msg frequency varies. Msg & data rates may apply. Reply STOP to opt out, HELP for help. Consent is not a condition of purchase. See our Privacy Policy, Terms of Use, and SMS Terms & Conditions.`,
 } as const
 
 /** Canonical FSA authentication host (see loginUrl). */

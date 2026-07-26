@@ -2,7 +2,9 @@ import Link from 'next/link'
 import { Plus, Upload, Contact as ContactIcon, RefreshCw } from 'lucide-react'
 import { ListShell, StatTile, ErrorState, EmptyState } from '@/components/archetypes'
 import { Button } from '@/components/ui/button'
-import { load, loadAll } from '@/lib/data/query'
+import { loadAll } from '@/lib/data/query'
+import { getDb } from '@/lib/supabase/client'
+import { loadContactConsolidationReport, type ContactConsolidationReport } from '@/lib/services/contactConsolidation'
 import { ContactList, type ContactRow } from '@/components/app/ContactList'
 
 export const dynamic = 'force-dynamic'
@@ -14,7 +16,7 @@ export const runtime = 'nodejs'
 interface Row extends ContactRow {}
 
 export default async function ContactCenterPage() {
-  const [res, dupes] = await Promise.all([
+  const [res, report] = await Promise.all([
     loadAll<Row>(
       (db) =>
         db
@@ -23,7 +25,16 @@ export default async function ContactCenterPage() {
           .is('deleted_at', null)
           .order('created_at', { ascending: false }),
     ),
-    load<{ match_key: string }[]>((db) => db.from('v_contact_duplicates').select('match_key'), []),
+    // Consolidation report degrades to an all-zero report on failure; guard the
+    // getDb() config throw so an unconfigured DB still renders the not_configured
+    // notice below (driven by `res`), never a crash.
+    (async (): Promise<ContactConsolidationReport | null> => {
+      try {
+        return await loadContactConsolidationReport(getDb())
+      } catch {
+        return null
+      }
+    })(),
   ])
 
   const actions = (
@@ -48,9 +59,12 @@ export default async function ContactCenterPage() {
   }
 
   const rows = res.data
-  const active = rows.filter((r) => r.status === 'active').length
-  const owners = rows.filter((r) => r.contact_type === 'agency_owner').length
-  const dupCount = dupes.ok ? dupes.data.length : 0
+  // Prefer the DB-side consolidation report; fall back to what the loaded rows can
+  // show if the report view is unavailable (older DB without migration 070).
+  const total = report?.total ?? rows.length
+  const active = report?.active ?? rows.filter((r) => r.status === 'active').length
+  const orphaned = report?.orphaned ?? null
+  const dupCount = report?.duplicateGroups ?? 0
 
   return (
     <ListShell
@@ -60,9 +74,13 @@ export default async function ContactCenterPage() {
       breadcrumb={[{ label: 'FSA', href: '/app' }, { label: 'Contacts' }]}
     >
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatTile label="Contacts" value={active} />
-        <StatTile label="Agency owners" value={owners} />
-        <StatTile label="Total records" value={rows.length} />
+        <StatTile label="Active contacts" value={active} />
+        <StatTile
+          label="No household"
+          value={orphaned ?? '—'}
+          hint={orphaned ? 'Not yet campaign-enrollable' : orphaned === 0 ? 'All linked' : undefined}
+        />
+        <StatTile label="Total records" value={total} />
         <StatTile label="Possible duplicates" value={dupCount} hint={dupCount ? 'Shared email/phone' : undefined} />
       </div>
       {rows.length === 0 ? (

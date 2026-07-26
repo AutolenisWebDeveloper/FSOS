@@ -21,12 +21,20 @@ audit (`config.changed`) on every write, RLS default-deny.
 - UI: `src/app/(fsa)/app/booking/page.tsx` + `AppointmentTypesManager` / `AvailabilityRulesManager` / `BlackoutsManager` islands.
 - Tests: `tests/booking-config.test.mjs` (12 assertions — schema contracts + cross-field rules).
 
-## Slice 3 — Public booking flow
-Public route at `/schedule` (already allowlisted, no page yet). Timezone-correct slot picker rendering in
-the booker's zone; name/email/phone; **atomic slot claim** (DB unique index → clean "just taken" on race);
-resolve/create a spine `contact` (never a parallel person record); write the appointment; log `activity`;
-capture booking consent. Honor the `is_security` firewall; no sensitive data in the form. Repoint
-`bookingUrl()` → `/schedule`. Design bar per §2.A (mobile-first, WCAG 2.2 AA, designed empty/error/no-slots).
+## Slice 3 — Public booking flow ✅
+Public `/schedule` (kept under the already-allowlisted exact path via `?type=<slug>`; no auth change).
+Timezone-correct slot picker rendering in the booker's detected zone; name/email/phone/notes form;
+**atomic slot claim** (DB unique index → clean "just taken" on race); resolve-or-create a spine `contact`
+(dedupe on email/phone via the existing resolution engine — never a parallel person record); write the
+appointment on the spine (`booked_via='native'`, `scheduled_at==starts_at`); log `activities`; capture
+email booking-consent intent + audit. Honors the `is_security` firewall (no sensitive fields collected).
+`bookingUrl()` repointed → `/schedule`; client & partner schedule stubs now link to it.
+- Services: `slots.ts` (assemble config+busy → pure calculator), `book.ts` (validate slot, resolve contact,
+  atomic insert, activity+consent+audit), `ics.ts` (pure add-to-calendar).
+- API: `GET /api/public/booking/availability` + `POST /api/public/booking` (honeypot + rate-limit + Zod).
+- UI: `src/app/schedule/page.tsx` (type chooser) + `BookingFlow` client island (picker → details → success,
+  mobile-first, WCAG-labelled, designed loading/empty/no-slots/error/success states, add-to-calendar).
+- Tests: `booking-ics.test.mjs` (5), `booking-double-booking.test.mjs` (5, real Postgres — concurrent claim).
 
 ## Slice 4 — Zoom meeting provisioning
 Add meeting creation to `src/lib/zoom/client.ts` (reuse S2S OAuth, `zoomEnabled()` gate). On a `video`

@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Plus, Upload, Contact as ContactIcon, RefreshCw } from 'lucide-react'
+import { Plus, Upload, Contact as ContactIcon, RefreshCw, Filter } from 'lucide-react'
 import { ListShell, StatTile, ErrorState, EmptyState } from '@/components/archetypes'
 import { Button } from '@/components/ui/button'
 import { loadAll } from '@/lib/data/query'
@@ -41,6 +41,7 @@ export default async function ContactCenterPage() {
     <div className="flex flex-wrap gap-2">
       <Button asChild size="sm"><Link href="/app/contacts/new"><Plus className="h-4 w-4" /> Add contact</Link></Button>
       <Button asChild size="sm" variant="outline"><Link href="/app/contacts/import"><Upload className="h-4 w-4" /> Import file</Link></Button>
+      <Button asChild size="sm" variant="outline"><Link href="/app/contacts/segments"><Filter className="h-4 w-4" /> Segments</Link></Button>
       <Button asChild size="sm" variant="outline"><Link href="/app/contacts/upload"><RefreshCw className="h-4 w-4" /> Sync to GHL</Link></Button>
       <Button asChild size="sm" variant="ghost"><Link href="/app/contacts/ffs"><ContactIcon className="h-4 w-4" /> FFS Contacts</Link></Button>
     </div>

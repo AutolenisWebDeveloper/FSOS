@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
-import { parseConversionFile, summarizeConversions, type ConversionRecord } from '@/lib/import/conversionList'
+import { parseConversionFile, summarizeConversions, planConversionCreates, conversionOwnerKey, type ConversionRecord, type ConversionCreatePlan } from '@/lib/import/conversionList'
 import { createBatch } from '@/lib/import/auditWriter'
 import { emailLc, phoneDigits } from '@/lib/contacts/normalize'
 
@@ -16,16 +16,23 @@ const CHUNK = 500
 
 // Life Conversion import (FNWL term policies inside their conversion window).
 // preview — parse + match each policy number against the book; NO writes.
-// commit  — idempotent enrichment along the aggregate-root spine:
-//   • POLICY: match household_policies by policy_number, set conversion_deadline
-//     (only when blank — no valid data overwritten), fill product/face if blank,
-//     and stash the conversion detail in source_data.
-//   • CONTACT: tag the linked household's owner contact 'term-conversion' (create
-//     it on the book provenance key if the book→contacts sync hasn't run yet, so
-//     it never duplicates), upgrading an 'unknown' type to 'client'.
+// commit  — idempotent load + enrichment along the aggregate-root spine:
+//   ── matched rows (policy already on the book) ──
+//   • POLICY: set conversion_deadline (only when blank — no valid data
+//     overwritten), fill product/face if blank, stash conversion detail.
+//   • CONTACT: tag the owner contact 'term-conversion' (create on the book
+//     provenance key if the book→contacts sync hasn't run yet, so it never
+//     duplicates), upgrading an 'unknown' type to 'client'.
 //   • MEMBER: ensure the named insured exists on the household (if different).
-//   RBAC-gated + audited. GUARDRAILS: term products only — is_security stays
-//   false and nothing recommends a conversion (green-zone identify).
+//   ── unmatched rows (policy NOT yet on the book) ──
+//   • ORIGINATE the household (book_owner_key, dedupe-shared with the In-Force
+//     Book importer), the policy (source_system='fnwl' → policy-number unique
+//     index dedupes on re-run), the owner contact, and the named insured. So a
+//     single upload loads the whole conversion list, not only rows already in
+//     the book. Re-running matches those policies and changes nothing further.
+//   RBAC-gated + audited. GUARDRAILS: term products only — is_security is set
+//   from the product (variable → firewalled) and nothing recommends a
+//   conversion (green-zone identify).
 
 interface ExistingPolicy {
   id: string
@@ -109,6 +116,18 @@ export async function POST(req: NextRequest) {
     return r.conversion_deadline && !p.conversion_deadline
   }).length
 
+  // Unmatched rows become NEW book records. Load which owner households already
+  // exist (a prior partial import) so we never re-create one.
+  const unmatchedOwnerKeys = Array.from(new Set(unmatched.map((r) => r.owner_name).filter(Boolean).map(conversionOwnerKey)))
+  let existingHouseholdKeys: Set<string>
+  try {
+    existingHouseholdKeys = await loadExistingHouseholdKeys(db, unmatchedOwnerKeys)
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'Could not read households.' }, { status: 500 })
+  }
+  const createPlan: ConversionCreatePlan = planConversionCreates(unmatched, existingHouseholdKeys)
+  const unmatchedNoOwner = unmatched.filter((r) => !r.owner_name).length
+
   const plan = {
     total_rows: records.length,
     skipped_rows: skipped,
@@ -116,6 +135,9 @@ export async function POST(req: NextRequest) {
     policies_unmatched: unmatched.length,
     deadlines_to_set: deadlinesToSet,
     contacts_to_tag: householdIds.length,
+    households_to_create: createPlan.households.length,
+    policies_to_create: createPlan.policies.length,
+    rows_without_owner: unmatchedNoOwner,
   }
 
   if (mode !== 'commit') {
@@ -142,6 +164,96 @@ export async function POST(req: NextRequest) {
 
   // ── COMMIT ──────────────────────────────────────────────────────────────
   try {
+    // 0. ORIGINATE unmatched rows on the spine (households → policies → owner
+    //    contacts → insured members). Keyed so a re-run (now matched) is a no-op
+    //    and a later In-Force Book import converges on the same household.
+    let householdsCreated = 0
+    let policiesCreated = 0
+    let originatedContacts = 0
+    let originatedMembers = 0
+    if (createPlan.households.length || createPlan.policies.length) {
+      // 0a. New households.
+      const newHouseholdRows = createPlan.households.map((h) => ({ book_owner_key: h.book_owner_key, primary_name: h.primary_name }))
+      for (let i = 0; i < newHouseholdRows.length; i += CHUNK) {
+        const { error } = await db.from('households').insert(newHouseholdRows.slice(i, i + CHUNK))
+        if (error) throw new Error(`household create failed: ${error.message}`)
+      }
+      householdsCreated = newHouseholdRows.length
+
+      // 0b. Resolve book_owner_key → household_id for every policy's household
+      //     (newly created OR pre-existing).
+      const policyOwnerKeys = Array.from(new Set(createPlan.policies.map((p) => p.book_owner_key)))
+      const householdIdByKey = await mapHouseholdIds(db, policyOwnerKeys)
+
+      // 0c. New policies (FNWL provenance → policy-number unique index dedupes).
+      const newPolicyRows = createPlan.policies
+        .map((p) => {
+          const hid = householdIdByKey.get(p.book_owner_key)
+          if (!hid) return null
+          return {
+            household_id: hid,
+            policy_number: p.policy_number,
+            product_name: p.product_name,
+            status: 'active',
+            is_with_us: true,
+            is_security: p.is_security,
+            face_amount: p.face_amount,
+            effective_date: p.effective_date,
+            expiration_date: p.expiration_date,
+            conversion_deadline: p.conversion_deadline,
+            source_system: 'fnwl',
+            source_data: p.source_data,
+          }
+        })
+        .filter((r): r is NonNullable<typeof r> => r !== null)
+      for (let i = 0; i < newPolicyRows.length; i += CHUNK) {
+        const { error } = await db.from('household_policies').insert(newPolicyRows.slice(i, i + CHUNK))
+        if (error) throw new Error(`policy create failed: ${error.message}`)
+      }
+      policiesCreated = newPolicyRows.length
+
+      // 0d. Owner contacts for the new households (term-conversion), keyed on the
+      //     book provenance so the book→contacts sync never duplicates them.
+      const newHhKeys = createPlan.households.map((h) => `owner:${h.book_owner_key}`)
+      const alreadyContacts = await loadContactsByBookKey(db, newHhKeys)
+      const haveContactKey = new Set(alreadyContacts.map((c) => c.book_key!))
+      const originatedContactRows = createPlan.households
+        .filter((h) => !haveContactKey.has(`owner:${h.book_owner_key}`))
+        .map((h) => {
+          const hid = householdIdByKey.get(h.book_owner_key) ?? null
+          const nm = h.primary_name.trim().split(/\s+/)
+          return {
+            book_key: `owner:${h.book_owner_key}`, full_name: h.primary_name, first_name: nm[0] || h.primary_name, last_name: nm.slice(1).join(' ') || null,
+            contact_type: 'client', source: 'conversion_list', status: 'active', created_by: actor,
+            tags: ['term-conversion', 'fnwl-book'], household_id: hid,
+            email: h.owner_email, email_lc: emailLc(h.owner_email), phone: h.owner_phone, phone_digits: phoneDigits(h.owner_phone),
+          }
+        })
+      for (let i = 0; i < originatedContactRows.length; i += CHUNK) {
+        const { error } = await db.from('contacts').insert(originatedContactRows.slice(i, i + CHUNK))
+        if (error) throw new Error(`contact create failed: ${error.message}`)
+      }
+      originatedContacts = originatedContactRows.length
+
+      // 0e. Named insureds → household members (idempotent per household).
+      const memberRows: Array<{ household_id: string; full_name: string; relationship: string }> = []
+      for (const h of createPlan.households) {
+        const hid = householdIdByKey.get(h.book_owner_key)
+        if (!hid) continue
+        for (const name of h.insured_names) memberRows.push({ household_id: hid, full_name: name, relationship: 'insured' })
+      }
+      if (memberRows.length) {
+        const hids = Array.from(new Set(memberRows.map((m) => m.household_id)))
+        const existingPairs = await loadMemberPairs(db, hids)
+        const toInsert = memberRows.filter((m) => !existingPairs.has(`${m.household_id}|${m.full_name.toLowerCase()}`))
+        for (let i = 0; i < toInsert.length; i += CHUNK) {
+          const { error } = await db.from('household_members').insert(toInsert.slice(i, i + CHUNK))
+          if (error) throw new Error(`member create failed: ${error.message}`)
+        }
+        originatedMembers = toInsert.length
+      }
+    }
+
     // 1. Policy enrichment (no-overwrite).
     let policiesUpdated = 0
     const policyUpdates: Array<{ id: string; patch: Record<string, unknown> }> = []
@@ -252,10 +364,12 @@ export async function POST(req: NextRequest) {
       summary,
       plan,
       committed: {
+        policies_created: policiesCreated,
+        households_created: householdsCreated,
         policies_enriched: policiesUpdated,
-        contacts_created: contactInserts.length,
+        contacts_created: contactInserts.length + originatedContacts,
         contacts_tagged: contactsTagged,
-        members_added: membersAdded,
+        members_added: membersAdded + originatedMembers,
       },
     })
   } catch (e) {
@@ -275,6 +389,28 @@ async function loadPolicies(db: any, numbers: string[]): Promise<ExistingPolicy[
     out.push(...((data || []) as ExistingPolicy[]))
   }
   return out
+}
+// Which of these book_owner_keys already have a household (never re-create one).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function loadExistingHouseholdKeys(db: any, keys: string[]): Promise<Set<string>> {
+  const set = new Set<string>()
+  for (let i = 0; i < keys.length; i += CHUNK) {
+    const { data, error } = await db.from('households').select('book_owner_key').in('book_owner_key', keys.slice(i, i + CHUNK)).is('deleted_at', null)
+    if (error) throw new Error(error.message)
+    for (const r of data || []) if (r.book_owner_key != null) set.add(String(r.book_owner_key))
+  }
+  return set
+}
+// Map book_owner_key → household id (for linking originated policies/contacts).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function mapHouseholdIds(db: any, keys: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>()
+  for (let i = 0; i < keys.length; i += CHUNK) {
+    const { data, error } = await db.from('households').select('id, book_owner_key').in('book_owner_key', keys.slice(i, i + CHUNK)).is('deleted_at', null)
+    if (error) throw new Error(error.message)
+    for (const r of data || []) if (r.book_owner_key != null) map.set(String(r.book_owner_key), String(r.id))
+  }
+  return map
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function loadHouseholds(db: any, ids: string[]): Promise<ExistingHousehold[]> {

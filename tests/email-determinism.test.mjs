@@ -64,13 +64,25 @@ for (const tpl of EMAIL_TEMPLATES) {
     assert.notEqual(r.sha, renderSha(r.html, r.text + ' '))
   })
 
-  await at(`[${tpl.sourceKey}] is a real, green-zone email (tokens, no baked footer, non-empty text)`, async () => {
+  await at(`[${tpl.sourceKey}] is a real, green-zone email (tokens, CAN-SPAM footer, non-empty text)`, async () => {
     const { html, text } = await renderEmailTemplate(tpl.element)
     assert.ok(html.includes('<html') || html.includes('<!DOCTYPE'), 'is HTML')
     assert.ok(html.includes('{{first_name}}') || html.includes('{{fsa_name}}'), 'carries merge tokens for send-time personalization')
     assert.ok(text.trim().length > 0, 'plaintext is non-empty')
-    // The dispatcher appends the TRAIGA/opt-out footer at send time — it must NOT be baked in.
-    assert.ok(!/unsubscribe|reply stop|opt.?out/i.test(html), 'no baked-in opt-out footer (dispatcher adds it)')
+    // The SMS TRAIGA opt-out ("Reply STOP") is appended by the dispatcher for SMS only —
+    // it must NEVER be baked into an email template.
+    assert.ok(!/reply stop/i.test(html), 'no baked-in SMS opt-out footer (dispatcher adds it for SMS)')
+    // CAN-SPAM (three-life-campaigns launch, Slice 2): unlike SMS, nothing is appended to
+    // email at send time, so every email MUST carry its own unsubscribe mechanism + the
+    // sender's physical mailing address, baked into the shared layout footer. The
+    // per-recipient link resolves from the {{unsubscribe_url}} merge token at send.
+    assert.ok(html.includes('{{unsubscribe_url}}'), 'carries the CAN-SPAM unsubscribe merge token')
+    assert.ok(/unsubscribe/i.test(html), 'carries visible unsubscribe copy')
+    assert.ok(html.includes('Frisco') && html.includes('75035'), 'carries the physical mailing address (CAN-SPAM sender identification)')
+    // The plaintext part is a first-class message part — it must carry the same CAN-SPAM
+    // unsubscribe mechanism + physical address, not just the HTML.
+    assert.ok(text.includes('{{unsubscribe_url}}'), 'plaintext carries the unsubscribe merge token')
+    assert.ok(text.includes('Frisco') && text.includes('75035'), 'plaintext carries the physical mailing address')
     // §2.2 red line — no individualized recommendation / call-to-action language (build-gated).
     assert.equal(containsRecommendationLanguage(text), false, 'plaintext must be recommendation-free')
     assert.equal(containsRecommendationLanguage(html), false, 'HTML must be recommendation-free')

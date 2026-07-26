@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
 import { readJson } from '@/lib/http'
+import { suppressContact } from '@/lib/comms/unsubscribe'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -63,6 +64,12 @@ export async function POST(req: NextRequest) {
     if (channels.includes('sms')) update.consent_sms = false
     await supabase.from('customers').update(update).eq('customer_id', customer.customer_id)
   }
+
+  // Enforced suppression (the store the send-time gate actually reads): upsert dnc_entries
+  // for the contact so future automated sends are blocked at gate step 3 — keyed by the
+  // destination, so it works even when the contact isn't a legacy `customers` row. This is
+  // what makes the opt-out real for the native comms engine, not just the legacy ledger.
+  await suppressContact(contact, channel)
 
   return NextResponse.json({ success: true })
 }

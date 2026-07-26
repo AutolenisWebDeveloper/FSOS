@@ -21,15 +21,38 @@ export function smsConfigured(): boolean {
   return !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER)
 }
 
-export async function sendEmail(to: string, subject: string, html: string, text?: string): Promise<SendResult> {
+/** Optional per-send email delivery options (deliverability: reply routing + headers). */
+export interface EmailSendOptions {
+  /** Reply-To address (monitored inbox). Falls back to RESEND_REPLY_TO env when unset. */
+  replyTo?: string
+  /** Extra SMTP headers, e.g. RFC 8058 List-Unsubscribe / List-Unsubscribe-Post. */
+  headers?: Record<string, string>
+}
+
+export async function sendEmail(
+  to: string,
+  subject: string,
+  html: string,
+  text?: string,
+  opts?: EmailSendOptions,
+): Promise<SendResult> {
   const apiKey = process.env.RESEND_API_KEY
   const from = process.env.RESEND_FROM_EMAIL
   if (!apiKey) return { ok: false, error: 'RESEND_API_KEY not set' }
   if (!from || /yourdomain\.com/i.test(from)) return { ok: false, error: 'RESEND_FROM_EMAIL not a verified sender' }
   if (!to) return { ok: false, error: 'No recipient email' }
+  const replyTo = opts?.replyTo || process.env.RESEND_REPLY_TO || undefined
   try {
     const resend = new Resend(apiKey)
-    const { data, error } = await resend.emails.send({ from, to, subject, html, text })
+    const { data, error } = await resend.emails.send({
+      from,
+      to,
+      subject,
+      html,
+      text,
+      ...(replyTo ? { replyTo } : {}),
+      ...(opts?.headers ? { headers: opts.headers } : {}),
+    })
     if (error) return { ok: false, error: error.message || String(error) }
     return { ok: true, id: data?.id }
   } catch (err) {

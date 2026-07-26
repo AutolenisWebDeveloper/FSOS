@@ -1,5 +1,7 @@
+import Link from 'next/link'
 import { ListShell, Section, ErrorState, EmptyState, IntegrationShell, StatTile } from '@/components/archetypes'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Button } from '@/components/ui/button'
 import { load } from '@/lib/data/query'
 import { CalendarView, type AppointmentRow } from '@/components/app/CalendarView'
 import { RunAppointmentRecoveryButton } from '@/components/app/RunAppointmentRecoveryButton'
@@ -64,7 +66,14 @@ export default async function CalendarPage() {
       title="Calendar"
       description="Upcoming appointments and reviews — with lifecycle triage and no-show recovery."
       breadcrumb={[{ label: 'FSA', href: '/app' }, { label: 'Calendar' }]}
-      actions={<RunAppointmentRecoveryButton />}
+      actions={
+        <div className="flex items-center gap-2">
+          <Button asChild variant="outline" size="sm">
+            <Link href="/app/booking">Booking settings</Link>
+          </Button>
+          <RunAppointmentRecoveryButton />
+        </div>
+      }
     >
       <div className="space-y-6">
         {/* Appointment funnel */}

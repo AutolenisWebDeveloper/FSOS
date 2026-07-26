@@ -11,9 +11,15 @@ Additive schema (mig 069) + the pure availability calculator. No public UI.
 - `src/lib/booking/timezone.ts` (Intl, DST-correct) + `src/lib/booking/availability.ts` (pure calculator).
 - `tests/booking-availability.test.mjs` — DST, buffers, min-notice/max-lead/max-per-day, blackout/external, exact-slot removal.
 
-## Slice 2 — Appointment types + FSA configuration UI
-Extend the FSA calendar area. FSA sets appointment types, weekly hours, buffers, blackouts, min-notice,
-max lead. Reuse `DashboardShell`, `Section`, `StatTile`, tokens. Zod at the edge; thin routes → services.
+## Slice 2 — Appointment types + FSA configuration UI ✅
+FSA sets appointment types, weekly hours, buffers, blackouts, min-notice, max lead at `/app/booking`
+(reached from the Calendar area + FSA nav). Reuses `SettingsShell`/`SettingsSection`/`Field`/`Table`/
+tokens — no new design pattern. Zod at the edge (`config-schemas.ts`), thin routes → service (`config.ts`),
+audit (`config.changed`) on every write, RLS default-deny.
+- Services: `src/lib/booking/config.ts` + `config-schemas.ts` + `display.ts` + `route-helpers.ts`.
+- Routes: `/api/app/booking/{types,rules,blackouts}` (+ `[id]` PATCH/DELETE), `requireApiRole('fsa')` + `requirePermission`.
+- UI: `src/app/(fsa)/app/booking/page.tsx` + `AppointmentTypesManager` / `AvailabilityRulesManager` / `BlackoutsManager` islands.
+- Tests: `tests/booking-config.test.mjs` (12 assertions — schema contracts + cross-field rules).
 
 ## Slice 3 — Public booking flow
 Public route at `/schedule` (already allowlisted, no page yet). Timezone-correct slot picker rendering in

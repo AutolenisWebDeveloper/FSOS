@@ -612,3 +612,27 @@ propagates across all pages — are addressed at the shared-foundation layer (to
 archetypes) before any per-page work. Re-run `impeccable` after foundation changes and reconcile this
 backlog. Current known debt includes legacy `useState`-based navigation (no deep links / broken back
 button, §12) pending the routing migration in `CLAUDE.md §20`.
+
+---
+
+## 31. Email template footer (CAN-SPAM) [STANDARD]
+
+Every marketing email is rendered through the shared `src/emails/_layout.tsx` shell (ADR-025:
+React → stored, immutable HTML + plaintext). Its footer is a compliance surface, not decoration:
+
+- **Educational disclaimer** — "for educational and informational purposes only; not a product
+  recommendation or suitability determination" (§4.2 red line, reinforced by the build-gated
+  recommendation-language check in `tests/email-determinism.test.mjs`).
+- **Physical mailing address** — the FSA's verified NAP from `src/lib/site.ts` (`BUSINESS.brand` ·
+  `CONTACT.address`). Required for CAN-SPAM sender identification; present in **both** the HTML and
+  plaintext parts.
+- **Unsubscribe** — a visible "Unsubscribe from marketing emails" link resolving from the
+  `{{unsubscribe_url}}` merge token, substituted per recipient at send time by `personalize.ts`
+  (the send path injects the recipient-specific URL; it falls back to `/unsubscribe` if unset).
+  Opting out writes the **enforced DNC store** (`dnc_entries`) the send-time gate reads, so it truly
+  suppresses future sends — it is not cosmetic.
+
+Tokens (styling `--shell`/`--muted-foreground` equivalents, inline for email-client safety) live in
+`_layout.tsx`. Do **not** bake the SMS TRAIGA opt-out ("Reply STOP") into an email template — that is
+appended by the dispatcher for SMS only. Deliverability specifics (SPF/DKIM/DMARC, reply-to, RFC 8058
+List-Unsubscribe headers) are documented in `docs/comms-native/launch-slice-2-email-deliverability.md`.

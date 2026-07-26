@@ -14,7 +14,7 @@
 // Run: npx tsx tests/conversion-import.test.mts
 import assert from 'node:assert/strict'
 import ExcelJS from 'exceljs'
-import { parseConversionFile } from '@/lib/import/conversionList'
+import { parseConversionFile, planConversionCreates, conversionOwnerKey, type ConversionRecord } from '@/lib/import/conversionList'
 
 let passed = 0
 const t = async (name: string, fn: () => void | Promise<void>) => {
@@ -119,6 +119,76 @@ await t('a file without a Policy Number column still throws a clear error', asyn
     () => parseConversionFile(Buffer.from(csv, 'utf8'), 'bad.csv'),
     /Could not find the conversion header row/,
   )
+})
+
+// ── Create plan (unmatched rows → new book records) ──────────────────────────
+const rec = (over: Partial<ConversionRecord>): ConversionRecord => ({
+  policy_number: '1000', owner_name: 'Delfino Ornelas', insured_name: 'Delfino Ornelas', insured_dob: null,
+  product_type: '10 Yr Term', convertible_amount: 150000, conversion_deadline: '2026-07-28',
+  inception_date: '2006-07-28', expiration_date: '2070-07-28', preferred_email: null, preferred_phone: null,
+  agent_of_record: null, aor_code: null, name_key: 'delfinoornelas', conversion_key: '1000', ...over,
+})
+
+// 6 — each unmatched row is originated: one household per owner, one policy per row.
+await t('unmatched rows produce a create plan (household + policy per row)', () => {
+  const plan = planConversionCreates([
+    rec({ policy_number: '1000', owner_name: 'Delfino Ornelas' }),
+    rec({ policy_number: '1001', owner_name: 'Marta L Salazar', insured_name: 'Marta L Salazar' }),
+  ], new Set())
+  assert.equal(plan.households.length, 2, 'two distinct owners → two households')
+  assert.equal(plan.policies.length, 2, 'two rows → two policies')
+  const p = plan.policies.find((x) => x.policy_number === '1000')!
+  assert.equal(p.book_owner_key, conversionOwnerKey('Delfino Ornelas'))
+  assert.equal(p.face_amount, 150000)
+  assert.equal(p.conversion_deadline, '2026-07-28')
+  assert.equal(p.is_security, false, 'term product is NOT a security (firewall)')
+})
+
+// 7 — two policies for the same owner collapse into ONE household.
+await t('same owner, two policies → one household, two policies', () => {
+  const plan = planConversionCreates([
+    rec({ policy_number: '2000', owner_name: 'Jane Doe', insured_name: 'Jane Doe' }),
+    rec({ policy_number: '2001', owner_name: 'Jane Doe', insured_name: 'John Doe' }),
+  ], new Set())
+  assert.equal(plan.households.length, 1, 'one owner → one household')
+  assert.equal(plan.policies.length, 2, 'two policies under that household')
+  assert.deepEqual(plan.households[0].insured_names, ['John Doe'], 'insured differing from owner recorded as member; owner-as-insured excluded')
+})
+
+// 8 — an existing household is never re-created, but its new policy is still planned.
+await t('existing household key → no re-create, policy still linked', () => {
+  const key = conversionOwnerKey('Jane Doe')
+  const plan = planConversionCreates([rec({ policy_number: '3000', owner_name: 'Jane Doe' })], new Set([key]))
+  assert.equal(plan.households.length, 0, 'household already exists → not re-created')
+  assert.equal(plan.policies.length, 1, 'policy still originated against the existing household')
+  assert.equal(plan.policies[0].book_owner_key, key)
+})
+
+// 9 — a row with no owner name has no home on the spine → skipped.
+await t('row without an owner name is skipped (no household to attach)', () => {
+  const plan = planConversionCreates([rec({ policy_number: '4000', owner_name: '' })], new Set())
+  assert.equal(plan.households.length, 0)
+  assert.equal(plan.policies.length, 0)
+})
+
+// 10 — variable product is firewalled even if it slips into a conversion list.
+await t('variable product is flagged is_security (firewall holds)', () => {
+  const plan = planConversionCreates([rec({ policy_number: '5000', product_type: 'Variable Universal Life' })], new Set())
+  assert.equal(plan.policies[0].is_security, true, 'variable → is_security true')
+})
+
+// 11 — the owner key matches the In-Force Book derivation with an empty ZIP.
+await t('conversionOwnerKey matches the shared book_owner_key form (name|)', () => {
+  assert.equal(conversionOwnerKey('  Delfino   Ornelas '), 'delfino ornelas|')
+})
+
+// 12 — duplicate policy numbers across rows are de-duplicated in the plan.
+await t('duplicate policy numbers are collapsed to one policy', () => {
+  const plan = planConversionCreates([
+    rec({ policy_number: '6000', owner_name: 'Sam Roe' }),
+    rec({ policy_number: '6000', owner_name: 'Sam Roe' }),
+  ], new Set())
+  assert.equal(plan.policies.length, 1, 'same policy number appears once')
 })
 
 console.log(`\nconversion-import: ${passed} checks passed`)

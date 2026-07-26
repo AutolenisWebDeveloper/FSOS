@@ -18,11 +18,19 @@ const CHANNELS = [
   { value: 'sms', label: 'SMS' },
 ] as const
 
-export default function Unsubscribe() {
-  const [contact, setContact] = useState('')
-  const [channel, setChannel] = useState<'all' | 'email' | 'sms'>('all')
+export default function Unsubscribe({
+  initialContact = '',
+  initialChannel = 'all',
+  initialDone = false,
+}: {
+  initialContact?: string
+  initialChannel?: 'all' | 'email' | 'sms'
+  initialDone?: boolean
+} = {}) {
+  const [contact, setContact] = useState(initialContact)
+  const [channel, setChannel] = useState<'all' | 'email' | 'sms'>(initialChannel)
   const [submitting, setSubmitting] = useState(false)
-  const [done, setDone] = useState(false)
+  const [done, setDone] = useState(initialDone)
   const [err, setErr] = useState<string | null>(null)
 
   const submit = async () => {

@@ -20,6 +20,12 @@ export interface RecipientContext {
   agency_name?: string | null
   fsa_name?: string | null
   city?: string | null
+  /**
+   * Per-recipient unsubscribe URL (CAN-SPAM). Injected by the email send path
+   * (sendThroughGate) so every marketing email carries a working, recipient-specific
+   * opt-out link in its footer. Falls back to a relative /unsubscribe if unset.
+   */
+  unsubscribe_url?: string | null
 }
 
 const DEFAULTS: Record<string, string> = {
@@ -29,6 +35,7 @@ const DEFAULTS: Record<string, string> = {
   agency_name: 'your Farmers agency',
   fsa_name: 'your Farmers Financial Services agent',
   city: 'your area',
+  unsubscribe_url: '/unsubscribe',
 }
 
 function firstNameOf(ctx: RecipientContext): string {
@@ -61,6 +68,7 @@ export function personalize(body: string, ctx: RecipientContext, opts: Personali
     agency_name: (ctx.agency_name || '').trim() || DEFAULTS.agency_name,
     fsa_name: (ctx.fsa_name || '').trim() || DEFAULTS.fsa_name,
     city: (ctx.city || '').trim() || DEFAULTS.city,
+    unsubscribe_url: (ctx.unsubscribe_url || '').trim() || DEFAULTS.unsubscribe_url,
   }
   return body.replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (_m, token: string) => {
     const key = token.toLowerCase()

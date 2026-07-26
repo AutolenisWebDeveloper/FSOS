@@ -106,7 +106,15 @@ export const defaultDeps: DispatchDeps = {
   },
   async send(channel, to, body, subject, bodyText) {
     const { sendSms, sendEmail } = await import('../messaging')
-    return channel === 'sms' ? sendSms(to, body) : sendEmail(to, subject ?? '', body, bodyText)
+    if (channel === 'sms') return sendSms(to, body)
+    // Email deliverability: route replies to the monitored inbox and attach the RFC 8058
+    // List-Unsubscribe one-click headers (Gmail/Yahoo bulk-sender requirement). The
+    // per-recipient in-body unsubscribe link is already substituted via {{unsubscribe_url}}.
+    const { emailListUnsubscribeHeaders, replyToAddress } = await import('./unsubscribe')
+    return sendEmail(to, subject ?? '', body, bodyText, {
+      replyTo: replyToAddress(),
+      headers: emailListUnsubscribeHeaders(to),
+    })
   },
 }
 

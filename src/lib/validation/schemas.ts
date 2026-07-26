@@ -430,6 +430,22 @@ export const TemplateApprovalSchema = z.object({
   action: z.enum(['submit', 'approve', 'reject']),
 })
 
+// Slice 5 — a contacts-based segment rule (mirrors src/lib/segments/rules.ts
+// SegmentRule). Free-form over contact fields + an optional campaign preset that
+// consults a household signal. Validated at the edge; the resolver enforces membership.
+export const SegmentRuleSchema = z.object({
+  base: z.literal('contacts').default('contacts'),
+  preset: z.enum(['cross_sell', 'life_conversion', 'win_back']).nullish(),
+  contactTypes: z.array(z.string().trim().max(40)).max(20).optional(),
+  tagsAny: z.array(z.string().trim().max(60)).max(50).optional(),
+  sources: z.array(z.string().trim().max(80)).max(50).optional(),
+  states: z.array(z.string().trim().max(2)).max(60).optional(),
+  ownerScope: uuid.nullish(),
+  minCompleteness: z.number().min(0).max(1).optional(),
+  channel: z.enum(['sms', 'email']).optional(),
+})
+export type SegmentRuleInput = z.infer<typeof SegmentRuleSchema>
+
 export const CampaignCreateSchema = z.object({
   name: z.string().trim().min(1, 'Name is required').max(160),
   channel: z.enum(['sms', 'email']),
@@ -455,8 +471,11 @@ export const CampaignCreateSchema = z.object({
   // audience selection — a segment definition; the dispatch job re-checks the gate per recipient.
   audience: z
     .object({
-      kind: z.enum(['all_consented', 'household_ids', 'cross_sell', 'conversion']).default('all_consented'),
+      kind: z.enum(['all_consented', 'household_ids', 'cross_sell', 'conversion', 'contact_segment']).default('all_consented'),
       household_ids: z.array(uuid).max(5000).optional(),
+      // Slice 5 — a contacts-based segment rule (enrolls the eligible members it
+      // resolves to via source_contact_id). Used when kind === 'contact_segment'.
+      segment: SegmentRuleSchema.optional(),
     })
     .default({ kind: 'all_consented' }),
   schedule_at: z.string().datetime().optional().or(z.literal('').transform(() => undefined)),
@@ -569,10 +588,12 @@ export const AudienceCreateSchema = z.object({
   description: z.string().trim().max(1000).optional(),
   definition: z
     .object({
-      base: z.enum(['households', 'agencies', 'policies']).default('households'),
+      base: z.enum(['households', 'agencies', 'policies', 'contacts']).default('households'),
       has_life: z.enum(['any', 'yes', 'no']).default('any'),
       status: z.string().trim().max(40).optional(),
       consented_only: z.boolean().default(true),
+      // Slice 5 — when base === 'contacts', the segment rule this audience saves.
+      segment: SegmentRuleSchema.optional(),
     })
     .default({ base: 'households', has_life: 'any', consented_only: true }),
 })

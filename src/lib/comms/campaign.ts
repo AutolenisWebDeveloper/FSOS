@@ -19,6 +19,8 @@ import type { MessagePurpose } from './purpose'
 import { campaignSendConfig, delegationSendContext } from './campaign-config'
 import { campaignClaimKeys, buildDataConfidence } from './claims'
 import { resolveClaimFields } from './claim-resolver'
+import { segmentMemberIds } from '@/lib/segments/resolve'
+import type { SegmentRule } from '@/lib/segments/rules'
 
 export interface DispatchCounts {
   audience: number
@@ -43,12 +45,13 @@ interface Variant {
   weight: number
 }
 
-export async function resolveAudience(campaign: { channel: string; audience: { kind?: string; household_ids?: string[] } }): Promise<Recipient[]> {
+export async function resolveAudience(campaign: { channel: string; audience: { kind?: string; household_ids?: string[]; segment?: SegmentRule } }): Promise<Recipient[]> {
   const db = getDb()
   const kind = campaign.audience?.kind ?? 'all_consented'
   const channel = campaign.channel as 'sms' | 'email'
 
   let householdIds: string[] | null = null
+  let memberIds: string[] | null = null
   if (kind === 'household_ids' && Array.isArray(campaign.audience?.household_ids)) {
     householdIds = campaign.audience.household_ids
   } else if (kind === 'cross_sell') {
@@ -57,6 +60,13 @@ export async function resolveAudience(campaign: { channel: string; audience: { k
   } else if (kind === 'conversion') {
     const { data } = await db.from('v_conversions_due').select('household_id').eq('is_security', false).limit(2000)
     householdIds = (data ?? []).map((r: { household_id: string }) => r.household_id)
+  } else if (kind === 'contact_segment' && campaign.audience?.segment) {
+    // Slice 5 — a contacts-based saved segment. Enroll the SPECIFIC eligible members
+    // it resolves to (via household_members.source_contact_id), on the campaign's
+    // channel — not whole households. Same Recipient shape; the gate still re-checks
+    // consent/DNC/quiet-hours/securities per recipient at send time.
+    memberIds = await segmentMemberIds(db, { ...campaign.audience.segment, base: 'contacts', channel })
+    if (memberIds.length === 0) return []
   }
 
   let q = db
@@ -65,7 +75,9 @@ export async function resolveAudience(campaign: { channel: string; audience: { k
     .is('households.deleted_at', null)
     .eq('households.do_not_contact', false)
     .limit(5000)
-  if (householdIds) {
+  if (memberIds) {
+    q = q.in('id', memberIds)
+  } else if (householdIds) {
     if (householdIds.length === 0) return []
     q = q.in('household_id', householdIds)
   }

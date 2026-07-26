@@ -10,6 +10,7 @@ import { classifyContacts, routeForType, type ContactType } from '@/lib/ai/conta
 import { emailLc, phoneDigits } from '@/lib/contacts/normalize'
 import { buildContactIndex, resolveContact, mergeFields, type Resolution } from '@/lib/import/resolution'
 import { createBatch, writeRecords, loadContactCandidates, type RecordInput } from '@/lib/import/auditWriter'
+import { materializeContact, type MaterializableContact } from '@/lib/services/householdMaterialize'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -197,9 +198,20 @@ export async function POST(req: NextRequest) {
       contact_type: type, tags, source: c.source, status: 'active', owner_scope: ownerScope, created_by: actor,
     }
   })
+  let materialized = 0
   if (insertRows.length) {
-    const { error } = await db.from('contacts').insert(insertRows)
+    const { data: inserted, error } = await db
+      .from('contacts')
+      .insert(insertRows)
+      .select('id, full_name, first_name, last_name, email, phone, address, city, state, zip, contact_type, agency_partnership_id, owner_scope')
     if (error) return NextResponse.json({ error: `Import failed on write: ${error.message}` }, { status: 500 })
+    // Slice 3 — materialize each new contact into the household spine so it is
+    // campaign-enrollable (the native engine enrolls household_members). Idempotent
+    // and best-effort per contact: a failure is counted, never fails the import.
+    for (const c of (inserted ?? []) as MaterializableContact[]) {
+      const r = await materializeContact(db, c)
+      if (r.householdId && r.action !== 'error') materialized++
+    }
   }
 
   const counts = {
@@ -222,6 +234,7 @@ export async function POST(req: NextRequest) {
     format: ext || 'csv',
     total: rows.length,
     counts,
+    households_materialized: materialized,
     detection_method: resolved.method,
     ai_used: !!aiResult,
     batch_id: batchId,

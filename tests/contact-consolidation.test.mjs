@@ -104,7 +104,7 @@ ok(third.creates === 0 && book.length === importList.length, 'idempotent across 
 // ── 2. Report shaper purity/correctness ───────────────────────────────────────
 console.log('consolidation — report shaper')
 const report = shapeConsolidationReport(
-  { total: 10, orphaned: 7, linked: 3, with_email: 8, with_phone: 6, unreachable: 1, typed: 4, untyped: 6, active: 9, archived: 1 },
+  { total: 10, orphaned: 7, orphaned_eligible: 5, orphaned_ineligible: 2, linked: 3, with_email: 8, with_phone: 6, unreachable: 1, typed: 4, untyped: 6, active: 9, archived: 1 },
   2,
   [
     { source: 'import:csv', total: 3, orphaned: 3 },
@@ -113,6 +113,7 @@ const report = shapeConsolidationReport(
   ],
 )
 ok(report.total === 10 && report.orphaned === 7 && report.linked === 3, 'summary counts mapped')
+ok(report.orphanedEligible === 5 && report.orphanedIneligible === 2, 'eligible/ineligible orphan split mapped')
 ok(report.duplicateGroups === 2, 'duplicate-group count carried through')
 ok(report.bySource[0].source === 'ghl' && report.bySource[0].total === 5, 'sources sorted by total desc')
 ok(report.unreachable === 1 && report.untyped === 6, 'reachability + typing counts mapped')

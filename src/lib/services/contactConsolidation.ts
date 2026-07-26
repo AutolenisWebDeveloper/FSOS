@@ -13,6 +13,10 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 export interface ConsolidationSummaryRow {
   total: number
   orphaned: number
+  /** household_id IS NULL AND a client-eligible type — the number that blocks enrollment. */
+  orphaned_eligible: number
+  /** household_id IS NULL AND agency_owner/business — orphaned by design (B2B). */
+  orphaned_ineligible: number
   linked: number
   with_email: number
   with_phone: number
@@ -31,8 +35,12 @@ export interface SourceBreakdownRow {
 
 export interface ContactConsolidationReport {
   total: number
-  /** household_id IS NULL — blocked from native campaign enrollment (Slice 3 fixes this). */
+  /** household_id IS NULL (any type). */
   orphaned: number
+  /** household_id IS NULL AND client-eligible — the enrollment-blocking count Slice 3 drives to zero. */
+  orphanedEligible: number
+  /** household_id IS NULL AND B2B (agency_owner/business) — orphaned by design. */
+  orphanedIneligible: number
   linked: number
   withEmail: number
   withPhone: number
@@ -71,6 +79,8 @@ export function shapeConsolidationReport(
   return {
     total: num(s.total),
     orphaned: num(s.orphaned),
+    orphanedEligible: num(s.orphaned_eligible),
+    orphanedIneligible: num(s.orphaned_ineligible),
     linked: num(s.linked),
     withEmail: num(s.with_email),
     withPhone: num(s.with_phone),
@@ -94,7 +104,7 @@ export async function loadContactConsolidationReport(
   db: SupabaseClient<any>,
 ): Promise<ContactConsolidationReport> {
   const [summaryRes, dupRes, sourceRes] = await Promise.all([
-    db.from('v_contact_consolidation').select('total, orphaned, linked, with_email, with_phone, unreachable, typed, untyped, active, archived').maybeSingle(),
+    db.from('v_contact_consolidation').select('total, orphaned, orphaned_eligible, orphaned_ineligible, linked, with_email, with_phone, unreachable, typed, untyped, active, archived').maybeSingle(),
     db.from('v_contact_duplicates').select('*', { count: 'exact', head: true }),
     db.from('v_contact_by_source').select('source, total, orphaned'),
   ])

@@ -63,7 +63,9 @@ export default async function ContactCenterPage() {
   // show if the report view is unavailable (older DB without migration 070).
   const total = report?.total ?? rows.length
   const active = report?.active ?? rows.filter((r) => r.status === 'active').length
-  const orphaned = report?.orphaned ?? null
+  // The enrollment-blocking orphan count (client-eligible contacts with no household);
+  // Slice 3's materialization drives this toward zero. Falls back to null pre-migration.
+  const orphaned = report?.orphanedEligible ?? null
   const dupCount = report?.duplicateGroups ?? 0
 
   return (

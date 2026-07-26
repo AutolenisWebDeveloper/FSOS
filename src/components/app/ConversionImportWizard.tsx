@@ -26,6 +26,9 @@ interface Plan {
   policies_unmatched: number
   deadlines_to_set: number
   contacts_to_tag: number
+  households_to_create: number
+  policies_to_create: number
+  rows_without_owner: number
 }
 interface SampleRow {
   policy_number: string
@@ -37,7 +40,7 @@ interface SampleRow {
   matched: boolean
 }
 interface PreviewData { mode: 'preview'; filename: string; summary: Summary; plan: Plan; unmatched: string[]; sample: SampleRow[] }
-interface CommitData { mode: 'commit'; filename: string; summary: Summary; plan: Plan; committed: { policies_enriched: number; contacts_created: number; contacts_tagged: number; members_added: number } }
+interface CommitData { mode: 'commit'; filename: string; summary: Summary; plan: Plan; committed: { policies_created: number; households_created: number; policies_enriched: number; contacts_created: number; contacts_tagged: number; members_added: number } }
 
 export function ConversionImportWizard({ today }: { today: string }) {
   const [file, setFile] = React.useState<File | null>(null)
@@ -60,7 +63,7 @@ export function ConversionImportWizard({ today }: { today: string }) {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) { setError(data.error || `Request failed (HTTP ${res.status}).`); return }
       if (mode === 'preview') setPreview(data as PreviewData)
-      else { setCommitted(data as CommitData); toast.success(`Set ${data.committed.policies_enriched} conversion deadlines.`) }
+      else { setCommitted(data as CommitData); const c = (data as CommitData).committed; toast.success(`Loaded ${c.policies_created} new policies and set ${c.policies_enriched + c.policies_created} conversion deadlines.`) }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Network error.')
     } finally {
@@ -79,14 +82,14 @@ export function ConversionImportWizard({ today }: { today: string }) {
             <label htmlFor="conv-file" className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-input p-8 text-center transition-colors hover:border-primary/50">
               {file ? <FileSpreadsheet className="h-8 w-8 text-primary" /> : <Upload className="h-8 w-8 text-muted-foreground" />}
               <span className="text-sm font-medium">{file ? file.name : 'Drop the conversion export (.xlsx, .csv, or .pdf)'}</span>
-              <span className="text-xs text-muted-foreground">Each policy is matched by policy number and its conversion deadline is set on the book — no valid data overwritten.</span>
+              <span className="text-xs text-muted-foreground">Every policy is loaded onto the book — matched by policy number when it already exists, or created when it doesn&apos;t. No valid data overwritten.</span>
               <input id="conv-file" type="file" accept=".xlsx,.csv,.tsv,.txt,.pdf,.json" className="sr-only" onChange={(e) => { setFile(e.target.files?.[0] ?? null); setPreview(null); setCommitted(null) }} />
             </label>
             <div className="flex gap-2">
               <Button onClick={() => run('preview')} disabled={busy !== null || !file}>{busy === 'preview' ? 'Analyzing…' : 'Preview (dry run)'}</Button>
               <Button variant="outline" onClick={() => run('commit')} disabled={busy !== null || !preview}>{busy === 'commit' ? 'Syncing…' : 'Commit sync'}</Button>
             </div>
-            <p className="text-xs text-muted-foreground">Matches each row to a book policy by policy number, sets the conversion deadline (only when blank), tags the owner contact <span className="font-medium">term-conversion</span>, and records the named insured. Term products only — nothing here is a security. Re-running is idempotent.</p>
+            <p className="text-xs text-muted-foreground">Matches each row to a book policy by policy number — or creates the household + policy when it isn&apos;t on the book yet — sets the conversion deadline (only when blank), tags the owner contact <span className="font-medium">term-conversion</span>, and records the named insured. Term products only — nothing here is a security. Re-running is idempotent.</p>
             <div className="flex items-center gap-2 rounded-md border bg-muted/30 p-2 text-xs text-muted-foreground">
               <Repeat className="h-4 w-4 shrink-0 text-primary" />
               <span>Imported deadlines drive the <Link href="/app/conversions" className="font-medium text-primary underline-offset-2 hover:underline">Term Conversion pipeline</Link> — every matched policy appears there ranked by how soon its window closes.</span>
@@ -108,8 +111,8 @@ export function ConversionImportWizard({ today }: { today: string }) {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <Stat label="Conversion policies" value={preview.summary.total} />
-              <Stat label="Match the book" value={preview.plan.policies_matched} icon={<Link2 className="h-3.5 w-3.5" />} />
-              <Stat label="Deadlines to set" value={preview.plan.deadlines_to_set} icon={<CalendarClock className="h-3.5 w-3.5" />} />
+              <Stat label="Already on book" value={preview.plan.policies_matched} icon={<Link2 className="h-3.5 w-3.5" />} />
+              <Stat label="New — will create" value={preview.plan.policies_to_create} icon={<Upload className="h-3.5 w-3.5" />} />
               <Stat label="Convertible" money value={preview.summary.total_convertible} />
             </div>
 
@@ -119,10 +122,18 @@ export function ConversionImportWizard({ today }: { today: string }) {
                 {preview.summary.expiring_12mo} conversion window{preview.summary.expiring_12mo === 1 ? '' : 's'} close within 12 months — prioritize these.
               </div>
             ) : null}
-            {preview.plan.policies_unmatched > 0 ? (
-              <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-2 text-xs">
-                <AlertTriangle className="h-4 w-4 text-destructive" />
-                {preview.plan.policies_unmatched} policies aren&apos;t in the book yet (import the District Book first): {preview.unmatched.join(', ')}
+            {preview.plan.policies_to_create > 0 ? (
+              <div className="flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 p-2 text-xs">
+                <Upload className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                <span>
+                  <span className="font-medium">{preview.plan.policies_to_create.toLocaleString('en-US')} new policies</span> and {preview.plan.households_to_create.toLocaleString('en-US')} household{preview.plan.households_to_create === 1 ? '' : 's'} will be created on the book — they aren&apos;t there yet. Commit loads them so every conversion window is tracked.
+                </span>
+              </div>
+            ) : null}
+            {preview.plan.rows_without_owner > 0 ? (
+              <div className="flex items-center gap-2 rounded-md border border-status-pending/40 bg-status-pending/5 p-2 text-xs">
+                <AlertTriangle className="h-4 w-4 text-status-pending" />
+                {preview.plan.rows_without_owner} row{preview.plan.rows_without_owner === 1 ? '' : 's'} have no policy-holder name and can&apos;t be placed on a household — they&apos;ll be skipped.
               </div>
             ) : null}
 
@@ -164,12 +175,12 @@ export function ConversionImportWizard({ today }: { today: string }) {
           <CardHeader><CardTitle className="flex items-center gap-2 text-base"><CheckCircle2 className="h-4 w-4 text-status-won" /> Conversion sync committed</CardTitle></CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <Stat label="Deadlines set" value={committed.committed.policies_enriched} />
-              <Stat label="Contacts tagged" value={committed.committed.contacts_tagged} />
-              <Stat label="Contacts created" value={committed.committed.contacts_created} />
-              <Stat label="Insureds added" value={committed.committed.members_added} />
+              <Stat label="Policies created" value={committed.committed.policies_created} icon={<Upload className="h-3.5 w-3.5" />} />
+              <Stat label="Households created" value={committed.committed.households_created} />
+              <Stat label="Deadlines set (existing)" value={committed.committed.policies_enriched} icon={<CalendarClock className="h-3.5 w-3.5" />} />
+              <Stat label="Contacts + insureds" value={committed.committed.contacts_created + committed.committed.contacts_tagged + committed.committed.members_added} />
             </div>
-            <p className="mt-3 text-xs text-muted-foreground">Conversion deadlines are now on the book and drive the Term Conversion pipeline. Re-running the same file changes nothing further (idempotent).</p>
+            <p className="mt-3 text-xs text-muted-foreground">Every policy is now on the book with its conversion deadline, driving the Term Conversion pipeline. Re-running the same file changes nothing further (idempotent).</p>
             <Button asChild className="mt-3">
               <Link href="/app/conversions">Open the Term Conversion pipeline <ArrowRight className="ml-1.5 h-4 w-4" /></Link>
             </Button>

@@ -16,6 +16,7 @@
 import ExcelJS from 'exceljs'
 import { parseCsv } from '@/lib/csv'
 import { extensionOf } from '@/lib/spreadsheet'
+import { ownerKey, isSecurityProduct } from '@/lib/import/inforceBook'
 
 export interface ConversionRecord {
   policy_number: string
@@ -238,6 +239,121 @@ export interface ConversionSummary {
   total_convertible: number
   expiring_12mo: number
   by_product: Record<string, number>
+}
+
+// ── Create plan (unmatched rows → new book records) ──────────────────────────
+// When a conversion policy has no matching book policy, we ORIGINATE it on the
+// aggregate-root spine rather than dropping it: one household per owner (keyed by
+// the shared book_owner_key so a later In-Force Book import converges, not
+// duplicates), the policy itself (source_system='fnwl' so the policy-number
+// unique index dedupes on re-run), the owner contact (term-conversion), and the
+// named insured as a household member. The conversion export carries no ZIP, so
+// the owner key degrades to `name|` — same-named owners with no other signal
+// share a household, and a later full-book import (with ZIP) may key the same
+// owner differently; policies never duplicate (unique on fnwl policy_number).
+
+// A household to create, plus the owner contact + insured member that hang off it.
+export interface ConversionHouseholdPlan {
+  book_owner_key: string
+  primary_name: string
+  owner_email: string | null
+  owner_phone: string | null
+  agent_of_record: string | null
+  aor_code: string | null
+  insured_names: string[] // named insureds distinct from the owner
+}
+// A policy to create, linked to its household by book_owner_key (resolved to an
+// id after the households are inserted).
+export interface ConversionPolicyPlan {
+  book_owner_key: string
+  policy_number: string
+  product_name: string | null
+  face_amount: number | null
+  conversion_deadline: string | null
+  effective_date: string | null
+  expiration_date: string | null
+  is_security: boolean
+  source_data: Record<string, unknown>
+}
+export interface ConversionCreatePlan {
+  households: ConversionHouseholdPlan[]
+  policies: ConversionPolicyPlan[]
+}
+
+/** book_owner_key for a conversion owner (no ZIP in the export). */
+export function conversionOwnerKey(ownerName: string): string {
+  return ownerKey(ownerName, '')
+}
+
+function conversionSourceData(r: ConversionRecord): Record<string, unknown> {
+  return {
+    source: 'conversion_list',
+    convertible_amount: r.convertible_amount,
+    product_type: r.product_type,
+    insured: r.insured_name,
+    insured_dob: r.insured_dob,
+    inception_date: r.inception_date,
+    expiration_date: r.expiration_date,
+    conversion_deadline: r.conversion_deadline,
+    preferred_email: r.preferred_email,
+    preferred_phone: r.preferred_phone,
+    agent_of_record: r.agent_of_record,
+    aor_code: r.aor_code,
+  }
+}
+
+/**
+ * Build the create plan for the rows with no matching book policy. Pure and
+ * deterministic: groups rows into one household per owner key, one policy per
+ * row. `existingHouseholdKeys` are book_owner_keys already present (so we never
+ * re-create a household), letting a re-run — where the policies now match — add
+ * nothing. Rows missing an owner name are skipped (no home on the spine).
+ */
+export function planConversionCreates(
+  unmatched: ConversionRecord[],
+  existingHouseholdKeys: Set<string>,
+): ConversionCreatePlan {
+  const households = new Map<string, ConversionHouseholdPlan>()
+  const policies: ConversionPolicyPlan[] = []
+  const seenPolicy = new Set<string>()
+  for (const r of unmatched) {
+    if (!r.owner_name) continue // cannot originate a household without an owner
+    const key = conversionOwnerKey(r.owner_name)
+    let h = households.get(key)
+    if (!h && !existingHouseholdKeys.has(key)) {
+      h = {
+        book_owner_key: key,
+        primary_name: r.owner_name,
+        owner_email: r.preferred_email,
+        owner_phone: r.preferred_phone,
+        agent_of_record: r.agent_of_record,
+        aor_code: r.aor_code,
+        insured_names: [],
+      }
+      households.set(key, h)
+    } else if (h) {
+      // Fill contact points from a later row only when the first was blank.
+      if (!h.owner_email && r.preferred_email) h.owner_email = r.preferred_email
+      if (!h.owner_phone && r.preferred_phone) h.owner_phone = r.preferred_phone
+    }
+    if (h && r.insured_name && r.insured_name.toLowerCase() !== r.owner_name.toLowerCase() && !h.insured_names.some((n) => n.toLowerCase() === r.insured_name!.toLowerCase())) {
+      h.insured_names.push(r.insured_name)
+    }
+    if (seenPolicy.has(r.policy_number)) continue
+    seenPolicy.add(r.policy_number)
+    policies.push({
+      book_owner_key: key,
+      policy_number: r.policy_number,
+      product_name: r.product_type,
+      face_amount: r.convertible_amount,
+      conversion_deadline: r.conversion_deadline,
+      effective_date: r.inception_date,
+      expiration_date: r.expiration_date,
+      is_security: isSecurityProduct(r.product_type || ''),
+      source_data: { conversion: conversionSourceData(r) },
+    })
+  }
+  return { households: Array.from(households.values()), policies }
 }
 
 export function summarizeConversions(records: ConversionRecord[], now: string): ConversionSummary {

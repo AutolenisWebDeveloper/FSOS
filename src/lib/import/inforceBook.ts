@@ -91,7 +91,11 @@ export function isSecurityProduct(productName: string): boolean {
   return /variable/i.test(productName)
 }
 
-function ownerKey(name: string, zip: string): string {
+// Normalized owner identity used as households.book_owner_key (the unique
+// dedupe key uq_households_book_owner). EXPORTED so the Life Conversion importer
+// derives the SAME key when it creates households — one keying function, so the
+// two importers converge on the same household instead of duplicating it.
+export function ownerKey(name: string, zip: string): string {
   const n = name.trim().toLowerCase().replace(/\s+/g, ' ')
   const z = (zip || '').replace(/\D/g, '').slice(0, 5)
   return `${n}|${z}`

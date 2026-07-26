@@ -49,10 +49,22 @@ Unconfigured Zoom or an API failure → booking still succeeds, link left null f
 - Deferred (noted): the created meeting lives on the FSA's own Zoom account (appears in their Zoom app), so
   surfacing `start_url` inside FSOS is a convenience left to a later slice, not a blocker.
 
-## Slice 5 — Notifications through comms
-Confirmation on booking; reminders (configurable lead, e.g. 24h + 1h) via `sendThroughGate()` — never
-direct Twilio/Resend, no comms-code edits. Reminders on the existing cron/job path, idempotent
-(`reminder_sent_at`). Reuse `src/emails/appointments.tsx`.
+## Slice 5 — Notifications through comms ✅
+Confirmation on booking + a single pre-appointment reminder (configurable lead, default 24h) via
+`sendThroughGate()` — never direct Twilio/Resend, **comms code untouched**. Reminders on the existing
+static cron path, idempotent via the `reminder_sent_at` atomic claim.
+- `src/lib/booking/notify-core.ts` (pure: time formatting, meeting-details copy, `isReminderDue`) +
+  `notify.ts` (`sendBookingConfirmation`, `runBookingReminderPass` — loads the approved appointment
+  template by `source_key`, sends email with `durableConsentGranted` for the non-member booker + merge
+  tokens carrying the time + Zoom join link; defers cleanly if the template isn't approved yet).
+- Extended `src/emails/appointments.tsx` confirmation + reminder with `{{appointment_time}}` /
+  `{{meeting_details}}` merge tokens (grounded at send; determinism test still green).
+- `/api/cron/booking-reminders` static route (mirrors `workshop-reminders` auth) + `vercel.json` entry
+  (`*/15 * * * *`); confirmation fired best-effort from the booking flow.
+- Consent: reads the Slice 3 `consent_intent` (email only; never infers SMS). Quiet-hours/DNC/approval
+  all still enforced by the untouched gate.
+- Tests: `booking-notify.test.mjs` (15, pure) + `booking-reminder-idempotency.test.mjs` (3, real
+  Postgres — the `reminder_sent_at` atomic claim sends once).
 
 ## Slice 6 — Reschedule / cancel
 Signed, expiring, single-purpose tokens in the confirmation. Cancel frees the slot atomically, deletes the

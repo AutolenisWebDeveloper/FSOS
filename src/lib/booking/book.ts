@@ -18,6 +18,7 @@ import { generateFormToken, referenceFromToken } from '@/lib/tokens'
 import { emailLc, phoneDigits, deriveFullName } from '@/lib/contacts/normalize'
 import { buildContactIndex, resolveContact, type CandidateContact } from '@/lib/import/resolution'
 import { createZoomMeeting, zoomEnabled } from '@/lib/zoom/client'
+import { sendBookingConfirmation } from './notify'
 import { computeSlotsForType } from './slots'
 
 export interface BookInput {
@@ -194,6 +195,15 @@ export async function bookAppointment(input: BookInput, now: string): Promise<Bo
     entityId: contactId,
     diff: { channel: 'email', scope: 'booking', version: CONSENT_DISCLOSURE_VERSION },
   })
+
+  // 6. Send the confirmation email through the comms gate (Slice 5). Best-effort: the
+  //    appointment already exists, so a deferred/blocked email (e.g. template not yet
+  //    approved, quiet hours) never fails the booking. Errors are swallowed here.
+  try {
+    await sendBookingConfirmation(appointmentId)
+  } catch {
+    /* best-effort — booking success is not contingent on the confirmation email */
+  }
 
   return {
     ok: true,

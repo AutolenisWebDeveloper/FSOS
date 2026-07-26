@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
 import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
-import { AudienceCreateSchema } from '@/lib/validation/schemas'
+import { AudienceCreateSchema, type AudienceCreate } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
+import { resolveSegment } from '@/lib/segments/resolve'
+import type { SegmentRule } from '@/lib/segments/rules'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -28,14 +30,22 @@ export async function GET() {
 // Rough size estimate for the chosen base. This is an approximate segment count
 // (the real, gated recipient list is resolved at dispatch time), so it is stored
 // only as guidance.
-async function estimateSize(base: 'households' | 'agencies' | 'policies'): Promise<number> {
+async function estimateSize(definition: AudienceCreate['definition']): Promise<number> {
   const db = getDb()
+  const base = definition.base
   if (base === 'agencies') {
     const { count } = await db.from('agency_partnerships').select('id', { count: 'exact', head: true })
     return count ?? 0
   }
   if (base === 'policies') {
     const { count } = await db.from('household_policies').select('id', { count: 'exact', head: true }).is('deleted_at', null)
+    return count ?? 0
+  }
+  if (base === 'contacts') {
+    // Slice 5 — a contacts segment estimates to its live ELIGIBLE count (the number a
+    // campaign would actually enroll), resolved through the shared segment engine.
+    if (definition.segment) return (await resolveSegment(db, definition.segment as SegmentRule)).eligible
+    const { count } = await db.from('contacts').select('id', { count: 'exact', head: true }).is('deleted_at', null).eq('status', 'active')
     return count ?? 0
   }
   const { count } = await db.from('households').select('id', { count: 'exact', head: true }).is('deleted_at', null)
@@ -56,7 +66,7 @@ export async function POST(req: NextRequest) {
   try {
     const db = getDb()
     const actor = actorOf(auth.session)
-    const estimated = await estimateSize(v.data.definition.base)
+    const estimated = await estimateSize(v.data.definition)
     const { data, error } = await db
       .from('comm_audiences')
       .insert({

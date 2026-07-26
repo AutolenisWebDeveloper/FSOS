@@ -22,6 +22,7 @@ import { getOrCreateConversation, touchConversation, normalizeContact, type Chan
 import { loadHoursPolicy, isWithinOperatingHours } from './hours'
 import { recordMessageEvent } from './events'
 import { personalize, type RecipientContext } from './personalize'
+import { emailUnsubscribeUrl } from './unsubscribe'
 import { instrumentEmailHtml } from './tracking'
 import { resolveDelegation, enqueueAssignmentReview } from './ownership'
 import { resolveIdentityDisclosure, type IdentityContext } from './identity-resolver'
@@ -323,10 +324,18 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
   // On email the body is HTML → HTML-escape recipient-controlled merge VALUES so a
   // name/city containing markup can't inject into the delivered email or the stored
   // body the operator console renders (stored-XSS defense, §13.8). SMS substitutes raw.
-  const personalized = personalize(ctx.body, ctx.recipientContext ?? {}, { escapeHtml: ctx.channel === 'email' })
+  // Email deliverability (CAN-SPAM): inject the per-recipient unsubscribe URL so the
+  // shared footer's {{unsubscribe_url}} token resolves to a working, recipient-specific
+  // opt-out link (the enforced DNC-store suppression endpoint). SMS carries the opt-out
+  // via the TRAIGA footer instead, so this is email-only.
+  const recipientCtx: RecipientContext =
+    ctx.channel === 'email'
+      ? { ...(ctx.recipientContext ?? {}), unsubscribe_url: emailUnsubscribeUrl(to) }
+      : (ctx.recipientContext ?? {})
+  const personalized = personalize(ctx.body, recipientCtx, { escapeHtml: ctx.channel === 'email' })
   // Slice 9B — the stored plaintext part, personalized the same way (email multipart).
   // Plaintext is never HTML, so values are substituted verbatim (no escaping).
-  const personalizedText = ctx.bodyText ? personalize(ctx.bodyText, ctx.recipientContext ?? {}) : undefined
+  const personalizedText = ctx.bodyText ? personalize(ctx.bodyText, recipientCtx) : undefined
 
   // First-contact identity disclosure (§8). The platform decides + auto-prepends the
   // approved disclosure when a full introduction is required; the author never inserts

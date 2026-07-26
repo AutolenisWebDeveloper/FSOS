@@ -23,6 +23,7 @@ import {
   Workflow,
   CheckSquare,
   Calendar,
+  CalendarClock,
   GraduationCap,
   Calculator,
   Bot,
@@ -106,6 +107,7 @@ const NAV: NavItem[] = [
   { href: '/app/workflows', label: 'Workflows', icon: Workflow, group: 'Engage' },
   { href: '/app/tasks', label: 'Tasks', icon: CheckSquare, group: 'Engage' },
   { href: '/app/calendar', label: 'Calendar', icon: Calendar, group: 'Engage' },
+  { href: '/app/booking', label: 'Booking', icon: CalendarClock, group: 'Engage' },
   { href: '/app/tools/calculator', label: 'Sales Calculator', icon: Calculator, group: 'Engage' },
 
   { href: '/app/ai', label: 'AI Operations', icon: Bot, group: 'Operate' },

@@ -5,6 +5,7 @@ import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { ContactCreateSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
 import { emailLc, phoneDigits, deriveFullName } from '@/lib/contacts/normalize'
+import { materializeContact } from '@/lib/services/householdMaterialize'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -103,6 +104,27 @@ export async function POST(req: NextRequest) {
       .select('id')
       .maybeSingle()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    // Slice 3 — if the caller didn't attach a household and this is a client-eligible
+    // type, materialize it into the household spine so it's campaign-enrollable
+    // (never leave a new contact floating). Idempotent + best-effort.
+    if (row?.id && !v.data.household_id) {
+      await materializeContact(db, {
+        id: row.id as string,
+        full_name: fullName,
+        first_name: v.data.first_name ?? null,
+        last_name: v.data.last_name ?? null,
+        email: v.data.email ?? null,
+        phone: v.data.phone ?? null,
+        address: null,
+        city: v.data.city ?? null,
+        state: v.data.state ?? null,
+        zip: v.data.zip ?? null,
+        contact_type: v.data.contact_type,
+        agency_partnership_id: v.data.agency_partnership_id ?? null,
+        owner_scope: auth.session.userId ?? null,
+      })
+    }
 
     await writeAudit({ actor, action: 'entity.created', entity: 'contact', entityId: row?.id ?? null, diff: { contact_type: v.data.contact_type, source: v.data.source ?? 'manual' } })
     return NextResponse.json({ ok: true, id: row?.id ?? null })

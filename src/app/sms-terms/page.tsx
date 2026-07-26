@@ -57,9 +57,9 @@ export default function SmsTermsPage() {
 
             <h2 id="program">1. Program</h2>
             <p>
-              A mixed messaging program: subscribers receive recurring SMS/MMS about appointment and policy updates,
-              account and customer-service messages, requested information, and marketing or promotional offers,
-              consistent with the consent provided.
+              An informational customer-care messaging program: subscribers receive recurring SMS/MMS about appointment
+              and policy updates, account and customer-service messages, and requested information, consistent with the
+              consent provided. This program does not send marketing or promotional messages.
             </p>
 
             <h2 id="optin">2. How you opt in</h2>

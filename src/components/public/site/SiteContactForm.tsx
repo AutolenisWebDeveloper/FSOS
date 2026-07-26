@@ -167,12 +167,12 @@ export function SiteContactForm() {
         <div className="consent__row">
           <input type="checkbox" id="sms-consent" name="sms_consent" value="yes" checked={sms} onChange={(e) => setSms(e.target.checked)} />
           <label htmlFor="sms-consent">
-            By checking this box, I agree to receive recurring text messages from {BUSINESS.brand} at the mobile number
-            provided, including appointment and policy updates, account and customer-service messages, and marketing or
-            promotional offers. Messages originate from {SMS_CONSENT.from}. Msg frequency varies. Msg &amp; data rates
-            may apply. Reply STOP to opt out, HELP for help. Consent is not a condition of purchase. See our{' '}
-            <Link href="/privacy">Privacy Policy</Link>, <Link href="/terms">Terms of Use</Link>, and{' '}
-            <Link href="/sms-terms">SMS Terms &amp; Conditions</Link>.
+            By checking this box, I agree to receive recurring account and customer-service text messages from{' '}
+            {BUSINESS.brand} at the mobile number provided — including appointment scheduling and reminders, policy and
+            account service updates, document or information requests, and replies to my inquiries. Messages originate
+            from {SMS_CONSENT.from}. Msg frequency varies. Msg &amp; data rates may apply. Reply STOP to opt out, HELP
+            for help. Consent is not a condition of purchase. See our <Link href="/privacy">Privacy Policy</Link>,{' '}
+            <Link href="/terms">Terms of Use</Link>, and <Link href="/sms-terms">SMS Terms &amp; Conditions</Link>.
           </label>
         </div>
         <p className="consent__note">

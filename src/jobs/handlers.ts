@@ -309,23 +309,28 @@ export async function workforceOrchestrator(): Promise<JobResult> {
 export async function dataQuality(): Promise<JobResult> {
   const db = getDb()
   const { reconcileAgencyOwnerContacts, countContactDuplicates } = await import('@/lib/services/dataQualityReconcile')
+  const { backfillOrphanHouseholds } = await import('@/lib/services/householdMaterialize')
   const rec = await reconcileAgencyOwnerContacts()
+  // Slice 3 — connect client-eligible orphan contacts (household_id IS NULL) into the
+  // household spine so they become campaign-enrollable. Bounded per run; drains a
+  // large backlog across daily runs, idempotent (only scans unlinked contacts).
+  const hh = await backfillOrphanHouseholds(db)
   const { count: membersMissing } = await db.from('household_members').select('id', { count: 'exact', head: true }).is('email', null).is('phone', null)
   const duplicates = await countContactDuplicates()
 
-  if (rec.scanned > 0) {
+  if (rec.scanned > 0 || hh.scanned > 0) {
     await writeAudit({
       actor: SYSTEM,
       action: 'ai.run',
       entity: 'data_quality',
-      diff: { owners: rec, members_missing_contact: membersMissing ?? 0, duplicate_contact_groups: duplicates },
+      diff: { owners: rec, household_backfill: hh, members_missing_contact: membersMissing ?? 0, duplicate_contact_groups: duplicates },
     })
   }
 
   return {
     ok: true,
-    handled: rec.linked,
-    note: `data-quality: reconciled ${rec.scanned} owners → ${rec.merged} merged / ${rec.created} created / ${rec.review} need review; ${membersMissing ?? 0} members missing contact info; ${duplicates} duplicate contact groups flagged`,
+    handled: rec.linked + hh.linked,
+    note: `data-quality: reconciled ${rec.scanned} owners → ${rec.merged} merged / ${rec.created} created / ${rec.review} need review; household backfill linked ${hh.linked}/${hh.scanned} orphans (${hh.householdsCreated} households, ${hh.membersCreated} members); ${membersMissing ?? 0} members missing contact info; ${duplicates} duplicate contact groups flagged`,
   }
 }
 

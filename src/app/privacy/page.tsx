@@ -83,9 +83,10 @@ export default function PrivacyPage() {
 
             <h2 id="sms">3. SMS and mobile information</h2>
             <p>
-              When you opt in, we use your mobile number to send recurring messages from Markist Athelus — Farmers
-              Insurance — appointment and policy updates, account and customer-service messages, and marketing or
-              promotional offers consistent with your consent.
+              When you opt in, we use your mobile number to send recurring account and customer-service messages from
+              Markist Athelus — Farmers Insurance — appointment and policy updates, policy and account service updates,
+              document or information requests, and replies to your inquiries, consistent with your consent. This program
+              does not send marketing or promotional messages.
             </p>
             <p>
               <strong>Message frequency varies. Message and data rates may apply.</strong> Reply STOP to opt out, HELP

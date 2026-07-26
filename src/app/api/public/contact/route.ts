@@ -5,6 +5,7 @@ import { rateLimit, clientIp } from '@/lib/http/rate-limit'
 import { ContactLeadSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
 import { emailLc } from '@/lib/contacts/normalize'
+import { SMS_CONSENT } from '@/lib/site'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -105,32 +106,40 @@ export async function POST(req: NextRequest) {
       actor,
     })
 
-    // SMS consent EVIDENCE — only on affirmative opt-in. Materializes into a
-    // `consents` row once the lead converts to a household member (WF-1 spine).
-    if (v.data.consent_sms) {
+    // SMS consent AUDIT TRAIL (TCPA / A2P 10DLC defense record). We persist the
+    // consent DECISION alongside the lead every time — `granted` reflects the
+    // affirmative checkbox — with the exact wording shown, the version, a
+    // server-stamped timestamp, and the server-captured IP + user agent + source
+    // URL. Full (unmasked) IP + user agent are the point here: masked values are
+    // worthless as consent proof. Enrollment only ever follows an affirmative
+    // opt-in; providing a phone number never enrolls the number.
+    const granted = Boolean(v.data.consent_sms)
+    await writeAudit({
+      actor,
+      action: 'consent.captured',
+      entity: 'referral',
+      entityId: referral.id,
+      diff: {
+        channel: 'sms',
+        granted,
+        consentText: SMS_CONSENT.disclosure,
+        consentVersion: SMS_CONSENT.version,
+        timestampUtc: now.toISOString(),
+        ipAddress: ip,
+        userAgent,
+        sourceUrl: SMS_CONSENT.sourceUrl,
+        phone_masked: mask(phone),
+      },
+    })
+    if (granted) {
+      // Timeline breadcrumb + enrollment intent. Materializes into a `consents`
+      // row once the lead converts to a household member (WF-1 spine).
       await db.from('activities').insert({
         entity_type: 'referral',
         entity_id: referral.id,
         kind: 'consent_intent',
-        note: `SMS consent captured at public intake (${v.data.consent_version ?? 'unversioned'})`,
+        note: `SMS consent captured at public intake (${SMS_CONSENT.version})`,
         actor,
-      })
-      await writeAudit({
-        actor,
-        action: 'consent.captured',
-        entity: 'referral',
-        entityId: referral.id,
-        diff: {
-          channels: ['sms'],
-          consent_version: v.data.consent_version ?? null,
-          source_page: v.data.source_page,
-          form_name: v.data.form_name,
-          captured_at: now.toISOString(),
-          ip_masked: mask(ip),
-          user_agent: userAgent,
-          phone_masked: mask(phone),
-          purpose: 'appointments, requested information, service updates, account servicing, customer support',
-        },
       })
     }
 

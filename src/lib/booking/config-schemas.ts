@@ -116,3 +116,25 @@ export const BlackoutCreate = z
     }
   })
 export type BlackoutCreateInput = z.infer<typeof BlackoutCreate>
+
+// ── Public booking submission (Slice 3) ──────────────────────────────────────────
+// The attendee-facing form. Deliberately collects ONLY scheduling + contact fields — no
+// securities/financial data ever (firewall §4.1). `company` is an unrendered honeypot.
+export const PublicBookingInput = z.object({
+  typeSlug: SLUG,
+  startsAt: z.string().datetime({ offset: true }),
+  bookerTimezone: IANA,
+  name: z.string().trim().min(1).max(120),
+  email: z.string().trim().email().max(200),
+  phone: z
+    .string()
+    .trim()
+    .max(40)
+    .optional()
+    .nullable()
+    .transform((v) => (v ? v : null)),
+  notes: z.string().trim().max(1000).optional().nullable(),
+  /** Honeypot — a bot filling this is silently dropped by the route (not a validation error). */
+  company: z.string().max(200).optional(),
+})
+export type PublicBookingInputType = z.infer<typeof PublicBookingInput>

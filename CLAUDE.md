@@ -440,6 +440,8 @@ The identity is consistent across homepage, public pages, login, forgot-password
 | ADR-023 | Campaign library (pre-built, compliance-ready blueprints; §17) |
 | ADR-024 | Data-confidence claim wiring for campaigns (§18) |
 | ADR-025 | Email rendering: hybrid React → stored, immutable, deterministic HTML + plaintext |
+| ADR-026 | Social content module |
+| ADR-027 | Native FSOS booking (Calendly replacement) — availability model, DB-enforced double-booking, comms-based notifications, Calendly decommission |
 
 New architectural decisions get a new ADR using `docs/adr/ADR-000-template.md`. Status values: Proposed → Accepted → Superseded (link the superseding ADR).
 

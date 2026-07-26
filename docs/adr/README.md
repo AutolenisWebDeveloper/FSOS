@@ -44,5 +44,7 @@ Two numbers each currently have **two** files on disk — a comms ADR and an FNA
 | 023 | Campaign Library (Pre-Built, Compliance-Ready Blueprints) | Accepted | [`ADR-023-campaign-library.md`](./ADR-023-campaign-library.md) |
 | 024 | Data-Confidence Claim Wiring for Campaigns (§18) | Accepted | [`ADR-024-data-confidence-claim-wiring.md`](./ADR-024-data-confidence-claim-wiring.md) |
 | 025 | Email Rendering: Hybrid React → Stored, Immutable, Deterministic HTML + Plaintext | Accepted | [`ADR-025-email-rendering.md`](./ADR-025-email-rendering.md) |
+| 026 | Social Content Module | Accepted | [`ADR-026-social-content-module.md`](./ADR-026-social-content-module.md) |
+| 027 | Native FSOS Booking (Calendly replacement) | Accepted | [`ADR-027-native-booking.md`](./ADR-027-native-booking.md) |
 
 **Note:** ADR-011 has no file (the sequence skips it). `CLAUDE.md` §19 lists the canonical ADR subjects; where §19 and a filename disagree (the 015/016 collision above), §19's assignment is authoritative for the number.

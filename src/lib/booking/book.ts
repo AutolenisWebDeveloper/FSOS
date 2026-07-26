@@ -17,6 +17,7 @@ import { writeAudit } from '@/lib/audit/log'
 import { generateFormToken, referenceFromToken } from '@/lib/tokens'
 import { emailLc, phoneDigits, deriveFullName } from '@/lib/contacts/normalize'
 import { buildContactIndex, resolveContact, type CandidateContact } from '@/lib/import/resolution'
+import { createZoomMeeting, zoomEnabled } from '@/lib/zoom/client'
 import { computeSlotsForType } from './slots'
 
 export interface BookInput {
@@ -38,6 +39,13 @@ export interface BookingConfirmation {
   durationMinutes: number
   meetingMode: string
   bookerTimezone: string
+  /** Client-facing Zoom join link when a video meeting was provisioned; else null. Never the start_url. */
+  joinUrl: string | null
+  /**
+   * Meeting-link state for the UI copy: 'none' (phone/in-person), 'provisioned' (link ready),
+   * or 'pending' (video but Zoom is unconfigured or provisioning is being retried).
+   */
+  meetingStatus: 'none' | 'provisioned' | 'pending'
 }
 
 export type BookResult =
@@ -121,7 +129,38 @@ export async function bookAppointment(input: BookInput, now: string): Promise<Bo
   if (!ins.data) return { ok: false, kind: 'error', message: 'Booking could not be created.' }
   const appointmentId = ins.data.id
 
-  // 4. Activity log + consent intent + audit (best-effort; the appointment already exists).
+  // 4. Provision a Zoom meeting for VIDEO appointments (spec §5). Best-effort and gated on
+  //    zoomEnabled(): if Zoom is unconfigured or the API fails, the booking still succeeds
+  //    with meeting_mode recorded and the link left null for a later retry (never a hard
+  //    failure — mirrors the workshop provision-zoom no-op). The client only ever receives
+  //    join_url; start_url is FSA-only and is persisted but NEVER returned or logged.
+  let joinUrl: string | null = null
+  let meetingStatus: BookingConfirmation['meetingStatus'] = type.meeting_mode === 'video' ? 'pending' : 'none'
+  if (type.meeting_mode === 'video' && zoomEnabled()) {
+    const meeting = await createZoomMeeting({
+      topic: type.name,
+      startTime: slot.startsAt,
+      durationMinutes: type.duration_minutes,
+      timezone: input.bookerTimezone,
+    })
+    if (meeting.ok) {
+      joinUrl = meeting.joinUrl ?? null
+      meetingStatus = 'provisioned'
+      await db
+        .from('appointments')
+        .update({
+          zoom_meeting_id: meeting.meetingId,
+          join_url: meeting.joinUrl,
+          start_url: meeting.startUrl, // FSA-only column; never returned to the client
+          dial_in: meeting.dialIn,
+          updated_at: now,
+        })
+        .eq('id', appointmentId)
+    }
+    // meeting.ok === false → leave links null, meetingStatus stays 'pending' for retry.
+  }
+
+  // 5. Activity log + consent intent + audit (best-effort; the appointment already exists).
   const reference = referenceFromToken(cancelToken)
   await Promise.allSettled([
     db.from('activities').insert({
@@ -166,6 +205,8 @@ export async function bookAppointment(input: BookInput, now: string): Promise<Bo
       durationMinutes: type.duration_minutes,
       meetingMode: type.meeting_mode,
       bookerTimezone: input.bookerTimezone,
+      joinUrl, // attendee join link only — the FSA-only host link is never placed here
+      meetingStatus,
     },
   }
 }

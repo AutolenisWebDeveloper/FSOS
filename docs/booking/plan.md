@@ -36,11 +36,18 @@ email booking-consent intent + audit. Honors the `is_security` firewall (no sens
   mobile-first, WCAG-labelled, designed loading/empty/no-slots/error/success states, add-to-calendar).
 - Tests: `booking-ics.test.mjs` (5), `booking-double-booking.test.mjs` (5, real Postgres — concurrent claim).
 
-## Slice 4 — Zoom meeting provisioning
-Add meeting creation to `src/lib/zoom/client.ts` (reuse S2S OAuth, `zoomEnabled()` gate). On a `video`
-booking, auto-create the meeting; store `zoom_meeting_id/join_url/start_url/dial_in`. Client gets
-`join_url` only; `start_url` is FSA-only, never sent/logged. Unconfigured Zoom → `not_configured`, booking
-still succeeds. `phone`/`in_person` skip Zoom.
+## Slice 4 — Zoom meeting provisioning ✅
+`createZoomMeeting()` added to `src/lib/zoom/client.ts` (reuses the same S2S OAuth + `zoomEnabled()` gate —
+no new integration/env). On a `video` booking, `book.ts` auto-creates the meeting and stores
+`zoom_meeting_id/join_url/start_url/dial_in`; the confirmation carries the **join link + a `meetingStatus`**
+(`provisioned`/`pending`/`none`) and the success screen shows a "Join video meeting" button when ready.
+`start_url` is persisted (FSA-only) but **never returned to the client or logged** (source-scan guardrail).
+Unconfigured Zoom or an API failure → booking still succeeds, link left null for retry via
+`POST /api/app/booking/provision-zoom` (FSA sweep, mirrors the workshop retry). `phone`/`in_person` skip Zoom.
+- Tests: `zoom-meeting-create.test.mjs` (3 — disabled no-op, no network), `booking-starturl-firewall.test.mjs`
+  (6 — host link stored, never on the confirmation / in logs / in responses / in the public UI).
+- Deferred (noted): the created meeting lives on the FSA's own Zoom account (appears in their Zoom app), so
+  surfacing `start_url` inside FSOS is a convenience left to a later slice, not a blocker.
 
 ## Slice 5 — Notifications through comms
 Confirmation on booking; reminders (configurable lead, e.g. 24h + 1h) via `sendThroughGate()` — never

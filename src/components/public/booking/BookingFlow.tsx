@@ -38,6 +38,8 @@ interface Confirmation {
   durationMinutes: number
   meetingMode: string
   bookerTimezone: string
+  joinUrl: string | null
+  meetingStatus: 'none' | 'provisioned' | 'pending'
 }
 
 const WINDOW_DAYS = 14
@@ -78,8 +80,12 @@ function fullWhen(iso: string, tz: string): string {
     minute: '2-digit',
   }).format(new Date(iso))
 }
-function modeNote(mode: string): string {
-  if (mode === 'video') return 'A video meeting link will be included in your confirmation email.'
+function modeNote(mode: string, status?: 'none' | 'provisioned' | 'pending'): string {
+  if (mode === 'video') {
+    return status === 'provisioned'
+      ? 'Use the video link below to join. It&rsquo;s also in your confirmation email.'
+      : 'A video meeting link will be included in your confirmation email.'
+  }
   if (mode === 'phone') return 'We&rsquo;ll call you at the number you provided at the scheduled time.'
   return 'Meeting location details will be included in your confirmation email.'
 }
@@ -471,9 +477,18 @@ function BookingConfirmed({ confirmation, onBookAnother }: { confirmation: Confi
         </div>
       </dl>
 
-      <p className="mt-3 text-sm text-muted-foreground">{modeNote(confirmation.meetingMode).replace(/&rsquo;/g, '’')}</p>
+      <p className="mt-3 text-sm text-muted-foreground">
+        {modeNote(confirmation.meetingMode, confirmation.meetingStatus).replace(/&rsquo;/g, '’')}
+      </p>
 
       <div className="mt-5 flex flex-wrap items-center gap-2">
+        {confirmation.joinUrl ? (
+          <Button asChild>
+            <a href={confirmation.joinUrl} target="_blank" rel="noopener noreferrer">
+              Join video meeting
+            </a>
+          </Button>
+        ) : null}
         <Button variant="outline" onClick={downloadIcs}>
           Add to calendar
         </Button>

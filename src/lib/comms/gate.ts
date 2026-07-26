@@ -13,6 +13,7 @@ export type GateStep =
   | 'consent' // 1
   | 'quiet_hours' // 2 — legal TCPA floor (9–20 recipient-local), non-negotiable
   | 'business_hours' // 2b — operator's hours of operation (can only tighten the floor)
+  | 'sms_live' // 2f — SMS staged pending A2P 10DLC approval (non-escalating hold)
   | 'frequency' // 2d — per-recipient rate caps (operational deferral, §9)
   | 'collision' // 2e — higher-priority campaign / active conversation underway (§10)
   | 'delegation' // 2c — FSA↔agency-owner on-behalf-of authority must be ACTIVE + in-scope
@@ -78,6 +79,15 @@ export interface GateInput {
   /** 6 — record/recipient securities-flagged. */
   isSecurity: boolean
   /**
+   * 2f — the SMS channel is live: A2P 10DLC brand/campaign is APPROVED. Defaults to TRUE
+   * so email and existing callers are unaffected (email is never A2P-gated). For an SMS
+   * send the dispatcher passes the current A2P-approved flag; a false is a NON-escalating
+   * HOLD (like business_hours) — the SMS is queued, never sent, and auto-activates the
+   * moment the flag flips true. This is the single code gate that prevents any SMS reaching
+   * real contacts before A2P approval (§12, twilio-a2p-compliance).
+   */
+  smsLive?: boolean
+  /**
    * 6b — the message's specific claims rest on VERIFIED/confident data (§13). Defaults to
    * TRUE. A false HARD-blocks + escalates: the contact is excluded and a verification task
    * is raised — never sent on unverified/conflicting data.
@@ -105,6 +115,7 @@ const BLOCK: Record<GateStep, string> = {
   consent: 'No valid channel consent on file.',
   quiet_hours: 'Outside permitted quiet hours (9:00–20:00 recipient-local).',
   business_hours: 'Outside configured hours of operation — held for the next in-hours cycle.',
+  sms_live: 'SMS is staged pending A2P 10DLC approval — held until the campaign is approved.',
   dnc: 'Recipient is on the do-not-contact list.',
   approved_template: 'Message does not use an approved template or AI policy.',
   recommendation: 'Message contains individualized recommendation / call-to-action language.',
@@ -150,11 +161,16 @@ export function evaluateGate(input: GateInput): GateResult {
   // contact + raise a verification task; never send on a guess.
   if (input.dataConfidenceOk === false) return blocked('data_confidence', true, input.dataConfidenceReason)
   if (input.otherRuleBlocked) return blocked('other_rule')
-  // 2b/2d/2e — operational deferrals (business hours, rate caps, priority collision) are
-  // checked LAST, so they only ever defer a COMPLIANCE-CLEAN send: a message that should
-  // escalate for an invalid delegation / DNC / securities / recommendation / data-confidence
-  // issue surfaces + escalates first and is never masked by a non-escalating deferral
-  // (§9/§10; ADR-017). business_hours can only TIGHTEN the legal quiet-hours floor above.
+  // 2b/2f/2d/2e — operational deferrals (SMS-A2P hold, business hours, rate caps, priority
+  // collision) are checked LAST, so they only ever defer a COMPLIANCE-CLEAN send: a message
+  // that should escalate for an invalid delegation / DNC / securities / recommendation /
+  // data-confidence issue surfaces + escalates first and is never masked by a non-escalating
+  // deferral (§9/§10; ADR-017). business_hours can only TIGHTEN the legal quiet-hours floor.
+  //
+  // 2f — SMS-A2P hold is FIRST among the deferrals so a staged SMS clearly reads "pending
+  // A2P approval" rather than a later deferral reason. Non-escalating: the SMS is held and
+  // retried each cycle, activating automatically when the A2P flag flips true (§12).
+  if (input.smsLive === false) return blocked('sms_live', false)
   if (input.withinBusinessHours === false) return blocked('business_hours', false)
   if (input.withinFrequencyCaps === false) return blocked('frequency', false, input.frequencyReason)
   if (input.collisionPaused === true) return blocked('collision', false, input.collisionReason)

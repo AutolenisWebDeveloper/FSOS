@@ -1,7 +1,7 @@
 // src/lib/forms.ts
-// Shared form-send core. Called in-process by POST /api/forms/send and by the
-// Calendly webhook (no HTTP self-fetch, so it works even when NEXT_PUBLIC_URL
-// is unset and needs no internal auth round-trip).
+// Shared form-send core. Called in-process by POST /api/forms/send (no HTTP
+// self-fetch, so it works even when NEXT_PUBLIC_URL is unset and needs no
+// internal auth round-trip).
 
 import { getDb } from '@/lib/supabase/client'
 import { TRAIGA_SMS_FOOTER } from '@/lib/compliance'

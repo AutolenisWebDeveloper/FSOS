@@ -23,6 +23,7 @@ import { loadHoursPolicy, isWithinOperatingHours } from './hours'
 import { recordMessageEvent } from './events'
 import { personalize, type RecipientContext } from './personalize'
 import { emailUnsubscribeUrl } from './unsubscribe'
+import { smsLiveFor } from './a2p'
 import { instrumentEmailHtml } from './tracking'
 import { resolveDelegation, enqueueAssignmentReview } from './ownership'
 import { resolveIdentityDisclosure, type IdentityContext } from './identity-resolver'
@@ -531,6 +532,9 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
       usesApprovedTemplateOrPolicy: approved,
       // Firewall (§4.1): caller flag OR the server-resolved conversation/household flag.
       isSecurity: ctx.isSecurity === true || convIsSecurity,
+      // A2P 10DLC (§12): SMS holds until the campaign is approved; email is never gated.
+      // Computed server-side from the single go-live flag so no caller can bypass it.
+      smsLive: smsLiveFor(ctx.channel),
       dataConfidenceOk,
       dataConfidenceReason,
     },

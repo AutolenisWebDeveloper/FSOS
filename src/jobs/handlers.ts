@@ -10,6 +10,7 @@ import { buildDataConfidence } from '@/lib/comms/claims'
 import { resolveClaimFields } from '@/lib/comms/claim-resolver'
 import { sendThroughGate, isTemplateApproved } from '@/lib/comms/send'
 import { evaluateResume } from '@/lib/comms/conversation-mode'
+import { smsA2pApproved } from '@/lib/comms/a2p'
 import type { JobResult } from './index'
 
 const SYSTEM = 'system'
@@ -170,6 +171,13 @@ export async function dripAdvance(): Promise<JobResult> {
   for (const e of (enrollments ?? []) as unknown as Array<{ id: string; campaign_id: string; member_id: string; household_id: string; agency_id: string | null; current_step: number; comm_campaigns: { id: string; type: string; channel: string; sequence_id: string | null; status: string; archived_at: string | null; purpose: string | null; represented_agency_owner_id: string | null; delegation_id: string | null; claim_fields: string[] | null } }>) {
     const camp = e.comm_campaigns
     if (!camp || camp.type !== 'drip' || camp.status !== 'active' || camp.archived_at || !camp.sequence_id) continue
+
+    // A2P 10DLC hold (Slice 7): an SMS drip is QUEUED, not advanced, until the A2P campaign
+    // is approved — so its steps auto-send (never skip) the moment SMS_A2P_APPROVED flips.
+    // The enrollment stays 'enrolled' at its current step with next_send_at in the past, so
+    // the next cycle retries it. Email drips are never A2P-gated. (The pure gate's `sms_live`
+    // step is the universal backstop; this avoids the cursor advancing past a held SMS step.)
+    if (camp.channel === 'sms' && !smsA2pApproved()) continue
 
     const { data: seq } = await db.from('comm_sequences').select('steps, status, purpose').eq('id', camp.sequence_id).maybeSingle()
     const steps = (seq?.steps ?? []) as Array<{ delay_days: number; template_id?: string; subject?: string }>

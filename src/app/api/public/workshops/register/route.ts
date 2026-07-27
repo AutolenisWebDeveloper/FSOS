@@ -6,6 +6,8 @@ import { rateLimit, clientIp } from '@/lib/http/rate-limit'
 import { WorkshopRegisterSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
 import { provisionZoomForRegistration } from '@/lib/workshops/server'
+import { notifyFsa, sendVisitorAck } from '@/lib/notifications/transactional'
+import { BUSINESS } from '@/lib/site'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -158,6 +160,65 @@ export async function POST(req: NextRequest) {
     } catch (provErr) {
       console.error('[workshop] zoom provisioning (non-fatal):', provErr)
     }
+
+    // When (date, venue) is known, surface it in the acknowledgement. Best-effort lookup —
+    // a missing session never blocks the confirmation (the cron cadence carries the details).
+    let whenLocal: string | null = null
+    let venue: string | null = null
+    if (sessionId) {
+      const { data: s } = await db
+        .from('workshop_sessions')
+        .select('starts_at, timezone, venue_name, venue_address')
+        .eq('id', sessionId)
+        .maybeSingle()
+      if (s?.starts_at) {
+        try {
+          whenLocal = new Intl.DateTimeFormat('en-US', {
+            timeZone: s.timezone || 'America/Chicago',
+            dateStyle: 'full',
+            timeStyle: 'short',
+          }).format(new Date(s.starts_at))
+        } catch {
+          whenLocal = new Date(s.starts_at).toUTCString()
+        }
+      }
+      venue = s?.venue_name || s?.venue_address || null
+    }
+
+    // TRANSACTIONAL notifications (best-effort — the registration is already persisted). The
+    // registrant gets an immediate "you're registered" receipt; the FSA gets a "new
+    // registration" ops alert. This is the immediate acknowledgement — the templated
+    // reminder/nurture cadence (comms-engine cron) remains the consent-gated marketing layer.
+    const displayName = v.data.name?.trim() || 'there'
+    await Promise.allSettled([
+      sendVisitorAck({
+        to: v.data.email,
+        subject: `You're registered — ${w.title}`,
+        heading: `You're registered, ${displayName}.`,
+        lede: `Thanks for registering for “${w.title}” with ${BUSINESS.agent}. This is an educational event — no product recommendation. Your details are below.`,
+        rows: [
+          { label: 'Workshop', value: w.title },
+          { label: 'When', value: whenLocal },
+          { label: 'Where', value: venue },
+        ],
+        note: 'We\'ll send a reminder before the event. If you did not register, you can ignore this email.',
+      }),
+      notifyFsa({
+        subject: `New workshop registration — ${w.title}`,
+        heading: 'New workshop registration',
+        lede: `${v.data.name} just registered through the public site.`,
+        rows: [
+          { label: 'Name', value: v.data.name },
+          { label: 'Email', value: v.data.email },
+          { label: 'Phone', value: v.data.phone ?? null },
+          { label: 'Workshop', value: w.title },
+          { label: 'When', value: whenLocal },
+          { label: 'Consent', value: channels.length ? channels.join(', ') : 'none' },
+          { label: 'Source', value: leadSource },
+        ],
+        replyTo: v.data.email,
+      }),
+    ])
 
     return NextResponse.json({ ok: true, workshop: w.title, join_token: joinToken })
   } catch (e) {

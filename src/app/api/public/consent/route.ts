@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
 import { readJson, configErrorResponse } from '@/lib/http'
 import { writeAudit } from '@/lib/audit/log'
+import { consentContactKey } from '@/lib/comms/contact-consent'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -39,6 +40,25 @@ export async function POST(req: NextRequest) {
       // (contact is on the list) is still met. Other errors surface as 500.
       const conflict = /duplicate|conflict|unique/i.test(error.message)
       if (!conflict) return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    // Keep the durable per-contact consent store consistent with the opt-out. The ENFORCED
+    // revocation is the dnc_entries write above (checked at gate step `dnc` for every send);
+    // this appends a matching `revoked` action so comm_contact_consents reflects the latest
+    // decision too (latest-wins). SMS/email get a normalized-contact row; 'all' revokes both.
+    const revokeChannels =
+      v.data.channel === 'all' ? (['sms', 'email'] as const) : v.data.channel === 'call' ? [] : ([v.data.channel] as const)
+    if (revokeChannels.length) {
+      await db.from('comm_contact_consents').insert(
+        revokeChannels.map((ch) => ({
+          contact: consentContactKey(ch, v.data.contact),
+          channel: ch,
+          action: 'revoked',
+          consent_text: 'Public opt-out request',
+          consent_version: 'opt-out',
+          source_url: 'https://www.markistfsa.com/optout',
+        })),
+      )
     }
 
     await writeAudit({

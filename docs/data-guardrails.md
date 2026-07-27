@@ -24,6 +24,11 @@ referrals                   -- referring_agency_id, household_id?, engagement
 households                  -- referring_agency_id, address, do_not_contact
 household_members           -- household_id, full_name, dob (SENSITIVE), relationship
 consents                    -- member_id, channel (call|sms|email), status, captured_at, source
+comm_contact_consents       -- durable, CONTACT-keyed customer-care SMS/email consent for a
+                            -- PUBLIC-INTAKE lead (no member yet): action (granted|revoked,
+                            -- latest wins), consent_text/version, source_url, ip, user_agent,
+                            -- referral_id. Read by the send path (send.ts) at gate step 1 by
+                            -- contact suffix; enforceable revocation stays dnc_entries. mig 074
 carriers                    -- name, is_farmers, is_ffs (securities carrier)
 products                    -- family (life|annuity|investment|education), subtype,
                             -- is_security (bool), required_license, active

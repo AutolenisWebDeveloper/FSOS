@@ -33,6 +33,7 @@ import type { MessagePurpose } from './purpose'
 import { evaluateOutboundMessage } from './evaluations'
 import type { AiMessageClass } from './ai-authority'
 import { evaluateDataConfidence, type ClaimField } from './data-confidence'
+import { latestConsentGranted, smsTail } from './contact-consent'
 
 export interface SendContext {
   channel: Channel
@@ -213,6 +214,48 @@ async function hasConsent(memberId: string | null | undefined, channel: Channel)
 }
 
 /**
+ * Durable, CONTACT-RESOLVABLE customer-care consent (gate step 1) for a lead captured at
+ * PUBLIC INTAKE before any household member exists (comm_contact_consents, migration 074).
+ *
+ * This is the enforcement read that makes public-intake consent a REAL control: the send
+ * path consults it for every SMS/email by normalized contact — SMS matched TOLERANTLY on
+ * the last-10-digit suffix (like onDNC) so +1/bare drift can't miss a grant. Latest action
+ * wins (a later `revoked` overrides an earlier `granted`; latestConsentGranted). Fails
+ * CLOSED (false) on any error — never grants on a lookup failure.
+ *
+ * Scope: applied ONLY when the contact has NOT resolved to a household member. Once a
+ * member exists, the member-keyed `consents` table is authoritative (and STOP/DNC always
+ * governs independently at gate step 3), so this can never re-grant a member-level revoke.
+ */
+async function durableContactConsentGranted(contact: string, channel: Channel): Promise<boolean> {
+  try {
+    const db = getDb()
+    if (channel === 'sms') {
+      const tail = smsTail(contact)
+      if (tail.length < 10) return false
+      const { data } = await db
+        .from('comm_contact_consents')
+        .select('action, captured_at')
+        .eq('channel', 'sms')
+        .ilike('contact', `%${tail}`)
+        .order('captured_at', { ascending: false })
+        .limit(1)
+      return latestConsentGranted(data as { action: string; captured_at: string }[] | null)
+    }
+    const { data } = await db
+      .from('comm_contact_consents')
+      .select('action, captured_at')
+      .eq('channel', channel)
+      .eq('contact', contact.toLowerCase())
+      .order('captured_at', { ascending: false })
+      .limit(1)
+    return latestConsentGranted(data as { action: string; captured_at: string }[] | null)
+  } catch {
+    return false
+  }
+}
+
+/**
  * "Approved AI policy" for gate step 4 — the non-template path for AI-authored
  * green-zone messages (CLAUDE.md §7: "approved template OR approved AI policy").
  * A policy is approved only when BOTH kill switches are on: the global AI gateway
@@ -370,16 +413,21 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
   // Compute the gate context FRESH (send-time re-check — WF-9 invariant). Step 4
   // is satisfied by an approved template OR, for AI-authored replies with no
   // template, an approved AI policy (both AI kill switches on).
-  const [memberConsent, dnc, templateApproved, hoursPolicy] = await Promise.all([
+  // A durable, contact-resolvable public-intake grant only applies BEFORE the contact has a
+  // household member — once a member exists, the member-keyed `consents` row is authoritative
+  // (and STOP/DNC always governs independently), so this can never re-grant a member revoke.
+  const [memberConsent, contactConsent, dnc, templateApproved, hoursPolicy] = await Promise.all([
     hasConsent(convMemberId, ctx.channel),
+    convMemberId ? Promise.resolve(false) : durableContactConsentGranted(to, ctx.channel),
     onDNC(to, ctx.channel),
     isTemplateApproved(ctx.templateId),
     loadHoursPolicy(),
   ])
   // Gate step 1: member-keyed consent OR a domain-owned durable per-channel grant
-  // (workshops). The OR can only ADD consent an existing caller never asserted; it never
-  // removes it. DNC/quiet-hours/recommendation/securities remain enforced below.
-  let consent = memberConsent || ctx.durableConsentGranted === true
+  // (workshops) OR a durable PUBLIC-INTAKE contact grant (comm_contact_consents, mig 074).
+  // The OR can only ADD consent an existing caller never asserted; it never removes it.
+  // DNC/quiet-hours/recommendation/securities remain enforced below.
+  let consent = memberConsent || contactConsent || ctx.durableConsentGranted === true
 
   // Purpose policy (Slice 3, §9/§10): purpose-scoped consent + frequency caps + priority
   // collision. Opt-in via ctx.purpose. Purpose-scoped consent (when a row exists) REPLACES

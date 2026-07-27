@@ -442,6 +442,7 @@ The identity is consistent across homepage, public pages, login, forgot-password
 | ADR-025 | Email rendering: hybrid React → stored, immutable, deterministic HTML + plaintext |
 | ADR-026 | Social content module |
 | ADR-027 | Native FSOS booking (Calendly replacement) — availability model, DB-enforced double-booking, comms-based notifications, Calendly decommission |
+| ADR-028 | Governed agent tool-calling (gateway tool-use loop; read-only v1 ceiling; no third-party orchestration platform) |
 
 New architectural decisions get a new ADR using `docs/adr/ADR-000-template.md`. Status values: Proposed → Accepted → Superseded (link the superseding ADR).
 

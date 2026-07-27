@@ -32,3 +32,5 @@ All AI access goes through a single **model-agnostic gateway** (Claude-first; Op
 ## Related Documents
 - CLAUDE.md §3, §11, §11.1
 - docs/adr/ADR-008-ai-governance.md, docs/adr/ADR-003-communications-dispatcher.md
+- docs/adr/ADR-028-agent-tool-calling.md (governed tool-calling extends this gateway; a
+  third-party orchestration platform stays rejected per this ADR's Alternatives)

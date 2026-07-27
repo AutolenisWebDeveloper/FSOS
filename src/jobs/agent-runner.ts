@@ -8,11 +8,14 @@
 //      escalate to /app/ai/escalations,
 //   4. is idempotent (dedupe key) and retries transient failures with backoff.
 
-import { runGateway, assertKillSwitch, GatewayDisabledError, type GatewayRequest, type GatewayResult } from '@/lib/ai/gateway'
+import { runGateway, runGatewayTools, assertKillSwitch, GatewayDisabledError, type GatewayRequest, type GatewayResult, type GatewayToolResult } from '@/lib/ai/gateway'
 import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
 import { retry, runIdempotent } from '@/lib/jobs/runtime'
 import { dispatch, type DispatchRequest } from '@/lib/comms/dispatcher'
+import { AGENT_ROSTER } from '@/lib/ai/roster'
+import { assertToolAuthority, type GreenLoopTool } from '@/lib/ai/tools'
+import type { ToolEffect } from '@/lib/ai/tool-loop'
 
 export interface AgentRunContext {
   runId: string
@@ -20,6 +23,13 @@ export interface AgentRunContext {
   actor: string
   /** Call the AI gateway; usage/cost are accumulated onto this run. */
   gateway(req: Omit<GatewayRequest, 'agentKey'>): Promise<GatewayResult>
+  /**
+   * Run a GOVERNED model tool-calling loop (ADR-028). v1 authority ceiling is
+   * read/assemble/draft only ('read' effect) — no autonomous send or mutation
+   * (§11.1). Every tool must be in THIS agent's roster green-zone set. Usage/cost
+   * accumulate onto the run and every attempted tool call is logged to agent_actions.
+   */
+  runTools(spec: { system?: string; prompt: string; tools: GreenLoopTool[]; maxIterations?: number }): Promise<GatewayToolResult>
   /** Log a completed green-zone action. */
   recordAction(action: { kind: string; targetType?: string; targetId?: string; outcome: string; note?: string }): Promise<void>
   /** Route a client-facing message through the guardrail/dispatcher (auto-escalates on block). */
@@ -93,6 +103,43 @@ async function execute(args: RunAgentArgs): Promise<RunAgentResult> {
       outputTokens += res.usage.outputTokens
       costUsd += res.costUsd
       model = res.model
+      return res
+    },
+    async runTools(spec) {
+      // v1 authority ceiling: read/assemble/draft only. No 'send'/'write' effect can
+      // enter the loop, so the model can neither dispatch nor mutate (§11.1, §4.2).
+      const allowedEffects = new Set<ToolEffect>(['read'])
+      const def = AGENT_ROSTER[args.agentKey]
+      // Bind model-invokable tools to the agent's EXISTING green-zone grant (§6).
+      assertToolAuthority(def?.tools ?? [], spec.tools, allowedEffects)
+      const res = await runGatewayTools(
+        { system: spec.system, messages: [{ role: 'user', content: spec.prompt }], agentKey: args.agentKey },
+        spec.tools,
+        { allowedEffects, maxIterations: spec.maxIterations },
+      )
+      inputTokens += res.usage.inputTokens
+      outputTokens += res.usage.outputTokens
+      costUsd += res.costUsd
+      model = res.model
+      // Audit every attempted tool call (§13.9): ok → outcome+truncated output;
+      // rejected/invalid/error → outcome + reason. A no-op run still leaves a trace.
+      for (const call of res.calls) {
+        await db.from('agent_actions').insert({
+          run_id: runId,
+          kind: `tool.${call.name}`,
+          actor,
+          outcome: call.status,
+          note: call.status === 'ok' ? (call.output ?? '').slice(0, 500) : null,
+          reason: call.status === 'ok' ? null : call.detail ?? null,
+        })
+      }
+      await writeAudit({
+        actor,
+        action: 'ai.tools',
+        entity: 'agent_run',
+        entityId: runId,
+        diff: { agentKey: args.agentKey, model: res.model, calls: res.calls.length, stopped: res.stopped },
+      })
       return res
     },
     async recordAction(action) {

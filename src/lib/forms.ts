@@ -7,7 +7,7 @@ import { getDb } from '@/lib/supabase/client'
 import { TRAIGA_SMS_FOOTER } from '@/lib/compliance'
 import { generateFormToken } from '@/lib/tokens'
 import { escapeHtml } from '@/lib/http'
-import { Resend } from 'resend'
+import { sendEmail } from '@/lib/messaging'
 
 export const FORM_TITLES: Record<string, string> = {
   'customer-questionnaire': 'Customer Questionnaire',
@@ -127,45 +127,29 @@ export async function sendForm(input: SendFormInput): Promise<SendFormResult> {
   let sms_error: string | undefined
 
   if ((channel === 'email' || channel === 'both') && email) {
-    const apiKey = process.env.RESEND_API_KEY
-    const from = process.env.RESEND_FROM_EMAIL
-    // Fail loudly on misconfiguration instead of reporting a phantom "sent".
-    if (!apiKey) {
-      email_error = 'RESEND_API_KEY is not set in the environment'
-    } else if (!from || /yourdomain\.com/i.test(from)) {
-      email_error =
-        'RESEND_FROM_EMAIL is not set to a Resend-verified sender (currently ' +
-        (from ? `"${from}"` : 'unset') + ')'
+    // Transactional send through the shared, guarded sender (src/lib/messaging.ts):
+    // one Resend wrapper for the whole app, so config checks, reply-to routing, and
+    // the never-throw { ok, error } contract are identical everywhere. A form link
+    // is transactional — it is NOT gated by marketing consent. Fail loudly on
+    // misconfiguration or provider rejection instead of reporting a phantom "sent".
+    const result = await sendEmail(
+      email,
+      `Action Required — ${FORM_TITLES[form_id]}`,
+      buildEmailHTML(client_name || 'Client', FORM_TITLES[form_id], link, form_id),
+    )
+    if (result.ok) {
+      email_sent = true
+      await db.from('form_sends').insert({
+        submission_id: submission.submission_id,
+        customer_id: customer_id || null,
+        form_id,
+        channel: 'email',
+        destination: email,
+      })
+      if (result.id) console.log('[forms] Resend accepted email id', result.id)
     } else {
-      try {
-        const resend = new Resend(apiKey)
-        // resend.emails.send() resolves with { data, error } — it does NOT throw
-        // on API/validation errors (e.g. unverified domain), so we must inspect
-        // `error` rather than assume success.
-        const { data, error } = await resend.emails.send({
-          from,
-          to: email,
-          subject: `Action Required — ${FORM_TITLES[form_id]}`,
-          html: buildEmailHTML(client_name || 'Client', FORM_TITLES[form_id], link, form_id),
-        })
-        if (error) {
-          email_error = error.message || String(error)
-          console.error('[forms] Resend rejected the email:', error)
-        } else {
-          email_sent = true
-          await db.from('form_sends').insert({
-            submission_id: submission.submission_id,
-            customer_id: customer_id || null,
-            form_id,
-            channel: 'email',
-            destination: email,
-          })
-          if (data?.id) console.log('[forms] Resend accepted email id', data.id)
-        }
-      } catch (err) {
-        email_error = err instanceof Error ? err.message : String(err)
-        console.error('[forms] email send exception:', err)
-      }
+      email_error = result.error || 'Email delivery failed'
+      console.error('[forms] email send failed:', email_error)
     }
   }
 

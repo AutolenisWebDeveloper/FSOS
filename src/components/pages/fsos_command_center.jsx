@@ -1982,7 +1982,7 @@ function Calendar(){
       <button className="btn-secondary" style={{fontSize:10,padding:"5px 12px"}} onClick={refresh}>↻ Refresh</button>
     </div>
     <div style={{marginBottom:10,fontSize:12,color:"var(--muted)"}}>
-      Appointments booked through Calendly appear here automatically.
+      Appointments booked through FSOS scheduling appear here automatically.
     </div>
     {error && <div className="error-banner"><span>⚠ Couldn't load appointments ({error}).</span><button onClick={refresh}>Retry</button></div>}
     {loading && <div className="loading-state"><div className="loading-spinner"/><div>Loading appointments…</div></div>}
@@ -1990,7 +1990,7 @@ function Calendar(){
       <div className="empty-state">
         <div className="empty-state-icon">📅</div>
         <div className="empty-state-title">No appointments booked yet</div>
-        <div className="empty-state-sub">Bookings arrive automatically via Calendly.</div>
+        <div className="empty-state-sub">Bookings arrive automatically via FSOS scheduling.</div>
       </div>
     )}
     {!loading && appts.length>0 && (
@@ -3304,7 +3304,7 @@ function FNAPage({ toast, onNav }) {
             Client receives a secure link by email or SMS and fills out the intake form themselves. System notifies you when complete and auto-generates the report.
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:4}}>
-            {["Tokenized secure link — expires in 30 days","Client fills out on phone or computer","Auto-sent when appointment booked in Calendly","Responses stored in Supabase automatically"].map((s,i)=>(
+            {["Tokenized secure link — expires in 30 days","Client fills out on phone or computer","Auto-sent when an appointment is booked in FSOS","Responses stored in Supabase automatically"].map((s,i)=>(
               <div key={i} style={{display:"flex",gap:6,alignItems:"flex-start",fontSize:11,color:"var(--text)"}}>
                 <span style={{color:"var(--green2)",flexShrink:0}}>✓</span>{s}
               </div>
@@ -3847,7 +3847,7 @@ function AIControlCenter({toast}) {
   return (<>
     <div className="page-title">AI Agent Control Center</div>
     <div style={{fontSize:12,color:"var(--muted)",marginBottom:12}}>
-      All 4 AI agents powered by Retell AI · Calendly handles booking · Pay-per-minute voice, pay-per-message SMS — no platform fee · Compliant with TCPA, Texas SB 140, TRAIGA
+      All 4 AI agents powered by Retell AI · FSOS handles booking · Pay-per-minute voice, pay-per-message SMS — no platform fee · Compliant with TCPA, Texas SB 140, TRAIGA
     </div>
     <div className="error-banner" style={{background:"var(--orange-bg)",border:"1px solid var(--orange-border)",color:"var(--orange)"}}>
       <span>⚠ Sample metrics — the per-agent counts below are illustrative placeholders. Connect Retell/Twilio to show live activity.</span>
@@ -4313,7 +4313,6 @@ const INTEGRATIONS = [
   { key:"twilio", label:"Twilio (SMS)", powers:"Form sends & SMS campaign steps", test:h=>h.env?.twilio },
   { key:"ghl_key", label:"GoHighLevel", powers:"Pipeline sync & contact upload", test:h=>h.env?.ghl_key },
   { key:"apollo_key", label:"Apollo (enrichment)", powers:"Contact enrichment in the client drawer", test:h=>h.env?.apollo_key },
-  { key:"calendly_secret", label:"Calendly", powers:"Appointment booking webhook", test:h=>h.env?.calendly_secret },
   { key:"admin_gate_enabled", label:"Admin auth gate", powers:"Password-protects the command center", test:h=>h.env?.admin_gate_enabled },
   { key:"internal_api_secret", label:"Internal API secret", powers:"Bearer auth for server-to-server calls", test:h=>h.env?.internal_api_secret },
 ];

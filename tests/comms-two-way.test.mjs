@@ -66,11 +66,11 @@ check('tokensIn lists referenced merge tokens', () => {
 // ─── Email tracking instrumentation ─────────────────────────────────────────────
 check('instrumentEmailHtml adds an open pixel and rewrites links (when base url set)', () => {
   process.env.NEXT_PUBLIC_APP_URL = 'https://app.example.com'
-  const html = '<body><p>Hi</p><a href="https://calendly.com/book">Book</a></body>'
+  const html = '<body><p>Hi</p><a href="https://example.com/book">Book</a></body>'
   const out1 = instrumentEmailHtml(html, '11111111-1111-1111-1111-111111111111')
   assert.ok(out1.includes('/api/track/open/11111111-1111-1111-1111-111111111111'), 'open pixel injected')
   assert.ok(out1.includes('/api/track/click/11111111-1111-1111-1111-111111111111?u='), 'link rewritten through click tracker')
-  assert.ok(out1.includes(encodeURIComponent('https://calendly.com/book')), 'original destination preserved (encoded)')
+  assert.ok(out1.includes(encodeURIComponent('https://example.com/book')), 'original destination preserved (encoded)')
 })
 check('safeRedirectTarget rejects non-http(s) schemes (no open redirect abuse)', () => {
   assert.equal(safeRedirectTarget('https://ok.example.com/x'), 'https://ok.example.com/x')

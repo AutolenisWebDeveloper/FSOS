@@ -106,10 +106,26 @@ ONLY), tokens encrypted at rest, refresh server-side. One-way only — FSOS neve
   only `calendar.readonly` + only `freeBusy`, no events-mutation endpoint) + `booking-google-connection.test.mjs`
   (6, real Postgres — pgcrypto encrypt-at-rest round-trip + wrong-key failure, per-host uniqueness, disconnect).
 
-## Slice 8 — Calendly decommission
-Migrate open Calendly bookings onto the spine (reconciliation count). Remove the webhook + references
-(`forms.ts`, `dashboard/route.ts`, `health/route.ts`, legacy command-center). Network-proof no `calendly.com`
-/ `CALENDLY_*` remain. Then the user cancels the subscription manually.
+## Slice 8 — Calendly decommission ✅
+Third-party scheduler removed; booking is fully native.
+- **Reconciliation (mig 073):** forward-only + idempotent. Lifts still-OPEN Calendly bookings (future,
+  non-cancelled, ISO-parseable) from the legacy `activity` feed onto the spine as
+  `booked_via='legacy_calendly'` `appointments`, linked to the household via
+  `households.legacy_customer_id` (null host/household when unbridged — never dropped), `scheduled_at`
+  in lock-step with `starts_at`, deduped by `external_ref='calendly:<activity_id>'`; records a durable
+  count in `audit_log`. Past/cancelled/unparseable rows are skipped (§4.3).
+- **Removed:** the inbound webhook (`/api/webhooks/calendly`), its `forms.ts` comment coupling,
+  `health/route.ts` `calendly_secret`, and the legacy command-center Calendly copy + integration row.
+- **Retired Model B:** `dashboard/route.ts` `?scope=calendar` now reads the native `appointments` spine
+  (upcoming scheduled) instead of the Calendly activity feed, and `counts.appointments` is a real count
+  (was hardcoded `0`). The workshop-replay CTA + all "Book" CTAs resolve through `bookingUrl()` → `/schedule`.
+- **Env:** `CALENDLY_*` removed from `.env.local.example` (replaced with the optional Google Calendar
+  busy-sync vars from Slice 7).
+- **Tests:** `booking-calendly-gone.test.mjs` (5, source scan — no `calendly.com`/`CALENDLY_*`/webhook
+  route remain, `bookingUrl()`→`/schedule`) + `booking-calendly-reconcile.test.mjs` (7, real Postgres —
+  only open bookings migrate, household bridge, idempotency, audit count, skip past/cancelled/unparseable).
+- **Untouched:** the frozen GHL webhook's appointment handling. After this merges, the FSA cancels the
+  Calendly subscription manually.
 
 ## Cross-cutting Definition of Done (every slice)
 Real data (no mocks); Zod at the edge; server-side authz + RLS; full loading/empty/error/success states;

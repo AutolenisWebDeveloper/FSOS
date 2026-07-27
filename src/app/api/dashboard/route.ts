@@ -47,6 +47,7 @@ async function dashboardScope() {
     recentReferrals,
     pendingForms,
     gdcSummary,
+    upcomingAppointments,
   ] = await Promise.all([
     db
       .from('daily_briefings')
@@ -118,6 +119,14 @@ async function dashboardScope() {
       .from('commission_cases')
       .select('case_status, estimated_gdc, estimated_fsa, actual_gdc, actual_fsa, issued_date')
       .not('case_status', 'eq', 'cancelled'),
+
+    // Upcoming scheduled appointments on the native spine (ADR-027) — count only.
+    db
+      .from('appointments')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'scheduled')
+      .not('starts_at', 'is', null)
+      .gte('starts_at', new Date().toISOString()),
   ])
 
   // Attach days_to_deadline to each conversion row for the UI.
@@ -169,7 +178,7 @@ async function dashboardScope() {
       opra_due: opraDue.data?.length || 0,
       pending_forms: pendingForms.data?.length || 0,
       new_referrals: recentReferrals.data?.length || 0,
-      appointments: 0,
+      appointments: upcomingAppointments.count || 0,
     },
     generated_at: new Date().toISOString(),
   })
@@ -220,25 +229,30 @@ async function workshopsScope() {
 
 async function calendarScope() {
   const db = getDb()
-  // Appointments are logged in the activity feed (type='appointment') by the
-  // Calendly webhook. Surface the most recent for the calendar view.
+  // Native spine (ADR-027): upcoming scheduled appointments straight from the
+  // `appointments` aggregate root — the same rows every FSA/client/revenue surface
+  // reads. (The legacy Calendly activity-feed calendar was retired in Slice 8.)
   const { data } = await db
-    .from('activity')
-    .select('activity_id, subject, notes, channel, created_at, customers (first_name, last_name, phone, email)')
-    .eq('type', 'appointment')
-    .order('created_at', { ascending: false })
+    .from('appointments')
+    .select('id, starts_at, scheduled_at, status, meeting_mode, booked_via, join_url, contacts (full_name, email, phone)')
+    .eq('status', 'scheduled')
+    .not('starts_at', 'is', null)
+    .gte('starts_at', new Date().toISOString())
+    .order('starts_at', { ascending: true })
     .limit(50)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const appointments = ((data || []) as any[]).map((a) => ({
-    activity_id: a.activity_id,
-    subject: a.subject,
-    notes: a.notes,
-    channel: a.channel,
-    booked_at: a.created_at,
-    client: a.customers ? `${a.customers.first_name} ${a.customers.last_name}`.trim() : 'Unknown',
-    phone: a.customers?.phone || null,
-    email: a.customers?.email || null,
+    appointment_id: a.id,
+    subject: a.meeting_mode ? `Appointment (${a.meeting_mode})` : 'Appointment',
+    starts_at: a.starts_at ?? a.scheduled_at,
+    status: a.status,
+    meeting_mode: a.meeting_mode || null,
+    booked_via: a.booked_via || null,
+    join_url: a.join_url || null,
+    client: a.contacts?.full_name || 'Client',
+    phone: a.contacts?.phone || null,
+    email: a.contacts?.email || null,
   }))
 
   return NextResponse.json({ appointments })

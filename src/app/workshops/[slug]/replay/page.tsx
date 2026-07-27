@@ -5,6 +5,7 @@ import { CalendarClock, PlayCircle, ShieldAlert, Lock } from 'lucide-react'
 import { PublicPage, PublicBrandLockup } from '@/components/public/PublicShell'
 import { WorkshopFeedbackForm } from '@/components/public/WorkshopFeedbackForm'
 import { loadReplay } from '@/lib/workshops/replay'
+import { bookingUrl } from '@/lib/site'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -25,7 +26,7 @@ export default async function WorkshopReplayPage(props: {
   const view = await loadReplay(slug, t ?? null, nowIso)
   if (!view) notFound()
 
-  const consultUrl = process.env.NEXT_PUBLIC_CALENDLY_URL || '/workshops'
+  const consultUrl = bookingUrl()
   const expiresLabel = view.recordingExpiresAt
     ? new Date(view.recordingExpiresAt).toLocaleDateString('en-US', { dateStyle: 'long' })
     : null

@@ -59,7 +59,12 @@ surfaces, the Zoom integration, and the comms dispatcher must be **reused, not r
 
 8. **Calendly is decommissioned last.** After native booking works end to end, open Calendly bookings
    are migrated onto the spine, the webhook + references are removed, network-proven gone, and the
-   subscription is cancelled manually.
+   subscription is cancelled manually. *(Implemented in Slice 8: reconciliation is an idempotent,
+   forward-only migration — mig 073 — that lifts still-open Calendly bookings from the legacy `activity`
+   feed onto the `appointments` spine as `booked_via='legacy_calendly'`, bridged via
+   `households.legacy_customer_id`, deduped by `external_ref='calendly:<id>'`, with a durable count in
+   `audit_log`; the inbound webhook is deleted and the legacy Model-B `?scope=calendar` dashboard read is
+   repointed to the native spine. The frozen GHL webhook's appointment handling is untouched.)*
 
 ## Rationale
 

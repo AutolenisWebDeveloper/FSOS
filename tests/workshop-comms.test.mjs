@@ -120,6 +120,6 @@ ok('missing/placeholder template → deferred (template_not_approved), never sen
 ok('atomic claim before dispatch (idempotency): insert sending + guarded deferred retry', /status: 'sending'/.test(eng) && /\.eq\('status', 'deferred'\)/.test(eng))
 
 const send = readFileSync(join(root, 'src/lib/comms/send.ts'), 'utf8')
-ok('send.ts consent is additive OR (member consent OR durable grant — never reduces)', /memberConsent \|\| ctx\.durableConsentGranted === true/.test(send))
+ok('send.ts consent is additive OR (member consent OR public-intake grant OR durable grant — never reduces)', /memberConsent \|\| contactConsent \|\| ctx\.durableConsentGranted === true/.test(send))
 
 console.log(`\n${passed} checks passed.`)

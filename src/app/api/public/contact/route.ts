@@ -6,6 +6,8 @@ import { ContactLeadSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
 import { emailLc } from '@/lib/contacts/normalize'
 import { SMS_CONSENT } from '@/lib/site'
+import { smsConsentVersion } from '@/lib/comms/consent-version'
+import { consentContactKey } from '@/lib/comms/contact-consent'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -13,9 +15,11 @@ export const runtime = 'nodejs'
 // PUBLIC, UNAUTHENTICATED homepage contact / consultation-request intake.
 // Creates a lead on the CRM referral spine (owner_scope null → surfaces in the
 // FSA's public-referral triage), records a non-destructive possible-duplicate
-// signal, and captures A2P 10DLC SMS consent EVIDENCE (wording version, source,
-// timestamp, IP, user agent, masked phone) — but only when the visitor
-// affirmatively checked the box. Providing a phone number NEVER enrolls SMS.
+// signal, and — only when the visitor affirmatively checked the box — persists
+// A2P 10DLC / TCPA SMS consent into BOTH the append-only audit_log (evidence:
+// wording version, source, timestamp, IP, user agent) AND the enforceable
+// comm_contact_consents store the outbound send path actually reads before
+// sending (src/lib/comms/send.ts). Providing a phone number NEVER enrolls SMS.
 // Guardrails: honeypot + per-IP rate limit, no securities data accepted (§2.1),
 // created id never leaked to the caller.
 const SLA_HOURS = 24
@@ -114,6 +118,9 @@ export async function POST(req: NextRequest) {
     // worthless as consent proof. Enrollment only ever follows an affirmative
     // opt-in; providing a phone number never enrolls the number.
     const granted = Boolean(v.data.consent_sms)
+    // Version is DERIVED from the deployed consent-template content (never the client-sent
+    // value, never a hand-maintained string) so the record proves the exact wording shown.
+    const consentVersion = smsConsentVersion()
     await writeAudit({
       actor,
       action: 'consent.captured',
@@ -123,7 +130,7 @@ export async function POST(req: NextRequest) {
         channel: 'sms',
         granted,
         consentText: SMS_CONSENT.disclosure,
-        consentVersion: SMS_CONSENT.version,
+        consentVersion,
         timestampUtc: now.toISOString(),
         ipAddress: ip,
         userAgent,
@@ -131,14 +138,32 @@ export async function POST(req: NextRequest) {
         phone_masked: mask(phone),
       },
     })
-    if (granted) {
-      // Timeline breadcrumb + enrollment intent. Materializes into a `consents`
-      // row once the lead converts to a household member (WF-1 spine).
+    // ENFORCEABLE PERSISTENCE (A2P 10DLC / TCPA fix). An affirmative opt-in — and ONLY an
+    // affirmative opt-in — writes a durable `granted` row into comm_contact_consents, the
+    // CONTACT-RESOLVABLE store the outbound authorization layer reads at send time
+    // (src/lib/comms/send.ts → durableContactConsentGranted, gate step 1). Without this,
+    // consent would live only in audit_log, which the send path never reads — a false
+    // control. An UNCHECKED box writes NO positive-consent row and enrolls nothing.
+    if (granted && phone) {
+      await db.from('comm_contact_consents').insert({
+        contact: consentContactKey('sms', phone),
+        channel: 'sms',
+        action: 'granted',
+        consent_text: SMS_CONSENT.disclosure,
+        consent_version: consentVersion,
+        source_url: SMS_CONSENT.sourceUrl,
+        ip_address: ip,
+        user_agent: userAgent,
+        referral_id: referral.id,
+        captured_at: now.toISOString(),
+      })
+      // Timeline breadcrumb. The enforceable grant lives in comm_contact_consents above;
+      // it materializes into a member-keyed `consents` row when the lead converts (WF-1).
       await db.from('activities').insert({
         entity_type: 'referral',
         entity_id: referral.id,
         kind: 'consent_intent',
-        note: `SMS consent captured at public intake (${SMS_CONSENT.version})`,
+        note: `SMS consent captured at public intake (${consentVersion})`,
         actor,
       })
     }

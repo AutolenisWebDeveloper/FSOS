@@ -106,6 +106,74 @@ export async function addZoomRegistrant(inp: ZoomRegistrantInput): Promise<ZoomR
   }
 }
 
+export interface ZoomMeetingInput {
+  topic: string
+  /** UTC ISO start instant. */
+  startTime: string
+  durationMinutes: number
+  /** IANA zone for display in Zoom (start_time is sent in UTC and is unambiguous). */
+  timezone?: string
+}
+
+export interface ZoomMeetingResult {
+  ok: boolean
+  meetingId?: string | null
+  /** Attendee link — safe to send to the client. */
+  joinUrl?: string | null
+  /** HOST link — FSA-only. NEVER return this to a client or write it to a log. */
+  startUrl?: string | null
+  dialIn?: string | null
+  error?: string
+}
+
+/**
+ * Create a scheduled Zoom meeting for a booking (spec §5, Slice 4). Reuses the same S2S
+ * OAuth + zoomEnabled() gate as the registrant path — no new integration, no new env vars.
+ * Best-effort: returns { ok:false, error } on any failure (including zoom_disabled) so the
+ * caller can complete the booking and provision later, exactly like the workshop retry. No
+ * securities/financial data is sent — only the meeting topic + times.
+ */
+export async function createZoomMeeting(inp: ZoomMeetingInput): Promise<ZoomMeetingResult> {
+  if (!zoomEnabled()) return { ok: false, error: 'zoom_disabled' }
+  const token = await getAccessToken()
+  if (!token) return { ok: false, error: 'no_access_token' }
+
+  const userId = process.env.ZOOM_USER_ID || 'me'
+  // Zoom wants start_time without milliseconds (yyyy-MM-ddTHH:mm:ssZ).
+  const startIso = new Date(inp.startTime).toISOString().replace(/\.\d{3}Z$/, 'Z')
+  try {
+    const res = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}/meetings`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        topic: inp.topic.slice(0, 200),
+        type: 2, // scheduled meeting
+        start_time: startIso,
+        duration: inp.durationMinutes,
+        timezone: inp.timezone || 'UTC',
+        // A 1:1 booking joins via join_url (no registration). Waiting room on by default.
+        settings: { join_before_host: false, waiting_room: true, approval_type: 2 },
+      }),
+    })
+    if (!res.ok) return { ok: false, error: `zoom_${res.status}: ${await safeText(res)}` }
+    const body = (await res.json()) as {
+      id?: string | number
+      join_url?: string
+      start_url?: string
+      settings?: { global_dial_in_numbers?: { number?: string }[] }
+    }
+    return {
+      ok: true,
+      meetingId: body.id != null ? String(body.id) : null,
+      joinUrl: body.join_url ?? null,
+      startUrl: body.start_url ?? null,
+      dialIn: body.settings?.global_dial_in_numbers?.[0]?.number ?? null,
+    }
+  } catch (err) {
+    return { ok: false, error: `zoom_fetch_failed: ${(err as Error).message}` }
+  }
+}
+
 async function safeText(res: Response): Promise<string> {
   try {
     return (await res.text()).slice(0, 300)

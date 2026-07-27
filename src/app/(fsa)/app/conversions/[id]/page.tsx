@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { DetailShell, ErrorState, AssumptionBadge } from '@/components/archetypes'
@@ -5,10 +6,27 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { load } from '@/lib/data/query'
 import { OutreachActions } from '@/components/app/OutreachActions'
-import { Numeric } from '@/components/ui/typography'
+import { Numeric, Money } from '@/components/ui/typography'
 import { SecuritiesChip } from '@/components/ui/securities'
 
 export const dynamic = 'force-dynamic'
+
+// The conversion detail block stashed on household_policies.source_data by the
+// Life Conversion importer — every column of the District export lives here, so
+// the feature surfaces the full record (not just number + deadline).
+interface ConversionDetail {
+  convertible_amount?: number | null
+  product_type?: string | null
+  insured?: string | null
+  insured_dob?: string | null
+  inception_date?: string | null
+  expiration_date?: string | null
+  conversion_deadline?: string | null
+  preferred_email?: string | null
+  preferred_phone?: string | null
+  agent_of_record?: string | null
+  aor_code?: string | null
+}
 
 interface Policy {
   id: string
@@ -18,13 +36,18 @@ interface Policy {
   conversion_deadline: string | null
   is_security: boolean
   premium: number | null
+  product_name: string | null
+  face_amount: number | null
+  effective_date: string | null
+  expiration_date: string | null
+  source_data: { conversion?: ConversionDetail } | null
 }
 
 // OS-07 Conversion Opportunity Detail (A3). The only client-facing content permitted
 // is neutral education + a review invitation — never a specific product.
 export default async function ConversionDetailPage(props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
-  const res = await load<Policy | null>((db) => db.from('household_policies').select('id, household_id, policy_number, status, conversion_deadline, is_security, premium').eq('id', params.id).is('deleted_at', null).maybeSingle(), null)
+  const res = await load<Policy | null>((db) => db.from('household_policies').select('id, household_id, policy_number, status, conversion_deadline, is_security, premium, product_name, face_amount, effective_date, expiration_date, source_data').eq('id', params.id).is('deleted_at', null).maybeSingle(), null)
   if (!res.ok) return <ErrorState description={res.kind === 'not_configured' ? 'Database not configured.' : res.message} />
   const p = res.data
   if (!p) notFound()
@@ -34,6 +57,7 @@ export default async function ConversionDetailPage(props: { params: Promise<{ id
     load<{ id: string; kind: string | null; note: string | null; created_at: string }[]>((db) => db.from('activities').select('id, kind, note, created_at').eq('entity_type', 'policy').eq('entity_id', params.id).order('created_at', { ascending: false }).limit(20), []),
   ])
   const householdName = hh.ok ? hh.data?.primary_name ?? null : null
+  const conv: ConversionDetail = p.source_data?.conversion ?? {}
 
   return (
     <DetailShell
@@ -62,10 +86,33 @@ export default async function ConversionDetailPage(props: { params: Promise<{ id
         <Card>
           <CardHeader><CardTitle className="text-base">Policy</CardTitle></CardHeader>
           <CardContent className="space-y-1 text-sm">
-            <div className="flex justify-between"><span className="text-muted-foreground">Number</span><Numeric>{p.policy_number ?? '—'}</Numeric></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Status</span><span className="capitalize">{p.status}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Conversion deadline</span><Numeric>{p.conversion_deadline ?? '—'}</Numeric></div>
+            <Row label="Policy number"><Numeric>{p.policy_number ?? '—'}</Numeric></Row>
+            <Row label="Policy holder">{householdName ?? '—'}</Row>
+            <Row label="Primary insured">{conv.insured ?? householdName ?? '—'}</Row>
+            <Row label="Product type">{p.product_name ?? conv.product_type ?? '—'}</Row>
+            <Row label="Coverage amount"><Money value={p.face_amount ?? conv.convertible_amount ?? null} /></Row>
+            <Row label="Status"><span className="capitalize">{p.status}</span></Row>
             <p className="pt-2 text-xs text-muted-foreground">Window is a config default — verify against the FNWL contract.</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="text-base">Conversion & dates</CardTitle></CardHeader>
+          <CardContent className="space-y-1 text-sm">
+            <Row label="Conversion expiring date"><Numeric>{p.conversion_deadline ?? conv.conversion_deadline ?? '—'}</Numeric></Row>
+            <Row label="Inception date"><Numeric>{p.effective_date ?? conv.inception_date ?? '—'}</Numeric></Row>
+            <Row label="Policy expiration date"><Numeric>{p.expiration_date ?? conv.expiration_date ?? '—'}</Numeric></Row>
+            <Row label="Insured birthday"><Numeric>{conv.insured_dob ?? '—'}</Numeric></Row>
+            <p className="pt-2 text-xs text-muted-foreground">Insured birthday is month/day only (no year in the source) — never fabricated.</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="text-base">Servicing & contact</CardTitle></CardHeader>
+          <CardContent className="space-y-1 text-sm">
+            <Row label="Agent of record">{conv.agent_of_record ?? '—'}</Row>
+            <Row label="AOR code"><Numeric>{conv.aor_code ?? '—'}</Numeric></Row>
+            <Row label="Preferred email">{conv.preferred_email ? <a href={`mailto:${conv.preferred_email}`} className="text-primary hover:underline">{conv.preferred_email}</a> : '—'}</Row>
+            <Row label="Preferred phone">{conv.preferred_phone ? <a href={`tel:${conv.preferred_phone}`} className="text-primary hover:underline"><Numeric>{conv.preferred_phone}</Numeric></a> : '—'}</Row>
+            <p className="pt-2 text-xs text-muted-foreground">Contact points are stored for reachability; the dispatcher still gates any outreach (consent, quiet hours, DNC).</p>
           </CardContent>
         </Card>
         <Card>
@@ -81,5 +128,15 @@ export default async function ConversionDetailPage(props: { params: Promise<{ id
         </Card>
       </div>
     </DetailShell>
+  );
+}
+
+// One label/value line in a detail card.
+function Row({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex justify-between gap-3">
+      <span className="shrink-0 text-muted-foreground">{label}</span>
+      <span className="text-right">{children}</span>
+    </div>
   );
 }

@@ -14,6 +14,12 @@ export function AppointmentConfirmation() {
         This note confirms your upcoming appointment with our office. We're looking forward to it, and we'll come
         prepared to make good use of your time.
       </Text>
+      {/* Specifics are grounded in stored data at send time via merge tokens (ADR-025 / §13):
+          appointment_time and meeting_details are substituted by the send path, never baked in. */}
+      <Text style={p}>
+        <strong>When:</strong> {'{{appointment_time}}'}
+      </Text>
+      <Text style={p}>{'{{meeting_details}}'}</Text>
       <Text style={p}>
         If anything comes up and you need to change the time, just reply — we're happy to find another slot that
         works for you.
@@ -30,6 +36,10 @@ export function AppointmentReminderEmail() {
         This is a friendly reminder about your upcoming appointment with our office. There's nothing you need to
         prepare — just bring any questions you'd like to cover.
       </Text>
+      <Text style={p}>
+        <strong>When:</strong> {'{{appointment_time}}'}
+      </Text>
+      <Text style={p}>{'{{meeting_details}}'}</Text>
       <Text style={p}>If you need to reschedule, reply any time and we'll take care of it.</Text>
     </EmailLayout>
   )

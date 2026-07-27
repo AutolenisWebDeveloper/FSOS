@@ -36,16 +36,35 @@ email booking-consent intent + audit. Honors the `is_security` firewall (no sens
   mobile-first, WCAG-labelled, designed loading/empty/no-slots/error/success states, add-to-calendar).
 - Tests: `booking-ics.test.mjs` (5), `booking-double-booking.test.mjs` (5, real Postgres — concurrent claim).
 
-## Slice 4 — Zoom meeting provisioning
-Add meeting creation to `src/lib/zoom/client.ts` (reuse S2S OAuth, `zoomEnabled()` gate). On a `video`
-booking, auto-create the meeting; store `zoom_meeting_id/join_url/start_url/dial_in`. Client gets
-`join_url` only; `start_url` is FSA-only, never sent/logged. Unconfigured Zoom → `not_configured`, booking
-still succeeds. `phone`/`in_person` skip Zoom.
+## Slice 4 — Zoom meeting provisioning ✅
+`createZoomMeeting()` added to `src/lib/zoom/client.ts` (reuses the same S2S OAuth + `zoomEnabled()` gate —
+no new integration/env). On a `video` booking, `book.ts` auto-creates the meeting and stores
+`zoom_meeting_id/join_url/start_url/dial_in`; the confirmation carries the **join link + a `meetingStatus`**
+(`provisioned`/`pending`/`none`) and the success screen shows a "Join video meeting" button when ready.
+`start_url` is persisted (FSA-only) but **never returned to the client or logged** (source-scan guardrail).
+Unconfigured Zoom or an API failure → booking still succeeds, link left null for retry via
+`POST /api/app/booking/provision-zoom` (FSA sweep, mirrors the workshop retry). `phone`/`in_person` skip Zoom.
+- Tests: `zoom-meeting-create.test.mjs` (3 — disabled no-op, no network), `booking-starturl-firewall.test.mjs`
+  (6 — host link stored, never on the confirmation / in logs / in responses / in the public UI).
+- Deferred (noted): the created meeting lives on the FSA's own Zoom account (appears in their Zoom app), so
+  surfacing `start_url` inside FSOS is a convenience left to a later slice, not a blocker.
 
-## Slice 5 — Notifications through comms
-Confirmation on booking; reminders (configurable lead, e.g. 24h + 1h) via `sendThroughGate()` — never
-direct Twilio/Resend, no comms-code edits. Reminders on the existing cron/job path, idempotent
-(`reminder_sent_at`). Reuse `src/emails/appointments.tsx`.
+## Slice 5 — Notifications through comms ✅
+Confirmation on booking + a single pre-appointment reminder (configurable lead, default 24h) via
+`sendThroughGate()` — never direct Twilio/Resend, **comms code untouched**. Reminders on the existing
+static cron path, idempotent via the `reminder_sent_at` atomic claim.
+- `src/lib/booking/notify-core.ts` (pure: time formatting, meeting-details copy, `isReminderDue`) +
+  `notify.ts` (`sendBookingConfirmation`, `runBookingReminderPass` — loads the approved appointment
+  template by `source_key`, sends email with `durableConsentGranted` for the non-member booker + merge
+  tokens carrying the time + Zoom join link; defers cleanly if the template isn't approved yet).
+- Extended `src/emails/appointments.tsx` confirmation + reminder with `{{appointment_time}}` /
+  `{{meeting_details}}` merge tokens (grounded at send; determinism test still green).
+- `/api/cron/booking-reminders` static route (mirrors `workshop-reminders` auth) + `vercel.json` entry
+  (`*/15 * * * *`); confirmation fired best-effort from the booking flow.
+- Consent: reads the Slice 3 `consent_intent` (email only; never infers SMS). Quiet-hours/DNC/approval
+  all still enforced by the untouched gate.
+- Tests: `booking-notify.test.mjs` (15, pure) + `booking-reminder-idempotency.test.mjs` (3, real
+  Postgres — the `reminder_sent_at` atomic claim sends once).
 
 ## Slice 6 — Reschedule / cancel
 Signed, expiring, single-purpose tokens in the confirmation. Cancel frees the slot atomically, deletes the

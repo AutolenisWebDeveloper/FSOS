@@ -96,10 +96,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Could not complete registration. Please try again.' }, { status: 500 })
   }
 
-  // Confirmation email (best-effort; never blocks the registration result).
+  // Confirmation email (transactional — a registration receipt, NOT gated by
+  // marketing consent). Best-effort: it never blocks the registration result, but a
+  // provider rejection is logged, not silently dropped, so a bad Resend config is
+  // diagnosable instead of leaving registrants with no confirmation and no trace.
   if (emailConfigured()) {
     const when = w.scheduled_at ? new Date(w.scheduled_at).toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' }) : 'TBA'
-    await sendEmail(
+    const sent = await sendEmail(
       email,
       `You're registered — ${w.title}`,
       `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#1a2332">
@@ -109,6 +112,11 @@ export async function POST(req: NextRequest) {
         <p>We'll send a reminder before the event. See you there!</p>
       </div>`,
     )
+    if (!sent.ok) {
+      console.error('[workshop-register] confirmation email failed (registration kept):', sent.error)
+    }
+  } else {
+    console.warn('[workshop-register] email not configured — confirmation not sent (registration kept)')
   }
 
   return NextResponse.json({ success: true, workshop: w.title })

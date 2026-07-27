@@ -6,6 +6,7 @@ import { load } from '@/lib/data/query'
 import type { BookableType } from '@/lib/booking/slots'
 import { meetingModeLabel } from '@/lib/booking/display'
 import { BookingFlow } from '@/components/public/booking/BookingFlow'
+import { ManageFlow } from '@/components/public/booking/ManageFlow'
 import { BUSINESS } from '@/lib/site'
 
 export const dynamic = 'force-dynamic'
@@ -19,8 +20,24 @@ export const metadata: Metadata = {
 // Public booking entry. `?type=<slug>` opens the flow for one appointment type; with no
 // type we show the chooser (or open the only type directly). Auth-free — /schedule is on
 // the public allowlist and this stays under that exact path (the type is a query param).
-export default async function SchedulePage(props: { searchParams: Promise<{ type?: string }> }) {
-  const { type: typeParam } = await props.searchParams
+export default async function SchedulePage(props: {
+  searchParams: Promise<{ type?: string; manage?: string }>
+}) {
+  const { type: typeParam, manage } = await props.searchParams
+
+  // Self-service reschedule/cancel (Slice 6) — reached from a signed link in the confirmation
+  // email; kept under the allowlisted /schedule path via the `manage` query param.
+  if (manage) {
+    return (
+      <PublicPage>
+        <div className="w-full max-w-2xl">
+          <PublicBrandLockup />
+          <ManageFlow token={manage} />
+        </div>
+      </PublicPage>
+    )
+  }
+
   const res = await load<BookableType[]>(
     (db) =>
       db

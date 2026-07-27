@@ -21,8 +21,22 @@ export function AppointmentConfirmation() {
       </Text>
       <Text style={p}>{'{{meeting_details}}'}</Text>
       <Text style={p}>
-        If anything comes up and you need to change the time, just reply — we're happy to find another slot that
-        works for you.
+        Need to make a change? Reschedule: {'{{reschedule_url}}'} — or cancel: {'{{cancel_url}}'}
+      </Text>
+    </EmailLayout>
+  )
+}
+
+export function AppointmentCancellation() {
+  return (
+    <EmailLayout preview="Your appointment has been cancelled">
+      <Heading style={h1}>Your appointment is cancelled, {'{{first_name}}'}</Heading>
+      <Text style={p}>
+        This confirms that your appointment ({'{{appointment_time}}'}) has been cancelled. No further action is
+        needed on your part.
+      </Text>
+      <Text style={p}>
+        If you'd like to find another time, you're always welcome to book again or just reply and we'll help.
       </Text>
     </EmailLayout>
   )
@@ -40,7 +54,9 @@ export function AppointmentReminderEmail() {
         <strong>When:</strong> {'{{appointment_time}}'}
       </Text>
       <Text style={p}>{'{{meeting_details}}'}</Text>
-      <Text style={p}>If you need to reschedule, reply any time and we'll take care of it.</Text>
+      <Text style={p}>
+        Need to make a change? Reschedule: {'{{reschedule_url}}'} — or cancel: {'{{cancel_url}}'}
+      </Text>
     </EmailLayout>
   )
 }

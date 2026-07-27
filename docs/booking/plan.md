@@ -66,10 +66,21 @@ static cron path, idempotent via the `reminder_sent_at` atomic claim.
 - Tests: `booking-notify.test.mjs` (15, pure) + `booking-reminder-idempotency.test.mjs` (3, real
   Postgres — the `reminder_sent_at` atomic claim sends once).
 
-## Slice 6 — Reschedule / cancel
-Signed, expiring, single-purpose tokens in the confirmation. Cancel frees the slot atomically, deletes the
-Zoom meeting, notifies. Reschedule claims-new-and-frees-old in one transaction and updates the Zoom time.
-All transitions audited; Zoom-unconfigured steps are clean no-ops.
+## Slice 6 — Reschedule / cancel ✅
+Signed, expiring, single-purpose manage tokens carried in the confirmation/reminder emails; a public
+token-gated flow at `/schedule?manage=<token>` (no id exposed). Cancel frees the slot atomically + deletes
+the Zoom meeting + sends a cancellation notice; reschedule re-validates the new slot, MOVES the row in one
+UPDATE (claim-new-and-free-old, guarded by the double-booking unique index), updates the Zoom time, and
+re-sends the confirmation. All transitions audited; Zoom steps are gated no-ops when unconfigured.
+- `src/lib/booking/manage-tokens.ts` (HMAC envelope over the STORED opaque `cancel_token`/`reschedule_token`
+  + purpose + expiry — no db id in the link) + `manage.ts` (`resolveManageToken`/`cancelAppointment`/
+  `rescheduleAppointment`, reusing `setAppointmentStatus`, `computeSlotsForType`, Zoom update/delete, notify).
+- `GET/POST /api/public/booking/manage` (token-gated, rate-limited, purpose must match action) +
+  `ManageFlow` client (`/schedule?manage=`), reusing the availability API for the reschedule picker.
+- New `AppointmentCancellation` email template (registry 30→31; determinism test updated); confirmation +
+  reminder now carry `{{reschedule_url}}`/`{{cancel_url}}` signed manage links.
+- Tests: `booking-manage-token.test.mjs` (10, pure — sign/verify/expiry/tamper/single-purpose) +
+  `booking-reschedule-move.test.mjs` (2, real Postgres — atomic move rejects a taken slot, frees the old).
 
 ## Slice 7 — Google busy-sync (one-way, optional)
 Read-only Google Calendar busy blocks feed the calculator's `externalBusy`. OAuth (read-only scope), tokens

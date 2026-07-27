@@ -174,6 +174,66 @@ export async function createZoomMeeting(inp: ZoomMeetingInput): Promise<ZoomMeet
   }
 }
 
+export interface ZoomMutationResult {
+  ok: boolean
+  /** True when Zoom is unconfigured — a clean no-op, not a failure (caller proceeds). */
+  skipped?: boolean
+  error?: string
+}
+
+/**
+ * Update a scheduled meeting's time/duration (reschedule, Slice 6). PATCH /meetings/{id}
+ * returns 204 on success. Gated + best-effort: `{ ok:true, skipped:true }` when Zoom is
+ * unconfigured or the appointment has no meeting id, so a reschedule never fails on Zoom.
+ */
+export async function updateZoomMeeting(
+  meetingId: string | null | undefined,
+  inp: { startTime: string; durationMinutes: number; topic?: string; timezone?: string },
+): Promise<ZoomMutationResult> {
+  if (!zoomEnabled()) return { ok: true, skipped: true }
+  if (!meetingId) return { ok: true, skipped: true }
+  const token = await getAccessToken()
+  if (!token) return { ok: false, error: 'no_access_token' }
+  const startIso = new Date(inp.startTime).toISOString().replace(/\.\d{3}Z$/, 'Z')
+  try {
+    const res = await fetch(`${API_BASE}/meetings/${encodeURIComponent(meetingId)}`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        start_time: startIso,
+        duration: inp.durationMinutes,
+        ...(inp.topic ? { topic: inp.topic.slice(0, 200) } : {}),
+        timezone: inp.timezone || 'UTC',
+      }),
+    })
+    if (!res.ok) return { ok: false, error: `zoom_${res.status}: ${await safeText(res)}` }
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: `zoom_fetch_failed: ${(err as Error).message}` }
+  }
+}
+
+/**
+ * Delete a scheduled meeting (cancel, Slice 6). DELETE /meetings/{id} returns 204; a 404 is
+ * treated as success (already gone). Gated + best-effort like updateZoomMeeting.
+ */
+export async function deleteZoomMeeting(meetingId: string | null | undefined): Promise<ZoomMutationResult> {
+  if (!zoomEnabled()) return { ok: true, skipped: true }
+  if (!meetingId) return { ok: true, skipped: true }
+  const token = await getAccessToken()
+  if (!token) return { ok: false, error: 'no_access_token' }
+  try {
+    const res = await fetch(`${API_BASE}/meetings/${encodeURIComponent(meetingId)}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (res.ok || res.status === 404) return { ok: true } // 404 = already deleted
+    return { ok: false, error: `zoom_${res.status}: ${await safeText(res)}` }
+  } catch (err) {
+    return { ok: false, error: `zoom_fetch_failed: ${(err as Error).message}` }
+  }
+}
+
 async function safeText(res: Response): Promise<string> {
   try {
     return (await res.text()).slice(0, 300)

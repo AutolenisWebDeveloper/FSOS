@@ -11,8 +11,9 @@
 
 import { getDb } from '@/lib/supabase/client'
 import { unwrapOne } from '@/lib/data/query'
-import { CONTACT } from '@/lib/site'
+import { CONTACT, siteUrl } from '@/lib/site'
 import { sendThroughGate } from '@/lib/comms/send'
+import { signManageToken, manageTokenKey, MANAGE_TOKEN_TTL_MS } from './manage-tokens'
 import {
   buildBookingContext,
   isReminderDue,
@@ -48,13 +49,32 @@ interface ApptRow {
   booked_at: string | null
   status: string
   reminder_sent_at: string | null
+  cancel_token: string | null
+  reschedule_token: string | null
   contacts: ContactRow | ContactRow[] | null
   appointment_types: TypeRow | TypeRow[] | null
 }
 
 const APPT_SELECT =
   'id, contact_id, starts_at, booker_timezone, meeting_mode, join_url, booked_at, status, reminder_sent_at, ' +
+  'cancel_token, reschedule_token, ' +
   'contacts:contact_id(full_name, first_name, email, phone), appointment_types:appointment_type_id(name, meeting_mode)'
+
+/** Signed, expiring reschedule/cancel manage links for the email (Slice 6). Empty when the
+ *  appointment carries no self-service token (e.g. a review-created appointment). */
+function manageUrls(appt: ApptRow): { reschedule_url: string; cancel_url: string } {
+  const key = manageTokenKey()
+  const exp = Date.now() + MANAGE_TOKEN_TTL_MS
+  const base = siteUrl()
+  return {
+    reschedule_url: appt.reschedule_token
+      ? `${base}/schedule?manage=${encodeURIComponent(signManageToken(appt.reschedule_token, 'reschedule', exp, key))}`
+      : '',
+    cancel_url: appt.cancel_token
+      ? `${base}/schedule?manage=${encodeURIComponent(signManageToken(appt.cancel_token, 'cancel', exp, key))}`
+      : '',
+  }
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = ReturnType<typeof getDb>
@@ -111,7 +131,8 @@ async function sendAppointmentEmail(
     isSecurity: false,
     actor: opts.actor,
     entity: { type: 'appointment', id: opts.appt.id },
-    recipientContext: ctx,
+    // Merge context + signed reschedule/cancel manage links (unused tokens render empty).
+    recipientContext: { ...ctx, ...manageUrls(opts.appt) },
   })
   return { sent: outcome.sent, reason: outcome.sent ? undefined : outcome.reason ?? 'gate_blocked' }
 }
@@ -127,6 +148,22 @@ export async function sendBookingConfirmation(appointmentId: string): Promise<No
   // The booker just opted into email at booking time (Slice 3 consent_intent) → durable email consent.
   return sendAppointmentEmail(db, {
     sourceKey: 'appointment-confirmation',
+    appt: data as unknown as ApptRow,
+    actor: 'public',
+    durableConsentGranted: true,
+  })
+}
+
+/**
+ * Send the cancellation notice (Slice 6). Best-effort — the cancellation is already
+ * committed. Transactional (the attendee just cancelled), so email consent is durable.
+ */
+export async function sendCancellationNotice(appointmentId: string): Promise<NotifyOutcome> {
+  const db = getDb()
+  const { data } = await db.from('appointments').select(APPT_SELECT).eq('id', appointmentId).maybeSingle()
+  if (!data) return { sent: false, reason: 'not_found' }
+  return sendAppointmentEmail(db, {
+    sourceKey: 'appointment-cancellation',
     appt: data as unknown as ApptRow,
     actor: 'public',
     durableConsentGranted: true,

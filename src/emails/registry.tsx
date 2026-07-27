@@ -17,7 +17,7 @@ import { BeneficiaryReviewReminder, LifeEventCheckin, CoverageNeedsCheckup, Year
 import { LifeInsuranceBasics, EmergencyFundEducation, IncomeProtectionEducation, RetirementReadinessEducation, CollegeSavingsEducation, EstatePlanningBasics } from './education'
 import { WorkshopInviteEmail, WorkshopReminder } from './events'
 import { ReferralThankYou, ReferralRequest, AgencyPartnerIntro } from './referrals'
-import { AppointmentConfirmation, AppointmentReminderEmail, AppointmentRecap, RescheduleInvite } from './appointments'
+import { AppointmentConfirmation, AppointmentReminderEmail, AppointmentRecap, RescheduleInvite, AppointmentCancellation } from './appointments'
 import { QuoteFollowUp, CoverageQuestionsFollowUp, ReconnectCheckin } from './followups'
 
 export interface EmailTemplateEntry {
@@ -69,6 +69,7 @@ export const EMAIL_TEMPLATES: EmailTemplateEntry[] = [
   { sourceKey: 'appointment-reminder-email', name: 'Appointment reminder (email)', channel: 'email', category: 'appointment', element: <AppointmentReminderEmail /> },
   { sourceKey: 'appointment-recap', name: 'Appointment recap / follow-up', channel: 'email', category: 'appointment', element: <AppointmentRecap /> },
   { sourceKey: 'reschedule-invite', name: 'Reschedule invitation', channel: 'email', category: 'appointment', element: <RescheduleInvite /> },
+  { sourceKey: 'appointment-cancellation', name: 'Appointment cancellation', channel: 'email', category: 'appointment', element: <AppointmentCancellation /> },
 
   // ── Gentle follow-ups ──
   { sourceKey: 'quote-follow-up', name: 'Quote / information follow-up', channel: 'email', category: 'educational', element: <QuoteFollowUp /> },

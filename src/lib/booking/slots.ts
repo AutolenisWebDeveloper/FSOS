@@ -11,6 +11,7 @@
 
 import { getDb } from '@/lib/supabase/client'
 import { computeAvailableSlots, type AvailabilityRule, type BusyBlock, type RenderedSlot } from './availability'
+import { loadGoogleBusy } from './google/busy'
 
 export interface BookableType {
   id: string
@@ -81,10 +82,21 @@ export async function computeSlotsForType(args: {
     .gte('starts_at', isoMinusDays(args.rangeStart, 1))
     .lte('starts_at', isoPlusDays(args.rangeEnd, 1))
 
-  const [rulesRes, blackoutsRes, busyRes] = await Promise.all([
+  // Google busy-sync (Slice 7): one-way, read-only. Loaded over the same padded window as
+  // existing appointments. This NEVER throws and NEVER blocks availability — when Google is
+  // not configured / not connected / degraded it returns an empty set (native availability).
+  const googleBusyP = loadGoogleBusy({
+    hostUserId: type.host_user_id,
+    timeMinIso: isoMinusDays(args.rangeStart, 1),
+    timeMaxIso: isoPlusDays(args.rangeEnd, 1),
+    now: args.now,
+  })
+
+  const [rulesRes, blackoutsRes, busyRes, googleBusy] = await Promise.all([
     type.host_user_id ? rulesQ.eq('host_user_id', type.host_user_id) : rulesQ.is('host_user_id', null),
     type.host_user_id ? blackoutsQ.eq('host_user_id', type.host_user_id) : blackoutsQ.is('host_user_id', null),
     type.host_user_id ? busyQ.eq('host_user_id', type.host_user_id) : busyQ.is('host_user_id', null),
+    googleBusyP,
   ])
   if (rulesRes.error) return { ok: false, kind: 'error', message: rulesRes.error.message }
   if (blackoutsRes.error) return { ok: false, kind: 'error', message: blackoutsRes.error.message }
@@ -122,7 +134,7 @@ export async function computeSlotsForType(args: {
     rules,
     existingAppointments,
     blackouts,
-    externalBusy: [], // Google busy-sync arrives in Slice 7.
+    externalBusy: googleBusy.busy, // Google busy-sync (Slice 7): [] when unconfigured/degraded.
     rangeStart: args.rangeStart,
     rangeEnd: args.rangeEnd,
     bookerTimezone: args.bookerTimezone,

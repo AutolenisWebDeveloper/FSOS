@@ -82,10 +82,29 @@ re-sends the confirmation. All transitions audited; Zoom steps are gated no-ops 
 - Tests: `booking-manage-token.test.mjs` (10, pure — sign/verify/expiry/tamper/single-purpose) +
   `booking-reschedule-move.test.mjs` (2, real Postgres — atomic move rejects a taken slot, frees the old).
 
-## Slice 7 — Google busy-sync (one-way, optional)
-Read-only Google Calendar busy blocks feed the calculator's `externalBusy`. OAuth (read-only scope), tokens
-encrypted at rest, refresh server-side. One-way only. `not_configured`-safe; token expiry/revocation/downtime
-degrade to native availability (WARNING, not ERROR).
+## Slice 7 — Google busy-sync (one-way, optional) ✅
+Read-only Google Calendar busy blocks feed the calculator's `externalBusy`. OAuth (`calendar.readonly` scope
+ONLY), tokens encrypted at rest, refresh server-side. One-way only — FSOS never writes to Google.
+`not_configured`-safe; token expiry/revocation/downtime/timeout all degrade to native availability
+(`skipped`, WARNING not ERROR) — the booker always sees native slots.
+- New table (mig 072) `booking_calendar_connections`, scoped by nullable `host_user_id` (null = default host),
+  one active per host (partial unique indexes), default-deny RLS. Credential envelope encrypted at rest via
+  pgcrypto SECURITY DEFINER RPCs (`booking_calendar_set_secret`/`_secret`, env-held key, revoked from
+  anon/authenticated) — booking-local, conforming to the social secret-at-rest technique without touching the
+  frozen social module (§6 bounded contexts).
+- `src/lib/booking/google/oauth.ts` (PURE: provider config + gate, authorize URL, signed expiring CSRF state,
+  credential envelope, `mapFreeBusyResponse` RFC3339→UTC-ISO) + `exchange.ts` (server-only: code exchange,
+  silent refresh, `freeBusy` read — raw `fetch`, no `googleapis` dep) + `connection.ts` (DB service, never
+  selects `secret_enc`) + `busy.ts` (`loadGoogleBusy` — the degrade-safe, never-throws orchestrator).
+- Wired at the single Slice-3 seam (`slots.ts` `externalBusy`), loaded over the same ±1-day padded window as
+  existing appointments; subtracted raw (no buffer) by the calculator.
+- Routes: `GET/DELETE /api/app/booking/calendar` (status/disconnect) + `GET .../calendar/oauth/{start,callback}`
+  (FSA-guarded, signed-state + nonce-cookie double binding, redirect flow). FSA connect card added to
+  `/app/booking` (`GoogleCalendarConnect`), reusing `SettingsSection`/`Badge`/`Button` — no new design pattern.
+- Tests: `booking-google-oauth.test.mjs` (11, pure — read-only scope, offline consent, state sign/verify/expiry/
+  tamper/cross-kind, envelope, freeBusy mapping) + `booking-google-no-writeback.test.mjs` (5, source scan —
+  only `calendar.readonly` + only `freeBusy`, no events-mutation endpoint) + `booking-google-connection.test.mjs`
+  (6, real Postgres — pgcrypto encrypt-at-rest round-trip + wrong-key failure, per-host uniqueness, disconnect).
 
 ## Slice 8 — Calendly decommission
 Migrate open Calendly bookings onto the spine (reconciliation count). Remove the webhook + references

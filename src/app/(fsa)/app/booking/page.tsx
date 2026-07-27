@@ -3,6 +3,20 @@ import { load } from '@/lib/data/query'
 import { AppointmentTypesManager, type AppointmentTypeRow } from '@/components/app/booking/AppointmentTypesManager'
 import { AvailabilityRulesManager, type AvailabilityRuleRow } from '@/components/app/booking/AvailabilityRulesManager'
 import { BlackoutsManager, type BlackoutRow } from '@/components/app/booking/BlackoutsManager'
+import { GoogleCalendarConnect, type CalendarConnection } from '@/components/app/booking/GoogleCalendarConnect'
+import { googleCalendarConfigured } from '@/lib/booking/google/oauth'
+
+interface CalendarConnRow {
+  id: string
+  status: CalendarConnection['status']
+  google_account_email: string | null
+  calendar_id: string
+  scopes: unknown
+  token_expires_at: string | null
+  last_synced_at: string | null
+  last_error: string | null
+  connected_at: string | null
+}
 
 export const dynamic = 'force-dynamic'
 
@@ -12,7 +26,7 @@ export const dynamic = 'force-dynamic'
 // portal layout has gated the FSA role (RLS on these tables is default-deny). The public
 // booking flow (Slice 3) consumes exactly this configuration.
 export default async function BookingSettingsPage() {
-  const [typesRes, rulesRes, blackoutsRes] = await Promise.all([
+  const [typesRes, rulesRes, blackoutsRes, calendarRes] = await Promise.all([
     load<AppointmentTypeRow[]>(
       (db) =>
         db
@@ -41,6 +55,18 @@ export default async function BookingSettingsPage() {
           .order('starts_at', { ascending: true }),
       [],
     ),
+    load<CalendarConnRow[]>(
+      (db) =>
+        db
+          .from('booking_calendar_connections')
+          .select(
+            'id, status, google_account_email, calendar_id, scopes, token_expires_at, last_synced_at, last_error, connected_at',
+          )
+          .is('deleted_at', null)
+          .order('connected_at', { ascending: false })
+          .limit(1),
+      [],
+    ),
   ])
 
   // Any hard failure across the three: show one clear notice rather than a partial page.
@@ -65,6 +91,23 @@ export default async function BookingSettingsPage() {
   const types = typesRes.ok ? typesRes.data : []
   const rules = rulesRes.ok ? rulesRes.data : []
   const blackouts = blackoutsRes.ok ? blackoutsRes.data : []
+
+  // Calendar connection is non-blocking: if it can't load (e.g. table not yet migrated),
+  // fall back to "not connected" rather than failing the whole settings page.
+  const calRow = calendarRes.ok ? calendarRes.data[0] : undefined
+  const calendarConnection: CalendarConnection | null = calRow
+    ? {
+        id: calRow.id,
+        status: calRow.status,
+        googleAccountEmail: calRow.google_account_email,
+        calendarId: calRow.calendar_id || 'primary',
+        scopes: Array.isArray(calRow.scopes) ? (calRow.scopes as string[]) : [],
+        tokenExpiresAt: calRow.token_expires_at,
+        lastSyncedAt: calRow.last_synced_at,
+        lastError: calRow.last_error,
+        connectedAt: calRow.connected_at,
+      }
+    : null
 
   const activeTypes = types.filter((t) => t.active).length
   const activeRules = rules.filter((r) => r.active).length
@@ -99,6 +142,13 @@ export default async function BookingSettingsPage() {
         description="Specific ranges you are unavailable — subtracted from every appointment type's availability."
       >
         <BlackoutsManager initialBlackouts={blackouts} />
+      </SettingsSection>
+
+      <SettingsSection
+        title="Google Calendar"
+        description="Connect your Google Calendar so booked time is blocked automatically. Read-only and one-way — FSOS reads only your busy times and never changes your calendar."
+      >
+        <GoogleCalendarConnect configured={googleCalendarConfigured()} connection={calendarConnection} />
       </SettingsSection>
     </SettingsShell>
   )

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
 import { Numeric } from '@/components/ui/typography'
+import { smsA2pApproved } from '@/lib/comms/a2p'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,6 +15,9 @@ export default async function CampaignsPage() {
     (db) => db.from('comm_campaigns').select('id, name, channel, category, status, activated_at').is('archived_at', null).order('created_at', { ascending: false }),
     [],
   )
+  // Slice 7 — SMS is staged until A2P 10DLC approval; flag SMS campaigns so the FSA knows
+  // they will hold (queued, not sent) until the campaign is approved.
+  const smsStaged = !smsA2pApproved()
 
   return (
     <ListShell title="Campaigns" description="No campaign sends without an approved template + a passing gate." breadcrumb={[{ label: 'FSA', href: '/app' }, { label: 'Comms', href: '/app/comms' }, { label: 'Campaigns' }]} actions={<Button asChild><Link href="/app/comms/campaigns/new">New campaign</Link></Button>}>
@@ -29,7 +33,14 @@ export default async function CampaignsPage() {
               {campaigns.data.map((c) => (
                 <TableRow key={c.id}>
                   <TableCell><Link href={`/app/comms/campaigns/${c.id}`} className="font-medium text-primary hover:underline">{c.name}</Link></TableCell>
-                  <TableCell><Badge variant="outline">{c.channel ?? '—'}</Badge></TableCell>
+                  <TableCell>
+                    <span className="inline-flex items-center gap-1.5">
+                      <Badge variant="outline">{c.channel ?? '—'}</Badge>
+                      {c.channel === 'sms' && smsStaged && (
+                        <Badge variant="pending" title="SMS holds (queued, not sent) until A2P 10DLC approval">Pending A2P</Badge>
+                      )}
+                    </span>
+                  </TableCell>
                   <TableCell><Badge variant={c.status === 'active' ? 'active' : c.status === 'completed' ? 'won' : c.status === 'paused' ? 'pending' : 'draft'}>{c.status}</Badge></TableCell>
                   <TableCell className="text-muted-foreground">{c.activated_at ? <Numeric>{new Date(c.activated_at).toLocaleDateString('en-US')}</Numeric> : '—'}</TableCell>
                 </TableRow>

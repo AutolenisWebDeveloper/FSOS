@@ -71,6 +71,12 @@ function appBaseUrl(): string {
 }
 
 export async function sendSms(to: string, body: string): Promise<SendResult> {
+  // A2P 10DLC backstop (§12): never place an SMS to a real contact before the A2P
+  // campaign is approved. The pure gate (step `sms_live`) is the primary enforcement;
+  // this is defense-in-depth so no code path — even one that bypasses the gate — can
+  // send SMS while staged. Flip SMS_A2P_APPROVED=true on approval to activate.
+  const { smsA2pApproved } = await import('./comms/a2p')
+  if (!smsA2pApproved()) return { ok: false, error: 'sms_pending_a2p_approval', skipped: true }
   const sid = process.env.TWILIO_ACCOUNT_SID
   const token = process.env.TWILIO_AUTH_TOKEN
   const from = process.env.TWILIO_PHONE_NUMBER

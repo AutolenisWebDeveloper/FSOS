@@ -5,9 +5,10 @@ import { rateLimit, clientIp } from '@/lib/http/rate-limit'
 import { ContactLeadSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
 import { emailLc } from '@/lib/contacts/normalize'
-import { SMS_CONSENT } from '@/lib/site'
+import { SMS_CONSENT, BUSINESS } from '@/lib/site'
 import { smsConsentVersion } from '@/lib/comms/consent-version'
 import { consentContactKey } from '@/lib/comms/contact-consent'
+import { notifyFsa, sendVisitorAck } from '@/lib/notifications/transactional'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -181,6 +182,43 @@ export async function POST(req: NextRequest) {
         email_masked: mask(email),
       },
     })
+
+    // TRANSACTIONAL notifications (best-effort — the lead is already persisted). The visitor
+    // gets an acknowledgement of their own request; the FSA gets an internal "new lead" alert
+    // (reply-to set to the lead so a reply reaches them directly). Neither is marketing, so
+    // neither is consent-gated; a failure is logged, never fatal to the submission.
+    const displayName = v.data.full_name?.trim() || 'there'
+    const leadRows = [
+      { label: 'Name', value: v.data.full_name },
+      { label: 'Email', value: v.data.email },
+      { label: 'Phone', value: phone },
+      { label: 'Interest', value: v.data.interest || null },
+      { label: 'Preferred contact', value: v.data.preferred_contact !== 'no_preference' ? v.data.preferred_contact : null },
+      { label: 'Appointment', value: v.data.appointment_pref || null },
+      { label: 'Source', value: `${v.data.source_page} (${v.data.form_name})` },
+      { label: 'Message', value: v.data.message },
+      ...(possibleDuplicate ? [{ label: 'Note', value: '⚠ Possible duplicate of an existing lead — reconcile before merge.' }] : []),
+    ]
+    await Promise.allSettled([
+      sendVisitorAck({
+        to: v.data.email,
+        subject: `We received your request — ${BUSINESS.short}`,
+        heading: `Thanks for reaching out, ${displayName}.`,
+        lede: `Your message has reached ${BUSINESS.agent}, ${BUSINESS.title} with ${BUSINESS.carrier}. We aim to respond within ${SLA_HOURS} hours during business hours. Here's a copy of what you sent.`,
+        rows: [
+          { label: 'Interest', value: v.data.interest || null },
+          { label: 'Your message', value: v.data.message },
+        ],
+        note: 'This is a confirmation that your request was received — no action is needed. If you did not submit this, you can ignore this email.',
+      }),
+      notifyFsa({
+        subject: `New lead — ${v.data.full_name}${v.data.interest ? ` (${v.data.interest})` : ''}`,
+        heading: 'New consultation request',
+        lede: 'A new lead came in through the public contact form. Details below.',
+        rows: leadRows,
+        replyTo: v.data.email,
+      }),
+    ])
 
     // Never leak the created id to the public caller.
     return NextResponse.json({ ok: true })

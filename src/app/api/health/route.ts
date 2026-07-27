@@ -14,6 +14,14 @@ export async function GET() {
     supabase_service_key: !!process.env.SUPABASE_SERVICE_KEY,
     anthropic_key: !!process.env.ANTHROPIC_API_KEY,
     resend_key: !!process.env.RESEND_API_KEY,
+    // Email actually SENDS only when both the key and a non-placeholder verified sender are
+    // set (lib/messaging.emailConfigured). resend_key alone is not enough — surface both.
+    resend_from_email: !!(process.env.RESEND_FROM_EMAIL && !/yourdomain\.com/i.test(process.env.RESEND_FROM_EMAIL)),
+    email_configured: !!(
+      process.env.RESEND_API_KEY &&
+      process.env.RESEND_FROM_EMAIL &&
+      !/yourdomain\.com/i.test(process.env.RESEND_FROM_EMAIL)
+    ),
     twilio: !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER),
     ghl_key: !!process.env.GHL_API_KEY,
     apollo_key: !!process.env.APOLLO_API_KEY,
@@ -51,6 +59,11 @@ export async function GET() {
   }
 
   if (!env.anthropic_key) hints.push('ANTHROPIC_API_KEY is unset — the FNA generator and AI assistant will be unavailable.')
+  if (!env.email_configured) {
+    hints.push(
+      'Email is not sendable — set RESEND_API_KEY and a RESEND_FROM_EMAIL on a Resend-verified domain (not a *yourdomain.com* placeholder). Until then, contact-form, workshop, and booking confirmations plus FSA lead alerts cannot send.',
+    )
+  }
 
   const ok = env.supabase_url && env.supabase_service_key && supabase_reachable && schema_present
 

@@ -20,6 +20,8 @@ import { buildContactIndex, resolveContact, type CandidateContact } from '@/lib/
 import { createZoomMeeting, zoomEnabled } from '@/lib/zoom/client'
 import { sendBookingConfirmation } from './notify'
 import { computeSlotsForType } from './slots'
+import { notifyFsa, sendVisitorAck } from '@/lib/notifications/transactional'
+import { BUSINESS } from '@/lib/site'
 
 export interface BookInput {
   typeSlug: string
@@ -55,6 +57,19 @@ export type BookResult =
 
 const UNIQUE_VIOLATION = '23505'
 const CONSENT_DISCLOSURE_VERSION = 'booking-email-2026-07'
+
+/** Human-readable local time for the notification body (best-effort; falls back to UTC). */
+function formatLocal(startsAt: string, timezone: string): string {
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone || 'America/Chicago',
+      dateStyle: 'full',
+      timeStyle: 'short',
+    }).format(new Date(startsAt))
+  } catch {
+    return new Date(startsAt).toUTCString()
+  }
+}
 
 /**
  * Book an appointment from a validated public request. `now` is injected (UTC ISO) so the
@@ -196,13 +211,69 @@ export async function bookAppointment(input: BookInput, now: string): Promise<Bo
     diff: { channel: 'email', scope: 'booking', version: CONSENT_DISCLOSURE_VERSION },
   })
 
-  // 6. Send the confirmation email through the comms gate (Slice 5). Best-effort: the
-  //    appointment already exists, so a deferred/blocked email (e.g. template not yet
-  //    approved, quiet hours) never fails the booking. Errors are swallowed here.
+  // 6. Notifications (best-effort — the appointment already exists, so nothing here can fail
+  //    the booking). Two audiences:
+  //    a) the BOOKER — the templated confirmation through the comms gate (Slice 5) when an
+  //       approved appointment-confirmation template exists; otherwise a TRANSACTIONAL
+  //       fallback so the booker always gets exactly one confirmation even before marketing
+  //       templates are approved (the historical outage: templates seed as `draft`).
+  //    b) the FSA — an internal "new booking" ops alert (reply-to the booker).
+  const whenLocal = formatLocal(slot.startsAt, input.bookerTimezone)
+  const meetingLine =
+    type.meeting_mode === 'video'
+      ? joinUrl
+        ? `Video — join link: ${joinUrl}`
+        : 'Video — join link to follow'
+      : type.meeting_mode === 'phone'
+        ? 'Phone call'
+        : 'In person'
   try {
-    await sendBookingConfirmation(appointmentId)
+    let confirmationSent = false
+    try {
+      const outcome = await sendBookingConfirmation(appointmentId)
+      confirmationSent = outcome.sent
+    } catch {
+      /* fall through to the transactional fallback below */
+    }
+    const notes: Promise<unknown>[] = []
+    if (!confirmationSent) {
+      notes.push(
+        sendVisitorAck({
+          to: input.email,
+          subject: `Appointment confirmed — ${type.name}`,
+          heading: `You're booked, ${input.name?.trim() || 'there'}.`,
+          lede: `Your appointment with ${BUSINESS.agent}, ${BUSINESS.title} with ${BUSINESS.carrier}, is confirmed. Details are below.`,
+          rows: [
+            { label: 'Appointment', value: type.name },
+            { label: 'When', value: whenLocal },
+            { label: 'How', value: meetingLine },
+            { label: 'Reference', value: reference },
+          ],
+          note: 'Need to reschedule or cancel? Reply to this email and we\'ll take care of it.',
+        }),
+      )
+    }
+    notes.push(
+      notifyFsa({
+        subject: `New booking — ${type.name} (${input.name})`,
+        heading: 'New appointment booked',
+        lede: `${input.name} booked “${type.name}” through the public scheduler.`,
+        rows: [
+          { label: 'Name', value: input.name },
+          { label: 'Email', value: input.email },
+          { label: 'Phone', value: input.phone ?? null },
+          { label: 'Appointment', value: type.name },
+          { label: 'When', value: whenLocal },
+          { label: 'How', value: meetingLine },
+          { label: 'Reference', value: reference },
+          { label: 'Notes', value: input.notes ?? null },
+        ],
+        replyTo: input.email,
+      }),
+    )
+    await Promise.allSettled(notes)
   } catch {
-    /* best-effort — booking success is not contingent on the confirmation email */
+    /* best-effort — booking success is not contingent on any notification */
   }
 
   return {

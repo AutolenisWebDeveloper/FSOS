@@ -73,6 +73,47 @@ export function deriveIsSecurity(presenters: PresenterSecuritySignal[]): boolean
   )
 }
 
+// ── Session Zoom-meeting provisioning decision (idempotent + gated) ─────────────
+// Pure gate for CREATING a Zoom meeting for a workshop session. Kept side-effect-free so
+// the create/retry paths and the tests share one decision. Order mirrors the registrant
+// provisioning skip-ladder in server.ts so behavior is consistent:
+//   not_virtual  → in-person session has no online meeting
+//   zoom_disabled → no ZOOM_* credentials (clean no-op; never a hard failure)
+//   already      → session already has a zoom_meeting_id (idempotent: never re-create)
+//   create       → all clear; the caller should createZoomMeeting + persist the result
+
+export interface SessionMeetingFacts {
+  /** workshop_sessions.delivery_mode */
+  deliveryMode: string | null | undefined
+  /** workshop_sessions.zoom_meeting_id (present ⇒ already provisioned) */
+  existingMeetingId: string | null | undefined
+  /** zoomEnabled() — all three ZOOM_* credentials present */
+  zoomEnabled: boolean
+}
+
+export type SessionMeetingReason = 'create' | 'not_virtual' | 'zoom_disabled' | 'already'
+
+export interface SessionMeetingDecision {
+  /** True only when a NEW meeting should be created. */
+  create: boolean
+  /** Machine reason for the outcome (audit + retry reporting). */
+  reason: SessionMeetingReason
+}
+
+/**
+ * Decide whether to CREATE a Zoom meeting for a workshop session. A session gets an online
+ * meeting when its delivery_mode is 'virtual' or 'hybrid' (hybrid still needs a virtual
+ * join for its remote attendees). Idempotent: an existing zoom_meeting_id short-circuits to
+ * 'already' so a re-run (or the staff retry route) never creates a duplicate.
+ */
+export function decideSessionMeetingProvision(facts: SessionMeetingFacts): SessionMeetingDecision {
+  const isVirtual = facts.deliveryMode === 'virtual' || facts.deliveryMode === 'hybrid'
+  if (!isVirtual) return { create: false, reason: 'not_virtual' }
+  if (facts.existingMeetingId) return { create: false, reason: 'already' }
+  if (!facts.zoomEnabled) return { create: false, reason: 'zoom_disabled' }
+  return { create: true, reason: 'create' }
+}
+
 // ── Slug generation ────────────────────────────────────────────────────────────
 /** URL-safe slug from a title. Deterministic; caller de-dupes against existing slugs. */
 export function slugify(input: string): string {

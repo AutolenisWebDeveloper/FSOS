@@ -3,7 +3,7 @@ import { getDb } from '@/lib/supabase/client'
 import { configErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
-import { provisionZoomForRegistration } from '@/lib/workshops/server'
+import { provisionZoomForRegistration, ensureSessionZoomMeeting } from '@/lib/workshops/server'
 import { zoomEnabled } from '@/lib/zoom/client'
 
 export const dynamic = 'force-dynamic'
@@ -24,14 +24,30 @@ export async function POST(_req: NextRequest, props: { params: Promise<{ id: str
   const actor = actorOf(auth.session)
   try {
     const db = getDb()
-    const { data: w } = await db.from('workshops').select('workshop_id').eq('workshop_id', params.id).maybeSingle()
+    const { data: w } = await db.from('workshops').select('workshop_id, title').eq('workshop_id', params.id).maybeSingle()
     if (!w) return NextResponse.json({ error: 'Workshop not found' }, { status: 404 })
 
     if (!zoomEnabled()) {
-      return NextResponse.json({ ok: true, zoom_enabled: false, provisioned: 0, skipped: 0, failed: 0, note: 'Zoom credentials not configured — provisioning is a no-op until ZOOM_* env vars are set.' })
+      return NextResponse.json({ ok: true, zoom_enabled: false, meetings_created: 0, provisioned: 0, skipped: 0, failed: 0, note: 'Zoom credentials not configured — provisioning is a no-op until ZOOM_* env vars are set.' })
     }
 
-    // Registrations for this workshop still missing a provisioned join link.
+    // 1) Ensure a Zoom meeting exists for each virtual/hybrid session BEFORE provisioning
+    //    registrants — a registrant can only be added once the session has a meeting id.
+    //    ensureSessionZoomMeeting is idempotent: a session that already has one is skipped
+    //    (never a duplicate); a transient create failure is counted for the next retry.
+    let meetingsCreated = 0
+    let meetingsFailed = 0
+    const { data: sessions } = await db
+      .from('workshop_sessions')
+      .select('id')
+      .eq('workshop_id', params.id)
+    for (const s of (sessions ?? []) as { id: string }[]) {
+      const ensured = await ensureSessionZoomMeeting(db, s.id, w.title ?? 'Workshop')
+      if (!ensured.ok) meetingsFailed++
+      else if ('created' in ensured && ensured.created) meetingsCreated++
+    }
+
+    // 2) Registrations for this workshop still missing a provisioned join link.
     const { data: regs } = await db
       .from('workshop_registrations')
       .select('reg_id')
@@ -54,10 +70,10 @@ export async function POST(_req: NextRequest, props: { params: Promise<{ id: str
       action: 'entity.updated',
       entity: 'workshop',
       entityId: params.id,
-      diff: { via: 'provision_zoom_retry', provisioned, skipped, failed },
+      diff: { via: 'provision_zoom_retry', meetings_created: meetingsCreated, meetings_failed: meetingsFailed, provisioned, skipped, failed },
     })
 
-    return NextResponse.json({ ok: true, zoom_enabled: true, provisioned, skipped, failed })
+    return NextResponse.json({ ok: true, zoom_enabled: true, meetings_created: meetingsCreated, meetings_failed: meetingsFailed, provisioned, skipped, failed })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Provisioning retry failed' }, { status: 500 })
   }

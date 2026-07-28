@@ -6,9 +6,9 @@ import { SiteContactForm } from '@/components/public/site/SiteContactForm'
 import { Icon } from '@/components/public/site/icons'
 import { BUSINESS, CONTACT, LICENSING, bookingUrl, siteUrl } from '@/lib/site'
 
-const TITLE = 'Markist Athelus — Farmers Insurance & Financial Services | Frisco, TX'
+const TITLE = 'Markist Athelus — Farmers Insurance & Financial Services | Plano, TX'
 const DESCRIPTION =
-  'Markist Athelus, Financial Services Agent with Farmers Insurance in Frisco, TX. Life insurance, retirement, college planning, investments, annuities, and business protection.'
+  'Markist Athelus, Financial Services Agent with Farmers Insurance in Plano, TX. Life insurance, retirement, college planning, investments, annuities, and business protection.'
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl()),

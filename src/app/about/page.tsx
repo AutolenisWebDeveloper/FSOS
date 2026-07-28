@@ -5,7 +5,7 @@ import { SiteShell } from '@/components/public/site/SiteShell'
 import { Icon } from '@/components/public/site/icons'
 import { BUSINESS, CONTACT, LICENSING, siteUrl } from '@/lib/site'
 
-const TITLE = 'About Markist Athelus — Financial Services Agent, Farmers Insurance | Frisco, TX'
+const TITLE = 'About Markist Athelus — Financial Services Agent, Farmers Insurance | Plano, TX'
 const DESCRIPTION = `Meet ${BUSINESS.agent}, a licensed ${BUSINESS.title} with ${BUSINESS.carrier} serving ${CONTACT.serviceArea}. Insurance and financial guidance built on relationships and trust.`
 
 export const metadata: Metadata = {

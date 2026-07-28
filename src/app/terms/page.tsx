@@ -5,7 +5,7 @@ import { CONTACT } from '@/lib/site'
 
 export const metadata: Metadata = {
   title: 'Terms of Use — Markist Athelus',
-  description: 'Terms of Use for the website of Markist Athelus, Farmers Insurance & Financial Services, Frisco, TX.',
+  description: 'Terms of Use for the website of Markist Athelus, Farmers Insurance & Financial Services, Plano, TX.',
   robots: { index: true, follow: true },
   alternates: { canonical: '/terms' },
 }

@@ -27,10 +27,12 @@ export const CONTACT = {
   phoneE164: '+13617174215',
   email: 'mathelus@farmersagent.com',
   address: {
-    line1: '12800 Westridge Blvd, Ste 114',
-    city: 'Frisco',
+    // Primary / registered business address — reconciled to the Twilio-vetted
+    // A2P Business Profile. This is the NAP that must match the brand registration.
+    line1: '5830 Granite Parkway, Ste 100-356',
+    city: 'Plano',
     region: 'TX',
-    postal: '75035',
+    postal: '75024',
     country: 'US',
   },
   hoursDisplay: 'Mon–Fri, 9:00 AM – 6:00 PM · Sat by appointment',
@@ -40,6 +42,13 @@ export const CONTACT = {
 
 /** License / registration designations shown in the footer + about. */
 export const LICENSING = 'TX License 3081061 · Life, Health, Series 6, 26, 63'
+
+/**
+ * Registered legal entity + DBA, reconciled to the Twilio-vetted A2P Business
+ * Profile. Rendered in the footer legal block for business-identity disclosure.
+ */
+export const LEGAL_ENTITY =
+  'Operated by Markist Athelus Farmers Agency (DBA markistfsa.com), a licensed insurance and financial-services sole proprietorship. Markist Athelus, agent appointed with Farmers Insurance · TX License 3081061.'
 
 /** Social links — only render the ones that are real (placeholders hidden). */
 export const SOCIAL: { label: string; href: string }[] = [
@@ -51,7 +60,7 @@ export const SOCIAL: { label: string; href: string }[] = [
  * number ("Messages originate from …") and is DISTINCT from the office/contact
  * number (CONTACT.phoneDisplay). It appears only in SMS-origination disclosures.
  */
-const SMS_FROM_NUMBER = '469-625-4987'
+const SMS_FROM_NUMBER = '361-240-7449'
 
 /**
  * A2P 10DLC consent copy — a purely INFORMATIONAL customer-care program (no

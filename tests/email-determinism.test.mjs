@@ -78,11 +78,11 @@ for (const tpl of EMAIL_TEMPLATES) {
     // per-recipient link resolves from the {{unsubscribe_url}} merge token at send.
     assert.ok(html.includes('{{unsubscribe_url}}'), 'carries the CAN-SPAM unsubscribe merge token')
     assert.ok(/unsubscribe/i.test(html), 'carries visible unsubscribe copy')
-    assert.ok(html.includes('Frisco') && html.includes('75035'), 'carries the physical mailing address (CAN-SPAM sender identification)')
+    assert.ok(html.includes('Plano') && html.includes('75024'), 'carries the physical mailing address (CAN-SPAM sender identification)')
     // The plaintext part is a first-class message part — it must carry the same CAN-SPAM
     // unsubscribe mechanism + physical address, not just the HTML.
     assert.ok(text.includes('{{unsubscribe_url}}'), 'plaintext carries the unsubscribe merge token')
-    assert.ok(text.includes('Frisco') && text.includes('75035'), 'plaintext carries the physical mailing address')
+    assert.ok(text.includes('Plano') && text.includes('75024'), 'plaintext carries the physical mailing address')
     // §2.2 red line — no individualized recommendation / call-to-action language (build-gated).
     assert.equal(containsRecommendationLanguage(text), false, 'plaintext must be recommendation-free')
     assert.equal(containsRecommendationLanguage(html), false, 'HTML must be recommendation-free')

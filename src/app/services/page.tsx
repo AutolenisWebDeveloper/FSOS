@@ -5,7 +5,7 @@ import { BUSINESS, CONTACT, bookingUrl } from '@/lib/site'
 
 const TITLE = 'Services — Life Insurance, Retirement & Financial Solutions | Markist Athelus'
 const DESCRIPTION =
-  'Educational overview of the insurance and financial solutions Markist Athelus helps with — life insurance, retirement planning, college planning, investments, annuities, and business protection. Serving Frisco & Greater DFW.'
+  'Educational overview of the insurance and financial solutions Markist Athelus helps with — life insurance, retirement planning, college planning, investments, annuities, and business protection. Serving Plano & Greater DFW.'
 
 export const metadata: Metadata = {
   title: TITLE,

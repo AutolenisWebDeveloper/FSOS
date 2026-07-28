@@ -1,7 +1,7 @@
 import * as React from 'react'
 import Link from 'next/link'
 import { Icon, BrandLogo } from './icons'
-import { BUSINESS, CONTACT, DISCLOSURES, LICENSING, SOCIAL, loginUrl } from '@/lib/site'
+import { BUSINESS, CONTACT, DISCLOSURES, LEGAL_ENTITY, LICENSING, SOCIAL, loginUrl } from '@/lib/site'
 
 const SOLUTIONS = ['Life Insurance', 'Retirement Planning', 'College Planning', 'Investments', 'Annuities', 'Business Protection']
 
@@ -108,6 +108,7 @@ export function SiteFooter() {
         </div>
 
         <div className="foot__legaltext">
+          <p>{LEGAL_ENTITY}</p>
           <p>{DISCLOSURES.practice}</p>
           <p>
             Securities offered through Farmers Financial Solutions, LLC, 30700 Russell Ranch Road #214, Westlake Village,

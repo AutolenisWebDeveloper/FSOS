@@ -19,14 +19,21 @@ All four are **env-only** — never commit them.
 | `ZOOM_WEBHOOK_SECRET_TOKEN` | same app → Feature → **Event Subscriptions** → Secret Token |
 
 Steps:
-1. Create the S2S OAuth app; add scopes `meeting:write:admin` (registrant create) and, if you
-   run webinars, `webinar:write:admin`.
+1. Create the S2S OAuth app; add scopes `meeting:write` **and** `meeting:read` (FSOS now
+   **creates** the session meeting), `meeting:write:admin` (registrant create) and, if you
+   run webinars, `webinar:write:admin`. Without `meeting:write` the create call 401s.
+   Set `ZOOM_USER_ID` to the host user id/email — S2S OAuth has no personal "me" context.
 2. Add an **Event Subscription** pointing at `https://<domain>/api/webhooks/zoom` and subscribe:
    `meeting.participant_joined`, `meeting.participant_left` (and the `webinar.*` equivalents
    if using webinars). Zoom sends a **URL-validation (CRC)** challenge — the endpoint answers
    it automatically once `ZOOM_WEBHOOK_SECRET_TOKEN` is set.
-3. Store each session's Zoom meeting id in `workshop_sessions.zoom_meeting_id` (staff UI /
-   session authoring). Provisioning is a no-op without it.
+3. **Meetings are created automatically** — `workshop_sessions.zoom_meeting_id` (and the host
+   `zoom_start_url` etc.) are populated by `createZoomMeeting` when a virtual/hybrid workshop
+   is created (`POST /api/workshops`). No manual entry. Creation is idempotent (an existing
+   meeting id is never re-created) and best-effort (a transient Zoom failure never blocks
+   workshop creation). If creation was skipped because Zoom was down at create time, the staff
+   retry `POST /api/workshops/[id]/provision-zoom` creates the missing meeting, then provisions
+   registrants. Cancelling the workshop deletes its session meetings (no stale links).
 4. Verify: register a test attendee on a virtual session → a personalized `join_url` +
    `zoom_registrant_id` should be stored. If Zoom was down at registration, run the staff
    retry `POST /api/workshops/[id]/provision-zoom`.

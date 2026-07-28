@@ -4,10 +4,10 @@
 // client (CLAUDE.md §1 convention 1). Pure decision logic lives in ./logic.ts.
 
 import { randomUUID } from 'node:crypto'
-import { deriveIsSecurity } from './logic'
+import { deriveIsSecurity, decideSessionMeetingProvision } from './logic'
 import { resolveCheckIn, type AttendanceStatus } from './attendance'
 import { deriveWebhookAttendance, type ParsedParticipantEvent } from './delivery'
-import { addZoomRegistrant, zoomEnabled } from '@/lib/zoom/client'
+import { addZoomRegistrant, createZoomMeeting, deleteZoomMeeting, zoomEnabled } from '@/lib/zoom/client'
 import {
   upsertContactWithRetry,
   createOpportunity,
@@ -648,6 +648,117 @@ export async function applyWebhookAttendance(
     .eq('reg_id', target.registrationId)
 
   return { action: 'write', status: decision.row.status }
+}
+
+export type EnsureMeetingOutcome =
+  | { ok: true; created: boolean; skipped: boolean; meetingId: string | null; reason: string }
+  | { ok: false; reason: string }
+
+/**
+ * Idempotently CREATE the Zoom meeting a virtual/hybrid session needs so its registrants
+ * have a room to join (spec §5; fixes the "no meeting was ever created" gap). Reuses the
+ * shared S2S OAuth client (createZoomMeeting) — no new integration. Decision is the pure
+ * decideSessionMeetingProvision gate:
+ *   - in-person session            → skip (not_virtual)
+ *   - already has zoom_meeting_id   → skip (already) — NEVER creates a duplicate on re-run
+ *   - Zoom unconfigured             → skip (zoom_disabled) — a clean no-op, booking/register still succeed
+ * On the create path, persists meeting id + uuid + join/start/passcode/dial-in on the session.
+ * start_url is HOST-ONLY: stored in zoom_start_url, never returned here and never logged.
+ * Best-effort: a transient Zoom API failure returns { ok:false, reason } so the staff
+ * /provision-zoom retry can re-run later — the session is never left half-created.
+ */
+export async function ensureSessionZoomMeeting(
+  db: Db,
+  sessionId: string,
+  topic: string,
+): Promise<EnsureMeetingOutcome> {
+  const { data: session } = await db
+    .from('workshop_sessions')
+    .select('id, workshop_id, starts_at, ends_at, timezone, delivery_mode, zoom_meeting_id')
+    .eq('id', sessionId)
+    .maybeSingle()
+  if (!session) return { ok: false, reason: 'session_not_found' }
+
+  const decision = decideSessionMeetingProvision({
+    deliveryMode: session.delivery_mode,
+    existingMeetingId: session.zoom_meeting_id,
+    zoomEnabled: zoomEnabled(),
+  })
+  if (!decision.create) {
+    return { ok: true, created: false, skipped: true, meetingId: session.zoom_meeting_id ?? null, reason: decision.reason }
+  }
+
+  // Duration from the session window; default to a 60-minute config default when ends_at is unset.
+  let durationMinutes = 60
+  if (session.ends_at) {
+    const mins = Math.round((new Date(session.ends_at).getTime() - new Date(session.starts_at).getTime()) / 60000)
+    if (Number.isFinite(mins) && mins > 0) durationMinutes = mins
+  }
+
+  const meeting = await createZoomMeeting({
+    topic: topic || 'Workshop',
+    startTime: session.starts_at,
+    durationMinutes,
+    timezone: session.timezone || 'America/Chicago',
+  })
+  if (!meeting.ok) return { ok: false, reason: meeting.error ?? 'zoom_create_failed' }
+
+  await db
+    .from('workshop_sessions')
+    .update({
+      zoom_meeting_id: meeting.meetingId,
+      zoom_meeting_uuid: meeting.uuid ?? null,
+      zoom_join_url: meeting.joinUrl ?? null,
+      zoom_start_url: meeting.startUrl ?? null, // HOST-ONLY column; never returned to a client or logged
+      zoom_passcode: meeting.passcode ?? null,
+      zoom_dial_in: meeting.dialIn ?? null,
+      updated_at: nowIso(),
+    })
+    .eq('id', session.id)
+
+  return { ok: true, created: true, skipped: false, meetingId: meeting.meetingId ?? null, reason: 'created' }
+}
+
+export interface CancelMeetingsResult {
+  deleted: number
+  failed: number
+}
+
+/**
+ * Delete every Zoom meeting attached to a workshop's sessions (cancel path — no stale links).
+ * Best-effort + gated: a no-op when Zoom is unconfigured. Clears the session Zoom columns on
+ * a successful delete; a 404 (already gone) is treated as success by deleteZoomMeeting. A
+ * transient delete failure is counted (caller may audit) but never blocks the cancellation.
+ */
+export async function cancelWorkshopZoomMeetings(db: Db, workshopId: string): Promise<CancelMeetingsResult> {
+  const result: CancelMeetingsResult = { deleted: 0, failed: 0 }
+  if (!zoomEnabled()) return result
+  const { data: sessions } = await db
+    .from('workshop_sessions')
+    .select('id, zoom_meeting_id')
+    .eq('workshop_id', workshopId)
+    .not('zoom_meeting_id', 'is', null)
+  for (const s of (sessions ?? []) as { id: string; zoom_meeting_id: string | null }[]) {
+    const z = await deleteZoomMeeting(s.zoom_meeting_id)
+    if (!z.ok) {
+      result.failed++
+      continue
+    }
+    await db
+      .from('workshop_sessions')
+      .update({
+        zoom_meeting_id: null,
+        zoom_meeting_uuid: null,
+        zoom_join_url: null,
+        zoom_start_url: null,
+        zoom_passcode: null,
+        zoom_dial_in: null,
+        updated_at: nowIso(),
+      })
+      .eq('id', s.id)
+    result.deleted++
+  }
+  return result
 }
 
 export type ProvisionOutcome =

@@ -5,7 +5,7 @@ import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { WorkshopPatchSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
 import { evaluateWorkshopPublish, publishBlockMessage } from '@/lib/workshops/logic'
-import { syncPresenters, gatherPublishFacts, recordMaterial } from '@/lib/workshops/server'
+import { syncPresenters, gatherPublishFacts, recordMaterial, cancelWorkshopZoomMeetings } from '@/lib/workshops/server'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -76,6 +76,21 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       .select('workshop_id, status')
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     if (!data || data.length === 0) return NextResponse.json({ error: 'Workshop not found' }, { status: 404 })
+
+    // Cancel → delete the session Zoom meetings so no stale join links survive. Only on the
+    // transition INTO 'cancelled' (idempotent: re-cancelling a cancelled workshop is a no-op
+    // since the meetings/columns are already cleared). Best-effort + gated: never blocks the
+    // status change; a delete failure is audited for a manual sweep.
+    if (rest.status === 'cancelled' && current.status !== 'cancelled') {
+      try {
+        const z = await cancelWorkshopZoomMeetings(db, params.id)
+        if (z.failed > 0) {
+          await writeAudit({ actor, action: 'config.changed', entity: 'workshop', entityId: params.id, diff: { zoom_delete_failed: z.failed, zoom_deleted: z.deleted } })
+        }
+      } catch (zerr) {
+        console.error('[workshop] zoom meeting cancel cleanup (non-fatal):', zerr)
+      }
+    }
 
     await writeAudit({
       actor,

@@ -6,7 +6,7 @@ import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { WorkshopCreateSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
 import { slugify } from '@/lib/workshops/logic'
-import { syncPresenters, recordMaterial } from '@/lib/workshops/server'
+import { syncPresenters, recordMaterial, ensureSessionZoomMeeting } from '@/lib/workshops/server'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -59,17 +59,39 @@ export async function POST(req: NextRequest) {
     const workshopId = data.workshop_id
 
     // Seed the 1:1 session mirroring the scheduled time + venue.
-    await db.from('workshop_sessions').insert({
-      workshop_id: workshopId,
-      starts_at: startsAt,
-      timezone: v.data.timezone ?? 'America/Chicago',
-      delivery_mode: v.data.delivery_mode,
-      venue_name: v.data.venue_name ?? null,
-      venue_address: v.data.venue_address ?? v.data.location ?? null,
-      capacity_in_person: v.data.capacity_in_person ?? null,
-      capacity_virtual: v.data.capacity_virtual ?? null,
-      ics_uid: `wshop-${workshopId}@fsos`,
-    })
+    const { data: sessionRow } = await db
+      .from('workshop_sessions')
+      .insert({
+        workshop_id: workshopId,
+        starts_at: startsAt,
+        timezone: v.data.timezone ?? 'America/Chicago',
+        delivery_mode: v.data.delivery_mode,
+        venue_name: v.data.venue_name ?? null,
+        venue_address: v.data.venue_address ?? v.data.location ?? null,
+        capacity_in_person: v.data.capacity_in_person ?? null,
+        capacity_virtual: v.data.capacity_virtual ?? null,
+        ics_uid: `wshop-${workshopId}@fsos`,
+      })
+      .select('id')
+      .maybeSingle()
+
+    // Provision the Zoom meeting for a virtual/hybrid session so registrants have a room to
+    // join (the fix: previously nothing ever created the meeting). Best-effort + gated:
+    // ensureSessionZoomMeeting is a clean no-op for in-person sessions or when Zoom is
+    // unconfigured, and a transient Zoom failure NEVER blocks workshop creation — staff can
+    // re-run via POST /api/workshops/[id]/provision-zoom (idempotent, never a duplicate).
+    let zoomMeetingCreated = false
+    if (sessionRow?.id) {
+      try {
+        const ensured = await ensureSessionZoomMeeting(db, sessionRow.id, v.data.title)
+        zoomMeetingCreated = ensured.ok && 'created' in ensured && ensured.created
+        if (!ensured.ok) {
+          console.error('[workshop] zoom meeting creation (non-fatal, retryable):', ensured.reason)
+        }
+      } catch (zerr) {
+        console.error('[workshop] zoom meeting creation threw (non-fatal, retryable):', zerr)
+      }
+    }
 
     // Attach presenters (recomputes + persists is_security) and snapshot hero image.
     if (v.data.presenter_ids && v.data.presenter_ids.length > 0) {
@@ -84,9 +106,9 @@ export async function POST(req: NextRequest) {
       action: 'entity.created',
       entity: 'workshop',
       entityId: workshopId,
-      diff: { title: v.data.title, topic: v.data.topic, slug, delivery_mode: v.data.delivery_mode },
+      diff: { title: v.data.title, topic: v.data.topic, slug, delivery_mode: v.data.delivery_mode, zoom_meeting_created: zoomMeetingCreated },
     })
-    return NextResponse.json({ workshop_id: workshopId, slug }, { status: 201 })
+    return NextResponse.json({ workshop_id: workshopId, slug, zoom_meeting_created: zoomMeetingCreated }, { status: 201 })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed to create workshop' }, { status: 500 })
   }

@@ -118,10 +118,14 @@ export interface ZoomMeetingInput {
 export interface ZoomMeetingResult {
   ok: boolean
   meetingId?: string | null
+  /** Zoom meeting UUID (distinct from the numeric id) — webhook/report correlation. */
+  uuid?: string | null
   /** Attendee link — safe to send to the client. */
   joinUrl?: string | null
   /** HOST link — FSA-only. NEVER return this to a client or write it to a log. */
   startUrl?: string | null
+  /** Meeting passcode. */
+  passcode?: string | null
   dialIn?: string | null
   error?: string
 }
@@ -158,15 +162,19 @@ export async function createZoomMeeting(inp: ZoomMeetingInput): Promise<ZoomMeet
     if (!res.ok) return { ok: false, error: `zoom_${res.status}: ${await safeText(res)}` }
     const body = (await res.json()) as {
       id?: string | number
+      uuid?: string
       join_url?: string
       start_url?: string
+      password?: string
       settings?: { global_dial_in_numbers?: { number?: string }[] }
     }
     return {
       ok: true,
       meetingId: body.id != null ? String(body.id) : null,
+      uuid: body.uuid ?? null,
       joinUrl: body.join_url ?? null,
       startUrl: body.start_url ?? null,
+      passcode: body.password ?? null,
       dialIn: body.settings?.global_dial_in_numbers?.[0]?.number ?? null,
     }
   } catch (err) {

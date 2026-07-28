@@ -23,6 +23,7 @@ export const AUDIT_ACTIONS = [
   'firewall.blocked',
   'ai.run',
   'ai.action',
+  'ai.tools',
   'ai.escalated',
   'approval.decided',
   'config.changed',

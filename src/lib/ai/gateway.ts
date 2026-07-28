@@ -8,6 +8,15 @@
 import { getAnthropic } from '@/lib/anthropic'
 import { getDb } from '@/lib/supabase/client'
 import { gatewayEnabledFrom } from './kill-switch'
+import {
+  driveToolLoop,
+  type LoopBlock,
+  type LoopMessage,
+  type LoopTool,
+  type ModelTurn,
+  type ToolEffect,
+  type ToolLoopResult,
+} from './tool-loop'
 
 export type Provider = 'claude' | 'openai' | 'gemini'
 
@@ -268,4 +277,106 @@ export async function runGateway(req: GatewayRequest): Promise<GatewayResult> {
     }
   }
   throw lastErr instanceof Error ? lastErr : new Error('AI gateway: all providers failed')
+}
+
+// ─── Governed tool-calling (ADR-028) ──────────────────────────────────────────
+// The gateway is the ONLY place a provider tool-use API is touched. It wires the
+// pure loop driver (tool-loop.ts) to Claude's native tools and re-checks the kill
+// switch before every model turn. It performs NO side effects itself — every tool
+// effect is a caller-supplied handler, run inside the loop under the governance
+// invariants proven in tests/ai-tool-loop.test.mjs.
+
+export interface ToolGatewayRequest {
+  system?: string
+  messages: GatewayMessage[]
+  /** Must resolve to a Claude model — only Claude exposes native tool-use here. */
+  model?: string
+  maxTokens?: number
+  agentKey?: string
+}
+
+export interface ToolGatewayOptions {
+  maxIterations?: number
+  /** Authority classes the tools may hold. v1 callers pass {'read'} (§11.1). */
+  allowedEffects: Set<ToolEffect>
+}
+
+/** The loop result plus the resolved model + estimated cost the caller persists. */
+export type GatewayToolResult = ToolLoopResult & { model: string; costUsd: number }
+
+function toAnthropicContent(blocks: LoopBlock[]): unknown[] {
+  return blocks.map((b) => {
+    if (b.type === 'text') return { type: 'text', text: b.text }
+    if (b.type === 'tool_use') return { type: 'tool_use', id: b.id, name: b.name, input: b.input }
+    return { type: 'tool_result', tool_use_id: b.toolUseId, content: b.content, is_error: b.isError ?? false }
+  })
+}
+
+/**
+ * Run a bounded, governed tool-calling loop through the gateway. Fallback models are
+ * intentionally NOT chained here: a mid-loop provider switch would break tool-use
+ * message continuity, so tool-calling requires a Claude model and fails fast if the
+ * configured model isn't one.
+ */
+export async function runGatewayTools(
+  req: ToolGatewayRequest,
+  tools: LoopTool[],
+  opts: ToolGatewayOptions,
+): Promise<GatewayToolResult> {
+  const model = req.model ?? DEFAULT_MODEL
+  if (providerOf(model) !== 'claude') {
+    throw new Error(`AI gateway tool-calling requires a Claude model (got "${model}")`)
+  }
+  await assertKillSwitch(req.agentKey)
+  const client = getAnthropic()
+  const anthropicTools = tools.map((t) => ({
+    name: t.name,
+    description: t.description,
+    input_schema: t.jsonSchema,
+  }))
+
+  const callModel = async (messages: LoopMessage[]): Promise<ModelTurn> => {
+    const res = await client.messages.create({
+      model,
+      max_tokens: req.maxTokens ?? 2048,
+      system: req.system,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      tools: anthropicTools as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      messages: messages.map((m) => ({ role: m.role, content: toAnthropicContent(m.content) })) as any,
+    })
+    const assistant: LoopMessage = {
+      role: 'assistant',
+      content: res.content.flatMap((b): LoopBlock[] => {
+        if (b.type === 'text') return [{ type: 'text', text: b.text }]
+        if (b.type === 'tool_use') return [{ type: 'tool_use', id: b.id, name: b.name, input: b.input }]
+        return []
+      }),
+    }
+    const toolUses = res.content
+      .filter((b): b is Extract<typeof b, { type: 'tool_use' }> => b.type === 'tool_use')
+      .map((b) => ({ id: b.id, name: b.name, input: b.input }))
+    const text = res.content.map((b) => (b.type === 'text' ? b.text : '')).join('')
+    return {
+      assistant,
+      toolUses,
+      text,
+      usage: { inputTokens: res.usage?.input_tokens ?? 0, outputTokens: res.usage?.output_tokens ?? 0 },
+    }
+  }
+
+  const initialMessages: LoopMessage[] = req.messages.map((m) => ({
+    role: m.role,
+    content: [{ type: 'text', text: m.content }],
+  }))
+
+  const result = await driveToolLoop(callModel, tools, {
+    initialMessages,
+    allowedEffects: opts.allowedEffects,
+    maxIterations: opts.maxIterations,
+    // Kill switch re-checked before every turn — a mid-run disable halts the loop.
+    beforeTurn: () => assertKillSwitch(req.agentKey),
+  })
+
+  return { ...result, model, costUsd: estimateCostUsd(model, result.usage) }
 }

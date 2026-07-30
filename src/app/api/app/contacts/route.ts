@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { ContactCreateSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
       .is('deleted_at', null)
       .order('full_name', { ascending: true })
       .limit(10)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('app/contacts', error)
     return NextResponse.json({ contacts: data ?? [] }, { status: 200 })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Search failed' }, { status: 500 })
@@ -103,7 +103,7 @@ export async function POST(req: NextRequest) {
       })
       .select('id')
       .maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('app/contacts', error)
 
     // Slice 3 — if the caller didn't attach a household and this is a client-eligible
     // type, materialize it into the household spine so it's campaign-enrollable

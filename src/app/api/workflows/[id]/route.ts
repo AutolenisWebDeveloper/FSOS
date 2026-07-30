@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { WorkflowPatchSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
@@ -16,7 +16,7 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
   try {
     const db = getDb()
     const { data, error } = await db.from('automation_workflows').select('*').eq('id', params.id).maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('workflows/[id]', error)
     if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     const { data: runs, error: runsError } = await db
@@ -25,7 +25,7 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
       .eq('workflow_id', params.id)
       .order('created_at', { ascending: false })
       .limit(20)
-    if (runsError) return NextResponse.json({ error: runsError.message }, { status: 500 })
+    if (runsError) return dbErrorResponse('workflows/[id]', runsError)
 
     return NextResponse.json({ workflow: data, runs: runs ?? [] })
   } catch (e) {
@@ -59,7 +59,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       .eq('id', params.id)
       .select('*')
       .maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('workflows/[id]', error)
     if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     await writeAudit({

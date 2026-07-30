@@ -5,7 +5,7 @@
 // response is the SAFE channel view only — never any token material.
 
 import { NextRequest, NextResponse } from 'next/server'
-import { configErrorResponse } from '@/lib/http'
+import { configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import {
@@ -65,7 +65,7 @@ export async function POST(_req: NextRequest, props: { params: Promise<{ id: str
         : { status: 'error', lastError: health.error ?? 'Health check failed' },
       actor,
     )
-    if (!marked.ok) return NextResponse.json({ error: marked.message }, { status: 500 })
+    if (!marked.ok) return dbErrorResponse('social/channels/[id]/verify', marked)
 
     await writeAudit({
       actor,

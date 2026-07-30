@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
-import { requireInternalAuth, readJson, parseLimit, callerLabel } from '@/lib/http'
+import { requireInternalAuth, readJson, parseLimit, callerLabel, dbErrorResponse } from '@/lib/http'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
   else if (due === 'week') q = q.lte('due_date', addDaysISO(7)).gte('due_date', todayISO())
 
   const { data, error } = await q
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbErrorResponse('tasks', error)
   return NextResponse.json({ tasks: data || [] })
 }
 
@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
     .insert({ ...v.data, created_by: callerLabel(req) })
     .select('*')
     .single()
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbErrorResponse('tasks', error)
   return NextResponse.json({ task: data }, { status: 201 })
 }
 
@@ -111,7 +111,7 @@ export async function PATCH(req: NextRequest) {
 
   const supabase = getDb()
   const { data, error } = await supabase.from('tasks').update(update).eq('task_id', task_id).select('*').single()
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbErrorResponse('tasks', error)
   if (!data) return NextResponse.json({ error: 'Task not found' }, { status: 404 })
   return NextResponse.json({ task: data })
 }

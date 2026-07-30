@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
-import { requireInternalAuth, readJson, callerLabel } from '@/lib/http'
+import { requireInternalAuth, readJson, callerLabel, dbErrorResponse } from '@/lib/http'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
     .from('campaigns')
     .select('*')
     .order('created_at', { ascending: false })
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbErrorResponse('campaigns', error)
 
   // Attach enrollment counts per campaign (active / completed / total).
   const withCounts = await Promise.all(
@@ -62,6 +62,6 @@ export async function POST(req: NextRequest) {
     .insert({ name: v.data.name, channel: v.data.channel, steps, created_by: callerLabel(req) })
     .select('*')
     .single()
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbErrorResponse('campaigns', error)
   return NextResponse.json({ campaign: data }, { status: 201 })
 }

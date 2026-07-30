@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { ReviewStageSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
@@ -15,7 +15,7 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
   if (!auth.ok) return auth.response
   try {
     const { data, error } = await getDb().from('reviews').select('*').eq('id', params.id).is('deleted_at', null).maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('reviews/[id]', error)
     if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     return NextResponse.json({ review: data })
   } catch (e) {
@@ -45,7 +45,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
 
     const from = review.stage as string
     const { error } = await db.from('reviews').update({ stage: v.data.stage, updated_at: new Date().toISOString() }).eq('id', params.id)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('reviews/[id]', error)
     await writeAudit({ actor, action: 'stage.changed', entity: 'review', entityId: params.id, diff: { from, to: v.data.stage } })
     return NextResponse.json({ ok: true, stage: v.data.stage })
   } catch (e) {

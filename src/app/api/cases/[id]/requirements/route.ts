@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { CaseRequirementSchema, RequirementPatchSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
@@ -26,7 +26,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     const db = getDb()
     const actor = actorOf(auth.session)
     const { data, error } = await db.from('case_requirements').insert({ case_id: params.id, requirement: v.data.requirement, source: v.data.source, status: 'outstanding' }).select('id').single()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('cases/[id]/requirements', error)
     // Requirements outstanding → set the case status accordingly.
     await db.from('cases').update({ status: 'requirements_outstanding', updated_at: new Date().toISOString() }).eq('id', params.id).eq('status', 'underwriting')
     await writeAudit({ actor, action: 'entity.created', entity: 'case_requirement', entityId: data.id, diff: { case_id: params.id, requirement: v.data.requirement } })
@@ -54,7 +54,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     const db = getDb()
     const actor = actorOf(auth.session)
     const { error } = await db.from('case_requirements').update({ status: v.data.status, updated_at: new Date().toISOString() }).eq('id', reqId).eq('case_id', params.id)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('cases/[id]/requirements', error)
     await writeAudit({ actor, action: 'entity.updated', entity: 'case_requirement', entityId: reqId, diff: { status: v.data.status } })
 
     // If no outstanding requirements remain, move the case back to underwriting.

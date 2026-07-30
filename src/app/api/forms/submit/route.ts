@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { requireInternalAuth, readJson, parseLimit } from '@/lib/http'
+import { requireInternalAuth, readJson, parseLimit, dbErrorResponse } from '@/lib/http'
 import { referenceFromToken } from '@/lib/tokens'
 import { generateFNAReport } from '@/lib/fna'
 
@@ -129,7 +129,7 @@ export async function GET(req: NextRequest) {
       .order('sent_at', { ascending: false })
       .limit(limit)
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('forms/submit', error)
     return NextResponse.json({ submissions: data || [] })
   }
 

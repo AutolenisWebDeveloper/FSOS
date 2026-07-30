@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, actorOf } from '@/lib/auth/api'
 import { DashboardPreferencesSchema } from '@/lib/validation/schemas'
 
@@ -23,7 +23,7 @@ export async function GET() {
       .select('layout, updated_at')
       .eq('user_id', actor)
       .maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('dashboard/preferences', error)
     return NextResponse.json({ layout: Array.isArray(data?.layout) ? data!.layout : null, updated_at: data?.updated_at ?? null })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed' }, { status: 500 })
@@ -47,7 +47,7 @@ export async function PUT(req: NextRequest) {
         { user_id: actor, layout: v.data.layout, updated_at: new Date().toISOString() },
         { onConflict: 'user_id' },
       )
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('dashboard/preferences', error)
     return NextResponse.json({ ok: true })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed to save layout' }, { status: 500 })

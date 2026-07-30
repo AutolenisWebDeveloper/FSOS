@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { SandboxRunSchema } from '@/lib/validation/schemas'
@@ -21,7 +21,7 @@ export async function GET() {
       .select('id, agent_key, prompt, output, model, tokens, guardrail_pass, guardrail_reason, blocked, created_at')
       .order('created_at', { ascending: false })
       .limit(50)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('super/sandbox', error)
     return NextResponse.json({ runs: data ?? [] })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed' }, { status: 500 })

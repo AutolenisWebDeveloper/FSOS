@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { configErrorResponse } from '@/lib/http'
+import { configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole } from '@/lib/auth/api'
 
 export const dynamic = 'force-dynamic'
@@ -12,7 +12,7 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
   if (!auth.ok) return auth.response
   try {
     const { data, error } = await getDb().from('opportunities').select('*').eq('id', params.id).is('deleted_at', null).maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('opportunities/[id]', error)
     if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     return NextResponse.json({ opportunity: data })
   } catch (e) {

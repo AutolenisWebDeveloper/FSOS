@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { RegistrationPatchSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
@@ -40,7 +40,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       .select('reg_id, workshop_id, name, email, phone, consent_channels, referral_id, status, attended, ghl_opportunity_id')
       .eq('reg_id', params.id)
       .maybeSingle()
-    if (rErr) return NextResponse.json({ error: rErr.message }, { status: 500 })
+    if (rErr) return dbErrorResponse('workshops/registrations/[id]', rErr)
     if (!reg) return NextResponse.json({ error: 'Registration not found' }, { status: 404 })
 
     const update: Record<string, unknown> = {}
@@ -151,7 +151,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
 
     if (Object.keys(update).length > 0) {
       const { error: uErr } = await db.from('workshop_registrations').update(update).eq('reg_id', reg.reg_id)
-      if (uErr) return NextResponse.json({ error: uErr.message }, { status: 500 })
+      if (uErr) return dbErrorResponse('workshops/registrations/[id]', uErr)
       await writeAudit({ actor, action: 'entity.updated', entity: 'workshop_registration', entityId: reg.reg_id, diff: update })
     }
 

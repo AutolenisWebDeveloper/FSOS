@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf, hasSecuritiesScope } from '@/lib/auth/api'
 import { ReferralConvertSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
@@ -139,7 +139,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       p_phone: v.data.member_phone ?? null,
       p_key: dobKey(),
     })
-    if (memErr) return NextResponse.json({ error: memErr.message }, { status: 500 })
+    if (memErr) return dbErrorResponse('referrals/[id]/convert', memErr)
     await writeAudit({ actor, action: 'entity.created', entity: 'household_member', entityId: (memberId as string) ?? null, diff: { household_id: householdId } })
 
     const consentChannels: string[] = []

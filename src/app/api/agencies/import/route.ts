@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { parseLimit, configErrorResponse } from '@/lib/http'
+import { parseLimit, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { parseSpreadsheet, extensionOf, SUPPORTED_EXTENSIONS } from '@/lib/spreadsheet'
@@ -299,7 +299,7 @@ export async function GET(req: NextRequest) {
       .eq('source', 'agency')
       .order('created_at', { ascending: false })
       .limit(limit)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('agencies/import', error)
     return NextResponse.json({ batches: data ?? [] })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed to load import history' }, { status: 500 })

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { dbErrorResponse } from '@/lib/http'
 import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
 import { getServerSession, getCurrentUserEmail } from '@/lib/auth/session'
@@ -39,7 +40,7 @@ export async function POST(req: NextRequest) {
     .select('id')
     .maybeSingle()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbErrorResponse('support/requests', error)
 
   await writeAudit({
     actor: session.userId,

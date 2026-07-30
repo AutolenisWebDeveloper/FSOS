@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { OUTREACH_AGENTS } from '@/lib/ai/outreach'
@@ -23,7 +23,7 @@ export async function GET(_req: NextRequest) {
       .from('agent_daily_targets')
       .select('agent_key, daily_target, channel, enabled, is_assumption, note, updated_at')
       .order('agent_key')
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('super/ai/targets', error)
     return NextResponse.json({ targets: data ?? [] })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed' }, { status: 500 })
@@ -62,7 +62,7 @@ export async function PUT(req: NextRequest) {
       .eq('agent_key', v.data.agent_key)
       .select('agent_key, daily_target, channel, enabled, is_assumption, note, updated_at')
       .maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('super/ai/targets', error)
 
     await writeAudit({
       actor: actorOf(auth.session),

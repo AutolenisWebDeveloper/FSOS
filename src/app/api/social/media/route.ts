@@ -2,7 +2,7 @@
 // views with fresh signed preview URLs; never the raw storage path or a public URL.
 
 import { NextRequest, NextResponse } from 'next/server'
-import { configErrorResponse } from '@/lib/http'
+import { configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission } from '@/lib/auth/api'
 import { listMediaAssets } from '@/lib/social/media-service'
 import type { MediaKind } from '@/lib/social/media'
@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const res = await listMediaAssets({ kind })
-    if (!res.ok) return NextResponse.json({ error: res.message }, { status: 500 })
+    if (!res.ok) return dbErrorResponse('social/media', res)
     return NextResponse.json({ assets: res.data }, { status: 200 })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed to load media' }, { status: 500 })

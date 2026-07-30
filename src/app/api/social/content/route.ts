@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { ContentDraftSchema } from '@/lib/social/schema'
@@ -19,7 +19,7 @@ export async function GET() {
   if (denied) return denied
   try {
     const res = await listContent()
-    if (!res.ok) return NextResponse.json({ error: res.message }, { status: 500 })
+    if (!res.ok) return dbErrorResponse('social/content', res)
     return NextResponse.json({ content: res.data }, { status: 200 })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed to load content' }, { status: 500 })

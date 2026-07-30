@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { configErrorResponse, readJson, parseLimit } from '@/lib/http'
+import { configErrorResponse, readJson, parseLimit, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { NigoOutcomeSchema } from '@/lib/validation/schemas'
@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
     if (sp.get('to')) cases = cases.lte('received_at', sp.get('to'))
 
     const { data: caseRows, error } = await cases
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('compliance/history', error)
 
     const ids = (caseRows ?? []).map((c) => c.id)
     let issueRows: {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { KnowledgePatchSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
@@ -15,7 +15,7 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
   const { id } = await props.params
   try {
     const { data, error } = await getDb().from('knowledge_documents').select('*').eq('id', id).maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('knowledge/[id]', error)
     if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     return NextResponse.json({ document: data })
   } catch (e) {
@@ -44,7 +44,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       .eq('id', id)
       .select('id, title, kind, status, is_assumption, visibility, updated_at')
       .maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('knowledge/[id]', error)
     if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     await writeAudit({ actor, action: 'entity.updated', entity: 'knowledge_document', entityId: id, diff: v.data })
     return NextResponse.json({ document: data })
@@ -69,7 +69,7 @@ export async function DELETE(_req: NextRequest, props: { params: Promise<{ id: s
       .eq('id', id)
       .select('id')
       .maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('knowledge/[id]', error)
     if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     await writeAudit({ actor, action: 'entity.deleted', entity: 'knowledge_document', entityId: id, diff: { archived: true } })
     return NextResponse.json({ ok: true, archived: true })

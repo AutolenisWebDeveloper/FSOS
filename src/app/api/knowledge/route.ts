@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse, parseLimit } from '@/lib/http'
+import { readJson, configErrorResponse, parseLimit, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { KnowledgeCreateSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
       .limit(limit)
     if (kind) builder = builder.eq('kind', kind)
     const { data, error } = await builder
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('knowledge', error)
     return NextResponse.json({ documents: data ?? [] })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed' }, { status: 500 })

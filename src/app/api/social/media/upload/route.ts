@@ -4,7 +4,7 @@
 // (a fresh signed preview URL) — never a public URL, never the raw storage path.
 
 import { NextRequest, NextResponse } from 'next/server'
-import { configErrorResponse } from '@/lib/http'
+import { configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { MediaUploadMetaSchema } from '@/lib/social/schema'
@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
       },
       actor,
     )
-    if (!created.ok) return NextResponse.json({ error: created.message }, { status: 500 })
+    if (!created.ok) return dbErrorResponse('social/media/upload', created)
 
     await writeAudit({
       actor,

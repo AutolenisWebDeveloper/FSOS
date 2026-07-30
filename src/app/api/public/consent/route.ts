@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { writeAudit } from '@/lib/audit/log'
 import { consentContactKey } from '@/lib/comms/contact-consent'
 
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
       // A conflict on a constraint we can't upsert against is not fatal — the goal
       // (contact is on the list) is still met. Other errors surface as 500.
       const conflict = /duplicate|conflict|unique/i.test(error.message)
-      if (!conflict) return NextResponse.json({ error: error.message }, { status: 500 })
+      if (!conflict) return dbErrorResponse('public/consent', error)
     }
 
     // Keep the durable per-contact consent store consistent with the opt-out. The ENFORCED

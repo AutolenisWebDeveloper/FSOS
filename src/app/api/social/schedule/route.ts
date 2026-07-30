@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { ScheduleCreateSchema } from '@/lib/social/schema'
@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
   const status = statusParam && SCHEDULE_STATUSES.includes(statusParam) ? (statusParam as SocialScheduleStatus) : undefined
   try {
     const res = await listQueue({ status })
-    if (!res.ok) return NextResponse.json({ error: res.message }, { status: 500 })
+    if (!res.ok) return dbErrorResponse('social/schedule', res)
     return NextResponse.json({ entries: res.data }, { status: 200 })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed to load queue' }, { status: 500 })

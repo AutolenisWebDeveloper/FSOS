@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { MemberCreateSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       p_phone: v.data.phone ?? null,
       p_key: dobKey(),
     })
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('households/[id]/members', error)
     await writeAudit({
       actor,
       action: 'entity.created',

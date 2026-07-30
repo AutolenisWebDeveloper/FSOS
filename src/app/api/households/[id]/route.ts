@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { HouseholdPatchSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
@@ -14,7 +14,7 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
   if (!auth.ok) return auth.response
   try {
     const { data, error } = await getDb().from('households').select('*').eq('id', params.id).is('deleted_at', null).maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('households/[id]', error)
     if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     return NextResponse.json({ household: data })
   } catch (e) {
@@ -38,7 +38,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     if (archived === true) update.archived_at = new Date().toISOString()
     if (archived === false) update.archived_at = null
     const { data, error } = await getDb().from('households').update(update).eq('id', params.id).is('deleted_at', null).select('*').maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('households/[id]', error)
     if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     await writeAudit({ actor: actorOf(auth.session), action: 'entity.updated', entity: 'household', entityId: params.id, diff: v.data as Record<string, unknown> })
     return NextResponse.json({ household: data })
@@ -55,7 +55,7 @@ export async function DELETE(_req: NextRequest, props: { params: Promise<{ id: s
   if (denied) return denied
   try {
     const { data, error } = await getDb().from('households').update({ deleted_at: new Date().toISOString() }).eq('id', params.id).is('deleted_at', null).select('id').maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('households/[id]', error)
     if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     await writeAudit({ actor: actorOf(auth.session), action: 'entity.deleted', entity: 'household', entityId: params.id })
     return NextResponse.json({ ok: true })

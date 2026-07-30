@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { requireInternalAuth } from '@/lib/http'
+import { requireInternalAuth, dbErrorResponse } from '@/lib/http'
 import { ghlSummary } from '@/lib/ghl'
 
 export const dynamic = 'force-dynamic'
@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
 
     if (error) {
       console.error('[agencies/list] query error:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return dbErrorResponse('agencies/list', error)
     }
 
     // Pull all referrals once and aggregate per agency in memory

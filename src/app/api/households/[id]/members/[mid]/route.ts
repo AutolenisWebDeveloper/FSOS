@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, hasRole, actorOf } from '@/lib/auth/api'
 import { MemberBaseSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
@@ -23,7 +23,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
       .eq('id', params.mid)
       .is('deleted_at', null)
       .maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('households/[id]/members/[mid]', error)
     if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     let dob: string | null = null
@@ -59,7 +59,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       p_phone: v.data.phone ?? null,
       p_key: dobKey(),
     })
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('households/[id]/members/[mid]', error)
     await writeAudit({ actor: actorOf(auth.session), action: 'entity.updated', entity: 'household_member', entityId: params.mid, diff: { fields: Object.keys(v.data) } })
     return NextResponse.json({ ok: true })
   } catch (e) {

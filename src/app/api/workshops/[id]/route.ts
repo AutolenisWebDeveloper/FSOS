@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { WorkshopPatchSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
@@ -37,7 +37,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       .select('workshop_id, status, compliance_approval_ref, disclosure_config_id')
       .eq('workshop_id', params.id)
       .maybeSingle()
-    if (loadErr) return NextResponse.json({ error: loadErr.message }, { status: 500 })
+    if (loadErr) return dbErrorResponse('workshops/[id]', loadErr)
     if (!current) return NextResponse.json({ error: 'Workshop not found' }, { status: 404 })
 
     const { presenter_ids, hero_image_ref, ...rest } = v.data
@@ -74,7 +74,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       .update(update)
       .eq('workshop_id', params.id)
       .select('workshop_id, status')
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('workshops/[id]', error)
     if (!data || data.length === 0) return NextResponse.json({ error: 'Workshop not found' }, { status: 404 })
 
     // Cancel → delete the session Zoom meetings so no stale join links survive. Only on the

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { AgencyPatchSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
@@ -21,7 +21,7 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
       .eq('id', params.id)
       .is('deleted_at', null)
       .maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('agencies/[id]', error)
     if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     return NextResponse.json({ agency: data })
   } catch (e) {
@@ -55,7 +55,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       .is('deleted_at', null)
       .select('*')
       .maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('agencies/[id]', error)
     if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     if (owner_email || owner_phone) {
@@ -92,7 +92,7 @@ export async function DELETE(_req: NextRequest, props: { params: Promise<{ id: s
       .is('deleted_at', null)
       .select('id')
       .maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('agencies/[id]', error)
     if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     await writeAudit({
       actor: actorOf(auth.session),

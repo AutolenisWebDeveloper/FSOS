@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { ReviewOutcomeSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
@@ -134,7 +134,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         updated_at: new Date().toISOString(),
       })
       .eq('id', params.id)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('reviews/[id]/outcome', error)
 
     await writeAudit({ actor, action: 'entity.updated', entity: 'review', entityId: params.id, diff: { stage: 'outcome_logged', generated_opp_ids: generatedOppIds } })
     return NextResponse.json({ ok: true, generated_opp_ids: generatedOppIds })

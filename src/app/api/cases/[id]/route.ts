@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { CaseStatusSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
@@ -14,7 +14,7 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
   if (!auth.ok) return auth.response
   try {
     const { data, error } = await getDb().from('cases').select('*').eq('id', params.id).maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('cases/[id]', error)
     if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     return NextResponse.json({ case: data })
   } catch (e) {
@@ -45,7 +45,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     const update: Record<string, unknown> = { status: v.data.status, updated_at: new Date().toISOString() }
     if (v.data.status === 'issued' && !c.issued_at) update.issued_at = new Date().toISOString()
     const { error } = await db.from('cases').update(update).eq('id', params.id)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('cases/[id]', error)
     await writeAudit({ actor, action: 'stage.changed', entity: 'case', entityId: params.id, diff: { from, to: v.data.status } })
 
     // On issue → advance the opportunity to placed_issued (which prompts the commission).

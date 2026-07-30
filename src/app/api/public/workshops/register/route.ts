@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'node:crypto'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { rateLimit, clientIp } from '@/lib/http/rate-limit'
 import { WorkshopRegisterSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
       .select('workshop_id, title, status, max_attendees, disclosure_config_id')
       .eq('workshop_id', v.data.workshop_id)
       .maybeSingle()
-    if (wErr) return NextResponse.json({ error: wErr.message }, { status: 500 })
+    if (wErr) return dbErrorResponse('public/workshops/register', wErr)
     if (!w || w.status !== 'published') {
       return NextResponse.json({ error: 'This workshop is not open for registration.' }, { status: 404 })
     }

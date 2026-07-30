@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { ContactPatchSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
@@ -64,7 +64,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     }
 
     const { error } = await db.from('contacts').update(updates).eq('id', params.id)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('app/contacts/[id]', error)
 
     await writeAudit({ actor, action: 'entity.updated', entity: 'contact', entityId: params.id, diff: updates })
     return NextResponse.json({ ok: true })
@@ -88,7 +88,7 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ id: st
     if (!existing) return NextResponse.json({ error: 'Contact not found' }, { status: 404 })
 
     const { error } = await db.from('contacts').update({ deleted_at: new Date().toISOString() }).eq('id', params.id)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('app/contacts/[id]', error)
 
     await writeAudit({ actor, action: 'entity.deleted', entity: 'contact', entityId: params.id, diff: null })
     return NextResponse.json({ ok: true })

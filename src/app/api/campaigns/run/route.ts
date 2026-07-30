@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
-import { requireInternalAuth, readJson } from '@/lib/http'
+import { requireInternalAuth, readJson, dbErrorResponse } from '@/lib/http'
 import { sendThroughGate } from '@/lib/comms/send'
 import { buildCampaignSend } from '@/lib/comms/campaign-run'
 
@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
   if (v.data.campaign_id) q = q.eq('campaign_id', v.data.campaign_id)
 
   const { data: due, error } = await q
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbErrorResponse('campaigns/run', error)
 
   const counts = { processed: 0, sent: 0, skipped: 0, blocked: 0, deferred: 0, failed: 0, completed: 0 }
 

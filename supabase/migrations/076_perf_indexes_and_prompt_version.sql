@@ -1,4 +1,3 @@
--- fsos:no-transaction
 -- ─────────────────────────────────────────────────────────
 -- Migration: 076_perf_indexes_and_prompt_version
 --
@@ -30,10 +29,14 @@
 --             - FK: coverages.policy_id → household_policies(id) ON DELETE CASCADE
 --               (a policy delete must scan coverages; unindexed = seq-scan + lock)
 --
---       Uses CREATE INDEX CONCURRENTLY so building the index never locks the table
---       against writes in production. CONCURRENTLY cannot run inside a transaction —
---       hence the `-- fsos:no-transaction` directive on line 1 (honored by
---       scripts/migrate.mjs). IF NOT EXISTS keeps re-runs safe.
+--       Plain CREATE INDEX (not CONCURRENTLY): the deployment tooling — Supabase
+--       branching + this repo's atomic migrate runner — applies every migration inside
+--       a transaction/pipeline, and CONCURRENTLY is illegal there (SQLSTATE 25001).
+--       These aggregate-root tables are small in this pre-launch system, so the brief
+--       ACCESS EXCLUSIVE lock while the index builds is negligible. If any of these
+--       tables ever grows large before this migration is applied to a hot production
+--       DB, build that index out-of-band with CONCURRENTLY first (then this IF NOT
+--       EXISTS is a no-op). IF NOT EXISTS keeps re-runs safe.
 --
 --       NOTE: index selection was validated against query paths + the schema; run
 --       EXPLAIN (ANALYZE) against a populated instance to confirm plan wins before a
@@ -45,11 +48,11 @@
 --       records lib/ai/roster.ts PROMPT_VERSION on each new run.
 -- ─────────────────────────────────────────────────────────
 
--- (A) Hot-FK covering indexes (concurrent, non-locking).
-create index concurrently if not exists idx_household_members_household on household_members(household_id);
-create index concurrently if not exists idx_cases_opportunity on cases(opportunity_id);
-create index concurrently if not exists idx_case_requirements_case on case_requirements(case_id);
-create index concurrently if not exists idx_coverages_policy on coverages(policy_id);
+-- (A) Hot-FK covering indexes (transaction-safe; see header for the CONCURRENTLY note).
+create index if not exists idx_household_members_household on household_members(household_id);
+create index if not exists idx_cases_opportunity on cases(opportunity_id);
+create index if not exists idx_case_requirements_case on case_requirements(case_id);
+create index if not exists idx_coverages_policy on coverages(policy_id);
 
 -- (B) Prompt-version provenance on agent runs (nullable — no rewrite).
 alter table agent_runs add column if not exists prompt_version text;

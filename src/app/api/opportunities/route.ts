@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf, hasSecuritiesScope } from '@/lib/auth/api'
 import { OpportunityCreateSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
     let q = getDb().from('opportunities').select('*').is('deleted_at', null).order('created_at', { ascending: false })
     if (household) q = q.eq('household_id', household)
     const { data, error } = await q
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('opportunities', error)
     return NextResponse.json({ opportunities: data ?? [] })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed' }, { status: 500 })

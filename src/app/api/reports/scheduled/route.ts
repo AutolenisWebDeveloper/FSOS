@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { ScheduledReportSchema } from '@/lib/validation/schemas'
@@ -19,7 +19,7 @@ export async function GET() {
       .from('scheduled_reports')
       .select('id, report_key, name, cadence, format, recipients, enabled, last_run_at, next_run_at, created_by, created_at, updated_at')
       .order('created_at', { ascending: false })
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('reports/scheduled', error)
     return NextResponse.json({ scheduled: data ?? [] })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed' }, { status: 500 })

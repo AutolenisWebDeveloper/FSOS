@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 
@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
     else if (due === 'upcoming') query = query.gte('due_at', endIso)
 
     const { data, error } = await query.order('due_at', { ascending: true, nullsFirst: false })
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('work-tasks', error)
     return NextResponse.json({ tasks: data ?? [] })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed' }, { status: 500 })
@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
       completed: false,
     }
     const { data, error } = await getDb().from('work_tasks').insert(insert).select('*').maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('work-tasks', error)
     await writeAudit({
       actor: actorOf(auth.session),
       action: 'entity.created',

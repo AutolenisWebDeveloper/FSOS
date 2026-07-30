@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { requireInternalAuth, readJson, parseLimit } from '@/lib/http'
+import { requireInternalAuth, readJson, parseLimit, dbErrorResponse } from '@/lib/http'
 import { ghlSummary } from '@/lib/ghl'
 
 export const dynamic = 'force-dynamic'
@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
     const { data: cases, error } = await query
     if (error) {
       console.error('[opra] query error:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return dbErrorResponse('opra', error)
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { dbErrorResponse } from '@/lib/http'
 import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
 import { requireApiRole, actorOf } from '@/lib/auth/api'
@@ -28,7 +29,7 @@ export async function GET() {
     .eq('user_id', auth.session.userId)
     .order('created_at', { ascending: false })
     .limit(50)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbErrorResponse('app/notifications', error)
   const notifications = data ?? []
   const unread = notifications.filter((n) => !n.read_at).length
   return NextResponse.json({ notifications, unread })
@@ -48,7 +49,7 @@ export async function PATCH(req: NextRequest) {
   if ('id' in parsed.data) query = query.eq('id', parsed.data.id)
 
   const { data, error } = await query.select('id')
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbErrorResponse('app/notifications', error)
   const count = data?.length ?? 0
 
   if (count > 0) {

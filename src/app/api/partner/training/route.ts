@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { TrainingCompleteSchema } from '@/lib/validation/schemas'
@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
         { training_id: v.data.training_id, agency_id: agencyId, user_id: actor },
         { onConflict: 'training_id,user_id' },
       )
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('partner/training', error)
     await writeAudit({
       actor,
       action: 'entity.updated',

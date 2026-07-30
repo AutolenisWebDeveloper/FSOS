@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { configErrorResponse, readJson } from '@/lib/http'
+import { configErrorResponse, readJson, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { NigoIssuePatchSchema } from '@/lib/validation/schemas'
@@ -50,7 +50,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
         'id, case_id, seq, status, severity, assigned_to, human_reviewed, reviewer_notes, resolution, response_text, validity, authority_type',
       )
       .single()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('compliance/issues/[id]', error)
 
     await writeAudit({
       actor,

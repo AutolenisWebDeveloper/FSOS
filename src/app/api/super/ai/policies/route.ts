@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 
@@ -39,7 +39,7 @@ export async function PATCH(req: NextRequest) {
         .eq('id', 'global')
         .select('id, gateway_enabled')
         .maybeSingle()
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      if (error) return dbErrorResponse('super/ai/policies', error)
       if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
       await writeAudit({
@@ -78,7 +78,7 @@ export async function PATCH(req: NextRequest) {
       .eq('key', v.data.key)
       .select('key, name, enabled, is_guardrail')
       .maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('super/ai/policies', error)
     if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     await writeAudit({

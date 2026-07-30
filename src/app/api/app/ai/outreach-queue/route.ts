@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 
@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
     if (agent) q = q.eq('agent_key', agent)
     if (status) q = q.eq('status', status)
     const { data, error } = await q
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('app/ai/outreach-queue', error)
     return NextResponse.json({ items: data ?? [] })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed' }, { status: 500 })
@@ -68,7 +68,7 @@ export async function PATCH(req: NextRequest) {
     if (v.data.outcome) patch.outcome = v.data.outcome
 
     const { data, error } = await db.from('outreach_queue').update(patch).eq('id', v.data.id).select('id, status, outcome').maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('app/ai/outreach-queue', error)
 
     await writeAudit({
       actor: actorOf(auth.session),

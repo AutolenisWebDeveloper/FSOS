@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
 import { getTier } from '@/lib/compliance'
-import { requireInternalAuth, readJson, parseLimit } from '@/lib/http'
+import { requireInternalAuth, readJson, parseLimit, dbErrorResponse } from '@/lib/http'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
     const { data: cases, error } = await query
     if (error) {
       console.error('[gdc/cases] query error:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return dbErrorResponse('gdc/cases', error)
     }
 
     // Summary uses all non-cancelled cases, not just the filtered/limited page

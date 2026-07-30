@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf, hasSecuritiesScope } from '@/lib/auth/api'
 import { OpportunityStageSchema, OPPORTUNITY_STAGE } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
@@ -49,7 +49,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     if (to === 'lost' && v.data.note) update.lost_reason = v.data.note
 
     const { error } = await db.from('opportunities').update(update).eq('id', params.id)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('opportunities/[id]/stage', error)
     await writeAudit({ actor, action: 'stage.changed', entity: 'opportunity', entityId: params.id, diff: { from, to } })
 
     // placed_issued → prompt a commission record from assumption-flagged split defaults.

@@ -45,7 +45,15 @@ function psql(sql) {
 const dobKey = process.env.DOB_ENCRYPTION_KEY || ''
 function psqlFile(path) {
   const env = dobKey ? { ...process.env, PGOPTIONS: `${process.env.PGOPTIONS ? process.env.PGOPTIONS + ' ' : ''}-c app.dob_key=${dobKey}` } : process.env
-  execFileSync('psql', [dbUrl, '-v', 'ON_ERROR_STOP=1', '-f', path], { stdio: 'inherit', env })
+  // Apply each file atomically (--single-transaction): a mid-file failure rolls the
+  // WHOLE file back instead of leaving the schema half-migrated and unrecorded. Files
+  // that cannot run inside a transaction (e.g. CREATE INDEX CONCURRENTLY) opt out with
+  // a `-- fsos:no-transaction` marker on the first line.
+  const optOut = readFileSync(path, 'utf8').slice(0, 200).includes('fsos:no-transaction')
+  const args = optOut
+    ? [dbUrl, '-v', 'ON_ERROR_STOP=1', '-f', path]
+    : [dbUrl, '-v', 'ON_ERROR_STOP=1', '--single-transaction', '-f', path]
+  execFileSync('psql', args, { stdio: 'inherit', env })
 }
 
 try {

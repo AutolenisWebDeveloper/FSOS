@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { requireInternalAuth, parseLimit } from '@/lib/http'
+import { requireInternalAuth, parseLimit, dbErrorResponse } from '@/lib/http'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
     const { data, error } = await query
     if (error) {
       console.error('[forms/responses] query error:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return dbErrorResponse('forms/responses', error)
     }
 
     return NextResponse.json({ submissions: data || [] })

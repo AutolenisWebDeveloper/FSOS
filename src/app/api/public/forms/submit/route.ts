@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { rateLimit, clientIp } from '@/lib/http/rate-limit'
 import { FormPublicSubmitSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
       .select('id, slug, active, captures_consent')
       .eq('slug', v.data.template_slug)
       .maybeSingle()
-    if (tErr) return NextResponse.json({ error: tErr.message }, { status: 500 })
+    if (tErr) return dbErrorResponse('public/forms/submit', tErr)
     if (!template || !template.active) {
       return NextResponse.json({ error: 'Form not found' }, { status: 404 })
     }
@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
           .eq('id', existing.id)
           .neq('status', 'submitted')
           .select('id')
-        if (uErr) return NextResponse.json({ error: uErr.message }, { status: 500 })
+        if (uErr) return dbErrorResponse('public/forms/submit', uErr)
         responseId = upd?.[0]?.id ?? null
       }
     }
@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
         })
         .select('id')
         .single()
-      if (iErr) return NextResponse.json({ error: iErr.message }, { status: 500 })
+      if (iErr) return dbErrorResponse('public/forms/submit', iErr)
       responseId = ins.id
     }
 

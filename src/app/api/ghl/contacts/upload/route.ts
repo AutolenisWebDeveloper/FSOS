@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { requireInternalAuth, parseLimit } from '@/lib/http'
+import { requireInternalAuth, parseLimit, dbErrorResponse } from '@/lib/http'
 import { parseSpreadsheet, extensionOf, SUPPORTED_EXTENSIONS } from '@/lib/spreadsheet'
 import { resolveColumns, mapAndValidateRow, type CanonicalField } from '@/lib/ghlContacts'
 import { aiDetectColumns, columnAiEnabled } from '@/lib/columnAI'
@@ -386,7 +386,7 @@ export async function GET(req: NextRequest) {
     const status = url.searchParams.get('status')
     if (status) q = q.eq('status', status)
     const { data, error } = await q
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('ghl/contacts/upload', error)
     return NextResponse.json({ batch_id: batchId, rows: data || [] })
   }
 
@@ -395,6 +395,6 @@ export async function GET(req: NextRequest) {
     .select('*')
     .order('created_at', { ascending: false })
     .limit(limit)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbErrorResponse('ghl/contacts/upload', error)
   return NextResponse.json({ batches: data || [] })
 }

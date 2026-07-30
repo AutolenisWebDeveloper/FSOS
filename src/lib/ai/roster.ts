@@ -5,6 +5,12 @@
 // compliance_guardrail agent is the hard-block layer and cannot be disabled without
 // super + 2FA. Tool names are validated against GREEN_ZONE_TOOLS below.
 
+// Prompt/roster version recorded on every agent_runs row for reproducibility &
+// audit (ADR-008 / §11.1). Bump this whenever an agent's mission, system prompt, or
+// tool set changes materially, so a stored run can be traced to the exact prompt
+// contract that produced it.
+export const PROMPT_VERSION = 'roster-2026-07-1'
+
 // The complete green-zone tool vocabulary. There is deliberately NO recommend/advise/
 // suitability/allocate tool anywhere in this list.
 export const GREEN_ZONE_TOOLS = [

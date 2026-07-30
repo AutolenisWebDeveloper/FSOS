@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { requireInternalAuth, callerLabel } from '@/lib/http'
+import { requireInternalAuth, callerLabel, dbErrorResponse } from '@/lib/http'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
     .select('*')
     .eq('customer_id', customerId)
     .order('created_at', { ascending: false })
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbErrorResponse('customers/documents', error)
 
   const docs = await Promise.all(
     (data || []).map(async (d) => {
@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
     })
     .select('*')
     .single()
-  if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 })
+  if (insErr) return dbErrorResponse('customers/documents', insErr)
 
   const { data: signed } = await supabase.storage.from('documents').createSignedUrl(storagePath, SIGNED_URL_TTL)
   return NextResponse.json({ document: { ...doc, url: signed?.signedUrl || null } }, { status: 201 })

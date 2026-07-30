@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
-import { requireInternalAuth, readJson } from '@/lib/http'
+import { requireInternalAuth, readJson, dbErrorResponse } from '@/lib/http'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
     .from('campaign_enrollments')
     .upsert(rows, { onConflict: 'campaign_id,customer_id', ignoreDuplicates: true })
     .select('enrollment_id')
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbErrorResponse('campaigns/enroll', error)
 
   return NextResponse.json({ matched: ids.size, enrolled: inserted?.length || 0 })
 }

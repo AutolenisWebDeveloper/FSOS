@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { requireInternalAuth, parseLimit } from '@/lib/http'
+import { requireInternalAuth, parseLimit, dbErrorResponse } from '@/lib/http'
 import { ghlSummary } from '@/lib/ghl'
 
 export const dynamic = 'force-dynamic'
@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
     const { data: opportunities, error } = await query
     if (error) {
       console.error('[scores] query error:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return dbErrorResponse('scores', error)
     }
 
     // Resolve each customer's live GHL pipeline stage (id → human names) from

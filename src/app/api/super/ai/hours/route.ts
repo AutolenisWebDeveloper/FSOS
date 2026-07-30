@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 
@@ -22,7 +22,7 @@ export async function GET(_req: NextRequest) {
       .select('id, enabled, start_hour, end_hour, days, timezone_offset_hours, is_assumption, note, updated_at')
       .eq('id', 'global')
       .maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('super/ai/hours', error)
     return NextResponse.json({ policy: data })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed' }, { status: 500 })
@@ -72,7 +72,7 @@ export async function PUT(req: NextRequest) {
       .upsert({ id: 'global', ...patch }, { onConflict: 'id' })
       .select('id, enabled, start_hour, end_hour, days, timezone_offset_hours, is_assumption, note, updated_at')
       .maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('super/ai/hours', error)
 
     await writeAudit({
       actor: actorOf(auth.session),

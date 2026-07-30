@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { parseLimit } from '@/lib/http'
+import { parseLimit, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { parseSpreadsheet, extensionOf, SUPPORTED_EXTENSIONS } from '@/lib/spreadsheet'
@@ -310,7 +310,7 @@ export async function GET(req: NextRequest) {
       .select('batch_id, filename, source, total_rows, success_count, duplicate_count, invalid_count, failed_count, status, created_by, created_at')
       .order('created_at', { ascending: false })
       .limit(limit)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('app/contacts/upload', error)
     return NextResponse.json({ batches: data || [] })
   } catch {
     return NextResponse.json({ error: 'Failed to load upload history' }, { status: 500 })

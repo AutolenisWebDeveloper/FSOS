@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { FormAttachSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
@@ -35,7 +35,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       .eq('id', params.id)
       .is('deleted_at', null)
       .maybeSingle()
-    if (rErr) return NextResponse.json({ error: rErr.message }, { status: 500 })
+    if (rErr) return dbErrorResponse('forms/responses/[id]', rErr)
     if (!resp) return NextResponse.json({ error: 'Response not found' }, { status: 404 })
 
     const { data: hh, error: hErr } = await db
@@ -44,7 +44,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       .eq('id', v.data.household_id)
       .is('deleted_at', null)
       .maybeSingle()
-    if (hErr) return NextResponse.json({ error: hErr.message }, { status: 500 })
+    if (hErr) return dbErrorResponse('forms/responses/[id]', hErr)
     if (!hh) return NextResponse.json({ error: 'Household not found' }, { status: 404 })
 
     const nowIso = new Date().toISOString()
@@ -52,7 +52,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       .from('form_responses')
       .update({ household_id: hh.id, status: 'attached', attached_at: nowIso, updated_at: nowIso })
       .eq('id', resp.id)
-    if (uErr) return NextResponse.json({ error: uErr.message }, { status: 500 })
+    if (uErr) return dbErrorResponse('forms/responses/[id]', uErr)
 
     // Materialize captured consent into real consents rows on the household.
     const channels = Array.isArray(resp.consent_channels) ? (resp.consent_channels as string[]) : []
@@ -115,7 +115,7 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ id: st
       .eq('id', params.id)
       .is('deleted_at', null)
       .select('id')
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('forms/responses/[id]', error)
     if (!data || data.length === 0) return NextResponse.json({ error: 'Response not found' }, { status: 404 })
     await writeAudit({ actor, action: 'entity.deleted', entity: 'form_response', entityId: params.id, diff: { soft: true } })
     return NextResponse.json({ ok: true })

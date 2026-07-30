@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, actorOf, hasRole } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { z } from 'zod'
@@ -38,7 +38,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     }
 
     const { error } = await db.from('ai_agents').update({ enabled: v.data.enabled, updated_at: new Date().toISOString() }).eq('key', params.id)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('ai/agents/[id]', error)
     await writeAudit({ actor, action: 'config.changed', entity: 'ai_agent', entityId: params.id, diff: { enabled: v.data.enabled } })
     return NextResponse.json({ ok: true, enabled: v.data.enabled })
   } catch (e) {

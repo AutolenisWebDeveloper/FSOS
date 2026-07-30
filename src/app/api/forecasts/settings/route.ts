@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { ForecastSettingsSchema } from '@/lib/validation/schemas'
@@ -22,7 +22,7 @@ export async function GET(_req: NextRequest) {
       .order('updated_at', { ascending: false })
       .limit(1)
       .maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('forecasts/settings', error)
     return NextResponse.json({
       settings: data ?? {
         probabilities: DEFAULT_STAGE_PROBABILITIES,

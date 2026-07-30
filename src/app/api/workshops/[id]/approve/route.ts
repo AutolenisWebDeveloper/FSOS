@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { WorkshopApproveSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       .select('workshop_id, disclosure_config_id')
       .eq('workshop_id', params.id)
       .maybeSingle()
-    if (wErr) return NextResponse.json({ error: wErr.message }, { status: 500 })
+    if (wErr) return dbErrorResponse('workshops/[id]/approve', wErr)
     if (!workshop) return NextResponse.json({ error: 'Workshop not found' }, { status: 404 })
 
     // ── Rejection: record it and send the workshop back to draft. ──
@@ -54,7 +54,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         })
         .select('id')
         .single()
-      if (aErr) return NextResponse.json({ error: aErr.message }, { status: 500 })
+      if (aErr) return dbErrorResponse('workshops/[id]/approve', aErr)
       await db.from('workshops').update({ status: 'draft', updated_at: new Date().toISOString() }).eq('workshop_id', params.id)
       await writeAudit({ actor, action: 'approval.decided', entity: 'workshop', entityId: params.id, diff: { decision: 'rejected', approval_id: appr.id } })
       return NextResponse.json({ ok: true, decision: 'rejected' })
@@ -71,7 +71,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       .select('id, kind, version, body')
       .eq('id', disclosureId)
       .maybeSingle()
-    if (dErr) return NextResponse.json({ error: dErr.message }, { status: 500 })
+    if (dErr) return dbErrorResponse('workshops/[id]/approve', dErr)
     if (!disclosure) return NextResponse.json({ error: 'Disclosure version not found' }, { status: 404 })
 
     // Optionally replace the disclosure body with the approved text supplied now.
@@ -121,7 +121,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       })
       .select('id')
       .single()
-    if (aErr) return NextResponse.json({ error: aErr.message }, { status: 500 })
+    if (aErr) return dbErrorResponse('workshops/[id]/approve', aErr)
 
     // Open the gate: reference the approval + disclosure, move to compliance_approved.
     await db

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { dbErrorResponse } from '@/lib/http'
 import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
@@ -36,7 +37,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
   const actor = actorOf(auth.session)
 
   const { data: rec, error } = await db.from('import_records').select('*').eq('id', params.id).maybeSingle()
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbErrorResponse('app/imports/review/[id]', error)
   if (!rec) return NextResponse.json({ error: 'Review record not found.' }, { status: 404 })
   if (rec.review_status !== 'needs_review') return NextResponse.json({ error: `Record is already ${rec.review_status}.` }, { status: 409 })
 
@@ -60,7 +61,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       }
       if (Object.keys(patch).length) {
         const { error: uerr } = await db.from('contacts').update(patch).eq('id', target_contact_id).is('deleted_at', null)
-        if (uerr) return NextResponse.json({ error: uerr.message }, { status: 500 })
+        if (uerr) return dbErrorResponse('app/imports/review/[id]', uerr)
       }
       await db.from('import_records').update({ ...nowResolved, target_id: target_contact_id, merged_fields: merged, rejected_values: rejected }).eq('id', rec.id)
       await writeAudit({ actor, action: 'entity.updated', entity: 'contact', entityId: target_contact_id, diff: { via: 'import_review_merge', merged, rejected } })
@@ -78,7 +79,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       owner_scope: auth.session.userId ?? null,
     }
     const { data: created, error: cerr } = await db.from('contacts').insert(insert).select('id').single()
-    if (cerr) return NextResponse.json({ error: cerr.message }, { status: 500 })
+    if (cerr) return dbErrorResponse('app/imports/review/[id]', cerr)
     await db.from('import_records').update({ ...nowResolved, target_id: created?.id ?? null }).eq('id', rec.id)
     await writeAudit({ actor, action: 'entity.created', entity: 'contact', entityId: created?.id ?? null, diff: { via: 'import_review_create' } })
     return NextResponse.json({ ok: true, action, contact_id: created?.id })

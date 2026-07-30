@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { FfsContactSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
@@ -20,7 +20,7 @@ export async function GET() {
       .select('*')
       .order('sort', { ascending: true })
       .order('role', { ascending: true })
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('super/config/ffs-contacts', error)
     return NextResponse.json({ contacts: data ?? [] })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed' }, { status: 500 })

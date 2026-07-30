@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { configErrorResponse, readJson, parseLimit } from '@/lib/http'
+import { configErrorResponse, readJson, parseLimit, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { ComplianceIngestSchema } from '@/lib/validation/schemas'
@@ -51,7 +51,7 @@ export async function GET(req: NextRequest) {
       .select('id, title, authority_type, source_org, section_ref, carrier, product_scope, state_scope, verbatim, is_assumption, source, updated_at')
       .order('updated_at', { ascending: false })
       .limit(limit)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('compliance/ingest', error)
 
     // Chunk counts per tier so the UI can surface populated vs. empty tiers.
     const { data: chunkRows } = await db.from('compliance_chunks').select('authority_type')
@@ -120,7 +120,7 @@ export async function POST(req: NextRequest) {
     }))
     if (rows.length) {
       const { error: chunkErr } = await db.from('compliance_chunks').insert(rows)
-      if (chunkErr) return NextResponse.json({ error: chunkErr.message }, { status: 500 })
+      if (chunkErr) return dbErrorResponse('compliance/ingest', chunkErr)
     }
 
     await writeAudit({

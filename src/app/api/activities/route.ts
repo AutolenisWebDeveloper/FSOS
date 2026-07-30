@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
       .insert({ entity_type: v.data.entity_type, entity_id: v.data.entity_id, kind: v.data.kind, note: v.data.note, actor })
       .select('*')
       .single()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('activities', error)
 
     if (v.data.entity_type === 'agency_partnership' && ['contact', 'checkin', 'note'].includes(v.data.kind)) {
       await db.from('agency_partnerships').update({ last_contact_at: new Date().toISOString() }).eq('id', v.data.entity_id)

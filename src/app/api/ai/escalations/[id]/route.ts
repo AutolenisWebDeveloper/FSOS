@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 
@@ -49,7 +49,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       .eq('id', params.id)
       .eq('kind', 'escalation')
       .maybeSingle()
-    if (readErr) return NextResponse.json({ error: readErr.message }, { status: 500 })
+    if (readErr) return dbErrorResponse('ai/escalations/[id]', readErr)
     if (!row) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     const securities = isSecurities(row.reason as string | null, row.blocked_step as string | null)
@@ -61,7 +61,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       .eq('kind', 'escalation')
       .select('id, run_id, kind, actor, outcome, target_type, target_id, reason, blocked_step, note, drafted_content, created_at')
       .maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('ai/escalations/[id]', error)
     if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     await writeAudit({

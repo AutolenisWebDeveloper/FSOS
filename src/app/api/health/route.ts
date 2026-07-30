@@ -9,9 +9,12 @@ export const runtime = 'nodejs'
 // whether env vars are present, Supabase is reachable, and the schema exists.
 export async function GET() {
   const env = {
-    supabase_url: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+    // Accept the same alias names getDb() honors (Vercel↔Supabase integration
+    // injects SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY) so health doesn't falsely
+    // report "missing" when the app is in fact correctly configured.
+    supabase_url: !!(process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL),
     supabase_anon_key: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    supabase_service_key: !!process.env.SUPABASE_SERVICE_KEY,
+    supabase_service_key: !!(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY),
     anthropic_key: !!process.env.ANTHROPIC_API_KEY,
     resend_key: !!process.env.RESEND_API_KEY,
     // Email actually SENDS only when both the key and a non-placeholder verified sender are

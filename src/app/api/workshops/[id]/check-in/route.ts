@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, configErrorResponse } from '@/lib/http'
+import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { clientIp } from '@/lib/http/rate-limit'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { WorkshopCheckInSchema } from '@/lib/validation/schemas'
@@ -43,7 +43,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       .select('workshop_id, disclosure_config_id')
       .eq('workshop_id', params.id)
       .maybeSingle()
-    if (wErr) return NextResponse.json({ error: wErr.message }, { status: 500 })
+    if (wErr) return dbErrorResponse('workshops/[id]/check-in', wErr)
     if (!w) return NextResponse.json({ error: 'Workshop not found' }, { status: 404 })
 
     // ── Check-in by token (idempotent). ──

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { configErrorResponse, readJson } from '@/lib/http'
+import { configErrorResponse, readJson, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { GatewayDisabledError } from '@/lib/ai/gateway'
@@ -38,7 +38,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ id: strin
       )
       .eq('id', params.id)
       .maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('compliance/upload/[id]', error)
     if (!upload) return NextResponse.json({ error: 'Upload not found' }, { status: 404 })
 
     let pagesBuilder = db
@@ -177,7 +177,7 @@ export async function DELETE(_req: NextRequest, props: { params: Promise<{ id: s
     // Remove the stored object (best-effort) then the record (pages cascade).
     await db.storage.from(COMPLIANCE_BUCKET).remove([upload.storage_path]).catch(() => {})
     const { error } = await db.from('compliance_uploads').delete().eq('id', params.id)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('compliance/upload/[id]', error)
 
     await writeAudit({ actor, action: 'entity.deleted', entity: 'compliance_upload', entityId: params.id, diff: { filename: upload.filename } })
     return NextResponse.json({ ok: true })

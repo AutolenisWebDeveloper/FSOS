@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { configErrorResponse, parseLimit } from '@/lib/http'
+import { configErrorResponse, parseLimit, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
 import { GatewayDisabledError } from '@/lib/ai/gateway'
@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
     if (caseId) builder = builder.eq('case_id', caseId)
 
     const { data, error } = await builder.limit(limit)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbErrorResponse('compliance/upload', error)
 
     const uploads = await Promise.all(
       (data ?? []).map(async (u) => {

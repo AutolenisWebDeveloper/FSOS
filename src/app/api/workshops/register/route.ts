@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, escapeHtml } from '@/lib/http'
+import { readJson, escapeHtml, dbErrorResponse } from '@/lib/http'
 import { sendEmail, emailConfigured } from '@/lib/messaging'
 
 export const dynamic = 'force-dynamic'
@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
     .select('workshop_id, title, topic, scheduled_at, location, max_attendees')
     .eq('workshop_id', id)
     .maybeSingle()
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbErrorResponse('workshops/register', error)
   if (!w) return NextResponse.json({ error: 'Workshop not found' }, { status: 404 })
 
   const { count } = await supabase

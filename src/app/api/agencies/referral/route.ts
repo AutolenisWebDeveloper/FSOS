@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
-import { requireInternalAuth, readJson, parseLimit } from '@/lib/http'
+import { requireInternalAuth, readJson, parseLimit, dbErrorResponse } from '@/lib/http'
 import { sendForm } from '@/lib/forms'
 import { ghlEnabled, upsertContact, createOpportunity, GHL_CUSTOM_FIELDS } from '@/lib/ghl'
 
@@ -204,7 +204,7 @@ export async function GET(req: NextRequest) {
   if (agency_id) query = query.eq('agency_id', agency_id)
 
   const { data: referrals, error } = await query
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbErrorResponse('agencies/referral', error)
 
   return NextResponse.json({ referrals: referrals || [] })
 }

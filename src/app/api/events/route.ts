@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { dbErrorResponse } from '@/lib/http'
 import { getDb } from '@/lib/supabase/client'
 
 export const dynamic = 'force-dynamic'
@@ -15,6 +16,6 @@ export async function GET() {
     .gte('scheduled_at', nowISO)
     .order('scheduled_at', { ascending: true })
     .limit(50)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbErrorResponse('events', error)
   return NextResponse.json({ events: data || [] })
 }

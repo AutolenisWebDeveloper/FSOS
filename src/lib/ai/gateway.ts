@@ -74,6 +74,12 @@ export class GatewayDisabledError extends Error {
 // Default routing. Claude-first; the app already standardizes on Claude models.
 export const DEFAULT_MODEL = 'claude-sonnet-5'
 
+// Hard per-request wall-clock ceiling for a raw-fetch provider call (§11.1: every
+// gateway call has a timeout). Without this an unresponsive OpenAI/Gemini fallback
+// would hang the job until the platform SIGKILLs the function. The Claude path uses
+// the SDK's own timeout/retry (configured in lib/anthropic.ts).
+export const GATEWAY_FETCH_TIMEOUT_MS = 60_000
+
 // Provider inferred from model id prefix.
 export function providerOf(model: string): Provider {
   if (model.startsWith('claude')) return 'claude'
@@ -185,6 +191,7 @@ async function callOpenAI(req: GatewayRequest, model: string): Promise<GatewayRe
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    signal: AbortSignal.timeout(GATEWAY_FETCH_TIMEOUT_MS),
     body: JSON.stringify({
       model,
       max_tokens: req.maxTokens ?? 2048,
@@ -224,6 +231,7 @@ async function callGemini(req: GatewayRequest, model: string): Promise<GatewayRe
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(GATEWAY_FETCH_TIMEOUT_MS),
       body: JSON.stringify({
         systemInstruction: req.system ? { parts: [{ text: req.system }] } : undefined,
         contents,

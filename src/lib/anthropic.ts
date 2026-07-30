@@ -19,6 +19,10 @@ export function getAnthropic(): Anthropic {
   if (!apiKey) {
     throw new Error('[FSOS] ANTHROPIC_API_KEY is not configured')
   }
-  _client = new Anthropic({ apiKey })
+  // Explicit resilience config (§11.1: every gateway call has a timeout + bounded
+  // retry with backoff). The SDK retries idempotent failures (429/5xx/network) with
+  // exponential backoff; we cap the per-request wall-clock so a hung upstream can't
+  // stall a job until the platform SIGKILLs it.
+  _client = new Anthropic({ apiKey, timeout: 60_000, maxRetries: 2 })
   return _client
 }

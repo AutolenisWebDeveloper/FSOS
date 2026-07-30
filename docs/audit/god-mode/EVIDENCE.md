@@ -1,9 +1,19 @@
-# Gated migration evidence — for review before applying
+# Gated migration evidence
 
-Two **access-control** migrations are drafted and committed **unapplied** (this folder
-is outside `supabase/migrations/`, so `npm run migrate` will not run them). They change
-who can touch security-sensitive rows, so per the god-mode contract they wait for
-explicit go-ahead. Below is the evidence requested before review.
+> **STATUS: APPLIED (owner-approved 2026-07-30).** The two access-control changes were
+> reviewed and approved, and are now real forward migrations:
+> - `supabase/migrations/077_audit_log_lockdown.sql`
+> - `supabase/migrations/078_ai_governance_rls.sql`
+>
+> Both were validated on an ephemeral Postgres under `--single-transaction` (the runner +
+> Supabase-pipeline execution model): audit_insert policy dropped, TRUNCATE trigger
+> installed, RLS+FORCE enabled on ai_policies/ai_agents, super-read policies created.
+> This document is retained as the review record. After applying to a live instance, run
+> `get_advisors` (security) to confirm the RLS gap clears and smoke-test the kill switch.
+
+Two **access-control** migrations were originally drafted and committed **unapplied**
+(outside `supabase/migrations/`) pending explicit go-ahead. Below is the evidence that
+was gathered before approval.
 
 Authoring session had **no live DB** (Supabase MCP not authorized), so RLS/grant state
 is read from migration SQL + code, not `pg_catalog`. Confirm with `get_advisors` /

@@ -9,6 +9,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getDb, ConfigError } from '@/lib/supabase/client'
+import { resolveDobKey } from './dob-key'
 
 export type LoadResult<T> =
   | { ok: true; data: T }
@@ -85,9 +86,16 @@ export async function loadAll<T>(
   }
 }
 
-/** The DOB encryption key the app passes to the pgcrypto RPCs (never stored in DB). */
+/**
+ * The DOB encryption key the app passes to the pgcrypto RPCs (never stored in DB).
+ * Fails CLOSED in a deployed runtime: if no key is configured we throw a ConfigError
+ * (surfaced as a clean 503 by configErrorResponse) rather than silently encrypting
+ * client PII with the shared development default. See lib/data/dob-key.ts.
+ */
 export function dobKey(): string {
-  return process.env.DOB_ENCRYPTION_KEY || process.env.FSOS_DOB_KEY || 'fsos-dev-dob-key-change-me'
+  const r = resolveDobKey()
+  if (!r.ok) throw new ConfigError(r.reason)
+  return r.key
 }
 
 /**

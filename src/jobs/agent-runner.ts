@@ -13,7 +13,7 @@ import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
 import { retry, runIdempotent } from '@/lib/jobs/runtime'
 import { dispatch, type DispatchRequest } from '@/lib/comms/dispatcher'
-import { AGENT_ROSTER } from '@/lib/ai/roster'
+import { AGENT_ROSTER, PROMPT_VERSION } from '@/lib/ai/roster'
 import { assertToolAuthority, type GreenLoopTool } from '@/lib/ai/tools'
 import type { ToolEffect } from '@/lib/ai/tool-loop'
 
@@ -78,6 +78,7 @@ async function execute(args: RunAgentArgs): Promise<RunAgentResult> {
       actor,
       input: args.input ?? {},
       status: 'running',
+      prompt_version: PROMPT_VERSION,
       started_at: new Date().toISOString(),
     })
     .select('id')

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
 import { readJson, configErrorResponse } from '@/lib/http'
+import { rateLimit, clientIp } from '@/lib/http/rate-limit'
 import { ReferralCreateSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
 
@@ -13,6 +14,12 @@ export const runtime = 'nodejs'
 const SLA_HOURS = 24
 
 export async function POST(req: NextRequest) {
+  // Blunt submission floods on this unauthenticated write (parity with the other
+  // public POST endpoints; pairs with the honeypot + readJson size cap).
+  if (!rateLimit(`refer:${clientIp(req)}`)) {
+    return NextResponse.json({ error: 'Too many requests. Please try again shortly.' }, { status: 429 })
+  }
+
   const parsed = await readJson<Record<string, unknown>>(req)
   if ('error' in parsed) return parsed.error
 

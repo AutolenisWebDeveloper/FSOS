@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
 import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
+import { rateLimit, clientIp } from '@/lib/http/rate-limit'
 import { writeAudit } from '@/lib/audit/log'
 import { consentContactKey } from '@/lib/comms/contact-consent'
 
@@ -17,6 +18,12 @@ const ConsentOptOutSchema = z.object({
 })
 
 export async function POST(req: NextRequest) {
+  // Blunt floods without blocking a genuine opt-out: a generous per-IP cap (opt-out
+  // is a consumer-protection action, so the limit is looser than other public forms).
+  if (!rateLimit(`consent:${clientIp(req)}`, 20, 60_000)) {
+    return NextResponse.json({ error: 'Too many requests. Please try again shortly.' }, { status: 429 })
+  }
+
   const parsed = await readJson<Record<string, unknown>>(req)
   if ('error' in parsed) return parsed.error
 

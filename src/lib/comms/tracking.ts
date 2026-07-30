@@ -100,12 +100,17 @@ export function safeRedirectTarget(
   } catch {
     return null
   }
-  // Signature enforcement (open-redirect defense). Only enforced when a secret exists;
-  // the signature is computed over the ORIGINAL param value the link carried.
+  // Signature enforcement (open-redirect defense). The signature is computed over the
+  // ORIGINAL param value the link carried. When a signing secret is configured it is
+  // always enforced; when it is NOT, we fail CLOSED on any deployed runtime rather
+  // than degrading to scheme-only validation (which is an open redirect / phishing
+  // pivot). Local/dev without a secret still resolves for developer convenience.
   if (signingSecret()) {
     if (!verify) return null
     const expected = signRedirect(verify.messageId, raw)
     if (!signaturesMatch(expected, verify.sig ?? '')) return null
+  } else if (process.env.NODE_ENV === 'production' || process.env.VERCEL === '1') {
+    return null
   }
   return normalized
 }

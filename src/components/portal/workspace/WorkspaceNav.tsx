@@ -79,8 +79,21 @@ function NavRow({
 }
 
 // ─── Level 1: the section directory ───────────────────────────────────────────
+// The active (home) section stays EXPANDED inline: its sub-pages render nested
+// beneath its directory row, so they're always one click from home. Every other
+// section is a single row that drills in to Level 2.
 
-function Directory({ portal, current }: { portal: WorkspacePortal; current: Workspace | undefined }) {
+function Directory({
+  portal,
+  current,
+  pathname,
+  hidden,
+}: {
+  portal: WorkspacePortal
+  current: Workspace | undefined
+  pathname: string
+  hidden: Set<string>
+}) {
   const sections = workspaceSections(portal)
   return (
     <div className="space-y-5">
@@ -88,9 +101,40 @@ function Directory({ portal, current }: { portal: WorkspacePortal; current: Work
         <div key={s.section} className="space-y-1">
           <span className="mono-label px-2.5 text-nav-section">{s.section}</span>
           <div className="space-y-0.5">
-            {s.items.map((w) => (
-              <NavRow key={w.id} href={w.home} label={w.label} icon={w.icon} active={current?.id === w.id} ai={w.ai} />
-            ))}
+            {s.items.map((w) => {
+              const active = current?.id === w.id
+              const expanded = active && w.nav.length > 1
+              return (
+                <React.Fragment key={w.id}>
+                  <NavRow href={w.home} label={w.label} icon={w.icon} active={active} ai={w.ai} />
+                  {expanded ? (
+                    <ul className="ml-[26px] space-y-0.5 border-l border-shell-border/70 pl-2.5 pt-0.5">
+                      {w.nav
+                        .filter((item) => !hidden.has(item.href))
+                        .map((item) => {
+                          const subActive = item.href === activeNavHref(w, pathname)
+                          return (
+                            <li key={item.href}>
+                              <Link
+                                href={item.href}
+                                aria-current={subActive ? 'page' : undefined}
+                                className={cn(
+                                  'flex items-center rounded-md px-2.5 py-1.5 text-[13px] transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                                  subActive
+                                    ? 'font-medium text-nav-foreground'
+                                    : 'text-shell-muted hover:text-nav-foreground',
+                                )}
+                              >
+                                <span className="truncate">{item.label}</span>
+                              </Link>
+                            </li>
+                          )
+                        })}
+                    </ul>
+                  ) : null}
+                </React.Fragment>
+              )
+            })}
           </div>
         </div>
       ))}
@@ -174,7 +218,7 @@ export function WorkspaceNav({
     <aside className="shell-gradient shell-hairline sticky top-14 hidden h-[calc(100vh-3.5rem)] w-sidebar shrink-0 flex-col overflow-y-auto border-r border-shell-border px-3 py-4 md:flex">
       {showDirectory ? (
         <nav aria-label="Dashboard sections" className="flex-1">
-          <Directory portal={portal} current={ws} />
+          <Directory portal={portal} current={ws} pathname={pathname} hidden={hidden} />
         </nav>
       ) : ws ? (
         <>
@@ -191,7 +235,7 @@ export function WorkspaceNav({
         </>
       ) : (
         <nav aria-label="Dashboard sections" className="flex-1">
-          <Directory portal={portal} current={ws} />
+          <Directory portal={portal} current={ws} pathname={pathname} hidden={hidden} />
         </nav>
       )}
       {panels ? <div className="mt-6 border-t border-shell-border pt-5">{panels}</div> : null}

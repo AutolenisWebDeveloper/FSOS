@@ -26,6 +26,15 @@ export interface RecipientContext {
    * opt-out link in its footer. Falls back to a relative /unsubscribe if unset.
    */
   unsubscribe_url?: string | null
+  /**
+   * Campaign contact tokens (Life Conversion Campaign, §14). scheduling_link is the
+   * client-facing booking URL a review invitation points to; advisor_phone/advisor_email
+   * are the FSA's own contact details in the signature. All fall back to a safe neutral so
+   * a raw {{token}} never reaches a contact.
+   */
+  scheduling_link?: string | null
+  advisor_phone?: string | null
+  advisor_email?: string | null
 }
 
 const DEFAULTS: Record<string, string> = {
@@ -36,6 +45,9 @@ const DEFAULTS: Record<string, string> = {
   fsa_name: 'your Farmers Financial Services agent',
   city: 'your area',
   unsubscribe_url: '/unsubscribe',
+  scheduling_link: '/schedule',
+  advisor_phone: '',
+  advisor_email: '',
 }
 
 function firstNameOf(ctx: RecipientContext): string {
@@ -69,6 +81,9 @@ export function personalize(body: string, ctx: RecipientContext, opts: Personali
     fsa_name: (ctx.fsa_name || '').trim() || DEFAULTS.fsa_name,
     city: (ctx.city || '').trim() || DEFAULTS.city,
     unsubscribe_url: (ctx.unsubscribe_url || '').trim() || DEFAULTS.unsubscribe_url,
+    scheduling_link: (ctx.scheduling_link || '').trim() || DEFAULTS.scheduling_link,
+    advisor_phone: (ctx.advisor_phone || '').trim() || DEFAULTS.advisor_phone,
+    advisor_email: (ctx.advisor_email || '').trim() || DEFAULTS.advisor_email,
   }
   return body.replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (_m, token: string) => {
     const key = token.toLowerCase()

@@ -1,9 +1,10 @@
 import Link from 'next/link'
-import { Plus, LayoutGrid } from 'lucide-react'
+import { Plus, LayoutGrid, Target, TrendingUp, Wallet, ShieldAlert } from 'lucide-react'
 import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Button } from '@/components/ui/button'
 import { load } from '@/lib/data/query'
 import { OpportunityList } from '@/components/app/OpportunityList'
+import { PageStatStrip, type PageStat } from '@/components/app/PageStatStrip'
 import type { OppCard } from '@/components/app/OpportunityBoard'
 
 export const dynamic = 'force-dynamic'
@@ -36,7 +37,25 @@ export default async function OpportunitiesPage(props: { searchParams: Promise<{
   } else {
     const hhMap = new Map((households.ok ? households.data : []).map((h) => [h.id, h.primary_name]))
     const rows: OppCard[] = opps.data.map((o) => ({ id: o.id, household_name: o.household_id ? hhMap.get(o.household_id) ?? null : null, engagement: o.engagement, stage: o.stage, is_security: o.is_security, premium: o.premium }))
-    body = <OpportunityList rows={rows} />
+
+    // Summary — computed from the opportunities already loaded (respects the
+    // ?household filter, so it reflects "in view"). Open = not placed/lost.
+    const open = opps.data.filter((o) => o.stage !== 'placed_issued' && o.stage !== 'lost')
+    const openPremium = open.reduce((sum, o) => sum + (o.premium ?? 0), 0)
+    const securities = opps.data.filter((o) => o.is_security).length
+    const stats: PageStat[] = [
+      { label: 'Opportunities', value: opps.data.length, hint: 'In view', icon: Target, accent: 'brand' },
+      { label: 'Open pipeline', value: open.length, hint: 'Active stages', href: '/app/opportunities/board', icon: TrendingUp, accent: 'neutral' },
+      { label: 'Open premium', value: openPremium, currency: true, hint: 'Un-weighted', href: '/app/forecasts', icon: Wallet, accent: 'positive' },
+      { label: 'Securities-flagged', value: securities, hint: 'FFS-managed · firewall', href: '/app/compliance/firewall', icon: ShieldAlert, accent: 'security' },
+    ]
+
+    body = (
+      <div className="space-y-6">
+        <PageStatStrip stats={stats} />
+        <OpportunityList rows={rows} />
+      </div>
+    )
   }
 
   return (

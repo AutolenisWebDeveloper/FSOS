@@ -13,8 +13,18 @@ export const runtime = 'nodejs'
 // session receives 403 and never reaches this query. It searches only
 // non-securities entities (households, members, agencies, referrals); it never
 // returns a household_policies/opportunities row, so no is_security substantive
-// record can leak through search. Reads run with the service role AFTER the
-// portal gate; per-book scoping is enforced by RLS on the underlying tables.
+// record can leak through search.
+//
+// Authorization scope (corrected — was previously mis-stated as "RLS-enforced"):
+// reads run with the SERVICE-ROLE client (getDb), which BYPASSES RLS by design,
+// so RLS does NOT scope these results. What authorizes them is the
+// requireApiRole('fsa') gate above: the FSA book is single-tenant and all three
+// FSA roles are entitled to the whole book, so returning any book row to an
+// authenticated FSA session is correct. This route is therefore FSA-ONLY and MUST
+// NOT be reused for a tenant-scoped portal (partner/client) without adding an
+// explicit owner/scope filter to every query — the portal gate alone would leak
+// cross-tenant there. Soft-deleted rows are excluded (deleted_at is null) so
+// removed records never surface in search.
 
 type SearchHit = {
   type: 'household' | 'member' | 'agency' | 'referral'
@@ -51,15 +61,15 @@ export async function GET(req: NextRequest) {
 
   try {
     const [households, members, agencies, referrals] = await Promise.all([
-      db.from('households').select('id, primary_name, city, state').ilike('primary_name', s.like).limit(limit),
-      db.from('household_members').select('id, household_id, full_name, relationship').or(memberFilter.join(',')).limit(limit),
+      db.from('households').select('id, primary_name, city, state').ilike('primary_name', s.like).is('deleted_at', null).limit(limit),
+      db.from('household_members').select('id, household_id, full_name, relationship').or(memberFilter.join(',')).is('deleted_at', null).limit(limit),
       db
         .from('agency_partnerships')
         .select('id, agency_name, owner_name')
         .or(`agency_name.ilike.${s.like},owner_name.ilike.${s.like}`)
         .is('deleted_at', null)
         .limit(limit),
-      db.from('referrals').select('id, referred_name, status').ilike('referred_name', s.like).limit(limit),
+      db.from('referrals').select('id, referred_name, status').ilike('referred_name', s.like).is('deleted_at', null).limit(limit),
     ])
 
     const results: SearchHit[] = []

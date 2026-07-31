@@ -9,7 +9,9 @@ import { cn } from '@/lib/utils'
 // Attention tiles glow gold only when their value signals work (value > 0), and
 // recede to calm at 0, so a page reads as a triage surface, not a flat readout.
 
-export type StatAccent = 'brand' | 'positive' | 'attention' | 'neutral'
+// 'security' renders the purple firewall marker (guardrail 1) — use it only for a
+// securities/FFS-managed count, never as generic decoration.
+export type StatAccent = 'brand' | 'positive' | 'attention' | 'neutral' | 'security'
 
 export interface PageStat {
   label: string
@@ -23,12 +25,14 @@ export interface PageStat {
 function chipClass(accent: StatAccent, active: boolean): string {
   if (accent === 'attention') return active ? 'bg-gold/15 text-gold-deep' : 'bg-muted text-muted-foreground'
   if (accent === 'positive') return 'bg-status-won/10 text-status-won'
+  if (accent === 'security') return 'bg-status-security/12 text-status-security'
   if (accent === 'neutral') return 'bg-muted text-muted-foreground'
   return 'bg-primary-soft text-primary'
 }
 function barClass(accent: StatAccent, active: boolean): string {
   if (accent === 'attention') return active ? 'bg-gold' : 'bg-border'
   if (accent === 'positive') return 'bg-status-won'
+  if (accent === 'security') return 'bg-status-security'
   if (accent === 'neutral') return 'bg-muted-foreground/40'
   return 'bg-primary'
 }

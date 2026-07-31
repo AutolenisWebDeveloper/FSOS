@@ -5,7 +5,7 @@ import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { MonoLabel, Numeric } from '@/components/ui/typography'
-import { MetricCard } from '@/components/dashboards/primitives'
+import { MetricCard, type Tone } from '@/components/dashboards/primitives'
 import { BrandMark } from '@/components/portal/BrandMark'
 
 /*
@@ -144,7 +144,8 @@ export function StatTile({
   href?: string
   hint?: string
   icon?: LucideIcon
-  tone?: 'neutral' | 'brand' | 'attention'
+  /** Full canonical Tone (incl. positive/security) — StatTile forwards to MetricCard. */
+  tone?: Tone
 }) {
   return <MetricCard label={label} value={value} href={href} hint={hint} icon={icon} tone={tone} valueSize="lg" />
 }

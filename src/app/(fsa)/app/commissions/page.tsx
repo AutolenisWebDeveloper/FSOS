@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { Wallet, Banknote, Clock, AlertTriangle, HeartPulse, ShieldAlert } from 'lucide-react'
 import { DashboardShell, StatTile, ErrorState, AssumptionBadge } from '@/components/archetypes'
 import { load } from '@/lib/data/query'
 
@@ -24,12 +25,12 @@ export default async function CommissionsDashboardPage() {
 
   return (
     <DashboardShell title="Commissions" description="Expected vs received, splits, reconciliation.">
-      <StatTile label="Expected" value={fmt(expected)} href="/app/commissions/expected" />
-      <StatTile label="Received" value={fmt(received)} href="/app/commissions/received" />
-      <StatTile label="Pending" value={pending} href="/app/commissions/pending" />
-      <StatTile label="Discrepancies" value={discrepancies} href="/app/commissions/discrepancies" />
-      <StatTile label="Life production" value={fmt(life)} href="/app/commissions/expected" hint="Life / annuity / education" />
-      <StatTile label="Securities production" value={fmt(securities)} href="/app/commissions/expected" hint="Tracked for attribution; record lives in FFS" />
+      <StatTile label="Expected" value={fmt(expected)} href="/app/commissions/expected" icon={Wallet} tone="brand" />
+      <StatTile label="Received" value={fmt(received)} href="/app/commissions/received" icon={Banknote} tone="positive" />
+      <StatTile label="Pending" value={pending} href="/app/commissions/pending" icon={Clock} tone={pending > 0 ? 'attention' : 'neutral'} />
+      <StatTile label="Discrepancies" value={discrepancies} href="/app/commissions/discrepancies" icon={AlertTriangle} tone={discrepancies > 0 ? 'attention' : 'neutral'} />
+      <StatTile label="Life production" value={fmt(life)} href="/app/commissions/expected" icon={HeartPulse} tone="brand" hint="Life / annuity / education" />
+      <StatTile label="Securities production" value={fmt(securities)} href="/app/commissions/expected" icon={ShieldAlert} tone="security" hint="Tracked for attribution; record lives in FFS" />
       <div className="sm:col-span-2 lg:col-span-4">
         <div className="flex flex-wrap items-center gap-3 rounded-lg border p-4 text-sm">
           <AssumptionBadge />

@@ -85,3 +85,51 @@ export const PLAYBOOKS: Playbook[] = [
 export function playbookForTouch(touchNo: number): Playbook | null {
   return PLAYBOOKS.find((p) => p.touch_no === touchNo) ?? null
 }
+
+export interface AdvisorScript {
+  key: string
+  /** The §7 touch that generates this advisor task. */
+  touch_no: number
+  title: string
+  /** The verbatim §8 script the advisor works from (phone/voicemail/email). */
+  script: string
+  goals: string[]
+}
+
+// The two Advisor Outreach touches (spec §8). Each generates a work_task + a tracked advisor
+// touch (§9a); completion requires a LOGGED outreach attempt, and a missed task never stalls the
+// timeline (advisor.campaignProceedsPastAdvisor default 'proceed').
+export const ADVISOR_SCRIPTS: AdvisorScript[] = [
+  {
+    key: 'relationship_reconnect',
+    touch_no: 8,
+    title: 'Advisor Script #1 — Relationship Reconnect',
+    script:
+      "Hi {{first_name}}, this is {{fsa_name}} with {{agency_name}}. We spoke previously about life insurance, and I wanted to personally check in to see how you're doing. A lot can change over time, and if your needs or goals have changed, I'd be happy to answer any questions or review your options. There's absolutely no obligation — I just wanted to make myself available if I can help.",
+    goals: ['build rapport', 'understand why the process stopped', 'offer a review', 'schedule an appointment if interested'],
+  },
+  {
+    key: 'final_personal_follow_up',
+    touch_no: 14,
+    title: 'Advisor Script #2 — Final Personal Follow-Up',
+    script:
+      "Hi {{first_name}}, I wanted to personally reach out one last time before we close your follow-up file. If life insurance isn't a priority right now, I completely understand. If your situation changes in the future, I'd be glad to help whenever you're ready. Thank you for your time, and I wish you and your family all the best.",
+    goals: ['end the campaign professionally', 'leave a positive impression', 'keep the relationship open for future business'],
+  },
+]
+
+export interface EventTrigger {
+  key: string
+  title: string
+  body: string
+}
+
+// Event-driven SMS triggers (spec §8) — fired on events, NOT on the Day-based schedule, and do
+// not count toward the 24 proactive touches. Shown for completeness in the campaign detail.
+export const EVENT_DRIVEN_SMS: EventTrigger[] = [
+  { key: 'appointment_reminder', title: 'Appointment Reminder', body: 'Hi {{first_name}}, this is a reminder about your appointment with {{fsa_name}} on {{appointment_date}} at {{appointment_time}}. If you need to reschedule, simply reply to this message.' },
+  { key: 'missed_appointment', title: 'Missed Appointment', body: "Hi {{first_name}}, we missed you today. If you'd like to reschedule your complimentary life insurance review, just reply here and we'll find a time that works for you." },
+  { key: 'ai_follow_up', title: 'AI Follow-Up', body: "Thanks for reaching out, {{first_name}}. I'm here to answer general questions and help schedule a review with {{fsa_name}} if you'd like." },
+  { key: 'quote_ready', title: 'Quote Ready', body: "Hi {{first_name}}, information regarding your prior inquiry is ready for review. Reply CALL if you'd like to review it together or reply with any questions you have." },
+  { key: 'future_follow_up', title: 'Future Follow-Up', body: 'Hi {{first_name}}, you previously asked us to check back with you. Just wanted to see if now is a better time to review your life insurance options. Let us know how we can help.' },
+]

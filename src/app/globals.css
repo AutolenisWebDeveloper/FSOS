@@ -46,15 +46,23 @@
     --muted:            214 30% 93.5%;
     --muted-foreground: 214 15% 40%;   /* AA (≥4.5:1) secondary ink on canvas */
 
-    /* ---- Brand (Farmers blue) ---- */
-    --primary:            214 88% 40%;   /* #0b5fcc — confident Farmers blue */
+    /* ---- Brand (Farmers blue) — premium deep royal blue ----
+     * White-on-primary 8.0:1 and primary-on-white 8.0:1 (both WCAG AAA; §17.2).
+     * Every brand surface resolves through these — never hardcode the hex. */
+    --primary:            223 56% 39%;   /* #2C4C9C — premium Farmers blue */
     --primary-foreground: 0 0% 100%;
-    --primary-soft:       213 92% 94%;   /* soft blue wash */
-    --primary-deep:       215 90% 30%;   /* pressed / gradient floor */
+    --primary-soft:       223 60% 94%;   /* soft wash / icon-chip backgrounds */
+    --primary-deep:       223 56% 30%;   /* #223c7b — pressed / gradient floor */
 
     --secondary:          214 30% 93%;
     --secondary-foreground: 214 42% 22%;
 
+    /* --accent: the one brighter "pop" hue (active bars, nav-active icon, link
+     * hover glows). Held at a lighter, higher-chroma blue than --primary so it
+     * reads as a highlight, not a second brand color. Option A (as-built): a
+     * cooler 209° pop. Option B (harmonized, one-line swap): 223 66% 52% — same
+     * hue family as --primary for a more monochromatic, premium read. Pending
+     * design review (slice 1 A/B). */
     --accent:             209 92% 46%;   /* #0d86ef — brighter blue highlight / active bars */
     --accent-foreground:  0 0% 100%;
 
@@ -69,13 +77,13 @@
 
     --border:           214 24% 87%;
     --input:            214 22% 83%;
-    --ring:             214 88% 42%;
+    --ring:             223 56% 42%;      /* follows --primary (brand focus halo) */
 
     --radius: 0.625rem;
 
     /* ---- Status ---- */
     --status-draft:      214 12% 50%;
-    --status-active:     214 88% 42%;    /* Farmers blue — follows brand */
+    --status-active:     223 56% 42%;    /* follows --primary (brand blue) */
     --status-pending:    38 92% 45%;
     --status-won:        152 58% 37%;    /* #26996a — placed / active / success only */
     --status-lost:       350 78% 45%;    /* Farmers red — lost / error only */

@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { ArrowUpRight, type LucideIcon } from 'lucide-react'
-import { MonoLabel, Numeric } from '@/components/ui/typography'
+import { MonoLabel, Numeric, Money } from '@/components/ui/typography'
 import { cn } from '@/lib/utils'
 
 // Reusable premium summary strip for a workspace's landing page (Advisor OS
@@ -20,6 +20,8 @@ export interface PageStat {
   href?: string
   icon: LucideIcon
   accent?: StatAccent
+  /** Render a numeric value as currency via <Money> (respects money.ts). */
+  currency?: boolean
 }
 
 function chipClass(accent: StatAccent, active: boolean): string {
@@ -52,7 +54,13 @@ function Tile({ stat }: { stat: PageStat }) {
       </div>
       <div className="mt-4">
         <div className="text-2xl font-semibold tracking-tight text-foreground">
-          {numeric ? <Numeric>{(stat.value as number).toLocaleString('en-US')}</Numeric> : stat.value}
+          {stat.currency && numeric ? (
+            <Money value={stat.value as number} />
+          ) : numeric ? (
+            <Numeric>{(stat.value as number).toLocaleString('en-US')}</Numeric>
+          ) : (
+            stat.value
+          )}
         </div>
         {stat.hint ? (
           <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">

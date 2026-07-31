@@ -520,7 +520,9 @@ Registry** (`src/lib/workspaces/registry.ts`), filtered to the portal. Structure
 - **Contextual sidebar (`w-sidebar`, 260px):** a header (active workspace icon + name +
   description + **portal-scoped back control** to the portal home — never a cross-portal `/app`),
   then that workspace's sub-nav (`NavLink`-style active rules), then the character panels.
-- **Breadcrumbs:** derived from the active workspace + sub-nav + trailing path segments.
+- **Breadcrumbs:** owned by the page-level archetype shells (§10 — `ListShell` / `DetailShell` /
+  etc.), which are entity-aware (e.g. a household's actual name). The workspace shell does **not**
+  render its own breadcrumb — that would double every page's breadcrumb (§12 stays the source).
 - **Mobile:** the rail + sidebar collapse into a full-height nav drawer (sectioned switcher +
   AI markers), focus moves into the drawer on open and returns to the trigger on close.
 

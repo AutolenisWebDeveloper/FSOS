@@ -13,7 +13,8 @@
 // dispatcher.ts's own import style. Ditto: normalization is inlined below rather than
 // importing conversations.ts (which uses the alias) so the compile graph stays clean.
 import { getDb } from '../supabase/client'
-import { writeAudit } from '../audit/log'
+import { recordConsentChange } from './consent-events'
+import { smsTail } from './contact-consent'
 import { siteUrl, CONTACT } from '../site'
 import {
   type UnsubChannel,
@@ -82,15 +83,62 @@ export async function suppressContact(
   try {
     const db = getDb()
     await db.from('dnc_entries').upsert(rows, { onConflict: 'contact,channel' })
-    await writeAudit({
-      actor: 'system',
-      action: 'consent.revoked',
-      entity: 'contact',
-      entityId: null,
-      diff: { via: 'unsubscribe', contact, channels },
-    })
+    // Best-effort: resolve the member/household this contact belongs to so the opt-out is
+    // anchored on the customer 360 timeline (not only audit-only). A bare contact with no
+    // member (e.g. a public email with no household) is still audited via recordConsentChange.
+    const anchor = await resolveContactAnchor(db, contact, channels)
+    for (const ch of channels) {
+      // ONE consent-logging path → audit_log AND (when a member/household is known) the CRM
+      // timeline. Suppress is modeled as a channel-scoped revoke (§C).
+      await recordConsentChange({
+        actor: 'system',
+        channel: ch,
+        newStatus: 'revoked',
+        previousStatus: 'granted',
+        source: 'unsubscribe',
+        reason: 'unsubscribe opt-out',
+        memberId: anchor.memberId,
+        householdId: anchor.householdId,
+      })
+    }
     return { ok: true, channels }
   } catch {
     return { ok: false, channels }
   }
+}
+
+/**
+ * Best-effort resolve the household member behind an unsubscribing contact so the opt-out
+ * lands on the customer 360 timeline. Email is matched normalized; SMS tolerantly on the
+ * last-10 digits (like the send-path DNC match). Returns nulls when unresolved (audit-only).
+ */
+async function resolveContactAnchor(
+  db: ReturnType<typeof getDb>,
+  contact: string,
+  channels: ('email' | 'sms')[],
+): Promise<{ memberId: string | null; householdId: string | null }> {
+  try {
+    if (channels.includes('email') && contact.includes('@')) {
+      const { data } = await db
+        .from('household_members')
+        .select('id, household_id')
+        .ilike('email', normFor('email', contact))
+        .limit(1)
+      const m = Array.isArray(data) ? data[0] : null
+      if (m) return { memberId: m.id as string, householdId: (m.household_id as string) ?? null }
+    }
+    const tail = smsTail(contact)
+    if (channels.includes('sms') && tail.length === 10) {
+      const { data } = await db
+        .from('household_members')
+        .select('id, household_id')
+        .ilike('phone', `%${tail}`)
+        .limit(1)
+      const m = Array.isArray(data) ? data[0] : null
+      if (m) return { memberId: m.id as string, householdId: (m.household_id as string) ?? null }
+    }
+  } catch {
+    /* best-effort */
+  }
+  return { memberId: null, householdId: null }
 }

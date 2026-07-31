@@ -498,17 +498,17 @@ Auth is a P0 regulatory blocker (`CLAUDE.md §20`) and the first trust impressio
 
 ## 21. The branded shell [AS-BUILT] (`src/components/portal`)
 
-One `PortalShell` powers all six authenticated portals (`portalLabel`, `nav`, `banner`, `panels`, topbar
-wiring). Topbar: sticky 56px navy — global search, AI, bell, `ProfileMenu`. Sidebar: 260px
-`shell-gradient`, `IdentityLockup`, nav grouped by OS cluster under mono labels, optional character panels
-(FSA: AI Live Status, GDC Tier, FFS Contacts). Mobile: `MobileTabBar`. Nav via `NavLink` (36px, active =
-raised + 2px accent bar + weight bump).
+**All six authenticated portals now render through the Advisor OS workspace shell (§21.1).** The
+legacy `PortalShell` (single flat sidebar, `NavLink`, `MobileTabBar`) is **retired and removed** —
+its files are deleted, not left as dead code (§6 consolidation). `ProfileMenu`, `BrandMark`,
+`MonoLabel`, and the `IdentityLockup`/character panels it used are retained; the workspace shell
+consumes them.
 
 ### 21.1 Advisor OS workspace shell [AS-BUILT] (`src/components/portal/workspace`)
 
-The Advisor OS redesign replaces `PortalShell`'s flat sidebar with a **workspace shell** — the
-FSA portal is the reference; the other five portals migrate to it in the fan-out and keep
-`PortalShell` until then. It is a **navigation + layout layer only**: authorization is unchanged
+The Advisor OS redesign replaces `PortalShell`'s flat sidebar with a **workspace shell**, now
+adopted by **all six portals** (FSA was the reference; admin, super, compliance, partner, and
+client followed in the fan-out). It is a **navigation + layout layer only**: authorization is unchanged
 (portal gate + `requireRole` + RLS), and every destination is generated from the static **Workspace
 Registry** (`src/lib/workspaces/registry.ts`), filtered to the portal. Structure:
 

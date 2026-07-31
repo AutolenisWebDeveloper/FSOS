@@ -81,11 +81,11 @@ function Rail({ portal, pathname }: { portal: WorkspacePortal; pathname: string 
 
 // ─── Contextual sidebar: the active workspace's sub-nav ───────────────────────
 
-function SubNav({ ws, pathname }: { ws: Workspace; pathname: string }) {
+function SubNav({ ws, pathname, hidden }: { ws: Workspace; pathname: string; hidden: Set<string> }) {
   const activeHref = activeNavHref(ws, pathname)
   return (
     <div className="space-y-0.5">
-      {ws.nav.map((item) => {
+      {ws.nav.filter((item) => !hidden.has(item.href)).map((item) => {
         const Icon = resolveIcon(item.icon)
         const active = item.href === activeHref
         return (
@@ -154,13 +154,17 @@ function WorkspaceHeader({ ws, portal }: { ws: Workspace; portal: WorkspacePorta
 export function WorkspaceNav({
   portal,
   panels,
+  hiddenHrefs,
 }: {
   portal: WorkspacePortal
   /** Server-rendered character panels slotted into the sidebar footer. */
   panels?: React.ReactNode
+  /** Sub-nav hrefs to hide (server-gated items, e.g. partner comp disclosure). */
+  hiddenHrefs?: string[]
 }) {
   const pathname = usePathname() ?? PORTAL_HOME[portal]
   const ws = activeWorkspace(portal, pathname)
+  const hidden = React.useMemo(() => new Set(hiddenHrefs ?? []), [hiddenHrefs])
   return (
     <>
       <Rail portal={portal} pathname={pathname} />
@@ -169,7 +173,7 @@ export function WorkspaceNav({
           <WorkspaceHeader ws={ws} portal={portal} />
           <div className="my-4 border-t border-shell-border" />
           <nav aria-label={`${ws.label} navigation`} className="flex-1">
-            <SubNav ws={ws} pathname={pathname} />
+            <SubNav ws={ws} pathname={pathname} hidden={hidden} />
           </nav>
           {panels ? <div className="mt-6 border-t border-shell-border pt-5">{panels}</div> : null}
         </aside>
@@ -195,6 +199,9 @@ export function WorkspaceMobileNav({ portal, portalLabel }: { portal: WorkspaceP
   // return it to the trigger on close (WCAG 2.2 AA — focus follows the overlay).
   React.useEffect(() => {
     if (!open) return
+    // Capture the trigger node now so focus returns to it on close (it is always
+    // mounted, so this is stable across the effect's lifetime).
+    const trigger = triggerRef.current
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     const id = window.setTimeout(() => closeRef.current?.focus(), 20)
@@ -204,7 +211,7 @@ export function WorkspaceMobileNav({ portal, portalLabel }: { portal: WorkspaceP
       document.body.style.overflow = prev
       window.clearTimeout(id)
       window.removeEventListener('keydown', onKey)
-      triggerRef.current?.focus()
+      trigger?.focus()
     }
   }, [open])
 

@@ -1,38 +1,18 @@
-import {
-  Home,
-  Calendar,
-  CalendarCheck,
-  ClipboardList,
-  FolderOpen,
-  ClipboardCheck,
-  FileText,
-  GraduationCap,
-  Settings as SettingsIcon,
-  FileCheck2,
-} from 'lucide-react'
+import type { ReactNode } from 'react'
 import { requireRole } from '@/lib/auth/session'
-import { PortalShell, type NavItem } from '@/components/portal/PortalShell'
+import { WorkspaceShell } from '@/components/portal/workspace/WorkspaceShell'
 
 export const dynamic = 'force-dynamic'
 
-const NAV: NavItem[] = [
-  { href: '/client', label: 'Home', icon: Home, group: 'Overview' },
-  { href: '/client/schedule', label: 'Schedule', icon: Calendar, group: 'Appointments' },
-  { href: '/client/appointments', label: 'Appointments', icon: CalendarCheck, group: 'Appointments' },
-  { href: '/client/intake', label: 'Intake', icon: ClipboardList, group: 'Records' },
-  { href: '/client/documents', label: 'Documents', icon: FolderOpen, group: 'Records' },
-  { href: '/client/reviews', label: 'Reviews', icon: ClipboardCheck, group: 'Records' },
-  { href: '/client/case-status', label: 'Case Status', icon: FileText, group: 'Records' },
-  { href: '/client/education', label: 'Education', icon: GraduationCap, group: 'Overview' },
-  { href: '/client/preferences', label: 'Preferences', icon: SettingsIcon, group: 'Account' },
-  { href: '/client/consent', label: 'Consent', icon: FileCheck2, group: 'Account' },
-]
-
-export default async function ClientLayout({ children }: { children: React.ReactNode }) {
+// Client-facing portal shell (Advisor OS fan-out). Navigation is generated from the
+// Workspace Registry filtered to the 'client' portal. Navigation/layout only —
+// every /client route keeps its URL and its requireRole('client') guard. This is
+// a non-securities, non-advice surface (§4.1 firewall), unchanged by the shell.
+export default async function ClientLayout({ children }: { children: ReactNode }) {
   await requireRole('client', '/client')
   return (
-    <PortalShell portalLabel="Client" nav={NAV} settingsHref="/client/preferences">
+    <WorkspaceShell portal="client" portalLabel="Client" settingsHref="/client/preferences">
       {children}
-    </PortalShell>
+    </WorkspaceShell>
   )
 }

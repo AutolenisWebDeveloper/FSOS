@@ -48,7 +48,7 @@ function buildCommands(portal: WorkspacePortal): Cmd[] {
   return cmds.filter((c) => (seen.has(c.href) ? false : (seen.add(c.href), true)))
 }
 
-export function CommandPalette({ portal }: { portal: WorkspacePortal }) {
+export function CommandPalette({ portal, hiddenHrefs }: { portal: WorkspacePortal; hiddenHrefs?: string[] }) {
   const router = useRouter()
   const [open, setOpen] = React.useState(false)
   const [query, setQuery] = React.useState('')
@@ -56,7 +56,10 @@ export function CommandPalette({ portal }: { portal: WorkspacePortal }) {
   const inputRef = React.useRef<HTMLInputElement>(null)
   const listRef = React.useRef<HTMLUListElement>(null)
 
-  const commands = React.useMemo(() => buildCommands(portal), [portal])
+  const commands = React.useMemo(() => {
+    const hidden = new Set(hiddenHrefs ?? [])
+    return buildCommands(portal).filter((c) => !hidden.has(c.href))
+  }, [portal, hiddenHrefs])
   const results = React.useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return commands.slice(0, 8)

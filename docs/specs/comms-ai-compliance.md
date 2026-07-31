@@ -139,6 +139,65 @@ Where the autonomous system is observed and controlled. Every agent run and acti
 
 ---
 
+## Production messaging activation + existing-client consent population
+
+Operational runbook for taking outbound messaging live once A2P 10DLC is approved. It adds
+NO new campaign logic, templates, schedules, or workflows — it activates and seeds the
+existing single send path (dispatcher → gate → Twilio/Resend).
+
+### A. Production send path (already real — verify, don't rebuild)
+- The LIVE path is `sendThroughGate` → `dispatch` (dispatcher.ts) → `sendSms`/`sendEmail`
+  (messaging.ts). There is **no** sandbox/mock/simulate in the live path; `simulation.ts`
+  (ADR-021) is a separate, opt-in dry-run and never runs on a real send.
+- `sendSms` prefers **`TWILIO_MESSAGING_SERVICE_SID`** (the approved A2P Messaging Service —
+  number pool + built-in opt-out) over a single `TWILIO_PHONE_NUMBER`.
+- SMS is held (queued, never sent) until **`SMS_A2P_APPROVED=true`** — enforced in the gate
+  (`sms_live`), the drip runner, and the SMS provider (defense in depth, a2p.ts).
+- **Go-live env (set in the deploy, never committed):** `SMS_A2P_APPROVED=true`,
+  `TWILIO_MESSAGING_SERVICE_SID=<approved MG… SID>`, `TWILIO_ACCOUNT_SID`,
+  `TWILIO_AUTH_TOKEN`, `RESEND_API_KEY`, and a verified `RESEND_FROM_EMAIL`.
+- **Pre-bulk gate:** send ONE live test SMS and ONE live test email to a seed phone/inbox
+  (via the existing one-off send, `POST /api/comms/send`, with an approved template and a
+  consented seed) and confirm delivery is **not** filtered/spam BEFORE any bulk enrollment.
+  If either fails, stop and fix before enrolling anyone.
+
+### B. Existing-client consent population — `POST /api/super/consent/backfill`
+Existing clients have communications opt-in on file, but `hasConsent()` returns false without
+a `granted` row. This platform-owner endpoint (super portal, mandatory MFA step-up) seeds
+channel-wide `granted` consent for **both** sms and email for every current client member.
+- **Source label** `existing_client_optin`; `captured_at` = population time; the basis is
+  recorded on the row's `disclosure`.
+- **Idempotent / re-runnable:** `unique(member_id, channel)` + `ON CONFLICT DO NOTHING` — a
+  re-run never duplicates a row, never overwrites a later `revoked`, and creates zero new
+  audit/timeline entries for rows that already existed.
+- **Opt-out always wins (skipped, never granted):** an existing `revoked` consent row, a
+  channel (or `all`) DNC entry for the contact, or a `do_not_contact` household.
+- **Report:** members processed, sms rows created, email rows created, and the skip buckets
+  (already-granted / revoked / DNC / household-DNC). `GET` (or `{ "dry_run": true }`) returns
+  the same plan **without writing** — preview before committing.
+- The bulk population is itself an audited event, and every created grant writes to both the
+  `audit_log` and the CRM timeline (`activities`).
+
+### C. Consent enforcement (existing invariants + one consolidation)
+- `hasConsent()` (step 1) and `onDNC()` (step 3) run inside the ONE gate for **every**
+  outbound — SMS, email, AI-authored replies, and scheduled campaign touches — computed
+  **fresh at send time** (WF-9): a revoke suppresses future sends AND causes any already-
+  queued touch to be re-checked and skipped when the runner next tries to send it.
+- **Channel-specific suppression:** SMS `STOP` / an sms revoke pauses **SMS only**; an email
+  unsubscribe pauses **email only**; a `do_not_contact` household / `all` DNC pauses both.
+- **Consent restored does NOT auto-resume** promotional automation — an authorized admin must
+  explicitly re-enroll. `START` re-grants consent and clears DNC but never re-enrolls a paused
+  campaign.
+- **Single consent-logging path (`recordConsentChange`, consent-events.ts):** every grant,
+  revoke, suppress, and restore writes to both `audit_log` (previous→new state, source,
+  reason, actor, timestamp) **and** the CRM timeline (`activities`, anchored to the member,
+  else the household). Wired through the population backfill, the client consent portal, the
+  inbound STOP/START handler, the unsubscribe suppression path, and referral-conversion
+  consent capture. A bare contact with no resolvable member is audited (timeline needs an
+  anchor).
+
+---
+
 *The compliance invariants are enforced in three places and must agree: the dispatcher gate (comms), the guardrail validator (AI), and the firewall (data). If any UI control could bypass any of them, that is a build-blocking defect.*
 
 *Next (final Part 2 file): `portals-admin.md` — Agency-Owner, Client, Admin, and Super Admin portal page specs.*

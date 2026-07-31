@@ -4,6 +4,7 @@ import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf, hasSecuritiesScope } from '@/lib/auth/api'
 import { ReferralConvertSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
+import { recordConsentChange } from '@/lib/comms/consent-events'
 import { assertNotSecuritiesSystemOfRecord, FirewallError } from '@/lib/compliance/firewall'
 import { dobKey } from '@/lib/data/query'
 
@@ -152,9 +153,17 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
           { member_id: memberId as string, household_id: householdId, channel, status: 'granted', source: 'referral_convert' },
           { onConflict: 'member_id,channel' },
         )
-    }
-    if (consentChannels.length) {
-      await writeAudit({ actor, action: 'consent.captured', entity: 'household_member', entityId: (memberId as string) ?? null, diff: { channels: consentChannels } })
+      // ONE consent-logging path → audit_log AND the CRM timeline (§C).
+      await recordConsentChange({
+        actor,
+        channel: channel as 'sms' | 'email',
+        newStatus: 'granted',
+        previousStatus: 'none',
+        source: 'referral_convert',
+        reason: 'consent captured at referral conversion',
+        memberId: (memberId as string) ?? null,
+        householdId,
+      })
     }
 
     // ── Step 3: opportunity with full attribution (agency/referral/household).

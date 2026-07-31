@@ -3,7 +3,7 @@ import { getDb } from '@/lib/supabase/client'
 import { readJson, configErrorResponse } from '@/lib/http'
 import { requireApiRole, actorOf } from '@/lib/auth/api'
 import { z } from 'zod'
-import { writeAudit } from '@/lib/audit/log'
+import { recordConsentChange } from '@/lib/comms/consent-events'
 import { householdIdFor } from '@/lib/portal/scope'
 
 export const dynamic = 'force-dynamic'
@@ -30,17 +30,34 @@ export async function POST(req: NextRequest) {
     const householdId = await householdIdFor(auth.session)
     if (!householdId) return NextResponse.json({ error: 'No household scope.' }, { status: 403 })
 
-    // Update every member of this household on the channel.
-    const { data: members } = await db.from('household_members').select('id, email, phone').eq('household_id', householdId)
+    // Update every member of this household on the channel. Read the prior status first so
+    // each consent change records its true previous→new transition (audit + CRM timeline).
+    const { data: members } = await db
+      .from('household_members')
+      .select('id, email, phone, consents(channel, status)')
+      .eq('household_id', householdId)
     for (const m of members ?? []) {
+      const prior = (m as { consents?: { channel: string; status: string }[] }).consents?.find(
+        (c) => c.channel === v.data.channel,
+      )
       await db.from('consents').upsert({ member_id: m.id, household_id: householdId, channel: v.data.channel, status: v.data.status, source: 'client_portal', captured_at: new Date().toISOString() }, { onConflict: 'member_id,channel' })
       // Revocation → add to DNC so the gate blocks before the next send anywhere.
       if (v.data.status === 'revoked') {
         const contact = v.data.channel === 'email' ? m.email : m.phone
         if (contact) await db.from('dnc_entries').upsert({ contact, channel: v.data.channel === 'call' ? 'call' : v.data.channel, scope: 'internal', reason: 'client opt-out' }, { onConflict: 'contact,channel' })
       }
+      // ONE consent-logging path → audit_log AND the CRM timeline (§C).
+      await recordConsentChange({
+        actor,
+        channel: v.data.channel,
+        newStatus: v.data.status,
+        previousStatus: (prior?.status as 'granted' | 'revoked' | undefined) ?? 'none',
+        source: 'client_portal',
+        reason: 'client self-service preference change',
+        memberId: m.id,
+        householdId,
+      })
     }
-    await writeAudit({ actor, action: v.data.status === 'revoked' ? 'consent.revoked' : 'consent.captured', entity: 'household', entityId: householdId, diff: { channel: v.data.channel, source: 'client_portal' } })
     return NextResponse.json({ ok: true })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed' }, { status: 500 })

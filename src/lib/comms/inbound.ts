@@ -24,6 +24,7 @@ import { draftReply } from '@/lib/ai/responder'
 import { sendThroughGate } from './send'
 import { classifyKeyword, type Intent } from './keywords'
 import { shouldPauseOnReply } from './conversation-mode'
+import { recordConsentChange } from './consent-events'
 
 export type { Intent } from './keywords'
 export { classifyKeyword } from './keywords'
@@ -69,7 +70,18 @@ async function applyOptOut(conv: Conversation, contact: string): Promise<void> {
         .eq('channel', conv.channel)
     }
     await db.from('dnc_entries').upsert({ contact, channel: conv.channel, scope: 'internal', reason: 'inbound STOP' }, { onConflict: 'contact,channel' })
-    await writeAudit({ actor: 'system', action: 'consent.revoked', entity: 'conversation', entityId: conv.id, diff: { channel: conv.channel, via: 'inbound_stop', contact } })
+    // ONE consent-logging path → audit_log AND the CRM timeline (§C), anchored to the
+    // member/household so the opt-out is visible on the customer 360.
+    await recordConsentChange({
+      actor: 'system',
+      channel: conv.channel,
+      newStatus: 'revoked',
+      previousStatus: 'granted',
+      source: 'inbound_stop',
+      reason: `inbound STOP (conversation ${conv.id})`,
+      memberId: conv.member_id,
+      householdId: conv.household_id,
+    })
   } catch {
     /* best-effort; the inbound row is already recorded */
   }
@@ -109,7 +121,19 @@ async function applyOptIn(conv: Conversation, contact: string): Promise<void> {
           { onConflict: 'member_id,channel' },
         )
     }
-    await writeAudit({ actor: 'system', action: 'consent.captured', entity: 'conversation', entityId: conv.id, diff: { channel: conv.channel, via: 'inbound_start', contact } })
+    // Consent RESTORED via START: records the grant to audit_log + the CRM timeline. This
+    // clears the opt-out for future manual/1:1 sends but does NOT auto-resume any paused
+    // promotional enrollment — re-enrollment stays an explicit, authorized admin action.
+    await recordConsentChange({
+      actor: 'system',
+      channel: conv.channel,
+      newStatus: 'granted',
+      previousStatus: 'revoked',
+      source: 'inbound_start',
+      reason: `inbound START (conversation ${conv.id})`,
+      memberId: conv.member_id,
+      householdId: conv.household_id,
+    })
   } catch {
     /* best-effort */
   }

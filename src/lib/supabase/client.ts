@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { supabaseUrl, supabaseServiceKey, supabaseAnonKey } from '@/lib/env'
 
 /**
  * Thrown when required environment configuration is missing (e.g. Supabase
@@ -32,10 +33,9 @@ export function getDb(): SupabaseClient<any> {
   if (_db) return _db
 
   // Accept both the FSOS-native names and the names injected by the official
-  // Supabase↔Vercel integration (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY), so a
-  // reconnected integration doesn't silently break every internal API route.
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY
+  // Supabase↔Vercel integration, resolved in one place (lib/env) so no reader drifts.
+  const url = supabaseUrl()
+  const key = supabaseServiceKey()
 
   if (!url || !key) {
     throw new ConfigError(
@@ -62,8 +62,8 @@ let _browserDb: SupabaseClient<any> | null = null
 export function getBrowserDb(): SupabaseClient<any> {
   if (_browserDb) return _browserDb
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  const url = supabaseUrl()
+  const key = supabaseAnonKey()
 
   if (!url || !key) {
     throw new Error(

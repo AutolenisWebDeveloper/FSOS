@@ -48,6 +48,9 @@ export const JOBS: Record<string, JobHandler> = {
   // Life Conversion Campaign scheduler — advances the multi-channel 20-touch timeline,
   // rechecking eligibility before every touch and routing every send through the gate.
   'life-conversion-tick': async () => (await h()).lifeConversionTick(),
+  // Pipeline Win-Back Campaign scheduler — daily enrollment sweep + advances the multi-channel
+  // 24-touch timeline, rechecking eligibility before every touch, all sends through the gate.
+  'pipeline-winback-tick': async () => (await h()).pipelineWinbackTick(),
   'backup-verify': async () => (await h()).backupVerify(),
 }
 

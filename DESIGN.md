@@ -174,7 +174,7 @@ All tokens are HSL CSS variables in `src/app/globals.css :root`, surfaced throug
 | `--primary` `223 56% 39%` (`#2C4C9C`, premium Farmers blue) | `bg-primary` / `text-primary` | Primary actions, active nav, links. White-on-primary **8.1:1** / primary-on-white **8.1:1** (both WCAG AAA) |
 | `--primary-soft` `223 60% 94%` | `bg-primary-soft` | Soft brand wash (KPI icon chips) |
 | `--primary-deep` `223 56% 30%` | `.brand-fill` floor | Pressed / gradient floor for primary fills |
-| `--accent` `209 92% 46%` | `bg-accent` / `text-accent` | Highlights, focus, active bars. **Under design review** — Option A (as-built, cooler 209°) vs Option B (`223 66% 52%`, harmonized to `--primary`'s hue). See `docs/redesign/slice1/`. |
+| `--accent` `223 66% 52%` | `bg-accent` / `text-accent` | Brighter brand-blue highlight, focus glow, active bars — harmonized to `--primary`'s 223° hue so the UI reads as one blue family (white-on-accent 5.45:1, AA). |
 | `--destructive` `350 78% 43%` (Farmers red) | `bg-destructive` | Destructive / critical / blocking only |
 | `--ring` `223 56% 42%` | `ring-ring` | Focus ring, follows `--primary` (halo: `--ring-halo`) |
 

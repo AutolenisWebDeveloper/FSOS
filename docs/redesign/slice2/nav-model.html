@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FSOS — Nested Nav Model</title>
+<style>
+  :root{
+    --shell:214 56% 12%; --shell-raised:213 40% 18%; --shell-highlight:223 80% 62%;
+    --shell-foreground:210 32% 96%; --shell-muted:211 24% 67%; --shell-border:213 32% 24%;
+    --background:214 34% 96%; --foreground:214 46% 12%; --card:0 0% 100%;
+    --muted:214 30% 93.5%; --muted-foreground:214 15% 40%;
+    --primary:223 56% 39%; --primary-foreground:0 0% 100%; --primary-soft:223 60% 94%; --primary-deep:223 56% 30%;
+    --gold:43 89% 51%; --gold-deep:38 76% 34%; --destructive:350 78% 43%; --border:214 24% 87%;
+    --ring:223 56% 42%; --status-won:152 58% 37%; --status-security:262 47% 44%;
+    --nav-active:223 56% 39%; --nav-hover:213 44% 20%; --nav-foreground:210 32% 96%; --nav-muted:211 24% 67%; --nav-section:211 22% 60%;
+    --accent:223 66% 52%; --ai:232 72% 56%; --ai-shell:230 42% 18%; --ai-surface:226 68% 97%; --ai-surface-foreground:230 44% 24%; --ai-border:226 58% 89%;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'DM Sans',-apple-system,system-ui,sans-serif;background:hsl(var(--background));color:hsl(var(--foreground));-webkit-font-smoothing:antialiased;font-size:13px}
+  .mono{font-family:'DM Mono',ui-monospace,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;font-weight:500}
+  .num{font-family:'DM Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+  .frame{border-bottom:6px solid hsl(var(--shell))}
+  .flabel{background:hsl(var(--shell));color:hsl(var(--shell-foreground));padding:8px 16px;font-size:13px;font-weight:600;display:flex;gap:10px;align-items:center}
+  .flabel .tag{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:hsl(var(--shell-muted));border:1px solid hsl(var(--shell-border));border-radius:5px;padding:2px 7px}
+
+  /* ── topbar ── */
+  .topbar{height:52px;background:linear-gradient(180deg,hsl(var(--shell-raised)/.6),hsl(var(--shell)) 44%);border-bottom:1px solid hsl(var(--shell-border));display:flex;align-items:center;gap:12px;padding:0 14px;color:hsl(var(--shell-foreground));box-shadow:inset 0 1px 0 0 hsl(var(--shell-highlight)/.10)}
+  .hamburger{display:none;width:34px;height:34px;border-radius:8px;align-items:center;justify-content:center;color:hsl(var(--shell-muted));font-size:18px}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:700}
+  .brand .bm{width:26px;height:26px;border-radius:7px;background:linear-gradient(180deg,hsl(var(--primary)),hsl(var(--primary-deep)));display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:700}
+  .search{flex:1;max-width:420px;height:34px;border-radius:9px;background:hsl(var(--shell)/.5);border:1px solid hsl(var(--shell-border));display:flex;align-items:center;padding:0 12px;color:hsl(var(--shell-muted));font-size:12px;gap:8px}
+  .kbd{margin-left:auto;font-family:'DM Mono',monospace;font-size:10px;border:1px solid hsl(var(--shell-border));border-radius:4px;padding:1px 5px}
+  .tb-actions{margin-left:auto;display:flex;gap:6px}
+  .tb-btn{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:hsl(var(--shell-muted))}
+  .avatar{width:30px;height:30px;border-radius:8px;background:hsl(var(--primary-soft));color:hsl(var(--primary));display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px}
+
+  .body{display:flex;min-height:640px}
+  /* ── SINGLE sidebar ── */
+  .side{width:248px;background:linear-gradient(180deg,hsl(var(--shell-raised)/.6),hsl(var(--shell)) 44%);border-right:1px solid hsl(var(--shell-border));padding:16px 12px;color:hsl(var(--shell-foreground));flex-shrink:0;overflow-y:auto}
+  .secgrp{margin-bottom:18px}
+  .secgrp .mono{color:hsl(var(--nav-section));padding:0 10px;display:block;margin-bottom:6px}
+  .item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:9px;font-size:13px;color:hsl(var(--shell-muted));margin-bottom:2px;line-height:1.1}
+  .item .gi{width:18px;height:18px;flex-shrink:0;color:hsl(var(--shell-muted));font-size:14px;display:flex;align-items:center;justify-content:center}
+  .item .spk{margin-left:auto;color:hsl(var(--ai));font-size:11px}
+  .item.active{background:hsl(var(--nav-active));color:#fff;font-weight:600;box-shadow:0 1px 2px 0 hsl(214 46% 12% / .18)}
+  .item.active .gi{color:#fff}.item.active .spk{color:#fff}
+  /* level-2 header */
+  .back{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:hsl(var(--shell-muted));padding:6px 10px;border-radius:7px;margin-bottom:12px}
+  .l2head{display:flex;gap:10px;align-items:flex-start;margin-bottom:14px}
+  .l2head .ic{width:36px;height:36px;border-radius:9px;background:linear-gradient(180deg,hsl(var(--primary)),hsl(var(--primary-deep)));color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .l2head h2{font-size:13px;font-weight:600}
+  .l2head p{font-size:11px;color:hsl(var(--shell-muted));line-height:1.3;margin-top:2px}
+  .divider{border-top:1px solid hsl(var(--shell-border));margin:0 0 12px}
+  .footpanel{margin-top:20px;border-top:1px solid hsl(var(--shell-border));padding-top:14px}
+  .footpanel .mono{color:hsl(var(--shell-muted));display:block;margin-bottom:6px}
+  .gdc{border:1px solid hsl(var(--gold)/.4);background:hsl(var(--gold)/.1);border-radius:9px;padding:10px}
+  .gdc .val{font-family:'DM Mono',monospace;font-size:19px;font-weight:600;color:hsl(var(--gold))}
+  .gdc .rng{font-size:11px;color:hsl(var(--shell-muted));margin-top:2px}
+
+  /* ── canvas ── */
+  .canvas{flex:1;min-width:0;padding:20px;overflow:hidden}
+  .h1{font-size:22px;font-weight:600;letter-spacing:-.01em}
+  .sub{font-size:13px;color:hsl(var(--muted-foreground));margin-top:2px}
+  .hero{position:relative;overflow:hidden;border-radius:16px;border:1px solid hsl(var(--ai-border));background:linear-gradient(135deg,hsl(var(--ai)/.12),hsl(var(--primary)/.05) 60%,transparent);padding:16px;margin-top:14px}
+  .hero .top{display:flex;justify-content:space-between;align-items:center}
+  .chip{width:28px;height:28px;border-radius:8px;background:hsl(var(--ai-shell));color:#fff;display:flex;align-items:center;justify-content:center}
+  .hlbl{color:hsl(var(--ai-surface-foreground))}
+  .review{border:1px solid hsl(var(--ai-border));background:hsl(var(--card)/.7);border-radius:8px;padding:5px 11px;font-size:12px;font-weight:500;color:hsl(var(--ai-surface-foreground))}
+  .hero p.s{margin-top:12px;font-size:14px;line-height:1.5;color:hsl(var(--foreground))}
+  .callouts{margin-top:16px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  .callout{display:flex;gap:9px}
+  .callout .ic{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:hsl(var(--primary-soft));color:hsl(var(--primary))}
+  .callout .ic.sec{background:hsl(var(--status-security)/.12);color:hsl(var(--status-security))}
+  .callout .v{font-family:'DM Mono',monospace;font-size:21px;font-weight:600;line-height:1}
+  .callout .k{font-size:11px;color:hsl(var(--muted-foreground));margin-top:4px;line-height:1.2}
+  .grid2{display:grid;grid-template-columns:1.6fr 1fr;gap:16px;margin-top:16px}
+  .clbl{color:hsl(var(--muted-foreground));display:block;margin:16px 0 10px}
+  .kpis{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .kpi{border:1px solid hsl(var(--border));background:hsl(var(--card));border-radius:12px;padding:14px}
+  .kpi .ic{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:hsl(var(--primary-soft));color:hsl(var(--primary))}
+  .kpi .ic.pos{background:hsl(var(--status-won)/.12);color:hsl(var(--status-won))}
+  .kpi .kl{margin-top:10px;color:hsl(var(--muted-foreground))}
+  .kpi .v{font-family:'DM Mono',monospace;font-size:26px;font-weight:600;letter-spacing:-.02em;margin-top:5px}
+  .kpi .hint{font-size:11px;color:hsl(var(--muted-foreground));margin-top:5px}
+  .card{border:1px solid hsl(var(--border));background:hsl(var(--card));border-radius:16px;overflow:hidden}
+  .card header{display:flex;justify-content:space-between;align-items:center;padding:11px 15px;border-bottom:1px solid hsl(var(--border))}
+  .badge{min-width:20px;height:20px;border-radius:99px;background:hsl(var(--destructive));color:#fff;font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center;padding:0 6px}
+  .row{display:flex;align-items:center;gap:11px;padding:10px 15px;border-bottom:1px solid hsl(var(--border))}
+  .row .n{width:24px;font-family:'DM Mono',monospace;font-size:16px;font-weight:600}
+  .row .lab b{font-size:13px;font-weight:500;display:block}.row .lab i{font-size:11px;color:hsl(var(--muted-foreground));font-style:normal}
+  .row .lab{flex:1;min-width:0}
+  .sev{font-size:11px;font-weight:600;margin-left:auto}
+  .sev.high{color:hsl(var(--destructive))}.sev.med{color:hsl(var(--gold-deep))}.sev.low{color:hsl(var(--status-won))}
+  .viewall{padding:9px;text-align:center;font-size:13px;font-weight:500;color:hsl(var(--primary))}
+  .funnel{display:flex;flex-direction:column;gap:7px}
+  .fstage .fr{display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px}
+  .fstage .fr b{font-family:'DM Mono',monospace}
+  .ftrack{height:24px;border-radius:6px;background:hsl(var(--muted)/.7);overflow:hidden}
+  .fbar{height:100%;border-radius:6px;background:hsl(var(--primary))}
+  .nc{border:1px dashed hsl(var(--border));background:hsl(var(--muted)/.3);border-radius:12px;padding:20px;text-align:center;color:hsl(var(--muted-foreground));font-size:12px}
+  .nc b{display:block;color:hsl(var(--foreground));font-size:14px;margin-bottom:4px}
+  .link{color:hsl(var(--primary));font-weight:600}
+  .btnrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .btn{background:linear-gradient(180deg,hsl(var(--primary)),hsl(var(--primary-deep)));color:#fff;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600}
+  .btn.ghost{background:hsl(var(--card));border:1px solid hsl(var(--border));color:hsl(var(--foreground))}
+
+  /* responsive: below 768 hide sidebar, show hamburger (mirrors Tailwind md:) */
+  @media (max-width:767px){
+    .side{display:none}
+    .hamburger{display:flex}
+    .search{display:none}
+    .callouts{grid-template-columns:1fr 1fr}
+    .grid2{grid-template-columns:1fr}
+    .kpis{grid-template-columns:1fr 1fr}
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ FRAME 1 — LEVEL 1: MAIN DASHBOARD (directory) ============ -->
+<div class="frame">
+  <div class="flabel">Level 1 — Main Dashboard <span class="tag">/app · directory sidebar</span></div>
+  <div class="topbar">
+    <div class="hamburger">☰</div>
+    <div class="brand"><span class="bm">FS</span><span>FSOS</span></div>
+    <div class="search">⌘ Search clients, policies, households… <span class="kbd">⌘K</span></div>
+    <div class="tb-actions"><span class="tb-btn">✦</span><span class="tb-btn">🔔</span><span class="avatar">MA</span></div>
+  </div>
+  <div class="body">
+    <aside class="side">
+      <div class="secgrp"><span class="mono">Command</span>
+        <div class="item active"><span class="gi">▦</span>Executive</div>
+        <div class="item"><span class="gi">◈</span>AI Workforce<span class="spk">✦</span></div>
+        <div class="item"><span class="gi">▤</span>Financial Planning<span class="spk">✦</span></div>
+        <div class="item"><span class="gi">📻</span>Communications<span class="spk">✦</span></div>
+        <div class="item"><span class="gi">✉</span>Inbox</div>
+        <div class="item"><span class="gi">↗</span>Social<span class="spk">✦</span></div>
+      </div>
+      <div class="secgrp"><span class="mono">Pipeline</span>
+        <div class="item"><span class="gi">⇄</span>Cross-Sell</div>
+        <div class="item"><span class="gi">⟲</span>Life Win-Back</div>
+        <div class="item"><span class="gi">⟳</span>Life Conversion</div>
+        <div class="item"><span class="gi">◉</span>Opportunities</div>
+        <div class="item"><span class="gi">▣</span>Cases</div>
+        <div class="item"><span class="gi">$</span>Commissions</div>
+      </div>
+      <div class="secgrp"><span class="mono">Book</span>
+        <div class="item"><span class="gi">▤</span>Agencies</div>
+        <div class="item"><span class="gi">◑</span>Households</div>
+        <div class="item"><span class="gi">▦</span>Policies</div>
+      </div>
+      <div class="secgrp"><span class="mono">Operate</span>
+        <div class="item"><span class="gi">☑</span>Workspace</div>
+        <div class="item"><span class="gi">▣</span>Compliance</div>
+      </div>
+      <div class="footpanel"><span class="mono">Current GDC Tier</span>
+        <div class="gdc"><div class="val">Gold — 80%</div><div class="rng">$55k+ GDC</div></div>
+      </div>
+    </aside>
+    <main class="canvas">
+      <div class="h1">Good morning, Markist 👋</div>
+      <div class="sub">Here's what's happening in your book today.</div>
+      <div class="hero">
+        <div class="top"><div style="display:flex;align-items:center;gap:9px"><span class="chip">✦</span><span class="mono hlbl">AI Executive Briefing</span></div><span class="review">Review full briefing →</span></div>
+        <p class="s">Start with 1 compliance review and 2 closing conversion windows — they move production the most today.</p>
+        <div class="callouts">
+          <div class="callout"><span class="ic">◉</span><div><div class="v">8</div><div class="k">High-intent opportunities</div></div></div>
+          <div class="callout"><span class="ic">⇄</span><div><div class="v">3</div><div class="k">Households w/ cross-sell gaps</div></div></div>
+          <div class="callout"><span class="ic">⟳</span><div><div class="v">2</div><div class="k">Conversion windows ≤30d</div></div></div>
+          <div class="callout"><span class="ic sec">▣</span><div><div class="v">1</div><div class="k">Compliance reviews for you</div></div></div>
+        </div>
+      </div>
+      <div class="grid2">
+        <div>
+          <span class="mono clbl">Business performance</span>
+          <div class="kpis">
+            <div class="kpi"><span class="ic pos">$</span><div class="kl mono">Commission YTD</div><div class="v">$43,250</div><div class="hint">View records</div></div>
+            <div class="kpi"><span class="ic">↗</span><div class="kl mono">Weighted pipeline</div><div class="v">$1.24M</div><div class="hint">View records</div></div>
+            <div class="kpi"><span class="ic">◉</span><div class="kl mono">Open opportunities</div><div class="v">94</div><div class="hint">View records</div></div>
+            <div class="kpi"><span class="ic">▤</span><div class="kl mono">Agency partnerships</div><div class="v">17</div><div class="hint">View records</div></div>
+          </div>
+          <span class="mono clbl">Pipeline overview</span>
+          <div class="funnel">
+            <div class="fstage"><div class="fr"><span>Referral</span><b>245</b></div><div class="ftrack"><div class="fbar" style="width:100%"></div></div></div>
+            <div class="fstage"><div class="fr"><span>Review</span><b>128</b></div><div class="ftrack"><div class="fbar" style="width:76%"></div></div></div>
+            <div class="fstage"><div class="fr"><span>Opportunity</span><b>94</b></div><div class="ftrack"><div class="fbar" style="width:58%"></div></div></div>
+            <div class="fstage"><div class="fr"><span>Case</span><b>46</b></div><div class="ftrack"><div class="fbar" style="width:34%"></div></div></div>
+            <div class="fstage"><div class="fr"><span>Issued</span><b>27</b></div><div class="ftrack"><div class="fbar" style="width:20%"></div></div></div>
+          </div>
+        </div>
+        <div>
+          <span class="mono clbl">Needs immediate attention</span>
+          <div class="card">
+            <header><span class="mono" style="color:hsl(var(--muted-foreground))">Priority queue</span><span class="badge">5</span></header>
+            <div class="row"><span class="n">1</span><div class="lab"><b>Compliance review required</b><i>Escalation awaiting your action</i></div><span class="sev high">High</span></div>
+            <div class="row"><span class="n">3</span><div class="lab"><b>Overdue tasks</b><i>Across 2 workspaces</i></div><span class="sev med">Medium</span></div>
+            <div class="row"><span class="n">2</span><div class="lab"><b>New referrals</b><i>Awaiting triage</i></div><span class="sev low">Low</span></div>
+            <div class="viewall">View all alerts</div>
+          </div>
+          <span class="mono clbl">Business health</span>
+          <div class="nc"><b>Metric not yet available</b>No persistency / retention / efficiency source is configured. <span class="link">Connect a source →</span></div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- ============ FRAME 2 — LEVEL 2: DRILLED INTO CROSS-SELL ============ -->
+<div class="frame">
+  <div class="flabel">Level 2 — Section Dashboard (drilled in) <span class="tag">/app/cross-sell · contextual sidebar + back</span></div>
+  <div class="topbar">
+    <div class="hamburger">☰</div>
+    <div class="brand"><span class="bm">FS</span><span>FSOS</span></div>
+    <div class="search">⌘ Search clients, policies, households… <span class="kbd">⌘K</span></div>
+    <div class="tb-actions"><span class="tb-btn">✦</span><span class="tb-btn">🔔</span><span class="avatar">MA</span></div>
+  </div>
+  <div class="body">
+    <aside class="side">
+      <div class="back">← Back to Dashboard</div>
+      <div class="l2head"><span class="ic">⇄</span><div><h2>Cross-Sell</h2><p>Household coverage gaps and agency penetration opportunities.</p></div></div>
+      <div class="divider"></div>
+      <div class="item active"><span class="gi">◱</span>Overview</div>
+      <div class="item"><span class="gi">◑</span>Household Gaps</div>
+      <div class="item"><span class="gi">▤</span>Agency Penetration</div>
+      <div class="item"><span class="gi">◫</span>Analytics</div>
+      <div class="item"><span class="gi">⇪</span>Import</div>
+      <div class="footpanel"><span class="mono">Current GDC Tier</span>
+        <div class="gdc"><div class="val">Gold — 80%</div><div class="rng">$55k+ GDC</div></div>
+      </div>
+    </aside>
+    <main class="canvas">
+      <div class="h1">Cross-Sell</div>
+      <div class="sub">Household coverage gaps and agency penetration opportunities.</div>
+      <div class="btnrow"><span class="btn">Originate cross-sell</span><span class="btn ghost">Import households</span></div>
+      <span class="mono clbl">Cross-sell signal</span>
+      <div class="kpis" style="grid-template-columns:repeat(4,1fr)">
+        <div class="kpi"><span class="ic">⇄</span><div class="kl mono">Open gaps</div><div class="v">3</div><div class="hint">Households</div></div>
+        <div class="kpi"><span class="ic pos">$</span><div class="kl mono">Est. premium</div><div class="v">$18,400</div><div class="hint">Weighted</div></div>
+        <div class="kpi"><span class="ic">▤</span><div class="kl mono">Agencies covered</div><div class="v">11</div><div class="hint">of 17</div></div>
+        <div class="kpi"><span class="ic">◉</span><div class="kl mono">Converted YTD</div><div class="v">6</div><div class="hint">View records</div></div>
+      </div>
+      <div class="grid2">
+        <div>
+          <span class="mono clbl">Top household gaps</span>
+          <div class="card">
+            <div class="row"><div class="lab"><b>Johnson Household</b><i>Auto only — eligible for IUL cross-sell</i></div><span class="sev med">Review</span></div>
+            <div class="row"><div class="lab"><b>Williams Family</b><i>Life gap — no active term</i></div><span class="sev med">Review</span></div>
+            <div class="row"><div class="lab"><b>Nguyen Household</b><i>Under-insured vs FNA need</i></div><span class="sev low">Signal</span></div>
+            <div class="viewall">View all household gaps</div>
+          </div>
+        </div>
+        <div>
+          <span class="mono clbl">Agency penetration</span>
+          <div class="funnel">
+            <div class="fstage"><div class="fr"><span>Prescott Agency</span><b>62%</b></div><div class="ftrack"><div class="fbar" style="width:62%"></div></div></div>
+            <div class="fstage"><div class="fr"><span>Delgado Agency</span><b>48%</b></div><div class="ftrack"><div class="fbar" style="width:48%"></div></div></div>
+            <div class="fstage"><div class="fr"><span>Hart Agency</span><b>31%</b></div><div class="ftrack"><div class="fbar" style="width:31%"></div></div></div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+</body>
+</html>

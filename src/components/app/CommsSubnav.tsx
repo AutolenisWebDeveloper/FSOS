@@ -17,6 +17,8 @@ const GROUPS: { label: string; items: { href: string; label: string }[] }[] = [
       { href: '/app/comms/sequences', label: 'Sequences' },
       { href: '/app/comms/audience', label: 'Audience' },
       { href: '/app/comms/library', label: 'Library' },
+      { href: '/app/comms/life-conversion', label: 'Life Conversion' },
+      { href: '/app/comms/pipeline-winback', label: 'Win-Back' },
     ],
   },
   {

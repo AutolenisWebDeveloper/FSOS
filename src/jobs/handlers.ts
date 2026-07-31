@@ -351,6 +351,16 @@ export async function lifeConversionTick(): Promise<JobResult> {
   return { ok: r.ok, handled: r.handled, note: r.note }
 }
 
+// pipeline-winback-tick — advance the Pipeline Win-Back Campaign (§5/§5a/§7). Daily enrollment
+// sweep from v_pipeline_winback_due + multi-channel timeline: at most one due touch per
+// enrollment per run, eligibility rechecked before every touch (advisor-ownership precedence),
+// every send through the same gate. Idempotent per touch.
+export async function pipelineWinbackTick(): Promise<JobResult> {
+  const { pipelineWinbackTick } = await import('@/lib/pipeline-winback/tick')
+  const r = await pipelineWinbackTick()
+  return { ok: r.ok, handled: r.handled, note: r.note }
+}
+
 // backup-verify — record a backup-verification heartbeat (independent pg_dump is external).
 export async function backupVerify(): Promise<JobResult> {
   const db = getDb()

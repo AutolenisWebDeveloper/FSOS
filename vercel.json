@@ -6,6 +6,7 @@
     { "path": "/api/cron/campaign-dispatch", "schedule": "0 12 * * *" },
     { "path": "/api/cron/resume-paused", "schedule": "0 11 * * *" },
     { "path": "/api/cron/life-conversion-tick", "schedule": "0 14 * * *" },
+    { "path": "/api/cron/pipeline-winback-tick", "schedule": "0 15 * * *" },
     { "path": "/api/cron/data-quality", "schedule": "0 7 * * *" },
     { "path": "/api/cron/social-publish", "schedule": "*/5 * * * *" },
     { "path": "/api/cron/booking-reminders", "schedule": "*/15 * * * *" }

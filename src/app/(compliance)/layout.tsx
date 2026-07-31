@@ -1,32 +1,13 @@
-import {
-  ShieldCheck,
-  ScrollText,
-  MessageSquare,
-  FileCheck2,
-  BadgeCheck,
-  ShieldAlert,
-  AlertTriangle,
-  Gavel,
-  ClipboardCheck,
-  BookMarked,
-} from 'lucide-react'
+import type { ReactNode } from 'react'
 import { requireRole } from '@/lib/auth/session'
-import { PortalShell, type NavItem } from '@/components/portal/PortalShell'
+import { WorkspaceShell } from '@/components/portal/workspace/WorkspaceShell'
 
 export const dynamic = 'force-dynamic'
 
-const NAV: NavItem[] = [
-  { href: '/compliance', label: 'Overview', icon: ShieldCheck, group: 'Overview' },
-  { href: '/compliance/audit', label: 'Audit', icon: ScrollText, group: 'Monitoring' },
-  { href: '/compliance/communications', label: 'Communications', icon: MessageSquare, group: 'Monitoring' },
-  { href: '/compliance/consent', label: 'Consent', icon: FileCheck2, group: 'Monitoring' },
-  { href: '/compliance/firewall', label: 'Firewall', icon: ShieldAlert, group: 'Monitoring' },
-  { href: '/compliance/incidents', label: 'Incidents', icon: AlertTriangle, group: 'Monitoring' },
-  { href: '/compliance/licenses', label: 'Licenses', icon: BadgeCheck, group: 'Governance' },
-  { href: '/compliance/legal-holds', label: 'Legal Holds', icon: Gavel, group: 'Governance' },
-  { href: '/compliance/attestations', label: 'Attestations', icon: ClipboardCheck, group: 'Governance' },
-  { href: '/compliance/policies', label: 'Policies', icon: BookMarked, group: 'Governance' },
-]
+// Compliance & Supervisory portal shell (Advisor OS fan-out). Navigation is
+// generated from the Workspace Registry filtered to the 'compliance' portal.
+// Navigation/layout only — every /compliance route keeps its URL and its
+// requireRole('compliance') guard.
 
 // middleware-auth.md §6: the compliance portal renders a standing disclaimer that
 // FSOS supervisory views are supplemental to FFS books-and-records systems.
@@ -37,11 +18,11 @@ const Banner = (
   </div>
 )
 
-export default async function ComplianceLayout({ children }: { children: React.ReactNode }) {
+export default async function ComplianceLayout({ children }: { children: ReactNode }) {
   await requireRole('compliance', '/compliance')
   return (
-    <PortalShell portalLabel="Compliance" nav={NAV} banner={Banner}>
+    <WorkspaceShell portal="compliance" portalLabel="Compliance" banner={Banner}>
       {children}
-    </PortalShell>
+    </WorkspaceShell>
   )
 }

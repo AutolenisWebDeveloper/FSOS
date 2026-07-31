@@ -604,10 +604,11 @@ const CLIENT: Workspace[] = [
   },
   {
     id: 'client-case', label: 'My Case', portal: 'client', section: 'Client', icon: 'Briefcase',
-    home: '/client/case-status', match: ['/client/case-status', '/client/documents'],
-    description: 'Case status and documents.',
+    home: '/client/case-status', match: ['/client/case-status', '/client/documents', '/client/intake'],
+    description: 'Case status, intake, and documents.',
     nav: [
       { href: '/client/case-status', label: 'Case Status', icon: 'Briefcase' },
+      { href: '/client/intake', label: 'Intake', icon: 'ClipboardList' },
       { href: '/client/documents', label: 'Documents', icon: 'FolderOpen' },
     ],
   },
@@ -628,7 +629,7 @@ const CLIENT: Workspace[] = [
   },
   {
     id: 'client-profile', label: 'My Profile', portal: 'client', section: 'Client', icon: 'Contact',
-    home: '/client/profile', match: ['/client/profile', '/client/preferences', '/client/consent', '/client/intake'],
+    home: '/client/profile', match: ['/client/profile', '/client/preferences', '/client/consent'],
     description: 'Profile, preferences, and consent.',
     nav: [
       { href: '/client/profile', label: 'Profile', icon: 'Contact' },

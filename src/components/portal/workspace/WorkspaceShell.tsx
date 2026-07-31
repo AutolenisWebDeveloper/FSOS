@@ -29,6 +29,7 @@ export function WorkspaceShell({
   assistantHref,
   notificationsHref,
   settingsHref,
+  hiddenHrefs,
   children,
 }: {
   portal: WorkspacePortal
@@ -40,6 +41,9 @@ export function WorkspaceShell({
   assistantHref?: string
   notificationsHref?: string
   settingsHref?: string
+  /** Sub-nav hrefs to hide, for server-gated items (e.g. partner comp disclosure).
+   *  Hiding is presentation only — the route still enforces its own guard. */
+  hiddenHrefs?: string[]
   children: React.ReactNode
 }) {
   return (
@@ -68,7 +72,7 @@ export function WorkspaceShell({
         <div className="mx-1 hidden h-6 w-px bg-shell-border md:block" aria-hidden />
 
         {/* ⌘K palette trigger (reads as global search). */}
-        <CommandPalette portal={portal} />
+        <CommandPalette portal={portal} hiddenHrefs={hiddenHrefs} />
 
         <div className="ml-auto flex items-center gap-1">
           {assistantHref ? (
@@ -95,7 +99,7 @@ export function WorkspaceShell({
 
       {/* ── Rail + contextual sidebar + content ───────────────────────────── */}
       <div className="flex">
-        <WorkspaceNav portal={portal} panels={panels} />
+        <WorkspaceNav portal={portal} panels={panels} hiddenHrefs={hiddenHrefs} />
         <div className="min-w-0 flex-1">
           {banner}
           <main id="content" tabIndex={-1} className="mx-auto w-full max-w-[1400px] px-4 pb-16 pt-5 focus:outline-none md:px-6 md:pb-10 md:pt-6">

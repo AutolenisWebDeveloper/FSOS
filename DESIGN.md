@@ -233,6 +233,28 @@ official-palette value from §5.2 (not a fresh invention), and this is the only 
 permitted to inline brand hex outside the `.msite` scope. Screen surfaces still resolve
 every color through a token.
 
+### 6.7 Advisor OS additive tokens [AS-BUILT] — shell, nav, palette, AI, charts, motion, density
+
+The Advisor OS redesign extends the token layer **additively** — every §6.1–6.4 token is
+preserved unchanged (semantic roles, AA tuning, type, spacing). These tokens add the capabilities
+the workspace shell, navigation, command palette, AI-first surfaces, charts, motion, and density
+require. All live in `globals.css :root` and are surfaced through `tailwind.config.ts`. **Guardrail
+gold (assumptions) and purple (securities/escalation) are NOT reused by any token here.**
+
+**Motion** (§23) — `--motion-{instant 80ms, fast 140ms, base 220ms, slow 360ms}` → `duration-{instant,fast,base,slow}`; easings `--ease-{standard, emphasized, exit, spring}` → `ease-{standard,emphasized,exit,spring}`. `animation: scale-in` (palette/menu entrance).
+
+**Density & geometry** — `--density-row 40px` / `--density-row-compact 32px` / `--density-row-cozy 48px` / `--density-header 32px` / `--gutter 16px` / `--section-gap 24px` → `spacing.{row,row-compact,row-cozy,gutter,section}`. Shell geometry `--rail-width 64px` / `--sidebar-width 260px` / `--sidebar-width-wide 296px` / `--topbar-height 56px` → `spacing.{rail,sidebar,sidebar-wide,topbar}` (use as `w-sidebar`, `h-topbar`).
+
+**Navigation** (§12, on the navy shell) — `nav.{active, active-bar, hover, foreground, muted, section}` → `bg-nav-active`, `bg-nav-hover`, `bg-nav-active-bar`, `text-nav-foreground/muted/section`.
+
+**Command palette** (⌘K) — `palette.{DEFAULT, raised, border, selected, foreground, muted, kbd}`; floats on `.shadow-elev-2xl` (`--shadow-2xl`) over `.scrim` (`--overlay-scrim`).
+
+**AI-first surfaces** (§25) — `ai.{DEFAULT, foreground, surface, surface-foreground, border, shell}`, an **indigo-shifted** blue (`--ai 232 72% 56%`) adjacent to Farmers blue so AI reads as one distinct-but-native voice. Helpers: `.ai-surface` (soft indigo card, AA ink), `.ai-gradient` (ambient indigo→brand wash), `.ai-shell` (lit indigo panel on the dark shell). **This is not the guardrail purple** (`262°`, reserved for securities/escalation).
+
+**Charts** (§15) — categorical `chart.{1…8}` (data-series identity only — a chart hue **never** denotes compliance status); finance `chart.{positive, negative, neutral}` (aligns with won/loss semantics); sequential `--chart-seq-{1…5}` (light→deep brand, for intensity/heat); chrome `chart.{grid, axis, track}`.
+
+**Intent aliases & elevation** — `--hairline-strong` (stronger section divider); `--overlay-scrim` (backdrop base); `--shadow-2xl` → `shadow-2xl` / `.shadow-elev-2xl` (the overlay tier palette & drawers float on, above the existing `xs…xl` scale).
+
 ---
 
 ## 7. Core components [AS-BUILT] (`src/components/ui`)
@@ -481,6 +503,30 @@ wiring). Topbar: sticky 56px navy — global search, AI, bell, `ProfileMenu`. Si
 `shell-gradient`, `IdentityLockup`, nav grouped by OS cluster under mono labels, optional character panels
 (FSA: AI Live Status, GDC Tier, FFS Contacts). Mobile: `MobileTabBar`. Nav via `NavLink` (36px, active =
 raised + 2px accent bar + weight bump).
+
+### 21.1 Advisor OS workspace shell [AS-BUILT] (`src/components/portal/workspace`)
+
+The Advisor OS redesign replaces `PortalShell`'s flat sidebar with a **workspace shell** — the
+FSA portal is the reference; the other five portals migrate to it in the fan-out and keep
+`PortalShell` until then. It is a **navigation + layout layer only**: authorization is unchanged
+(portal gate + `requireRole` + RLS), and every destination is generated from the static **Workspace
+Registry** (`src/lib/workspaces/registry.ts`), filtered to the portal. Structure:
+
+- **Topbar (56px):** `BrandMark` + portal label (left), the ⌘K `CommandPalette` trigger (center,
+  reads as global search), AI / bell / `ProfileMenu` (right); mobile drawer trigger on the left.
+- **Icon rail (`w-rail`, 64px):** the **workspace switcher** — sectioned workspace icons with a
+  hover tooltip and an active pill + left accent bar (`bg-nav-active` / `bg-nav-active-bar`);
+  AI-first workspaces carry the indigo `--ai` treatment.
+- **Contextual sidebar (`w-sidebar`, 260px):** a header (active workspace icon + name +
+  description + **portal-scoped back control** to the portal home — never a cross-portal `/app`),
+  then that workspace's sub-nav (`NavLink`-style active rules), then the character panels.
+- **Breadcrumbs:** derived from the active workspace + sub-nav + trailing path segments.
+- **Mobile:** the rail + sidebar collapse into a full-height nav drawer (sectioned switcher +
+  AI markers), focus moves into the drawer on open and returns to the trigger on close.
+
+Nav tokens, palette tokens, AI-surface tokens, and shell geometry are in §6.7. Four registry
+invariants (portal consistency, routes-exist, legacy-coverage, same-portal back-nav) are enforced
+by `tests/workspace-registry.test.mjs` and may not be weakened.
 
 ---
 

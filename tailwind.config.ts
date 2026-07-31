@@ -90,6 +90,53 @@ const config: Config = {
           // Guardrail 1: the is_security / FFS-managed marker (purple).
           security: 'hsl(var(--status-security))',
         },
+        // AI-first surfaces (design-system.md §25). Indigo-shifted, adjacent to
+        // Farmers blue — a distinct-but-native AI voice. NOT the guardrail purple.
+        ai: {
+          DEFAULT: 'hsl(var(--ai))',
+          foreground: 'hsl(var(--ai-foreground))',
+          surface: 'hsl(var(--ai-surface))',
+          'surface-foreground': 'hsl(var(--ai-surface-foreground))',
+          border: 'hsl(var(--ai-border))',
+          shell: 'hsl(var(--ai-shell))',
+        },
+        // Categorical chart ramp (design-system.md §15). Data-series identity
+        // ONLY — a chart hue never denotes compliance status.
+        chart: {
+          1: 'hsl(var(--chart-1))',
+          2: 'hsl(var(--chart-2))',
+          3: 'hsl(var(--chart-3))',
+          4: 'hsl(var(--chart-4))',
+          5: 'hsl(var(--chart-5))',
+          6: 'hsl(var(--chart-6))',
+          7: 'hsl(var(--chart-7))',
+          8: 'hsl(var(--chart-8))',
+          positive: 'hsl(var(--chart-positive))',
+          negative: 'hsl(var(--chart-negative))',
+          neutral: 'hsl(var(--chart-neutral))',
+          grid: 'hsl(var(--chart-grid))',
+          axis: 'hsl(var(--chart-axis))',
+          track: 'hsl(var(--chart-track))',
+        },
+        // Workspace navigation surfaces on the navy shell (design-system.md §12).
+        nav: {
+          active: 'hsl(var(--nav-active))',
+          'active-bar': 'hsl(var(--nav-active-bar))',
+          hover: 'hsl(var(--nav-hover))',
+          foreground: 'hsl(var(--nav-foreground))',
+          muted: 'hsl(var(--nav-muted))',
+          section: 'hsl(var(--nav-section))',
+        },
+        // Command palette (⌘K) overlay surfaces.
+        palette: {
+          DEFAULT: 'hsl(var(--palette-bg))',
+          raised: 'hsl(var(--palette-raised))',
+          border: 'hsl(var(--palette-border))',
+          selected: 'hsl(var(--palette-selected))',
+          foreground: 'hsl(var(--palette-foreground))',
+          muted: 'hsl(var(--palette-muted))',
+          kbd: 'hsl(var(--palette-kbd))',
+        },
       },
       borderRadius: {
         lg: 'var(--radius)',
@@ -107,6 +154,34 @@ const config: Config = {
         md: 'var(--shadow-md)',
         lg: 'var(--shadow-lg)',
         xl: 'var(--shadow-xl)',
+        // Overlay tier — command palette / floating drawers (design-system.md §6.7).
+        '2xl': 'var(--shadow-2xl)',
+      },
+      // Workspace-shell geometry + dashboard density (design-system.md §6.7).
+      spacing: {
+        rail: 'var(--rail-width)',
+        sidebar: 'var(--sidebar-width)',
+        'sidebar-wide': 'var(--sidebar-width-wide)',
+        topbar: 'var(--topbar-height)',
+        gutter: 'var(--gutter)',
+        section: 'var(--section-gap)',
+        'row-compact': 'var(--density-row-compact)',
+        row: 'var(--density-row)',
+        'row-cozy': 'var(--density-row-cozy)',
+      },
+      // Motion tokens (design-system.md §23) — durations + easing curves so every
+      // transition reads from one system instead of ad-hoc ms/cubic-beziers.
+      transitionDuration: {
+        instant: 'var(--motion-instant)',
+        fast: 'var(--motion-fast)',
+        base: 'var(--motion-base)',
+        slow: 'var(--motion-slow)',
+      },
+      transitionTimingFunction: {
+        standard: 'var(--ease-standard)',
+        emphasized: 'var(--ease-emphasized)',
+        exit: 'var(--ease-exit)',
+        spring: 'var(--ease-spring)',
       },
       keyframes: {
         'accordion-down': {
@@ -124,12 +199,18 @@ const config: Config = {
           from: { opacity: '0', transform: 'translateY(4px)' },
           to: { opacity: '1', transform: 'translateY(0)' },
         },
+        // Command palette / menu entrance (design-system.md §23).
+        'scale-in': {
+          from: { opacity: '0', transform: 'scale(0.98) translateY(-4px)' },
+          to: { opacity: '1', transform: 'scale(1) translateY(0)' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
         shimmer: 'shimmer 1.6s ease-in-out infinite',
         'fade-in-up': 'fade-in-up 0.24s ease-out',
+        'scale-in': 'scale-in var(--motion-fast) var(--ease-emphasized)',
       },
     },
   },

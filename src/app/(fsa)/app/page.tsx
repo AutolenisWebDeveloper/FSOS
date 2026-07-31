@@ -7,6 +7,7 @@ import { load } from '@/lib/data/query'
 import { computeWidgets } from '@/lib/analytics/metrics'
 import { DASHBOARD_WIDGETS } from '@/lib/analytics/catalog'
 import { DashboardGrid } from '@/components/app/DashboardGrid'
+import { ExecutiveKpiStrip } from '@/components/app/ExecutiveKpiStrip'
 import { TriageBand } from '@/components/app/TriageBand'
 import { FnaPlanningIntelligence } from '@/components/fna/FnaPlanningIntelligence'
 import type { DashboardWidgetPlacement } from '@/lib/validation/schemas'
@@ -51,6 +52,10 @@ export default async function FsaDashboardPage() {
           </Button>
         }
       />
+
+      {/* Headline numbers first — the executive's at-a-glance read, live from the
+          same widget metrics as the grid below (no new query, no placeholder). */}
+      <ExecutiveKpiStrip widgets={widgets} />
 
       {/* Read-me-first: the action-needed queues, loud when work is waiting. */}
       <TriageBand widgets={widgets} />

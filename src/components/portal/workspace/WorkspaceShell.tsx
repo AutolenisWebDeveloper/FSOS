@@ -7,7 +7,6 @@ import { MonoLabel } from '@/components/ui/typography'
 import { PORTAL_HOME, type WorkspacePortal } from '@/lib/workspaces/registry'
 import { CommandPalette } from './CommandPalette'
 import { WorkspaceNav, WorkspaceMobileNav } from './WorkspaceNav'
-import { Breadcrumbs } from './Breadcrumbs'
 
 /**
  * Advisor OS shell (redesign) — the workspace-aware replacement for PortalShell.
@@ -103,7 +102,6 @@ export function WorkspaceShell({
         <div className="min-w-0 flex-1">
           {banner}
           <main id="content" tabIndex={-1} className="mx-auto w-full max-w-[1400px] px-4 pb-16 pt-5 focus:outline-none md:px-6 md:pb-10 md:pt-6">
-            <Breadcrumbs portal={portal} />
             {children}
           </main>
         </div>

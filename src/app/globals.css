@@ -94,6 +94,98 @@
     --shadow-xl: 0 18px 36px -10px hsl(214 46% 12% / 0.16), 0 28px 64px -14px hsl(214 46% 14% / 0.20);
     /* Focus ring — a soft brand halo used by inputs, tiles, and interactive cards. */
     --ring-halo: 0 0 0 3px hsl(var(--ring) / 0.28);
+
+    /* ====================================================================
+     * REDESIGN — ADDITIVE TOKENS (Advisor OS shell). Purely additive: no token
+     * above is overridden. These add the capabilities the workspace shell,
+     * navigation, command palette, AI-first surfaces, charts, motion, and
+     * density need — DESIGN.md §6.7. Guardrail gold/purple are NOT reused here.
+     * ==================================================================== */
+
+    /* ---- Motion (durations + easing curves) — DESIGN.md §23 ---- */
+    --motion-instant:  80ms;
+    --motion-fast:     140ms;
+    --motion-base:     220ms;
+    --motion-slow:     360ms;
+    --ease-standard:   cubic-bezier(0.2, 0, 0, 1);       /* enter / standard */
+    --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);    /* expressive enter */
+    --ease-exit:       cubic-bezier(0.4, 0, 1, 1);       /* exit */
+    --ease-spring:     cubic-bezier(0.34, 1.4, 0.64, 1); /* gentle overshoot */
+
+    /* ---- Density & rhythm (formalizes the as-built dashboard metrics) ---- */
+    --density-row:         2.5rem;   /* 40px — standard table row */
+    --density-row-compact: 2rem;     /* 32px — dense / nested rows */
+    --density-row-cozy:    3rem;     /* 48px — touch / primary lists */
+    --density-header:      2rem;     /* 32px — table header */
+    --gutter:              1rem;     /* 16px — card padding */
+    --section-gap:         1.5rem;   /* 24px — section rhythm */
+
+    /* ---- Workspace shell geometry ---- */
+    --rail-width:         4rem;       /* 64px — collapsed icon rail */
+    --sidebar-width:      16.25rem;   /* 260px — workspace nav (as-built) */
+    --sidebar-width-wide: 18.5rem;    /* 296px — nav with section labels */
+    --topbar-height:      3.5rem;     /* 56px — topbar (as-built) */
+
+    /* ---- Navigation (on the navy shell) — DESIGN.md §12 ---- */
+    --nav-active:      214 70% 22%;   /* active item pill on the shell */
+    --nav-active-bar:  209 92% 60%;   /* left accent bar on the active item */
+    --nav-hover:       213 44% 20%;   /* hover surface on the shell */
+    --nav-foreground:  210 32% 96%;
+    --nav-muted:       211 24% 67%;
+    --nav-section:     211 22% 60%;   /* mono section labels on the shell */
+
+    /* ---- Command palette (⌘K overlay) ---- */
+    --palette-bg:         214 46% 10%;
+    --palette-raised:     213 40% 16%;
+    --palette-border:     213 32% 28%;
+    --palette-selected:   214 70% 24%;
+    --palette-foreground: 210 32% 97%;
+    --palette-muted:      211 24% 70%;
+    --palette-kbd:        213 34% 22%;
+
+    /* ---- AI-first surfaces — indigo-shifted, adjacent to Farmers blue so AI
+     * reads as one distinct-but-native voice. DESIGN.md §25. NOT the guardrail
+     * purple (262°, reserved for securities/escalation). ---- */
+    --ai:                    232 72% 56%;
+    --ai-foreground:         0 0% 100%;
+    --ai-surface:            226 68% 97%;   /* soft AI wash on the light canvas */
+    --ai-surface-foreground: 230 44% 24%;   /* AA ink on --ai-surface */
+    --ai-border:             226 58% 89%;
+    --ai-shell:              230 42% 18%;    /* AI panel on the dark shell */
+    --ai-glow:               232 80% 60%;
+
+    /* ---- Chart categorical ramp — DATA-SERIES IDENTITY ONLY. A chart hue never
+     * denotes compliance status; guardrail gold/purple stay reserved for badges
+     * and markers, never a series fill. DESIGN.md §15. ---- */
+    --chart-1: 214 88% 46%;   /* brand blue   */
+    --chart-2: 190 80% 38%;   /* cyan         */
+    --chart-3: 158 56% 40%;   /* emerald      */
+    --chart-4: 280 52% 58%;   /* violet       */
+    --chart-5: 330 66% 55%;   /* rose         */
+    --chart-6: 20 82% 54%;    /* orange       */
+    --chart-7: 224 44% 32%;   /* deep navy    */
+    --chart-8: 210 12% 48%;   /* slate        */
+    /* Finance up/down — intentionally aligns with won/loss semantics. */
+    --chart-positive: 152 58% 37%;
+    --chart-negative: 350 78% 45%;
+    --chart-neutral:  214 12% 50%;
+    /* Sequential (intensity / heat) — light → deep brand. */
+    --chart-seq-1: 213 92% 92%;
+    --chart-seq-2: 212 88% 78%;
+    --chart-seq-3: 212 86% 58%;
+    --chart-seq-4: 214 88% 42%;
+    --chart-seq-5: 215 90% 28%;
+    /* Chart chrome. */
+    --chart-grid:  214 24% 90%;
+    --chart-axis:  214 15% 52%;
+    --chart-track: 214 30% 93.5%;
+
+    /* ---- Intent aliases genuinely missing today ---- */
+    --hairline-strong: 214 22% 80%;   /* stronger divider for section breaks */
+    --overlay-scrim:   214 46% 10%;    /* modal / drawer / palette backdrop base */
+
+    /* ---- Elevation — adds the overlay tier the palette/drawer float on ---- */
+    --shadow-2xl: 0 24px 48px -12px hsl(214 46% 10% / 0.28), 0 40px 80px -20px hsl(214 46% 12% / 0.30);
   }
 
   * {
@@ -206,6 +298,32 @@
    * fill that gives buttons and the identity mark subtle dimensionality. */
   .brand-fill {
     background-image: linear-gradient(180deg, hsl(var(--primary)) 0%, hsl(var(--primary-deep)) 100%);
+  }
+
+  /* Overlay elevation tier — command palette, floating drawers (DESIGN.md §6.7). */
+  .shadow-elev-2xl { box-shadow: var(--shadow-2xl); }
+
+  /* AI-first surface — a soft indigo card that marks an AI-authored/AI-driven
+   * region without shouting. Pair with the Sparkles mark (DESIGN.md §25). */
+  .ai-surface {
+    background-color: hsl(var(--ai-surface));
+    color: hsl(var(--ai-surface-foreground));
+    border: 1px solid hsl(var(--ai-border));
+  }
+  /* Ambient AI accent wash — indigo→brand, for hero AI panels on the canvas. */
+  .ai-gradient {
+    background-image: linear-gradient(135deg, hsl(var(--ai) / 0.12) 0%, hsl(var(--primary) / 0.05) 60%, transparent 100%);
+  }
+  /* On the dark shell, an AI region reads as a lit indigo panel. */
+  .ai-shell {
+    background-color: hsl(var(--ai-shell));
+    box-shadow: inset 0 1px 0 0 hsl(var(--ai-glow) / 0.14);
+  }
+
+  /* Backdrop for the command palette / mobile workspace drawer / modals. */
+  .scrim {
+    background-color: hsl(var(--overlay-scrim) / 0.55);
+    backdrop-filter: blur(2px);
   }
 }
 

@@ -29,6 +29,9 @@ yarn-error.log*
 # Test compile output (tests/p0-gate.test.mjs)
 .p0-out-*/
 
+# Claude Code personal (per-developer) settings — never commit
+.claude/settings.local.json
+
 # OS
 .DS_Store
 Thumbs.db

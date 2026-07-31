@@ -45,6 +45,9 @@ export const JOBS: Record<string, JobHandler> = {
   // the registered cron name continues to resolve.
   'agent-runner': async () => (await h()).workforceOrchestrator(),
   'data-quality': async () => (await h()).dataQuality(),
+  // Life Conversion Campaign scheduler — advances the multi-channel 20-touch timeline,
+  // rechecking eligibility before every touch and routing every send through the gate.
+  'life-conversion-tick': async () => (await h()).lifeConversionTick(),
   'backup-verify': async () => (await h()).backupVerify(),
 }
 

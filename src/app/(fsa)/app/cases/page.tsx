@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { LayoutGrid, ClipboardList } from 'lucide-react'
+import { LayoutGrid, ClipboardList, Briefcase, Workflow, CheckCircle2, ShieldAlert } from 'lucide-react'
 import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
 import { SecuritiesChip, securitiesRowClass } from '@/components/ui/securities'
@@ -7,6 +7,7 @@ import { Numeric } from '@/components/ui/typography'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
+import { PageStatStrip, type PageStat } from '@/components/app/PageStatStrip'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,6 +21,20 @@ export default async function CasesPage() {
     load<{ id: string; primary_name: string }[]>((db) => db.from('households').select('id, primary_name').is('deleted_at', null), []),
   ])
   const hhMap = new Map((households.ok ? households.data : []).map((h) => [h.id, h.primary_name]))
+
+  // Summary — computed from the cases already loaded (no new query). NIGO-free;
+  // the securities tile surfaces the firewall count with the purple marker.
+  const caseRows = cases.ok ? cases.data : []
+  const issued = caseRows.filter((c) => c.status === 'issued' || c.status === 'in_service').length
+  const closed = caseRows.filter((c) => c.status === 'declined' || c.status === 'withdrawn').length
+  const active = caseRows.length - issued - closed
+  const securities = caseRows.filter((c) => c.is_security).length
+  const stats: PageStat[] = [
+    { label: 'Cases', value: caseRows.length, hint: 'Open in your book', icon: Briefcase, accent: 'brand' },
+    { label: 'In progress', value: active, hint: 'Working requirements', href: '/app/cases/board', icon: Workflow, accent: 'neutral' },
+    { label: 'Issued', value: issued, hint: 'Placed & in service', icon: CheckCircle2, accent: 'positive' },
+    { label: 'Securities-flagged', value: securities, hint: 'FFS-managed · firewall', href: '/app/compliance/firewall', icon: ShieldAlert, accent: 'security' },
+  ]
 
   return (
     <ListShell
@@ -39,19 +54,22 @@ export default async function CasesPage() {
       ) : cases.data.length === 0 ? (
         <EmptyState title="No cases yet" description="Open a case from an opportunity that reached application." action={<Button asChild><Link href="/app/cases/new">Open a case</Link></Button>} />
       ) : (
-        <div className="rounded-lg border">
-          <Table>
-            <TableHeader><TableRow><TableHead>Household</TableHead><TableHead>Status</TableHead><TableHead>Submitted</TableHead></TableRow></TableHeader>
-            <TableBody>
-              {cases.data.map((c) => (
-                <TableRow key={c.id} className={c.is_security ? securitiesRowClass : undefined}>
-                  <TableCell><Link href={`/app/cases/${c.id}`} className="font-medium text-primary hover:underline">{c.household_id ? hhMap.get(c.household_id) ?? 'Case' : 'Case'}</Link>{c.is_security ? <SecuritiesChip className="ml-2" /> : null}</TableCell>
-                  <TableCell><Badge variant={c.status === 'issued' || c.status === 'in_service' ? 'won' : c.status === 'declined' || c.status === 'withdrawn' ? 'lost' : 'active'}>{c.status.replace(/_/g, ' ')}</Badge></TableCell>
-                  <TableCell className="text-muted-foreground"><Numeric>{c.submitted_at ? new Date(c.submitted_at).toLocaleDateString('en-US') : '—'}</Numeric></TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+        <div className="space-y-6">
+          <PageStatStrip stats={stats} />
+          <div className="rounded-lg border">
+            <Table>
+              <TableHeader><TableRow><TableHead>Household</TableHead><TableHead>Status</TableHead><TableHead>Submitted</TableHead></TableRow></TableHeader>
+              <TableBody>
+                {cases.data.map((c) => (
+                  <TableRow key={c.id} className={c.is_security ? securitiesRowClass : undefined}>
+                    <TableCell><Link href={`/app/cases/${c.id}`} className="font-medium text-primary hover:underline">{c.household_id ? hhMap.get(c.household_id) ?? 'Case' : 'Case'}</Link>{c.is_security ? <SecuritiesChip className="ml-2" /> : null}</TableCell>
+                    <TableCell><Badge variant={c.status === 'issued' || c.status === 'in_service' ? 'won' : c.status === 'declined' || c.status === 'withdrawn' ? 'lost' : 'active'}>{c.status.replace(/_/g, ' ')}</Badge></TableCell>
+                    <TableCell className="text-muted-foreground"><Numeric>{c.submitted_at ? new Date(c.submitted_at).toLocaleDateString('en-US') : '—'}</Numeric></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </div>
       )}
     </ListShell>

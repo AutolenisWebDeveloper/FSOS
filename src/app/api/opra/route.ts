@@ -1,10 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
 import { requireInternalAuth, readJson, parseLimit, dbErrorResponse } from '@/lib/http'
 import { ghlSummary } from '@/lib/ghl'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+
+// OPRA case status toggle. opra_id is required (the friendly "opra_id required"
+// message is preserved in the handler); every other field is an optional,
+// whitelisted column update. Unknown keys are stripped by Zod.
+const OpraPatchSchema = z.object({
+  opra_id: z.string().trim().max(200).optional(),
+  contacted: z.boolean().optional(),
+  contacted_at: z.string().trim().max(40).optional(),
+  appt_scheduled: z.boolean().optional(),
+  appt_date: z.string().trim().max(40).optional(),
+  review_complete: z.boolean().optional(),
+  review_date: z.string().trim().max(40).optional(),
+  transferred: z.boolean().optional(),
+  transferred_date: z.string().trim().max(40).optional(),
+  status: z.string().trim().max(100).optional(),
+  notes: z.string().trim().max(2000).optional(),
+})
 
 // GET /api/opra — OPRA Center page live data
 export async function GET(req: NextRequest) {
@@ -69,9 +87,13 @@ export async function PATCH(req: NextRequest) {
   if (unauthorized) return unauthorized
   try {
     const db = getDb()
-    const parsed = await readJson<Record<string, unknown> & { opra_id?: string }>(req)
+    const parsed = await readJson(req)
     if ('error' in parsed) return parsed.error
-    const { opra_id, ...rest } = parsed.data
+    const v = OpraPatchSchema.safeParse(parsed.data)
+    if (!v.success) {
+      return NextResponse.json({ error: 'Invalid OPRA update', details: v.error.flatten() }, { status: 400 })
+    }
+    const { opra_id, ...rest } = v.data
 
     if (!opra_id) {
       return NextResponse.json({ error: 'opra_id required' }, { status: 400 })

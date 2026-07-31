@@ -185,26 +185,33 @@ export function WorkspaceMobileNav({ portal, portalLabel }: { portal: WorkspaceP
   const [open, setOpen] = React.useState(false)
   const ws = activeWorkspace(portal, pathname)
   const sections = workspaceSections(portal)
+  const triggerRef = React.useRef<HTMLButtonElement>(null)
+  const closeRef = React.useRef<HTMLButtonElement>(null)
 
   // Close on route change.
   React.useEffect(() => setOpen(false), [pathname])
 
-  // Lock scroll + Escape while open.
+  // Lock scroll + Escape while open; move focus into the drawer on open and
+  // return it to the trigger on close (WCAG 2.2 AA — focus follows the overlay).
   React.useEffect(() => {
     if (!open) return
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
+    const id = window.setTimeout(() => closeRef.current?.focus(), 20)
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
     window.addEventListener('keydown', onKey)
     return () => {
       document.body.style.overflow = prev
+      window.clearTimeout(id)
       window.removeEventListener('keydown', onKey)
+      triggerRef.current?.focus()
     }
   }, [open])
 
   return (
     <>
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen(true)}
         aria-label="Open navigation"
@@ -221,6 +228,7 @@ export function WorkspaceMobileNav({ portal, portalLabel }: { portal: WorkspaceP
             <div className="flex items-center justify-between px-1">
               <span className="mono-label text-shell-muted">{portalLabel}</span>
               <button
+                ref={closeRef}
                 type="button"
                 onClick={() => setOpen(false)}
                 aria-label="Close navigation"

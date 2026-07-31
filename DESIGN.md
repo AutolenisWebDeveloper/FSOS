@@ -504,6 +504,30 @@ wiring). Topbar: sticky 56px navy — global search, AI, bell, `ProfileMenu`. Si
 (FSA: AI Live Status, GDC Tier, FFS Contacts). Mobile: `MobileTabBar`. Nav via `NavLink` (36px, active =
 raised + 2px accent bar + weight bump).
 
+### 21.1 Advisor OS workspace shell [AS-BUILT] (`src/components/portal/workspace`)
+
+The Advisor OS redesign replaces `PortalShell`'s flat sidebar with a **workspace shell** — the
+FSA portal is the reference; the other five portals migrate to it in the fan-out and keep
+`PortalShell` until then. It is a **navigation + layout layer only**: authorization is unchanged
+(portal gate + `requireRole` + RLS), and every destination is generated from the static **Workspace
+Registry** (`src/lib/workspaces/registry.ts`), filtered to the portal. Structure:
+
+- **Topbar (56px):** `BrandMark` + portal label (left), the ⌘K `CommandPalette` trigger (center,
+  reads as global search), AI / bell / `ProfileMenu` (right); mobile drawer trigger on the left.
+- **Icon rail (`w-rail`, 64px):** the **workspace switcher** — sectioned workspace icons with a
+  hover tooltip and an active pill + left accent bar (`bg-nav-active` / `bg-nav-active-bar`);
+  AI-first workspaces carry the indigo `--ai` treatment.
+- **Contextual sidebar (`w-sidebar`, 260px):** a header (active workspace icon + name +
+  description + **portal-scoped back control** to the portal home — never a cross-portal `/app`),
+  then that workspace's sub-nav (`NavLink`-style active rules), then the character panels.
+- **Breadcrumbs:** derived from the active workspace + sub-nav + trailing path segments.
+- **Mobile:** the rail + sidebar collapse into a full-height nav drawer (sectioned switcher +
+  AI markers), focus moves into the drawer on open and returns to the trigger on close.
+
+Nav tokens, palette tokens, AI-surface tokens, and shell geometry are in §6.7. Four registry
+invariants (portal consistency, routes-exist, legacy-coverage, same-portal back-nav) are enforced
+by `tests/workspace-registry.test.mjs` and may not be weakened.
+
 ---
 
 ## 22. Accessibility standards [STANDARD] — WCAG 2.2 AA (floor)

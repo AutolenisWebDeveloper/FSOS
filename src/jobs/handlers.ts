@@ -342,6 +342,15 @@ export async function dataQuality(): Promise<JobResult> {
   }
 }
 
+// life-conversion-tick — advance the Life Conversion Campaign (§4b/§5). Multi-channel
+// timeline: at most one due touch per enrollment per run, eligibility rechecked before every
+// touch (Active Opportunity Ownership), every send through the same gate. Idempotent per touch.
+export async function lifeConversionTick(): Promise<JobResult> {
+  const { lifeCampaignTick } = await import('@/lib/life-campaign/tick')
+  const r = await lifeCampaignTick()
+  return { ok: r.ok, handled: r.handled, note: r.note }
+}
+
 // backup-verify — record a backup-verification heartbeat (independent pg_dump is external).
 export async function backupVerify(): Promise<JobResult> {
   const db = getDb()

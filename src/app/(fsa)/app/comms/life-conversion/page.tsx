@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { ListShell, StatTile, ErrorState, EmptyState, AssumptionBadge } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -78,10 +79,29 @@ export default async function LifeConversionPage() {
         <div className="flex items-center gap-2">
           <Badge variant={STATUS_TONE[campaign.status] ?? 'outline'}>{campaign.status.replace(/_/g, ' ')}</Badge>
           {campaign.is_assumption && <AssumptionBadge />}
+          <Link
+            href={`/app/comms/life-conversion/${campaign.id}`}
+            className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90"
+          >
+            View full details →
+          </Link>
         </div>
       }
     >
       <div className="space-y-6">
+        <Link
+          href={`/app/comms/life-conversion/${campaign.id}`}
+          className="block rounded-lg border p-4 transition-colors hover:border-primary hover:bg-muted/40"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold">{campaign.name}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">Configuration, schedule, assets, workflows, analytics, settings & controls →</p>
+            </div>
+            <Badge variant={STATUS_TONE[campaign.status] ?? 'outline'}>{campaign.status.replace(/_/g, ' ')}</Badge>
+          </div>
+        </Link>
+
         <Card className="p-5">
           <h2 className="mb-3 text-sm font-semibold">Operational controls</h2>
           <CampaignControls campaignId={campaign.id} status={campaign.status} />

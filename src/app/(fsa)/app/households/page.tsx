@@ -1,9 +1,10 @@
 import Link from 'next/link'
-import { Plus } from 'lucide-react'
+import { Plus, Users, UserRound, Target, PhoneOff } from 'lucide-react'
 import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Button } from '@/components/ui/button'
 import { loadAll } from '@/lib/data/query'
 import { HouseholdList, type HouseholdRow } from '@/components/app/HouseholdList'
+import { PageStatStrip, type PageStat } from '@/components/app/PageStatStrip'
 
 export const dynamic = 'force-dynamic'
 
@@ -45,7 +46,22 @@ export default async function HouseholdsPage() {
       do_not_contact: h.do_not_contact,
       archived_at: h.archived_at,
     }))
-    body = <HouseholdList rows={rows} />
+
+    // Book-level summary — computed from the data already loaded (no new query).
+    const dncCount = households.data.filter((h) => h.do_not_contact).length
+    const stats: PageStat[] = [
+      { label: 'Households', value: households.data.length, hint: 'In your book', icon: Users, accent: 'brand' },
+      { label: 'Members', value: memberRows.length, hint: 'People across the book', icon: UserRound, accent: 'neutral', href: undefined },
+      { label: 'Open opportunities', value: oppRows.length, hint: 'Active in pipeline', href: '/app/opportunities/board', icon: Target, accent: 'positive' },
+      { label: 'Do-not-contact', value: dncCount, hint: dncCount ? 'Excluded from outreach' : 'None flagged', href: '/app/compliance/dnc', icon: PhoneOff, accent: 'attention' },
+    ]
+
+    body = (
+      <div className="space-y-6">
+        <PageStatStrip stats={stats} />
+        <HouseholdList rows={rows} />
+      </div>
+    )
   }
 
   return (

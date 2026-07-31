@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
 import { requireInternalAuth, readJson, parseLimit, dbErrorResponse } from '@/lib/http'
 import { sendForm } from '@/lib/forms'
@@ -7,20 +8,29 @@ import { ghlEnabled, upsertContact, createOpportunity, GHL_CUSTOM_FIELDS } from 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
+// Public referral submission. agency_slug + client_name are required; the
+// friendly required-field message is preserved below, so the schema only
+// enforces field shapes/bounds and leaves the presence check to the handler.
+const ReferralSchema = z.object({
+  agency_slug: z.string().trim().max(200).optional(),
+  client_name: z.string().trim().max(200).optional(),
+  client_email: z.string().trim().max(320).optional(),
+  client_phone: z.string().trim().max(50).optional(),
+  referral_type: z.string().trim().max(100).optional(),
+  notes: z.string().trim().max(5000).optional(),
+})
+
 // POST /api/agencies/referral — public (agency partner submits a referral).
 export async function POST(req: NextRequest) {
   try {
     const supabase = getDb()
-    const parsed = await readJson<{
-      agency_slug: string
-      client_name: string
-      client_email?: string
-      client_phone?: string
-      referral_type?: string
-      notes?: string
-    }>(req)
+    const parsed = await readJson(req)
     if ('error' in parsed) return parsed.error
-    const { agency_slug, client_name, client_email, client_phone, referral_type, notes } = parsed.data
+    const v = ReferralSchema.safeParse(parsed.data)
+    if (!v.success) {
+      return NextResponse.json({ error: 'Invalid referral', details: v.error.flatten() }, { status: 400 })
+    }
+    const { agency_slug, client_name, client_email, client_phone, referral_type, notes } = v.data
 
     if (!agency_slug || !client_name) {
       return NextResponse.json({ error: 'agency_slug and client_name required' }, { status: 400 })

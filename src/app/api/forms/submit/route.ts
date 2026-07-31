@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
 import { requireInternalAuth, readJson, parseLimit, dbErrorResponse } from '@/lib/http'
 import { referenceFromToken } from '@/lib/tokens'
@@ -8,17 +9,28 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
+// PUBLIC intake — validate at the edge (§3.1.7). response_data holds dynamic form
+// answers, so it is constrained to a keyed OBJECT (never a scalar/array injection) with
+// a bounded field count; the overall body is already size-capped by readJson.
+const FormSubmitSchema = z.object({
+  token: z.string().trim().min(1).max(200),
+  form_id: z.string().trim().min(1).max(120),
+  response_data: z
+    .record(z.string(), z.unknown())
+    .refine((o) => Object.keys(o).length <= 300, 'Too many fields'),
+})
+
 // POST /api/forms/submit — public (client portal). Saves a response by token.
 export async function POST(req: NextRequest) {
   try {
     const supabase = getDb()
-    const parsed = await readJson<{ token?: string; form_id?: string; response_data?: unknown }>(req)
+    const parsed = await readJson<Record<string, unknown>>(req)
     if ('error' in parsed) return parsed.error
-    const { token, form_id, response_data } = parsed.data
-
-    if (!token || !form_id || !response_data) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    const v = FormSubmitSchema.safeParse(parsed.data)
+    if (!v.success) {
+      return NextResponse.json({ error: 'Invalid submission', details: v.error.flatten() }, { status: 400 })
     }
+    const { token, form_id, response_data } = v.data
 
     const { data: submission, error: findErr } = await supabase
       .from('form_submissions')

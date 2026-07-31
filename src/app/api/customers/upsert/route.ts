@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
 import { requireInternalAuth, readJson } from '@/lib/http'
 
@@ -8,20 +9,24 @@ export const runtime = 'nodejs'
 // APEX CSV-export webhook target — receives one row from the APEX export
 // and upserts it into customers (and policies when a policy_type is present).
 
-interface UpsertBody {
-  first_name?: string
-  last_name?: string
-  email?: string
-  phone?: string
-  policy_type?: string
-  face_amount?: number | string
-  annual_premium?: number | string
-  conversion_deadline?: string
-  issue_date?: string
-  agency_id?: string
-  apex_id?: string
-  source?: string
-}
+// Shape of one APEX export row. All fields optional at the type layer; the
+// business-required checks (name present, email-or-phone present) run below so
+// a single bad row returns a precise 400 rather than a generic schema error.
+const UpsertSchema = z.object({
+  first_name: z.string().trim().max(200).optional(),
+  last_name: z.string().trim().max(200).optional(),
+  email: z.string().trim().max(320).optional(),
+  phone: z.string().trim().max(50).optional(),
+  policy_type: z.string().trim().max(100).optional(),
+  face_amount: z.union([z.number(), z.string().max(50)]).optional(),
+  annual_premium: z.union([z.number(), z.string().max(50)]).optional(),
+  conversion_deadline: z.string().trim().max(40).optional(),
+  issue_date: z.string().trim().max(40).optional(),
+  agency_id: z.string().trim().max(200).optional(),
+  apex_id: z.string().trim().max(200).optional(),
+  source: z.string().trim().max(100).optional(),
+})
+type UpsertBody = z.infer<typeof UpsertSchema>
 
 function normalizeEmail(email?: string): string | null {
   if (!email) return null
@@ -58,9 +63,16 @@ export async function POST(req: NextRequest) {
   try {
     // Use readJson so this route honors the shared 100 KB payload cap and
     // returns a clean 400/413 on bad/oversized input, like every other route.
-    const parsed = await readJson<UpsertBody>(req)
+    const parsed = await readJson(req)
     if ('error' in parsed) return parsed.error
-    const body = parsed.data
+    const v = UpsertSchema.safeParse(parsed.data)
+    if (!v.success) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid customer row', details: v.error.flatten() },
+        { status: 400 }
+      )
+    }
+    const body: UpsertBody = v.data
 
     const first_name = (body.first_name || '').trim()
     const last_name = (body.last_name || '').trim()

@@ -6,12 +6,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { JOBS, isJob } from '@/jobs'
 import { runIdempotent } from '@/lib/jobs/runtime'
+import { cronSecret } from '@/lib/env'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 function authorized(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET
+  const secret = cronSecret()
   // Vercel Cron sends this header; a Bearer secret supports manual/other triggers.
   if (req.headers.get('x-vercel-cron')) return true
   if (!secret) return false

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
 import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
@@ -8,6 +9,12 @@ import { listBlueprints, getBlueprint, blueprintToTemplateDraft } from '@/lib/co
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+
+// Which pre-built blueprint to instantiate. Optional/blank falls through to the
+// existing 404 "unknown_blueprint" path rather than a schema error.
+const InstantiateSchema = z.object({
+  blueprintKey: z.string().trim().max(200).optional(),
+})
 
 // Slice 8 (§17) — Campaign library. GET lists the pre-built blueprints (pure catalog,
 // no DB). POST instantiates a blueprint into a DRAFT comm_template — human approval is
@@ -25,9 +32,11 @@ export async function POST(req: NextRequest) {
   const denied = requirePermission(auth.session, ['fsa', 'licensed_staff', 'super_admin'])
   if (denied) return denied
 
-  const parsed = await readJson<{ blueprintKey?: string }>(req)
+  const parsed = await readJson(req)
   if ('error' in parsed) return parsed.error
-  const bp = getBlueprint(String(parsed.data.blueprintKey ?? ''))
+  const v = InstantiateSchema.safeParse(parsed.data)
+  if (!v.success) return NextResponse.json({ error: 'Invalid blueprint request', details: v.error.flatten() }, { status: 400 })
+  const bp = getBlueprint(String(v.data.blueprintKey ?? ''))
   if (!bp) return NextResponse.json({ error: 'Unknown blueprint.', reason: 'unknown_blueprint' }, { status: 404 })
 
   const draft = blueprintToTemplateDraft(bp)

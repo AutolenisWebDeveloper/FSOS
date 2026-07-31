@@ -1,10 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
 import { requireInternalAuth, readJson } from '@/lib/http'
 import { apolloEnabled, enrichPerson } from '@/lib/apollo'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+
+// Which customer to enrich. Optional/blank falls through to the existing
+// "customer_id is required" 400 rather than a generic schema error.
+const EnrichSchema = z.object({
+  customer_id: z.string().trim().max(200).optional(),
+})
 
 // POST /api/customers/enrich  (internal)  body: { customer_id }
 // Enriches a client via Apollo (title, company, industry, LinkedIn, seniority).
@@ -18,9 +25,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Apollo is not configured (set APOLLO_API_KEY).', code: 'not_configured' }, { status: 503 })
   }
 
-  const parsed = await readJson<{ customer_id?: string }>(req)
+  const parsed = await readJson(req)
   if ('error' in parsed) return parsed.error
-  const customerId = parsed.data.customer_id
+  const v = EnrichSchema.safeParse(parsed.data)
+  if (!v.success) return NextResponse.json({ error: 'Invalid enrichment request', details: v.error.flatten() }, { status: 400 })
+  const customerId = v.data.customer_id
   if (!customerId) return NextResponse.json({ error: 'customer_id is required' }, { status: 400 })
 
   const supabase = getDb()

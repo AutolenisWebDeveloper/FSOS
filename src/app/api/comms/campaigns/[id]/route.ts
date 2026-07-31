@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
 import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
@@ -9,6 +10,11 @@ import { simulationSatisfiesActivation } from '@/lib/comms/simulation-core'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+
+// Campaign lifecycle action. Anything outside this set is a bad request.
+const CampaignActionSchema = z.object({
+  action: z.enum(['activate', 'pause', 'simulate']),
+})
 
 export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
@@ -33,9 +39,11 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   const denied = requirePermission(auth.session, ['fsa', 'licensed_staff', 'super_admin'])
   if (denied) return denied
 
-  const parsed = await readJson<{ action?: string }>(req)
+  const parsed = await readJson(req)
   if ('error' in parsed) return parsed.error
-  const action = parsed.data.action
+  const v = CampaignActionSchema.safeParse(parsed.data)
+  if (!v.success) return NextResponse.json({ error: 'Invalid campaign action', details: v.error.flatten() }, { status: 400 })
+  const action = v.data.action
 
   try {
     const db = getDb()

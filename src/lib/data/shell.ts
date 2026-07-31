@@ -7,6 +7,7 @@ import { load } from '@/lib/data/query'
 import { AGENT_ROSTER } from '@/lib/ai/roster'
 import { getTier, FFS_CONTACTS } from '@/lib/compliance'
 import { loadFfsContacts } from '@/lib/data/ffs'
+import { sum as decSum, money as toCents } from '@/lib/money'
 
 export type AgentState = 'running' | 'idle' | 'escalated'
 
@@ -81,7 +82,7 @@ async function loadRollingGdc(): Promise<{ value: number; assumed: boolean }> {
     [],
   )
   if (!res.ok) return { value: 0, assumed: true }
-  const value = res.data.reduce((sum, r) => sum + Number(r.total_commission ?? 0), 0)
+  const value = toCents(decSum(res.data.map((r) => r.total_commission ?? 0)))
   return { value, assumed: false }
 }
 

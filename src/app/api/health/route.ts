@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
+import { supabaseUrl, supabaseAnonKey, supabaseServiceKey } from '@/lib/env'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -9,12 +10,12 @@ export const runtime = 'nodejs'
 // whether env vars are present, Supabase is reachable, and the schema exists.
 export async function GET() {
   const env = {
-    // Accept the same alias names getDb() honors (Vercel↔Supabase integration
-    // injects SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY) so health doesn't falsely
-    // report "missing" when the app is in fact correctly configured.
-    supabase_url: !!(process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL),
-    supabase_anon_key: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    supabase_service_key: !!(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY),
+    // Resolve through lib/env so health reports exactly what getDb() will use — no
+    // alias drift (the Vercel↔Supabase integration injects SUPABASE_URL /
+    // SUPABASE_SERVICE_ROLE_KEY alongside the native names).
+    supabase_url: !!supabaseUrl(),
+    supabase_anon_key: !!supabaseAnonKey(),
+    supabase_service_key: !!supabaseServiceKey(),
     anthropic_key: !!process.env.ANTHROPIC_API_KEY,
     resend_key: !!process.env.RESEND_API_KEY,
     // Email actually SENDS only when both the key and a non-placeholder verified sender are

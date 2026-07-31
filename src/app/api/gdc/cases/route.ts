@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
 import { getTier } from '@/lib/compliance'
 import { requireInternalAuth, readJson, parseLimit, dbErrorResponse } from '@/lib/http'
+import { sum, money, D } from '@/lib/money'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -9,16 +10,22 @@ export const runtime = 'nodejs'
 const ROLLING_12MO_CUTOFF = () => new Date(Date.now() - 365 * 24 * 60 * 60 * 1000)
 
 // Compute the current FSA tier rate from rolling 12-month issued/paid GDC.
+// GDC accumulates in decimal (no float drift) and rounds to cents once.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function computeTierRate(cases: any[]): { tier: 1 | 2 | 3; rate: 0.40 | 0.60 | 0.80; issued: number } {
   const cutoff = ROLLING_12MO_CUTOFF()
-  let issued = 0
-  for (const c of cases) {
-    if ((c.case_status === 'issued' || c.case_status === 'paid') &&
-        c.issued_date && new Date(c.issued_date) >= cutoff) {
-      issued += Number(c.actual_gdc || c.estimated_gdc || 0)
-    }
-  }
+  const issued = money(
+    sum(
+      cases
+        .filter(
+          (c) =>
+            (c.case_status === 'issued' || c.case_status === 'paid') &&
+            c.issued_date &&
+            new Date(c.issued_date) >= cutoff,
+        )
+        .map((c) => c.actual_gdc || c.estimated_gdc || 0),
+    ),
+  )
   const t = getTier(issued)
   return { tier: t.tier as 1 | 2 | 3, rate: t.rate as 0.40 | 0.60 | 0.80, issued }
 }
@@ -60,19 +67,23 @@ export async function GET(req: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rows = (allCases || []) as any[]
     const cutoff = ROLLING_12MO_CUTOFF()
-    let total_issued_ytd = 0
-    let total_pipeline = 0
-    let total_fsa_ytd = 0
+    // Decimal accumulation (no float drift); each total is rounded to cents once.
+    let issuedD = D(0)
+    let pipelineD = D(0)
+    let fsaD = D(0)
     for (const c of rows) {
       const inWindow = c.issued_date && new Date(c.issued_date) >= cutoff
       if ((c.case_status === 'issued' || c.case_status === 'paid') && inWindow) {
-        total_issued_ytd += Number(c.actual_gdc || c.estimated_gdc || 0)
-        total_fsa_ytd += Number(c.actual_fsa || 0)
+        issuedD = issuedD.plus(D(c.actual_gdc || c.estimated_gdc || 0))
+        fsaD = fsaD.plus(D(c.actual_fsa || 0))
       }
       if (c.case_status === 'submitted' || c.case_status === 'pending') {
-        total_pipeline += Number(c.estimated_gdc || 0)
+        pipelineD = pipelineD.plus(D(c.estimated_gdc || 0))
       }
     }
+    const total_issued_ytd = money(issuedD)
+    const total_pipeline = money(pipelineD)
+    const total_fsa_ytd = money(fsaD)
 
     const t = getTier(total_issued_ytd)
 

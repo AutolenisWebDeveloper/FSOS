@@ -36,8 +36,11 @@ export const runtime = 'nodejs'
 function verifyGHLSignature(rawBody: string, signature: string): boolean {
   const secret = process.env.GHL_WEBHOOK_SECRET
   if (!secret) {
-    // Fail closed in production; allow through in non-prod for local testing.
-    return process.env.NODE_ENV !== 'production'
+    // Fail closed on any DEPLOYED runtime — production AND Vercel previews serve real
+    // data (matches lib/auth/config-gate). Keyless is allowed only in true local dev
+    // for testing. A spoofed event could upsert contacts / flip consent, so this stays
+    // closed until the secret is configured.
+    return process.env.NODE_ENV !== 'production' && process.env.VERCEL !== '1'
   }
   if (!signature) return false
   const expected = createHmac('sha256', secret).update(rawBody).digest('hex')

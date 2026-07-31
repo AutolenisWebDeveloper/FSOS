@@ -11,6 +11,7 @@
 
 import { load } from '@/lib/data/query'
 import { computeGdcTier, sortTiers, type GdcTier, type GdcTierMath } from '@/lib/data/gdc-tiers'
+import { sum, money, pctOf, D, Decimal } from '@/lib/money'
 
 const ROLLING_DAYS = 365
 // Pipeline = live opportunities; a lost opp contributes no future GDC.
@@ -109,12 +110,16 @@ export async function loadGdcTierState(): Promise<LoadOutcome<GdcTierState>> {
   // production routes to FFS and is excluded here so the GDC tab and the sidebar
   // tier card (lib/data/shell.ts) show the same figure.
   const windowStart = windowStartIso()
-  const rolling12 = (commsRes.ok ? commsRes.data : [])
-    .filter((c) => !c.is_security && effectiveDate(c) >= windowStart)
-    .reduce((s, c) => s + Number(c.total_commission ?? 0), 0)
+  const rolling12 = money(
+    sum(
+      (commsRes.ok ? commsRes.data : [])
+        .filter((c) => !c.is_security && effectiveDate(c) >= windowStart)
+        .map((c) => c.total_commission ?? 0),
+    ),
+  )
 
-  const math = computeGdcTier(round2(rolling12), tiers)
-  return { ok: true, math, tiers, rolling12: round2(rolling12), windowStart }
+  const math = computeGdcTier(rolling12, tiers)
+  return { ok: true, math, tiers, rolling12, windowStart }
 }
 
 /** Full GDC dashboard payload — tier state + estimated-payout pipeline by stage. */
@@ -128,22 +133,24 @@ export async function loadGdcSummary(): Promise<LoadOutcome<GdcSummary>> {
   )
   const payoutPct = state.math.current?.payout_pct ?? 0
 
-  const byStage = new Map<string, { count: number; expected: number }>()
+  const byStage = new Map<string, { count: number; expected: Decimal }>()
   for (const o of oppsRes.ok ? oppsRes.data : []) {
     if (CLOSED_STAGES.has(o.stage)) continue
     if (o.is_security) continue // securities production is managed in FFS, not GDC
-    const cur = byStage.get(o.stage) ?? { count: 0, expected: 0 }
+    const cur = byStage.get(o.stage) ?? { count: 0, expected: D(0) }
     cur.count += 1
-    cur.expected += Number(o.expected_commission ?? 0)
+    cur.expected = cur.expected.plus(D(o.expected_commission ?? 0))
     byStage.set(o.stage, cur)
   }
 
+  // Decimal throughout: expected accumulates without float drift; payout is
+  // expected × payout% via pctOf; each figure is rounded to cents once at the edge.
   const pipeline: GdcPipelineStage[] = Array.from(byStage.entries())
     .map(([stage, v]) => ({
       stage,
       count: v.count,
-      expected: round2(v.expected),
-      estPayout: round2((v.expected * payoutPct) / 100),
+      expected: money(v.expected),
+      estPayout: money(pctOf(v.expected, payoutPct)),
     }))
     .sort((a, b) => b.expected - a.expected)
 
@@ -151,11 +158,7 @@ export async function loadGdcSummary(): Promise<LoadOutcome<GdcSummary>> {
   return {
     ...state,
     pipeline,
-    pipelineExpectedTotal: round2(pipeline.reduce((s, p) => s + p.expected, 0)),
-    pipelineEstPayoutTotal: round2(pipeline.reduce((s, p) => s + p.estPayout, 0)),
+    pipelineExpectedTotal: money(sum(pipeline.map((p) => p.expected))),
+    pipelineEstPayoutTotal: money(sum(pipeline.map((p) => p.estPayout))),
   }
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100
 }

@@ -1,5 +1,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
-import { supabaseUrl, supabaseServiceKey, supabaseAnonKey } from '@/lib/env'
+// Relative import (not the @/ alias): client.ts is pulled into the standalone-tsc
+// compiles used by the offline guardrail proofs, which don't apply the @/* path map.
+import { supabaseUrl, supabaseServiceKey, supabaseAnonKey } from '../env'
 
 /**
  * Thrown when required environment configuration is missing (e.g. Supabase

@@ -119,6 +119,57 @@ t('registry-covers-legacy-nav: every legacy FSA destination has a dedicated work
   }
 })
 
+// ── Invariant 3b: registry covers every migrated portal's legacy sidebar ──────
+// Sourced from each portal's pre-redesign (portal)/layout.tsx NAV. Proves the
+// fan-out dropped no destination and shifted no portal boundary: each legacy href
+// is owned by a workspace IN THE SAME PORTAL via a specific (non-root) prefix.
+const LEGACY_NAV = {
+  admin: {
+    root: '/admin',
+    hrefs: ['/admin', '/admin/cases', '/admin/documents', '/admin/data/imports', '/admin/data/exports',
+      '/admin/data/duplicates', '/admin/support/requests', '/admin/users'],
+  },
+  super: {
+    root: '/super',
+    hrefs: ['/super', '/super/users', '/super/roles', '/super/permissions', '/super/products',
+      '/super/integrations', '/super/ai/policies', '/super/ai/sandbox', '/super/config/gdc-tiers',
+      '/super/config/ffs-contacts', '/super/workflows', '/super/webhooks', '/super/jobs', '/super/states',
+      '/super/audit', '/super/security', '/super/backups'],
+  },
+  compliance: {
+    root: '/compliance',
+    hrefs: ['/compliance', '/compliance/audit', '/compliance/communications', '/compliance/consent',
+      '/compliance/firewall', '/compliance/incidents', '/compliance/licenses', '/compliance/legal-holds',
+      '/compliance/attestations', '/compliance/policies'],
+  },
+  partner: {
+    root: '/partner',
+    hrefs: ['/partner', '/partner/production', '/partner/commissions', '/partner/refer', '/partner/referrals',
+      '/partner/materials', '/partner/training', '/partner/schedule', '/partner/messages', '/partner/tasks',
+      '/partner/settings'],
+  },
+  client: {
+    root: '/client',
+    hrefs: ['/client', '/client/schedule', '/client/appointments', '/client/intake', '/client/documents',
+      '/client/reviews', '/client/case-status', '/client/education', '/client/preferences', '/client/consent'],
+  },
+}
+function coveredInPortal(portal, href, root) {
+  if (href === root) return true
+  return WORKSPACES.some(
+    (w) => w.portal === portal && w.match.some((p) => p !== root && (href === p || href.startsWith(p + '/'))),
+  )
+}
+t('registry-covers-legacy-nav (all portals): no fan-out destination dropped', () => {
+  for (const [portal, { root, hrefs }] of Object.entries(LEGACY_NAV)) {
+    for (const href of hrefs) {
+      assert.ok(coveredInPortal(portal, href, root), `${portal}: legacy ${href} not covered by a specific workspace prefix`)
+      // And the boundary did not shift: it resolves to a workspace in the same portal.
+      assert.equal(activeWorkspace(portal, href)?.portal, portal, `${portal}: ${href} resolves outside its portal`)
+    }
+  }
+})
+
 // ── Invariant 4: back-nav target stays in-portal (no cross-portal '/app' link) ─
 t('backnav-same-portal: PORTAL_HOME[portal] routes to that same portal', () => {
   for (const portal of PORTALS) {

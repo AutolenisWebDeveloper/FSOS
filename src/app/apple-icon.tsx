@@ -8,7 +8,7 @@ export const contentType = 'image/png'
 
 const NAVY = '#0d2138'
 const NAVY_RAISED = '#1b3252'
-const BLUE = '#0b5fcc'
+const BLUE = '#2C4C9C' // mirrors --primary (Satori/ImageResponse can't resolve CSS vars)
 
 export default function AppleIcon() {
   return new ImageResponse(

@@ -26,7 +26,7 @@
     /* ---- Shell (Farmers navy) — sidebar / topbar / dense dark panels ---- */
     --shell:            214 56% 12%;   /* #0d2138 — deep Farmers navy */
     --shell-raised:     213 40% 18%;   /* #1b3252 — panels inside the shell */
-    --shell-highlight:  210 90% 60%;   /* top-lit hairline / brand glow on the shell */
+    --shell-highlight:  223 80% 62%;   /* brand-blue glow on the shell (223° family) */
     --shell-foreground: 210 32% 96%;
     --shell-muted:      211 24% 67%;
     --shell-border:     213 32% 24%;
@@ -46,16 +46,22 @@
     --muted:            214 30% 93.5%;
     --muted-foreground: 214 15% 40%;   /* AA (≥4.5:1) secondary ink on canvas */
 
-    /* ---- Brand (Farmers blue) ---- */
-    --primary:            214 88% 40%;   /* #0b5fcc — confident Farmers blue */
+    /* ---- Brand (Farmers blue) — premium deep royal blue ----
+     * White-on-primary 8.0:1 and primary-on-white 8.0:1 (both WCAG AAA; §17.2).
+     * Every brand surface resolves through these — never hardcode the hex. */
+    --primary:            223 56% 39%;   /* #2C4C9C — premium Farmers blue */
     --primary-foreground: 0 0% 100%;
-    --primary-soft:       213 92% 94%;   /* soft blue wash */
-    --primary-deep:       215 90% 30%;   /* pressed / gradient floor */
+    --primary-soft:       223 60% 94%;   /* soft wash / icon-chip backgrounds */
+    --primary-deep:       223 56% 30%;   /* #223c7b — pressed / gradient floor */
 
     --secondary:          214 30% 93%;
     --secondary-foreground: 214 42% 22%;
 
-    --accent:             209 92% 46%;   /* #0d86ef — brighter blue highlight / active bars */
+    /* --accent: the one brighter "pop" hue (active bars, focus glows). Harmonized
+     * to --primary's 223° hue (Option B) so the whole UI reads as ONE premium blue
+     * family — a brighter, higher-L brand blue that still stands out on the navy
+     * shell (white-on-accent 5.45:1, AA). No cooler cyan-blue remains. */
+    --accent:             223 66% 52%;   /* #3462d5 — brand-family highlight (was 209 92% 46%) */
     --accent-foreground:  0 0% 100%;
 
     /* ---- Signature gold — GUARDRAIL: assumptions + attention ONLY. Never success. */
@@ -69,13 +75,13 @@
 
     --border:           214 24% 87%;
     --input:            214 22% 83%;
-    --ring:             214 88% 42%;
+    --ring:             223 56% 42%;      /* follows --primary (brand focus halo) */
 
     --radius: 0.625rem;
 
     /* ---- Status ---- */
     --status-draft:      214 12% 50%;
-    --status-active:     214 88% 42%;    /* Farmers blue — follows brand */
+    --status-active:     223 56% 42%;    /* follows --primary (brand blue) */
     --status-pending:    38 92% 45%;
     --status-won:        152 58% 37%;    /* #26996a — placed / active / success only */
     --status-lost:       350 78% 45%;    /* Farmers red — lost / error only */
@@ -127,8 +133,8 @@
     --topbar-height:      3.5rem;     /* 56px — topbar (as-built) */
 
     /* ---- Navigation (on the navy shell) — DESIGN.md §12 ---- */
-    --nav-active:      214 70% 22%;   /* active item pill on the shell */
-    --nav-active-bar:  209 92% 60%;   /* left accent bar on the active item */
+    --nav-active:      223 56% 39%;   /* active item pill = solid brand blue #2C4C9C */
+    --nav-active-bar:  223 72% 60%;   /* left accent bar on the active item (brand family) */
     --nav-hover:       213 44% 20%;   /* hover surface on the shell */
     --nav-foreground:  210 32% 96%;
     --nav-muted:       211 24% 67%;
@@ -157,7 +163,7 @@
     /* ---- Chart categorical ramp — DATA-SERIES IDENTITY ONLY. A chart hue never
      * denotes compliance status; guardrail gold/purple stay reserved for badges
      * and markers, never a series fill. DESIGN.md §15. ---- */
-    --chart-1: 214 88% 46%;   /* brand blue   */
+    --chart-1: 223 58% 46%;   /* brand blue (223° family) */
     --chart-2: 190 80% 38%;   /* cyan         */
     --chart-3: 158 56% 40%;   /* emerald      */
     --chart-4: 280 52% 58%;   /* violet       */
@@ -170,11 +176,11 @@
     --chart-negative: 350 78% 45%;
     --chart-neutral:  214 12% 50%;
     /* Sequential (intensity / heat) — light → deep brand. */
-    --chart-seq-1: 213 92% 92%;
-    --chart-seq-2: 212 88% 78%;
-    --chart-seq-3: 212 86% 58%;
-    --chart-seq-4: 214 88% 42%;
-    --chart-seq-5: 215 90% 28%;
+    --chart-seq-1: 223 62% 92%;
+    --chart-seq-2: 223 60% 78%;
+    --chart-seq-3: 223 58% 58%;
+    --chart-seq-4: 223 56% 42%;
+    --chart-seq-5: 223 56% 28%;
     /* Chart chrome. */
     --chart-grid:  214 24% 90%;
     --chart-axis:  214 15% 52%;

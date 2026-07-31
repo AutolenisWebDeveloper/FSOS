@@ -12,7 +12,7 @@ export const contentType = 'image/png'
 // Farmers navy shell + blue accent (mirrors globals.css --shell / --primary).
 const NAVY = '#0d2138'
 const NAVY_RAISED = '#1b3252'
-const BLUE = '#0b5fcc'
+const BLUE = '#2C4C9C'
 const LIGHT = '#e8eefb'
 const MUTED = '#9db6de'
 

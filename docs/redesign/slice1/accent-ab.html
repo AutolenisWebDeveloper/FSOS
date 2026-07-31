@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FSOS — Accent A/B</title>
+<style>
+  /* FSOS tokens (globals.css) — new premium blue #2C4C9C applied. */
+  :root{
+    --shell:214 56% 12%; --shell-raised:213 40% 18%; --shell-highlight:210 90% 60%;
+    --shell-foreground:210 32% 96%; --shell-muted:211 24% 67%; --shell-border:213 32% 24%;
+    --background:214 34% 96%; --foreground:214 46% 12%; --card:0 0% 100%; --card-foreground:214 46% 12%;
+    --surface-sunken:214 32% 94.5%; --muted:214 30% 93.5%; --muted-foreground:214 15% 40%;
+    --primary:223 56% 39%; --primary-foreground:0 0% 100%; --primary-soft:223 60% 94%; --primary-deep:223 56% 30%;
+    --gold:43 89% 51%; --gold-deep:38 76% 34%;
+    --destructive:350 78% 43%; --border:214 24% 87%; --ring:223 56% 42%;
+    --status-won:152 58% 37%; --status-security:262 47% 44%;
+    --nav-active:214 70% 22%; --nav-hover:213 44% 20%; --nav-foreground:210 32% 96%; --nav-muted:211 24% 67%; --nav-section:211 22% 60%;
+    --ai:232 72% 56%; --ai-surface:226 68% 97%; --ai-surface-foreground:230 44% 24%; --ai-border:226 58% 89%; --ai-shell:230 42% 18%;
+    /* ACCENT — overridden per column below */
+    --accent:209 92% 46%; --nav-active-bar:209 92% 60%;
+  }
+  .opt-a{ --accent:209 92% 46%; --nav-active-bar:209 92% 60%; }   /* Option A — cooler pop (as-built) */
+  .opt-b{ --accent:223 66% 52%; --nav-active-bar:223 70% 58%; }   /* Option B — harmonized / monochromatic */
+
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'DM Sans',-apple-system,system-ui,sans-serif;background:hsl(var(--background));color:hsl(var(--foreground));-webkit-font-smoothing:antialiased;font-size:13px}
+  .mono{font-family:'DM Mono',ui-monospace,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;font-weight:500}
+  .num{font-family:'DM Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+  .wrap{display:grid;grid-template-columns:1fr 1fr}
+  .col{padding:0}
+  .colhead{padding:14px 20px;background:hsl(var(--shell));color:hsl(var(--shell-foreground));display:flex;align-items:center;gap:10px;border-bottom:2px solid hsl(var(--accent))}
+  .colhead b{font-size:15px}
+  .colhead .swatch{width:22px;height:22px;border-radius:6px;background:hsl(var(--accent))}
+  .colhead span.mono{color:hsl(var(--shell-muted))}
+  .stage{display:flex;min-height:760px}
+
+  /* ── shell nav ── */
+  .rail{width:56px;background:linear-gradient(180deg,hsl(var(--shell-raised)/.6),hsl(var(--shell)) 44%);display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 0;border-right:1px solid hsl(var(--shell-border))}
+  .rail a{position:relative;width:40px;height:40px;border-radius:11px;display:flex;align-items:center;justify-content:center;color:hsl(var(--nav-muted))}
+  .rail a.active{background:hsl(var(--nav-active));color:hsl(var(--nav-foreground))}
+  .rail a.active::before{content:"";position:absolute;left:-8px;width:4px;height:22px;border-radius:99px;background:hsl(var(--nav-active-bar))}
+  .rail svg{width:19px;height:19px}
+  .side{width:220px;background:linear-gradient(180deg,hsl(var(--shell-raised)/.6),hsl(var(--shell)) 44%);border-right:1px solid hsl(var(--shell-border));padding:16px 12px;color:hsl(var(--shell-foreground))}
+  .side h2{font-size:13px;font-weight:600;margin-bottom:2px}
+  .side p.desc{font-size:11px;color:hsl(var(--shell-muted));line-height:1.3;margin-bottom:14px}
+  .navitem{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:9px;font-size:13px;color:hsl(var(--shell-muted));margin-bottom:2px}
+  .navitem svg{width:18px;height:18px;color:hsl(var(--shell-muted))}
+  .navitem.active{background:hsl(var(--nav-active));color:hsl(var(--nav-foreground));font-weight:500}
+  .navitem.active svg{color:hsl(var(--accent))}
+  .gdc{margin-top:16px;border-top:1px solid hsl(var(--shell-border));padding-top:14px}
+  .gdc .mono{color:hsl(var(--shell-muted));display:block;margin-bottom:6px}
+  .gdc .card{border:1px solid hsl(var(--gold)/.4);background:hsl(var(--gold)/.1);border-radius:9px;padding:10px}
+  .gdc .val{font-family:'DM Mono',monospace;font-size:20px;font-weight:600;color:hsl(var(--gold))}
+  .gdc .rng{font-size:11px;color:hsl(var(--shell-muted));margin-top:2px}
+  .agent{display:flex;align-items:center;gap:8px;font-size:12px;color:hsl(var(--shell-foreground));opacity:.92;padding:3px 0}
+  .dot{width:8px;height:8px;border-radius:99px}
+  .dot.run{background:hsl(var(--status-won))}.dot.idle{background:hsl(var(--accent))}.dot.esc{background:hsl(var(--gold))}
+
+  /* ── canvas ── */
+  .canvas{flex:1;padding:20px;overflow:hidden}
+  .hero{position:relative;overflow:hidden;border-radius:16px;border:1px solid hsl(var(--ai-border));background:linear-gradient(135deg,hsl(var(--ai)/.12),hsl(var(--primary)/.05) 60%,transparent);padding:18px}
+  .hero .top{display:flex;justify-content:space-between;align-items:center}
+  .chip{width:30px;height:30px;border-radius:9px;background:hsl(var(--ai-shell));color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:inset 0 1px 0 0 hsl(var(--ai)/.14)}
+  .chip svg{width:18px;height:18px}
+  .hero .lbl{color:hsl(var(--ai-surface-foreground))}
+  .review{display:inline-flex;align-items:center;gap:6px;border:1px solid hsl(var(--ai-border));background:hsl(var(--card)/.7);border-radius:9px;padding:6px 12px;font-size:13px;font-weight:500;color:hsl(var(--ai-surface-foreground))}
+  .hero p.summary{margin-top:14px;font-size:15px;line-height:1.5;color:hsl(var(--foreground));max-width:60ch}
+  .callouts{margin-top:18px;display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  .callout{display:flex;gap:10px}
+  .callout .ic{width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .callout .ic.brand{background:hsl(var(--primary-soft));color:hsl(var(--primary))}
+  .callout .ic.sec{background:hsl(var(--status-security)/.12);color:hsl(var(--status-security))}
+  .callout .ic svg{width:18px;height:18px}
+  .callout .v{font-family:'DM Mono',monospace;font-size:22px;font-weight:600;line-height:1;color:hsl(var(--foreground))}
+  .callout .k{font-size:11px;color:hsl(var(--muted-foreground));margin-top:5px;line-height:1.2}
+
+  .grid2{display:grid;grid-template-columns:1.6fr 1fr;gap:16px;margin-top:16px}
+  .kpis{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .kpi{border:1px solid hsl(var(--border));background:hsl(var(--card));border-radius:12px;padding:14px;position:relative;overflow:hidden}
+  .kpi .ic{width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center}
+  .kpi .ic.pos{background:hsl(var(--status-won)/.12);color:hsl(var(--status-won))}
+  .kpi .ic.brand{background:hsl(var(--primary-soft));color:hsl(var(--primary))}
+  .kpi .ic svg{width:18px;height:18px}
+  .kpi .lbl{margin-top:12px}
+  .kpi .v{font-family:'DM Mono',monospace;font-size:28px;font-weight:600;letter-spacing:-.02em;margin-top:6px;color:hsl(var(--foreground))}
+  .kpi .hint{font-size:11px;color:hsl(var(--muted-foreground));margin-top:6px}
+
+  .rail-card{border:1px solid hsl(var(--border));background:hsl(var(--card));border-radius:16px;overflow:hidden}
+  .rail-card header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid hsl(var(--border))}
+  .rail-card .badge{min-width:20px;height:20px;border-radius:99px;background:hsl(var(--destructive));color:#fff;font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center;padding:0 6px}
+  .row{display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid hsl(var(--border))}
+  .row .n{width:26px;font-family:'DM Mono',monospace;font-size:17px;font-weight:600;color:hsl(var(--foreground))}
+  .row .lab{flex:1}.row .lab b{font-size:13px;font-weight:500;display:block}.row .lab i{font-size:11px;color:hsl(var(--muted-foreground));font-style:normal}
+  .sev{font-size:11px;font-weight:600}
+  .sev.high{color:hsl(var(--destructive))}.sev.med{color:hsl(var(--gold-deep))}.sev.low{color:hsl(var(--status-won))}
+  .viewall{padding:9px;text-align:center;font-size:13px;font-weight:500;color:hsl(var(--primary))}
+
+  .mono.canvaslbl{color:hsl(var(--muted-foreground));display:block;margin:18px 0 10px}
+  /* funnel */
+  .funnel{display:flex;flex-direction:column;gap:6px}
+  .fstage{display:flex;align-items:center;gap:12px}
+  .fstage .fl{width:90px;font-size:12px;color:hsl(var(--muted-foreground))}
+  .fbar{height:26px;border-radius:6px;background:hsl(var(--primary));display:flex;align-items:center;justify-content:flex-end;padding-right:8px;color:#fff;font-family:'DM Mono',monospace;font-size:12px;font-weight:600}
+  .fpct{width:42px;text-align:right;font-family:'DM Mono',monospace;font-size:12px;color:hsl(var(--muted-foreground))}
+  /* not_configured */
+  .nc{border:1px dashed hsl(var(--border));background:hsl(var(--muted)/.3);border-radius:12px;padding:22px;text-align:center;color:hsl(var(--muted-foreground));font-size:13px}
+  .nc b{display:block;color:hsl(var(--foreground));font-size:14px;margin-bottom:4px}
+  .link{color:hsl(var(--primary));font-weight:500}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <!-- ================= OPTION A ================= -->
+  <div class="col opt-a">
+    <div class="colhead"><span class="swatch"></span><div><b>Option A — cooler pop</b><br><span class="mono">accent 209° · as-built</span></div></div>
+    <div class="stage">
+      <nav class="rail">
+        <a class="active" title="Executive">▦</a>
+        <a>◫</a><a>◇</a><a>▤</a><a>✦</a><a>◎</a>
+      </nav>
+      <div class="side">
+        <h2>Executive</h2>
+        <p class="desc">Command overview — production, KPIs, briefing, and what needs you next.</p>
+        <div class="navitem active">◱ Overview</div>
+        <div class="navitem">▤ Daily Briefing</div>
+        <div class="navitem">◔ KPIs</div>
+        <div class="navitem">↗ Production</div>
+        <div class="navitem">◫ Performance</div>
+        <div class="navitem">⟳ Conversion</div>
+        <div class="gdc">
+          <span class="mono">AI Agents · Live</span>
+          <div class="agent"><span class="dot run"></span>Referral Triage<span style="margin-left:auto"class="num">12</span></div>
+          <div class="agent"><span class="dot idle"></span>Cross-Sell Hunter<span style="margin-left:auto"class="num">8</span></div>
+          <div class="agent"><span class="dot esc"></span>Comms Assistant<span style="margin-left:auto"class="num">7</span></div>
+        </div>
+        <div class="gdc">
+          <span class="mono">Current GDC Tier</span>
+          <div class="card"><div class="val">Gold — 80%</div><div class="rng">$55k+ GDC</div></div>
+        </div>
+      </div>
+      <div class="canvas">
+        <div class="hero">
+          <div class="top">
+            <div style="display:flex;align-items:center;gap:9px"><span class="chip">✦</span><span class="mono lbl">AI Executive Briefing</span></div>
+            <span class="review">Review full briefing →</span>
+          </div>
+          <p class="summary">Start with 1 compliance review and 2 closing conversion windows — they move production the most today.</p>
+          <div class="callouts">
+            <div class="callout"><span class="ic brand">◎</span><div><div class="v">8</div><div class="k">High-intent opportunities</div></div></div>
+            <div class="callout"><span class="ic brand">⇄</span><div><div class="v">3</div><div class="k">Households w/ cross-sell gaps</div></div></div>
+            <div class="callout"><span class="ic brand">⟳</span><div><div class="v">2</div><div class="k">Conversion windows ≤30d</div></div></div>
+            <div class="callout"><span class="ic sec">▣</span><div><div class="v">1</div><div class="k">Compliance reviews for you</div></div></div>
+          </div>
+        </div>
+        <div class="grid2">
+          <div>
+            <span class="mono canvaslbl">Business performance</span>
+            <div class="kpis">
+              <div class="kpi"><span class="ic pos">$</span><div class="lbl mono" style="color:hsl(var(--muted-foreground))">Commission YTD</div><div class="v">$43,250</div><div class="hint">View records</div></div>
+              <div class="kpi"><span class="ic brand">↗</span><div class="lbl mono" style="color:hsl(var(--muted-foreground))">Weighted pipeline</div><div class="v">$1.24M</div><div class="hint">View records</div></div>
+              <div class="kpi"><span class="ic brand">◎</span><div class="lbl mono" style="color:hsl(var(--muted-foreground))">Open opportunities</div><div class="v">94</div><div class="hint">View records</div></div>
+              <div class="kpi"><span class="ic brand">▤</span><div class="lbl mono" style="color:hsl(var(--muted-foreground))">Agency partnerships</div><div class="v">17</div><div class="hint">View records</div></div>
+            </div>
+            <span class="mono canvaslbl">Pipeline overview</span>
+            <div class="funnel">
+              <div class="fstage"><span class="fl">Referral</span><div class="fbar" style="width:100%">245</div><span class="fpct">52%</span></div>
+              <div class="fstage"><span class="fl">Review</span><div class="fbar" style="width:76%">128</div><span class="fpct">73%</span></div>
+              <div class="fstage"><span class="fl">Opportunity</span><div class="fbar" style="width:58%">94</div><span class="fpct">49%</span></div>
+              <div class="fstage"><span class="fl">Case</span><div class="fbar" style="width:34%">46</div><span class="fpct">59%</span></div>
+              <div class="fstage"><span class="fl">Issued</span><div class="fbar" style="width:20%">27</div><span class="fpct">—</span></div>
+            </div>
+          </div>
+          <div>
+            <span class="mono canvaslbl">Needs immediate attention</span>
+            <div class="rail-card">
+              <header><span class="mono" style="color:hsl(var(--muted-foreground))">Priority queue</span><span class="badge">5</span></header>
+              <div class="row"><span class="n">1</span><div class="lab"><b>Compliance review required</b><i>Escalation awaiting your action</i></div><span class="sev high">High</span></div>
+              <div class="row"><span class="n">3</span><div class="lab"><b>Overdue tasks</b><i>Across 2 workspaces</i></div><span class="sev med">Medium</span></div>
+              <div class="row"><span class="n">2</span><div class="lab"><b>New referrals</b><i>Awaiting triage</i></div><span class="sev low">Low</span></div>
+              <div class="viewall">View all alerts</div>
+            </div>
+            <span class="mono canvaslbl">Business health</span>
+            <div class="nc"><b>Metric not yet available</b>No persistency / retention / efficiency source is configured. <span class="link">Connect a source →</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= OPTION B ================= -->
+  <div class="col opt-b">
+    <div class="colhead"><span class="swatch"></span><div><b>Option B — harmonized</b><br><span class="mono">accent 223° · monochromatic</span></div></div>
+    <div class="stage">
+      <nav class="rail">
+        <a class="active" title="Executive">▦</a>
+        <a>◫</a><a>◇</a><a>▤</a><a>✦</a><a>◎</a>
+      </nav>
+      <div class="side">
+        <h2>Executive</h2>
+        <p class="desc">Command overview — production, KPIs, briefing, and what needs you next.</p>
+        <div class="navitem active">◱ Overview</div>
+        <div class="navitem">▤ Daily Briefing</div>
+        <div class="navitem">◔ KPIs</div>
+        <div class="navitem">↗ Production</div>
+        <div class="navitem">◫ Performance</div>
+        <div class="navitem">⟳ Conversion</div>
+        <div class="gdc">
+          <span class="mono">AI Agents · Live</span>
+          <div class="agent"><span class="dot run"></span>Referral Triage<span style="margin-left:auto"class="num">12</span></div>
+          <div class="agent"><span class="dot idle"></span>Cross-Sell Hunter<span style="margin-left:auto"class="num">8</span></div>
+          <div class="agent"><span class="dot esc"></span>Comms Assistant<span style="margin-left:auto"class="num">7</span></div>
+        </div>
+        <div class="gdc">
+          <span class="mono">Current GDC Tier</span>
+          <div class="card"><div class="val">Gold — 80%</div><div class="rng">$55k+ GDC</div></div>
+        </div>
+      </div>
+      <div class="canvas">
+        <div class="hero">
+          <div class="top">
+            <div style="display:flex;align-items:center;gap:9px"><span class="chip">✦</span><span class="mono lbl">AI Executive Briefing</span></div>
+            <span class="review">Review full briefing →</span>
+          </div>
+          <p class="summary">Start with 1 compliance review and 2 closing conversion windows — they move production the most today.</p>
+          <div class="callouts">
+            <div class="callout"><span class="ic brand">◎</span><div><div class="v">8</div><div class="k">High-intent opportunities</div></div></div>
+            <div class="callout"><span class="ic brand">⇄</span><div><div class="v">3</div><div class="k">Households w/ cross-sell gaps</div></div></div>
+            <div class="callout"><span class="ic brand">⟳</span><div><div class="v">2</div><div class="k">Conversion windows ≤30d</div></div></div>
+            <div class="callout"><span class="ic sec">▣</span><div><div class="v">1</div><div class="k">Compliance reviews for you</div></div></div>
+          </div>
+        </div>
+        <div class="grid2">
+          <div>
+            <span class="mono canvaslbl">Business performance</span>
+            <div class="kpis">
+              <div class="kpi"><span class="ic pos">$</span><div class="lbl mono" style="color:hsl(var(--muted-foreground))">Commission YTD</div><div class="v">$43,250</div><div class="hint">View records</div></div>
+              <div class="kpi"><span class="ic brand">↗</span><div class="lbl mono" style="color:hsl(var(--muted-foreground))">Weighted pipeline</div><div class="v">$1.24M</div><div class="hint">View records</div></div>
+              <div class="kpi"><span class="ic brand">◎</span><div class="lbl mono" style="color:hsl(var(--muted-foreground))">Open opportunities</div><div class="v">94</div><div class="hint">View records</div></div>
+              <div class="kpi"><span class="ic brand">▤</span><div class="lbl mono" style="color:hsl(var(--muted-foreground))">Agency partnerships</div><div class="v">17</div><div class="hint">View records</div></div>
+            </div>
+            <span class="mono canvaslbl">Pipeline overview</span>
+            <div class="funnel">
+              <div class="fstage"><span class="fl">Referral</span><div class="fbar" style="width:100%">245</div><span class="fpct">52%</span></div>
+              <div class="fstage"><span class="fl">Review</span><div class="fbar" style="width:76%">128</div><span class="fpct">73%</span></div>
+              <div class="fstage"><span class="fl">Opportunity</span><div class="fbar" style="width:58%">94</div><span class="fpct">49%</span></div>
+              <div class="fstage"><span class="fl">Case</span><div class="fbar" style="width:34%">46</div><span class="fpct">59%</span></div>
+              <div class="fstage"><span class="fl">Issued</span><div class="fbar" style="width:20%">27</div><span class="fpct">—</span></div>
+            </div>
+          </div>
+          <div>
+            <span class="mono canvaslbl">Needs immediate attention</span>
+            <div class="rail-card">
+              <header><span class="mono" style="color:hsl(var(--muted-foreground))">Priority queue</span><span class="badge">5</span></header>
+              <div class="row"><span class="n">1</span><div class="lab"><b>Compliance review required</b><i>Escalation awaiting your action</i></div><span class="sev high">High</span></div>
+              <div class="row"><span class="n">3</span><div class="lab"><b>Overdue tasks</b><i>Across 2 workspaces</i></div><span class="sev med">Medium</span></div>
+              <div class="row"><span class="n">2</span><div class="lab"><b>New referrals</b><i>Awaiting triage</i></div><span class="sev low">Low</span></div>
+              <div class="viewall">View all alerts</div>
+            </div>
+            <span class="mono canvaslbl">Business health</span>
+            <div class="nc"><b>Metric not yet available</b>No persistency / retention / efficiency source is configured. <span class="link">Connect a source →</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

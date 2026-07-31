@@ -4,7 +4,9 @@
 // boundary can't render). Must supply its own <html>/<body> and cannot rely on the
 // app's font/class layer loading, so it is intentionally inline-styled — but every
 // value is snapped to the FSOS design tokens (navy shell #0d2138, brand blue
-// #0b5fcc, shell foreground) so it still reads as the same product.
+// #2C4C9C, shell foreground) so it still reads as the same product. These literals
+// mirror the --primary/--shell tokens because a root-error boundary renders its own
+// <html> and cannot resolve the app's CSS custom properties.
 export default function GlobalError({
   error,
   reset,
@@ -47,7 +49,7 @@ export default function GlobalError({
             fontSize: '0.9rem',
             fontWeight: 600,
             color: '#ffffff',
-            background: '#0b5fcc',
+            background: '#2C4C9C',
             border: 'none',
             borderRadius: '0.5rem',
             cursor: 'pointer',

@@ -361,6 +361,31 @@ export async function pipelineWinbackTick(): Promise<JobResult> {
   return { ok: r.ok, handled: r.handled, note: r.note }
 }
 
+// cross-sell-life-enroll — daily eligibility + enrollment sweep for the Cross-Sell Life Campaign
+// (§24). Fills the day's configurable quota from the highest-scoring gap households (existing
+// non-life clients with no active life relationship); enrolls only when the campaign is Active.
+export async function crossSellLifeEnroll(): Promise<JobResult> {
+  const { runDailyEnrollment } = await import('@/lib/cross-sell-life/jobs')
+  const r = await runDailyEnrollment()
+  return { ok: r.ok, handled: r.enrolled, note: r.note }
+}
+
+// cross-sell-life-tick — advance the Cross-Sell Life Campaign (§6). Multi-channel 35-touch,
+// 180-day timeline: at most one due touch per enrollment per run, eligibility rechecked before
+// every touch, every send through the same gate. Idempotent per touch (deterministic key).
+export async function crossSellLifeTick(): Promise<JobResult> {
+  const { crossSellLifeTick } = await import('@/lib/cross-sell-life/tick')
+  const r = await crossSellLifeTick()
+  return { ok: r.ok, handled: r.handled, note: r.note }
+}
+
+// cross-sell-life-retry — retry/dead-letter sweep for stuck Cross-Sell Life executions (§20).
+export async function crossSellLifeRetry(): Promise<JobResult> {
+  const { runRetrySweep } = await import('@/lib/cross-sell-life/jobs')
+  const r = await runRetrySweep()
+  return { ok: r.ok, handled: r.retried + r.deadLettered, note: r.note }
+}
+
 // backup-verify — record a backup-verification heartbeat (independent pg_dump is external).
 export async function backupVerify(): Promise<JobResult> {
   const db = getDb()

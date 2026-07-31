@@ -83,17 +83,39 @@ async function applyOptOut(conv: Conversation, contact: string): Promise<void> {
  * the number paused.
  */
 async function pauseActiveEnrollments(memberId: string, reason: string): Promise<number> {
+  const db = getDb()
+  const nowISO = new Date().toISOString()
+  let paused = 0
   try {
-    const { data } = await getDb()
+    const { data } = await db
       .from('comm_campaign_enrollments')
-      .update({ status: 'paused_for_conversation', paused_at: new Date().toISOString(), pause_reason: reason })
+      .update({ status: 'paused_for_conversation', paused_at: nowISO, pause_reason: reason })
       .eq('member_id', memberId)
       .eq('status', 'enrolled')
       .select('id')
-    return Array.isArray(data) ? data.length : 0
+    paused += Array.isArray(data) ? data.length : 0
   } catch {
-    return 0
+    /* best-effort */
   }
+  // Multi-channel campaign timelines (Life Conversion, Pipeline Win-Back, Cross-Sell Life) pause the
+  // same way so no proactive touch fires while a customer conversation is open (§13/ADR-018). Their
+  // live states differ: life/winback use 'active', cross-sell uses 'running'.
+  for (const [table, liveStatus] of [
+    ['life_campaign_enrollments', 'active'],
+    ['pipeline_winback_enrollments', 'active'],
+    ['xsell_life_campaign_enrollments', 'running'],
+  ] as const) {
+    try {
+      const patch: Record<string, unknown> = { status: 'paused_for_conversation', paused_at: nowISO, pause_reason: reason, updated_at: nowISO }
+      // Only the cross-sell table carries a previous_status column (its full §15 machine).
+      if (table === 'xsell_life_campaign_enrollments') patch.previous_status = liveStatus
+      const { data } = await db.from(table).update(patch).eq('member_id', memberId).eq('status', liveStatus).select('id')
+      paused += Array.isArray(data) ? data.length : 0
+    } catch {
+      /* best-effort — table/column absent tolerated */
+    }
+  }
+  return paused
 }
 
 /** Clear internal DNC + re-grant consent (START handling). */

@@ -18,6 +18,7 @@ const GROUPS: { label: string; items: { href: string; label: string }[] }[] = [
       { href: '/app/comms/audience', label: 'Audience' },
       { href: '/app/comms/library', label: 'Library' },
       { href: '/app/comms/life-conversion', label: 'Life Conversion' },
+      { href: '/app/comms/cross-sell-life', label: 'Cross-Sell Life' },
       { href: '/app/comms/pipeline-winback', label: 'Win-Back' },
     ],
   },

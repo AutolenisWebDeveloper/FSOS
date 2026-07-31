@@ -196,6 +196,18 @@ export async function bookAppointment(input: BookInput, now: string): Promise<Bo
       actor: 'public',
     }),
   ])
+
+  // Booking a review exits any open Cross-Sell Life enrollment for this contact's household
+  // (spec §11 — campaign outcome "Appointment Booked"). Best-effort; never fails the booking.
+  try {
+    const { data: c } = await db.from('contacts').select('household_id').eq('id', contactId).maybeSingle()
+    if (c?.household_id) {
+      const { exitOnAppointment } = await import('@/lib/cross-sell-life/inbound')
+      await exitOnAppointment({ householdId: c.household_id as string, actor: 'booking' })
+    }
+  } catch {
+    /* best-effort — the appointment already exists */
+  }
   await writeAudit({
     actor: 'public',
     action: 'entity.created',

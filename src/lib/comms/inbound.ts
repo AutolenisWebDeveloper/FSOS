@@ -132,6 +132,28 @@ export async function processInbound(input: InboundInput): Promise<InboundResult
     escalated: false,
   }
 
+  // Idempotency: providers (Twilio, Resend) retry a webhook on any non-2xx/timeout, so
+  // the same inbound message can arrive more than once. If we've already recorded this
+  // provider message, short-circuit — never create a duplicate conversation message or
+  // fire a second AI auto-reply (§13.10/§16.3; hard-backed by the uq_comm_messages_
+  // provider_id index in migration 079).
+  if (input.providerId) {
+    try {
+      const { data: existing } = await db
+        .from('comm_messages')
+        .select('id, conversation_id')
+        .eq('provider_id', input.providerId)
+        .maybeSingle()
+      if (existing) {
+        result.conversationId = (existing.conversation_id as string) ?? null
+        result.messageId = existing.id as string
+        return result
+      }
+    } catch {
+      /* best-effort; the DB unique index is the hard backstop */
+    }
+  }
+
   const conv = await getOrCreateConversation(input.channel, contact)
   if (!conv) return result
   result.conversationId = conv.id

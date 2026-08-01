@@ -10,6 +10,10 @@ export const runtime = 'nodejs'
 const ControlSchema = z.object({
   action: z.enum(['submit', 'enable', 'pause', 'resume', 'disable', 'emergency_stop', 'archive']),
   reason: z.string().trim().max(300).optional(),
+  // Resume strategy overrides (§5a). Absent → the safe default (only_admin_paused + skip: resume in
+  // place, no catch-up). Ignored for non-resume actions.
+  resumeBehavior: z.enum(['all_active', 'only_admin_paused', 'restart_day_1', 'only_new']).optional(),
+  replayPolicy: z.enum(['skip', 'replay']).optional(),
 })
 
 // Operational controls (§5a): enable / pause / resume / disable / emergency-stop / archive.
@@ -31,7 +35,14 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   if (!input.success) return NextResponse.json({ error: 'Invalid input', details: input.error.flatten() }, { status: 400 })
 
   try {
-    const result = await applyControl({ campaignId: id, action: input.data.action, reason: input.data.reason, actor: actorOf(auth.session) })
+    const result = await applyControl({
+      campaignId: id,
+      action: input.data.action,
+      reason: input.data.reason,
+      resumeBehavior: input.data.resumeBehavior,
+      replayPolicy: input.data.replayPolicy,
+      actor: actorOf(auth.session),
+    })
     if (!result.ok) return NextResponse.json(result, { status: result.error === 'campaign_missing' ? 404 : 409 })
     return NextResponse.json(result)
   } catch (e) {

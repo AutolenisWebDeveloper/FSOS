@@ -10,7 +10,7 @@
 import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
 import { canTransition, controlTargetState, type ControlAction } from './states'
-import { planResume, touchKind, TOTAL_TOUCHES, type ResumeBehavior, type ReplayPolicy } from './resume'
+import { planResume, kindForTouch, type ResumeBehavior, type ReplayPolicy } from './resume'
 import { computeTouchPlan } from './schedule'
 import type { Role } from '@/lib/auth/rbac'
 
@@ -140,25 +140,26 @@ async function resumePausedNoCatchup(campaignId: string, replay: ReplayPolicy, n
 
   let resumed = 0
   for (const e of rows ?? []) {
-    const plan = planResume({
-      baselineDate: e.baseline_date as string,
+    const timeline = computeTouchPlan(e.baseline_date as string)
+    const decision = planResume({
+      plan: timeline,
       currentTouchNo: e.current_touch_no as number,
       today,
       replay,
     })
-    for (const touchNo of plan.skippedTouchNos) {
-      await recordSkipped(db, e.id as string, touchNo, nowISO)
+    for (const touchNo of decision.skippedTouchNos) {
+      await recordSkipped(db, e.id as string, kindForTouch(timeline, touchNo) ?? 'email', touchNo, nowISO)
     }
     const patch: Record<string, unknown> = {
       status: 'active',
-      current_touch_no: plan.newCursor,
+      current_touch_no: decision.newCursor,
       resumed_at: nowISO,
       updated_at: nowISO,
     }
-    if (plan.nextTouchAt) patch.next_touch_at = plan.nextTouchAt
-    if (plan.complete) {
+    if (decision.nextTouchAt) patch.next_touch_at = decision.nextTouchAt
+    if (decision.complete) {
       patch.status = 'completed'
-      patch.current_touch_no = TOTAL_TOUCHES
+      patch.current_touch_no = timeline[timeline.length - 1]?.touch_no ?? e.current_touch_no
       patch.completed_at = nowISO
     }
     await db.from('life_campaign_enrollments').update(patch).eq('id', e.id).eq('status', 'paused_by_admin')
@@ -169,13 +170,13 @@ async function resumePausedNoCatchup(campaignId: string, replay: ReplayPolicy, n
 
 /** Record a touch that was skipped on resume (no catch-up). Idempotent on (enrollment_id,
  *  touch_no) — a re-run of resume never double-writes the skip. */
-async function recordSkipped(db: ReturnType<typeof getDb>, enrollmentId: string, touchNo: number, nowISO: string): Promise<void> {
+async function recordSkipped(db: ReturnType<typeof getDb>, enrollmentId: string, kind: string, touchNo: number, nowISO: string): Promise<void> {
   await db
     .from('life_campaign_executions')
     .insert({
       enrollment_id: enrollmentId,
       touch_no: touchNo,
-      kind: touchKind(touchNo) ?? 'email',
+      kind,
       status: 'skipped',
       detail: { reason: 'resume_no_catchup' },
       executed_at: nowISO,

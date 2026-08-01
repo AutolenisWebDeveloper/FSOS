@@ -1,25 +1,33 @@
 // src/lib/life-campaign/resume.ts
-// The Life Conversion Campaign's resume decision, PURE (no DB/clock). This is the correctness
-// core for §4b "no automatic catch-up": when an admin-paused enrollment resumes, touches that came
-// due DURING the pause must be recorded as Skipped and the cadence fast-forwarded to the next
-// FUTURE touch — never fired late, one-per-tick, as a delayed burst. The tick's per-day advance is
-// not a substitute for this: it would still deliver every missed touch, just spread out.
+// The campaign resume decision, PURE (no DB/clock/schedule). This is the correctness core for the
+// "no automatic catch-up" contract (Life §4b / Win-Back §5a): when an admin-paused enrollment
+// resumes, touches that came due DURING the pause must be recorded Skipped and the cadence
+// fast-forwarded to the next FUTURE touch — never fired late, one-per-tick, as a delayed burst.
 //
-// Kept pure (mirrors states.ts/schedule.ts) so the skip/replay/fast-forward behavior is provable
-// offline (tests/life-campaign-resume.test.mjs); controls.ts wraps it with the DB reads/writes.
-import { computeTouchPlan, TOUCH_SCHEDULE } from './schedule'
+// It is SCHEDULE-AGNOSTIC: the caller passes the enrollment's already-dated timeline (`plan`), so
+// the SAME core serves both the Life Conversion (20-touch) and Pipeline Win-Back (28-touch) engines
+// — the reuse Win-Back's engine.ts facade already establishes for the state machine (ADR-031 shared
+// campaign-engine primitives). controls.ts wraps it with the DB reads/writes.
+import { computeTouchPlan } from './schedule'
 
-// Resume strategy vocabulary (§4b). Life owns its own copy (bounded context) even though the
-// string values match the reference Cross-Sell engine.
+// Resume strategy vocabulary (Life §4b / Win-Back §5a). Shared by both engines.
 export type ResumeBehavior = 'all_active' | 'only_admin_paused' | 'restart_day_1' | 'only_new'
 export type ReplayPolicy = 'skip' | 'replay'
 
 /** The daily send instant appended to a due date (matches the tick's 13:00Z touch scheduling). */
 const SEND_TIME = 'T13:00:00.000Z'
 
+/** One dated touch on an enrollment's timeline — the shape both campaigns' computeTouchPlan emits. */
+export interface PlanTouch {
+  touch_no: number
+  kind: string
+  /** ISO date (YYYY-MM-DD) this touch is due. */
+  dueDate: string
+}
+
 export interface ResumePlanInput {
-  /** Enrollment baseline (Day 1), ISO date. */
-  baselineDate: string
+  /** The enrollment's dated timeline (from the campaign's own computeTouchPlan(baseline)). */
+  plan: PlanTouch[]
   /** Cursor — the last touch that fired for this enrollment (0 = nothing sent yet). */
   currentTouchNo: number
   /** Evaluation date, ISO date (nowISO.slice(0,10)). */
@@ -51,8 +59,7 @@ export interface ResumePlan {
  * next tick; subsequent touches then advance normally (the deliberate, non-default catch-up mode).
  */
 export function planResume(input: ResumePlanInput): ResumePlan {
-  const plan = computeTouchPlan(input.baselineDate)
-  const future = plan.filter((p) => p.touch_no > input.currentTouchNo)
+  const future = input.plan.filter((p) => p.touch_no > input.currentTouchNo)
 
   if (input.replay === 'replay') {
     const next = future[0] ?? null
@@ -79,11 +86,11 @@ export function planResume(input: ResumePlanInput): ResumePlan {
   return { skippedTouchNos: skipped, newCursor: cursor, nextTouchAt: null, complete: true }
 }
 
-/** The channel/kind for a given touch number, from the frozen schedule — used to stamp the
- *  skipped execution row so analytics can tell which channel was skipped. */
-export function touchKind(touchNo: number): string | null {
-  return TOUCH_SCHEDULE.find((t) => t.touch_no === touchNo)?.kind ?? null
+/** The channel/kind for a touch number within a plan — used to stamp the skipped execution row. */
+export function kindForTouch(plan: PlanTouch[], touchNo: number): string | null {
+  return plan.find((p) => p.touch_no === touchNo)?.kind ?? null
 }
 
-/** Total touches in the frozen cadence (20). Exposed so the wiring can detect completion. */
-export const TOTAL_TOUCHES = TOUCH_SCHEDULE.length
+// Re-export the Life schedule builder so life-campaign callers keep a single import site. Win-Back
+// passes its OWN computeTouchPlan result into planResume (different cadence, same algorithm).
+export { computeTouchPlan }

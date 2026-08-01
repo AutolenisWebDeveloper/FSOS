@@ -10,6 +10,8 @@
 import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
 import { canTransition, controlTargetState, type ControlAction } from './states'
+import { planResume, touchKind, TOTAL_TOUCHES, type ResumeBehavior, type ReplayPolicy } from './resume'
+import { computeTouchPlan } from './schedule'
 import type { Role } from '@/lib/auth/rbac'
 
 // Who may operate the campaign (§4b). Reuses existing roles; compliance/supervisor get
@@ -24,6 +26,10 @@ export interface ControlResult {
   to?: string
   enrollmentsPaused?: number
   enrollmentsResumed?: number
+  enrollmentsRestarted?: number
+  /** The resume strategy that actually applied (recorded in the audit diff). */
+  resumeBehavior?: ResumeBehavior
+  replayPolicy?: ReplayPolicy
   deadlineExposure?: DeadlineExposure
 }
 
@@ -41,6 +47,10 @@ export async function applyControl(input: {
   action: ControlAction
   actor: string
   reason?: string
+  /** Optional per-action resume strategy override (§4b). Absent → the safe default:
+   *  only_admin_paused + skip (resume in place, no catch-up). */
+  resumeBehavior?: ResumeBehavior
+  replayPolicy?: ReplayPolicy
 }): Promise<ControlResult> {
   const db = getDb()
   const nowISO = new Date().toISOString()
@@ -70,16 +80,23 @@ export async function applyControl(input: {
     }
   }
 
-  // Enable / Resume: return admin-paused enrollments to active. No auto catch-up — the tick
-  // fires at most one due touch per day, so resuming never bursts missed touches (§4b).
+  // Enable / Resume: apply the configured (or overridden) resume strategy. NO automatic catch-up —
+  // touches that came due while paused are recorded Skipped and the cadence fast-forwards to the
+  // next future touch (§4b); only the explicit replay policy re-fires a pending touch. Defaults are
+  // the safe pair: only_admin_paused + skip.
   if (RESUME_ACTIONS.has(input.action)) {
-    const { data: resumed } = await db
-      .from('life_campaign_enrollments')
-      .update({ status: 'active', resumed_at: nowISO, updated_at: nowISO })
-      .eq('campaign_id', input.campaignId)
-      .eq('status', 'paused_by_admin')
-      .select('id')
-    result.enrollmentsResumed = (resumed ?? []).length
+    const behavior: ResumeBehavior = input.resumeBehavior ?? 'only_admin_paused'
+    const replay: ReplayPolicy = input.replayPolicy ?? 'skip'
+    result.resumeBehavior = behavior
+    result.replayPolicy = replay
+    if (behavior === 'only_new') {
+      result.enrollmentsResumed = 0 // leave existing paused; only new enrollments proceed
+    } else if (behavior === 'restart_day_1') {
+      result.enrollmentsRestarted = await restartPausedFromDayOne(input.campaignId, nowISO)
+    } else {
+      // only_admin_paused | all_active — resume the admin-paused enrollments in place.
+      result.enrollmentsResumed = await resumePausedNoCatchup(input.campaignId, replay, nowISO)
+    }
   }
 
   await writeAudit({
@@ -96,8 +113,96 @@ function toExposureDiff(r: ControlResult): Record<string, unknown> {
   const d: Record<string, unknown> = {}
   if (r.enrollmentsPaused != null) d.enrollments_paused = r.enrollmentsPaused
   if (r.enrollmentsResumed != null) d.enrollments_resumed = r.enrollmentsResumed
+  if (r.enrollmentsRestarted != null) d.enrollments_restarted = r.enrollmentsRestarted
+  // Which resume strategy actually ran — explains in the audit trail why touches were skipped vs replayed.
+  if (r.resumeBehavior) d.resume_behavior = r.resumeBehavior
+  if (r.replayPolicy) d.replay_policy = r.replayPolicy
   if (r.deadlineExposure) d.deadline_exposure = r.deadlineExposure
   return d
+}
+
+/**
+ * Resume admin-paused enrollments WITHOUT catch-up. For each, the pure planResume decides which
+ * past-due touches to record Skipped and where the cadence resumes; we persist the skipped
+ * execution rows (idempotent on (enrollment_id, touch_no)) and fast-forward the enrollment to the
+ * next future touch — or complete it if none remains. The status guard (`.eq('status',
+ * 'paused_by_admin')`) keeps a concurrent control from double-resuming a row.
+ */
+async function resumePausedNoCatchup(campaignId: string, replay: ReplayPolicy, nowISO: string): Promise<number> {
+  const db = getDb()
+  const today = nowISO.slice(0, 10)
+  const { data: rows } = await db
+    .from('life_campaign_enrollments')
+    .select('id, baseline_date, current_touch_no')
+    .eq('campaign_id', campaignId)
+    .eq('status', 'paused_by_admin')
+    .limit(5000)
+
+  let resumed = 0
+  for (const e of rows ?? []) {
+    const plan = planResume({
+      baselineDate: e.baseline_date as string,
+      currentTouchNo: e.current_touch_no as number,
+      today,
+      replay,
+    })
+    for (const touchNo of plan.skippedTouchNos) {
+      await recordSkipped(db, e.id as string, touchNo, nowISO)
+    }
+    const patch: Record<string, unknown> = {
+      status: 'active',
+      current_touch_no: plan.newCursor,
+      resumed_at: nowISO,
+      updated_at: nowISO,
+    }
+    if (plan.nextTouchAt) patch.next_touch_at = plan.nextTouchAt
+    if (plan.complete) {
+      patch.status = 'completed'
+      patch.current_touch_no = TOTAL_TOUCHES
+      patch.completed_at = nowISO
+    }
+    await db.from('life_campaign_enrollments').update(patch).eq('id', e.id).eq('status', 'paused_by_admin')
+    resumed++
+  }
+  return resumed
+}
+
+/** Record a touch that was skipped on resume (no catch-up). Idempotent on (enrollment_id,
+ *  touch_no) — a re-run of resume never double-writes the skip. */
+async function recordSkipped(db: ReturnType<typeof getDb>, enrollmentId: string, touchNo: number, nowISO: string): Promise<void> {
+  await db
+    .from('life_campaign_executions')
+    .insert({
+      enrollment_id: enrollmentId,
+      touch_no: touchNo,
+      kind: touchKind(touchNo) ?? 'email',
+      status: 'skipped',
+      detail: { reason: 'resume_no_catchup' },
+      executed_at: nowISO,
+    })
+    .then(() => undefined, () => undefined)
+}
+
+/** Restart admin-paused enrollments from Day 1 (§4b resume option): reset the baseline to today
+ *  and re-arm the first touch. Existing executions stay as immutable history. */
+async function restartPausedFromDayOne(campaignId: string, nowISO: string): Promise<number> {
+  const db = getDb()
+  const baseline = nowISO.slice(0, 10)
+  const firstDue = computeTouchPlan(baseline)[0].dueDate
+  const { data: rows } = await db
+    .from('life_campaign_enrollments')
+    .update({
+      status: 'active',
+      baseline_date: baseline,
+      current_touch_no: 0,
+      next_touch_at: `${firstDue}T13:00:00.000Z`,
+      resumed_at: nowISO,
+      updated_at: nowISO,
+    })
+    .eq('campaign_id', campaignId)
+    .eq('status', 'paused_by_admin')
+    .select('id')
+  return (rows ?? []).length
 }
 
 /** Count active enrollments whose verified deadline lands within `horizonDays` — the outage

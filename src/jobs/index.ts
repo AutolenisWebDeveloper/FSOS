@@ -54,6 +54,9 @@ export const JOBS: Record<string, JobHandler> = {
   // Pipeline Win-Back Campaign scheduler — daily enrollment sweep + advances the multi-channel
   // 24-touch timeline, rechecking eligibility before every touch, all sends through the gate.
   'pipeline-winback-tick': async () => (await h()).pipelineWinbackTick(),
+  // Pipeline Win-Back retry/dead-letter sweep (§20 observability parity). Hourly; fails soft until
+  // migration 088 lands.
+  'pipeline-winback-retry': async () => (await h()).pipelineWinbackRetry(),
   // Cross-Sell Life Campaign — daily eligibility+enrollment sweep, the 35-touch/180-day scheduler
   // tick, and the retry/dead-letter sweep. Every send routes through the gate; ticks are idempotent.
   'cross-sell-life-enroll': async () => (await h()).crossSellLifeEnroll(),

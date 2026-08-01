@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { load } from '@/lib/data/query'
 import { loadCampaignDetail } from '@/lib/life-campaign/detail'
 import { campaignAnalytics } from '@/lib/life-campaign/analytics'
-import { CampaignControls } from '../campaign-controls'
+import { CampaignControls } from '@/components/app/CampaignEngineControls'
 
 export const dynamic = 'force-dynamic'
 
@@ -65,7 +65,7 @@ export default async function LifeConversionDetailPage(props: { params: Promise<
       <div className="space-y-6">
         {/* Operational controls (§4b) */}
         <Section title="Operational controls" hint="Enable, pause, resume, disable, emergency-stop, archive. Restricted to ops/admin; every action is audit-logged.">
-          <CampaignControls campaignId={s.id} status={s.status} />
+          <CampaignControls campaignId={s.id} status={s.status} endpoint="/api/life-campaign" />
           {!s.simulated_at && s.status !== 'active' && (
             <p className="mt-3 text-xs text-muted-foreground">A read-only simulation is recommended before activation (ADR-021).</p>
           )}
@@ -234,7 +234,7 @@ function MiniPanel({ title, children }: { title: string; children: React.ReactNo
 
 function Cell({ label, value, attention }: { label: string; value: number; attention?: boolean }) {
   return (
-    <div className={`rounded-lg border p-3 ${attention && value > 0 ? 'border-amber-400/60' : ''}`}>
+    <div className={`rounded-lg border p-3 ${attention && value > 0 ? 'border-status-pending/60' : ''}`}>
       <p className="text-2xl font-semibold tabular-nums">{value}</p>
       <p className="mt-1 text-xs text-muted-foreground">{label}</p>
     </div>

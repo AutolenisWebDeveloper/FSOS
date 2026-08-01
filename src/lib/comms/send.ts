@@ -21,7 +21,8 @@ import type { GateResult } from './gate'
 import { getOrCreateConversation, touchConversation, normalizeContact, type Channel } from './conversations'
 import { loadHoursPolicy, isWithinOperatingHours } from './hours'
 import { recordMessageEvent } from './events'
-import { personalize, type RecipientContext } from './personalize'
+import { personalize, unresolvedBlockingTokens, type RecipientContext } from './personalize'
+import { advisorMergeContext } from '@/lib/site'
 import { emailUnsubscribeUrl } from './unsubscribe'
 import { smsLiveFor } from './a2p'
 import { instrumentEmailHtml } from './tracking'
@@ -390,10 +391,25 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
   // shared footer's {{unsubscribe_url}} token resolves to a working, recipient-specific
   // opt-out link (the enforced DNC-store suppression endpoint). SMS carries the opt-out
   // via the TRAIGA footer instead, so this is email-only.
-  const recipientCtx: RecipientContext =
-    ctx.channel === 'email'
-      ? { ...(ctx.recipientContext ?? {}), unsubscribe_url: emailUnsubscribeUrl(to) }
-      : (ctx.recipientContext ?? {})
+  // Advisor + agency identity and the absolute scheduling link are single-FSA constants,
+  // injected here as CALLER-OVERRIDABLE defaults (§17): every campaign/booking send inherits
+  // correct identity + a working booking link, while a caller that supplies its own value wins.
+  // The per-recipient unsubscribe_url is FORCED for email (security-critical, never overridable).
+  const recipientCtx: RecipientContext = {
+    ...advisorMergeContext(),
+    ...(ctx.recipientContext ?? {}),
+    ...(ctx.channel === 'email' ? { unsubscribe_url: emailUnsubscribeUrl(to) } : {}),
+  }
+  // Fail-closed personalization (§13): any BLOCKING-tier merge token the template references but
+  // the context cannot resolve (missing identity, a relative/absent opt-out or manage link, a
+  // blank appointment time) hard-blocks the send at the gate — never shipped with an empty
+  // placeholder. Checked over BOTH the HTML body and the plaintext part.
+  const unresolvedTokens = [
+    ...new Set([
+      ...unresolvedBlockingTokens(ctx.body, recipientCtx),
+      ...(ctx.bodyText ? unresolvedBlockingTokens(ctx.bodyText, recipientCtx) : []),
+    ]),
+  ]
   const personalized = personalize(ctx.body, recipientCtx, { escapeHtml: ctx.channel === 'email' })
   // Slice 9B — the stored plaintext part, personalized the same way (email multipart).
   // Plaintext is never HTML, so values are substituted verbatim (no escaping).
@@ -603,6 +619,12 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
       delegationReason,
       onDNC: dnc,
       usesApprovedTemplateOrPolicy: approved,
+      // 4b — fail-closed personalization: a required merge token that did not resolve blocks +
+      // escalates (never ship an empty appointment time / opt-out link / advisor identity).
+      personalizationResolved: unresolvedTokens.length === 0,
+      personalizationReason: unresolvedTokens.length
+        ? `Unresolved required merge tokens: ${unresolvedTokens.join(', ')}`
+        : undefined,
       // Firewall (§4.1): caller flag OR the server-resolved conversation/household flag.
       isSecurity: ctx.isSecurity === true || convIsSecurity,
       // A2P 10DLC (§12): SMS holds until the campaign is approved; email is never gated.

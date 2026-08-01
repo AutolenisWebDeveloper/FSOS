@@ -12,7 +12,9 @@ import { getDb } from '@/lib/supabase/client'
 import { evaluateGate } from './gate'
 import { resolveAudience, templateBody, campaignDispatchContext } from './campaign'
 import { isTemplateApproved } from './send'
-import { personalize } from './personalize'
+import { personalize, unresolvedBlockingTokens } from './personalize'
+import { advisorMergeContext } from '@/lib/site'
+import { emailUnsubscribeUrl } from './unsubscribe'
 import { loadHoursPolicy, isWithinOperatingHours } from './hours'
 import { conversationIsSecurity, normalizeContact } from './conversations'
 import { resolveDelegation } from './ownership'
@@ -102,7 +104,16 @@ export async function simulateCampaign(campaignId: string, sampleLimit = 200): P
   for (const r of audience) {
     audienceCount++
     const to = normalizeContact(channel, channel === 'email' ? r.email ?? '' : r.phone ?? '')
-    const rendered = personalize(body, { full_name: r.full_name })
+    // Mirror send.ts EXACTLY (ADR-021 — the dry-run must match the real send): inject the
+    // caller-overridable advisor/agency identity + absolute scheduling link, force the email
+    // unsubscribe link, and fail closed on any unresolved blocking-tier token.
+    const recipientCtx = {
+      ...advisorMergeContext(),
+      full_name: r.full_name,
+      ...(channel === 'email' ? { unsubscribe_url: emailUnsubscribeUrl(to) } : {}),
+    }
+    const unresolvedTokens = unresolvedBlockingTokens(body, recipientCtx)
+    const rendered = personalize(body, recipientCtx, { escapeHtml: channel === 'email' })
     const [channelConsent, dnc, isSecurity] = await Promise.all([
       memberConsentGranted(r.member_id, channel),
       onDnc(to, channel),
@@ -160,6 +171,8 @@ export async function simulateCampaign(campaignId: string, sampleLimit = 200): P
       withinBusinessHours,
       onDNC: dnc,
       usesApprovedTemplateOrPolicy: templateApproved,
+      personalizationResolved: unresolvedTokens.length === 0,
+      personalizationReason: unresolvedTokens.length ? `Unresolved required merge tokens: ${unresolvedTokens.join(', ')}` : undefined,
       isSecurity,
       delegationValid,
       delegationReason,
@@ -187,6 +200,7 @@ export async function simulateCampaign(campaignId: string, sampleLimit = 200): P
         ...(campCtx.delegation ? { delegation: delegationValid ? 'pass (active, in-scope)' : `blocked: ${delegationReason ?? 'invalid delegation'}` } : {}),
         dnc: dnc ? 'on DNC' : 'pass',
         approved_template: templateApproved ? 'pass' : 'template not approved',
+        ...(unresolvedTokens.length ? { personalization: `blocked: unresolved ${unresolvedTokens.join(', ')}` } : {}),
         is_security: isSecurity ? 'securities-flagged (excluded)' : 'pass',
         ...(declaredClaims.length > 0 ? { data_confidence: dataConfidenceDecision } : {}),
         ...(purpose

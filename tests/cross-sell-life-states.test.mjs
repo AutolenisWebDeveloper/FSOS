@@ -23,6 +23,7 @@ const {
   canTransition,
   canDispatch,
   controlTargetState,
+  interpretControlClaim,
   ENROLLMENT_STATES,
   enrollmentCanReceiveTouch,
   isTerminal,
@@ -78,6 +79,23 @@ t('controlTargetState maps control actions to their target state', () => {
   assert.equal(controlTargetState('disable'), 'disabled')
   assert.equal(controlTargetState('emergency_stop'), 'emergency_stopped')
   assert.equal(controlTargetState('archive'), 'archived')
+})
+
+console.log('Optimistic-concurrency control claim (D6 — no double-commit TOCTOU)')
+
+t('a winning compare-and-set claim (1 row) succeeds', () => {
+  assert.deepEqual(interpretControlClaim('active', 'paused', 1), { ok: true, from: 'active', to: 'paused' })
+})
+
+t('a losing claim (0 rows — concurrent control already moved it) is stale_state, NOT success', () => {
+  // The second of two concurrent authorized pauses: its `update … WHERE status='active'` changes
+  // 0 rows because the first pause already flipped the status. It must return stale_state so the
+  // caller does NOT re-pause enrollments or write a second, misleading audit row.
+  assert.deepEqual(interpretControlClaim('active', 'paused', 0), { ok: false, error: 'stale_state', from: 'active', to: 'paused' })
+})
+
+t('an invalid transition is rejected before any claim is credited', () => {
+  assert.deepEqual(interpretControlClaim('active', 'draft', 1), { ok: false, error: 'invalid_transition', from: 'active', to: 'draft' })
 })
 
 console.log('Enrollment machine (§15)')

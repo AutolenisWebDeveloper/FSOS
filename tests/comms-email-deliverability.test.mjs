@@ -17,7 +17,7 @@ execSync(
 )
 const require = createRequire(import.meta.url)
 const core = require(join(out, 'lib/comms/unsubscribe-core.js'))
-const { personalize } = require(join(out, 'lib/comms/personalize.js'))
+const { personalize, unresolvedBlockingTokens } = require(join(out, 'lib/comms/personalize.js'))
 
 let passed = 0
 const t = (name, fn) => { fn(); passed++; console.log('  ✓', name) }
@@ -89,9 +89,14 @@ t('resolves {{unsubscribe_url}} from the recipient context', () => {
   assert.equal(personalize(body, { unsubscribe_url: url }), `Manage preferences: ${url}`)
 })
 
-t('falls back to /unsubscribe when unset (never leaks a raw token)', () => {
+t('unset {{unsubscribe_url}} FAILS CLOSED — no relative fallback, never a raw token', () => {
+  // Fail-closed contract: unsubscribe_url is a blocking-tier token. The send path INJECTS the
+  // absolute, per-recipient link at send time (sendThroughGate → emailUnsubscribeUrl); when a
+  // caller leaves it unset the personalizer no longer emits a CAN-SPAM-exposing relative
+  // "/unsubscribe" — it renders empty and the token is flagged unresolved so the send blocks.
   const body = '{{unsubscribe_url}}'
-  assert.equal(personalize(body, {}), '/unsubscribe')
+  assert.equal(personalize(body, {}), '')
+  assert.deepEqual(unresolvedBlockingTokens(body, {}), ['unsubscribe_url'])
 })
 
 t('email channel HTML-escapes other merge values but the unsubscribe URL is a plain href', () => {

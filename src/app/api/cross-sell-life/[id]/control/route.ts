@@ -3,16 +3,10 @@ import { z } from 'zod'
 import { readJson, configErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { applyControl, CONTROL_ROLES } from '@/lib/cross-sell-life/controls'
+import { ControlInputSchema } from '@/lib/cross-sell-life/control-contract'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
-
-const ControlSchema = z.object({
-  action: z.enum(['submit', 'enable', 'pause', 'resume', 'disable', 'emergency_stop', 'archive']),
-  reason: z.string().trim().max(300).optional(),
-  resumeBehavior: z.enum(['all_active', 'only_admin_paused', 'restart_day_1', 'only_new']).optional(),
-  replayPolicy: z.enum(['skip', 'replay']).optional(),
-})
 
 // Operational controls (§ Operational Controls): submit / enable / pause / resume / disable /
 // emergency-stop / archive. Restricted to ops/admin/super/fsa via the existing RBAC role-
@@ -30,7 +24,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
 
   const parsed = await readJson(req)
   if ('error' in parsed) return parsed.error
-  const input = ControlSchema.safeParse(parsed.data)
+  const input = ControlInputSchema.safeParse(parsed.data)
   if (!input.success) return NextResponse.json({ error: 'Invalid input', details: input.error.flatten() }, { status: 400 })
 
   try {

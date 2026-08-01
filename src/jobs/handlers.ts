@@ -351,6 +351,14 @@ export async function lifeConversionTick(): Promise<JobResult> {
   return { ok: r.ok, handled: r.handled, note: r.note }
 }
 
+// life-conversion-retry — retry/dead-letter sweep for stuck Life Conversion executions (§20,
+// observability parity D9). Fails soft before migration 087 is applied (no-op, never a cron error).
+export async function lifeConversionRetry(): Promise<JobResult> {
+  const { runRetrySweep } = await import('@/lib/life-campaign/jobs')
+  const r = await runRetrySweep()
+  return { ok: r.ok, handled: r.retried + r.deadLettered, note: r.note }
+}
+
 // pipeline-winback-tick — advance the Pipeline Win-Back Campaign (§5/§5a/§7). Daily enrollment
 // sweep from v_pipeline_winback_due + multi-channel timeline: at most one due touch per
 // enrollment per run, eligibility rechecked before every touch (advisor-ownership precedence),
@@ -359,6 +367,14 @@ export async function pipelineWinbackTick(): Promise<JobResult> {
   const { pipelineWinbackTick } = await import('@/lib/pipeline-winback/tick')
   const r = await pipelineWinbackTick()
   return { ok: r.ok, handled: r.handled, note: r.note }
+}
+
+// pipeline-winback-retry — retry/dead-letter sweep for stuck Pipeline Win-Back executions (§20,
+// observability parity C1/D9). Fails soft before migration 088 is applied (no-op, never a cron error).
+export async function pipelineWinbackRetry(): Promise<JobResult> {
+  const { runRetrySweep } = await import('@/lib/pipeline-winback/jobs')
+  const r = await runRetrySweep()
+  return { ok: r.ok, handled: r.retried + r.deadLettered, note: r.note }
 }
 
 // cross-sell-life-enroll — daily eligibility + enrollment sweep for the Cross-Sell Life Campaign

@@ -19,6 +19,7 @@ export type GateStep =
   | 'delegation' // 2c — FSA↔agency-owner on-behalf-of authority must be ACTIVE + in-scope
   | 'dnc' // 3
   | 'approved_template' // 4
+  | 'personalization' // 4b — a required (blocking-tier) merge token did not resolve
   | 'recommendation' // 5
   | 'is_security' // 6
   | 'data_confidence' // 6b — specific claim on unverified/conflicting data (§13)
@@ -76,6 +77,16 @@ export interface GateInput {
   onDNC: boolean
   /** 4 — approved template or approved AI policy. */
   usesApprovedTemplateOrPolicy: boolean
+  /**
+   * 4b — every BLOCKING-tier merge token the body references resolved (advisor/agency identity,
+   * the unsubscribe/scheduling links, and booking specifics). Defaults to TRUE so existing
+   * callers are unaffected. A false is a HARD block that ESCALATES: a message missing required
+   * identity/opt-out/booking content is never shipped with an empty placeholder — it is routed
+   * to the human FSA. Computed at send time from personalize.unresolvedBlockingTokens (§13).
+   */
+  personalizationResolved?: boolean
+  /** 4b — which required merge tokens did not resolve (for the escalation + audit). */
+  personalizationReason?: string
   /** 6 — record/recipient securities-flagged. */
   isSecurity: boolean
   /**
@@ -118,6 +129,7 @@ const BLOCK: Record<GateStep, string> = {
   sms_live: 'SMS is staged pending A2P 10DLC approval — held until the campaign is approved.',
   dnc: 'Recipient is on the do-not-contact list.',
   approved_template: 'Message does not use an approved template or AI policy.',
+  personalization: 'A required merge token did not resolve — held for the FSA to complete.',
   recommendation: 'Message contains individualized recommendation / call-to-action language.',
   is_security: 'Securities-flagged record — excluded from automation; route to FFS-supervised handling.',
   data_confidence: 'Specific claim rests on unverified/conflicting data — excluded; verification task raised.',
@@ -155,6 +167,11 @@ export function evaluateGate(input: GateInput): GateResult {
   if (input.delegationValid === false) return blocked('delegation', true, input.delegationReason)
   if (input.onDNC) return blocked('dnc')
   if (!input.usesApprovedTemplateOrPolicy) return blocked('approved_template')
+  // 4b — content integrity: a required (blocking-tier) merge token that did not resolve means the
+  // body would ship with an empty placeholder (a blank appointment time, a missing opt-out or
+  // manage link, absent advisor/agency identity). Escalating hard block — never sent, routed to
+  // the FSA to complete (§13; personalize.unresolvedBlockingTokens is the send-time source).
+  if (input.personalizationResolved === false) return blocked('personalization', true, input.personalizationReason)
   if (containsRecommendationLanguage(input.draft)) return blocked('recommendation')
   if (input.isSecurity) return blocked('is_security')
   // 6b — a specific claim on unverified/conflicting data (§13). Escalates: exclude the

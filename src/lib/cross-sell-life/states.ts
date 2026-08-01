@@ -58,6 +58,25 @@ export function canTransition(from: string, to: string): boolean {
   return CAMPAIGN_TRANSITIONS[from as CampaignState].includes(to as CampaignState)
 }
 
+export type ControlClaim =
+  | { ok: true; from: string; to: string }
+  | { ok: false; error: 'invalid_transition' | 'stale_state'; from: string; to: string }
+
+/**
+ * PURE decision for an OPTIMISTIC-CONCURRENCY campaign control transition. A control writes the
+ * new status with a compare-and-set (`update … WHERE id=? AND status=from`); `claimedRows` is how
+ * many rows that update actually changed. 0 means a CONCURRENT control already moved the campaign
+ * out of `from` since we read it (TOCTOU) — the no-op update must NOT be treated as success, or
+ * two authorized POSTs both "succeed", double-pause enrollments, and write a misleading audit
+ * pair. This maps the (transition-validity, claim) pair to the single authoritative outcome so the
+ * DB wiring and the test agree.
+ */
+export function interpretControlClaim(from: string, to: string, claimedRows: number): ControlClaim {
+  if (!canTransition(from, to)) return { ok: false, error: 'invalid_transition', from, to }
+  if (claimedRows < 1) return { ok: false, error: 'stale_state', from, to }
+  return { ok: true, from, to }
+}
+
 /** The target state a control action drives the campaign toward. */
 export function controlTargetState(action: ControlAction): CampaignState {
   switch (action) {

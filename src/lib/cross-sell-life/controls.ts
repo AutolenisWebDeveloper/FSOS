@@ -9,14 +9,19 @@
 // generation, and enrollment in one place (the kill switch, §18).
 import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
-import { canTransition, controlTargetState, type ControlAction } from './states'
+import { canTransition, controlTargetState, interpretControlClaim, type ControlAction } from './states'
 import { computeTouchPlan, deferToBusinessDay } from './schedule'
+import { CONTROL_ROLE_NAMES, type ResumeBehaviorName, type ReplayPolicyName } from './control-contract'
 import type { Role } from '@/lib/auth/rbac'
 
-export const CONTROL_ROLES: Role[] = ['admin', 'ops', 'super_admin', 'fsa']
+// Derived from the single source of truth in ./control-contract (§6). The pure contract keeps the
+// names as strings so it stays framework-free + offline-testable; here we bind them to the RBAC
+// Role[] the typed requirePermission() gate expects.
+export const CONTROL_ROLES: Role[] = [...CONTROL_ROLE_NAMES] as Role[]
 
-export type ResumeBehavior = 'all_active' | 'only_admin_paused' | 'restart_day_1' | 'only_new'
-export type ReplayPolicy = 'skip' | 'replay'
+// Re-exported from the pure contract so the resume-strategy vocabulary has one definition (§6).
+export type ResumeBehavior = ResumeBehaviorName
+export type ReplayPolicy = ReplayPolicyName
 
 export interface ControlResult {
   ok: boolean
@@ -61,12 +66,27 @@ export async function applyControl(input: {
     patch.emergency_stopped_by = input.actor
   }
   if (input.action === 'archive') patch.archived_at = nowISO
-  await db.from('xsell_life_campaigns').update(patch).eq('id', input.campaignId)
+  // Optimistic-concurrency compare-and-set: only flip the status if it is STILL `from` (D6/TOCTOU).
+  // Two concurrent authorized POSTs both pass canTransition above; the predicate + rows-affected
+  // check below lets exactly ONE win — the loser sees 0 rows and returns stale_state (→ 409) instead
+  // of a second no-op "success" that would double-pause enrollments and write a misleading audit pair.
+  const { data: claimed } = await db
+    .from('xsell_life_campaigns')
+    .update(patch)
+    .eq('id', input.campaignId)
+    .eq('status', from)
+    .select('id')
+  const claim = interpretControlClaim(from, to, (claimed ?? []).length)
+  if (!claim.ok) return { ok: false, error: claim.error, from, to }
 
   const result: ControlResult = { ok: true, from, to }
+  // Which resume strategy actually applied — recorded in the audit diff (D11). Null for non-resume.
+  let appliedResumeBehavior: ResumeBehavior | null = null
+  let appliedReplayPolicy: ReplayPolicy | null = null
 
   // Pause/Disable/Emergency-Stop: pause running enrollments distinctly as admin-paused so the
-  // configurable resume behavior can tell them apart from reply-pauses (§ Resume Behavior).
+  // configurable resume behavior can tell them apart from reply-pauses (§ Resume Behavior). Runs
+  // only for the WINNING claim (the compare-and-set committed above).
   if (PAUSE_ACTIONS.has(input.action)) {
     const { data: paused } = await db
       .from('xsell_life_campaign_enrollments')
@@ -82,6 +102,8 @@ export async function applyControl(input: {
   if (RESUME_ACTIONS.has(input.action)) {
     const behavior = (input.resumeBehavior ?? (campaign.resume_behavior as ResumeBehavior)) ?? 'only_admin_paused'
     const replay = (input.replayPolicy ?? (campaign.replay_policy as ReplayPolicy)) ?? 'skip'
+    appliedResumeBehavior = behavior
+    appliedReplayPolicy = replay
     if (behavior === 'restart_day_1') {
       result.enrollmentsRestarted = await restartEnrollments(input.campaignId, campaign, nowISO)
     } else if (behavior === 'only_new') {
@@ -101,6 +123,10 @@ export async function applyControl(input: {
       prev: from,
       next: to,
       reason: input.reason ?? null,
+      // Applied resume strategy (D11) — the campaign chose a behavior/replay policy on resume;
+      // record which one actually ran so the audit trail explains why touches were skipped vs replayed.
+      resume_behavior: appliedResumeBehavior,
+      replay_policy: appliedReplayPolicy,
       enrollments_paused: result.enrollmentsPaused ?? null,
       enrollments_resumed: result.enrollmentsResumed ?? null,
       enrollments_restarted: result.enrollmentsRestarted ?? null,

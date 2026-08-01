@@ -19,6 +19,11 @@ export const BUSINESS = {
   brand: 'Markist Athelus — Farmers Insurance',
   /** Short brand used in the nav lockup. */
   short: 'Markist Athelus',
+  /**
+   * Registered agency display name (the "{{agency_name}}" merge token). Derived from
+   * LEGAL_ENTITY — the Twilio-vetted registered entity, not invented data (§4.3).
+   */
+  agency: 'Markist Athelus Farmers Agency',
 } as const
 
 /** Verified business contact — Name / Address / Phone (NAP). */
@@ -102,6 +107,32 @@ export function dashboardUrl(): string {
 /** The booking URL — the native FSOS scheduler (Calendly replacement, ADR-027). */
 export function bookingUrl(): string {
   return '/schedule'
+}
+
+/**
+ * The advisor + agency identity merge tokens shared by every outbound message (§13/§17).
+ * These are single-FSA constants, so the send path (sendThroughGate) injects them as
+ * CALLER-OVERRIDABLE defaults — a campaign or booking send inherits correct advisor identity,
+ * agency identity, and an ABSOLUTE scheduling link without each call site re-specifying them,
+ * while a caller that needs a different value (e.g. an on-behalf-of send naming a partner
+ * agency) still wins by passing its own recipientContext. All are BLOCKING-tier tokens: if one
+ * somehow fails to resolve, the send is blocked rather than shipping empty identity.
+ */
+export function advisorMergeContext(): {
+  fsa_name: string
+  agency_name: string
+  advisor_phone: string
+  advisor_email: string
+  scheduling_link: string
+} {
+  return {
+    fsa_name: BUSINESS.agent,
+    agency_name: BUSINESS.agency,
+    advisor_phone: CONTACT.phoneDisplay,
+    advisor_email: CONTACT.email,
+    // Absolute booking link — the relative bookingUrl() ('/schedule') breaks in a delivered email.
+    scheduling_link: `${siteUrl()}/schedule`,
+  }
 }
 
 /** Canonical site origin for metadata / structured data. */

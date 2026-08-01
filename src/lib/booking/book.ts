@@ -197,13 +197,22 @@ export async function bookAppointment(input: BookInput, now: string): Promise<Bo
     }),
   ])
 
-  // Booking a review exits any open Cross-Sell Life enrollment for this contact's household
-  // (spec §11 — campaign outcome "Appointment Booked"). Best-effort; never fails the booking.
+  // Booking a review exits any live campaign enrollment for this contact's household (spec §11 /
+  // §4b — campaign outcome "Appointment Booked"): the client has engaged and the advisor now owns
+  // the relationship, so both the Cross-Sell Life and Life Conversion cadences must stop.
+  // Best-effort; a failure here never fails the booking (the appointment already exists).
   try {
     const { data: c } = await db.from('contacts').select('household_id').eq('id', contactId).maybeSingle()
     if (c?.household_id) {
-      const { exitOnAppointment } = await import('@/lib/cross-sell-life/inbound')
-      await exitOnAppointment({ householdId: c.household_id as string, actor: 'booking' })
+      const householdId = c.household_id as string
+      const [xsell, life] = await Promise.all([
+        import('@/lib/cross-sell-life/inbound'),
+        import('@/lib/life-campaign/inbound'),
+      ])
+      await Promise.allSettled([
+        xsell.exitOnAppointment({ householdId, actor: 'booking' }),
+        life.exitOnAppointment({ householdId, actor: 'booking' }),
+      ])
     }
   } catch {
     /* best-effort — the appointment already exists */

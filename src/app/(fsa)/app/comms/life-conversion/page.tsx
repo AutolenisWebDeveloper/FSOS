@@ -5,7 +5,7 @@ import { Card } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
 import { campaignAnalytics } from '@/lib/life-campaign/analytics'
-import { CampaignControls } from './campaign-controls'
+import { CampaignControls } from '@/components/app/CampaignEngineControls'
 
 export const dynamic = 'force-dynamic'
 
@@ -104,7 +104,7 @@ export default async function LifeConversionPage() {
 
         <Card className="p-5">
           <h2 className="mb-3 text-sm font-semibold">Operational controls</h2>
-          <CampaignControls campaignId={campaign.id} status={campaign.status} />
+          <CampaignControls campaignId={campaign.id} status={campaign.status} endpoint="/api/life-campaign" />
           {!campaign.simulated_at && campaign.status !== 'active' && (
             <p className="mt-3 text-xs text-muted-foreground">A read-only simulation is recommended before activation (ADR-021).</p>
           )}
@@ -174,7 +174,7 @@ export default async function LifeConversionPage() {
 
 function PhaseCell({ label, value, tone }: { label: string; value: number; tone?: 'attention' }) {
   return (
-    <div className={`rounded-lg border p-3 ${tone === 'attention' && value > 0 ? 'border-amber-400/60' : ''}`}>
+    <div className={`rounded-lg border p-3 ${tone === 'attention' && value > 0 ? 'border-status-pending/60' : ''}`}>
       <p className="text-2xl font-semibold tabular-nums">{value}</p>
       <p className="mt-1 text-xs text-muted-foreground">{label}</p>
     </div>

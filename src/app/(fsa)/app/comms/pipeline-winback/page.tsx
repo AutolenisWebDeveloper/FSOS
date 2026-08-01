@@ -8,7 +8,7 @@ import { campaignAnalytics } from '@/lib/pipeline-winback/analytics'
 import { loadCampaignDetail } from '@/lib/pipeline-winback/detail'
 import { PLAYBOOKS, ADVISOR_SCRIPTS, EVENT_DRIVEN_SMS } from '@/lib/pipeline-winback/playbooks'
 import { WINBACK_CANDIDATE_STAGES } from '@/lib/pipeline-winback/eligibility'
-import { CampaignControls } from './campaign-controls'
+import { CampaignControls } from '@/components/app/CampaignEngineControls'
 
 export const dynamic = 'force-dynamic'
 
@@ -133,9 +133,9 @@ export default async function PipelineWinbackPage() {
       {/* ── Operational controls (§5a) ──────────────────────── */}
       <Section title="Operational controls" description="Enable, pause, resume, disable, emergency-stop, or archive. Only an Active campaign dispatches; every action is RBAC-guarded and audited.">
         <Card className="p-5">
-          <CampaignControls campaignId={config.id} status={config.status} />
+          <CampaignControls campaignId={config.id} status={config.status} endpoint="/api/pipeline-winback" />
           {unapprovedCount > 0 && (
-            <p className="mt-3 text-xs text-amber-700 dark:text-amber-400">
+            <p className="mt-3 text-xs text-status-pending">
               {unapprovedCount} of {assets.length} assets are not yet approved — the campaign cannot dispatch them until each is approved in the Templates library (ADR-023).
             </p>
           )}
@@ -390,7 +390,7 @@ function AssetGroup({ title, items }: { title: string; items: { id: string; name
 
 function MiniCell({ label, value, tone }: { label: string; value: number; tone?: 'attention' }) {
   return (
-    <div className={`rounded-lg border p-3 ${tone === 'attention' && value > 0 ? 'border-amber-400/60' : ''}`}>
+    <div className={`rounded-lg border p-3 ${tone === 'attention' && value > 0 ? 'border-status-pending/60' : ''}`}>
       <p className="text-2xl font-semibold tabular-nums">{value}</p>
       <p className="mt-1 text-xs text-muted-foreground">{label}</p>
     </div>

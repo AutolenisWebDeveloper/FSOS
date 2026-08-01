@@ -17,7 +17,7 @@ execSync(
   { stdio: 'inherit' },
 )
 const require = createRequire(import.meta.url)
-const { personalize } = require(join(out, 'personalize.js'))
+const { personalize, unresolvedBlockingTokens } = require(join(out, 'personalize.js'))
 
 let passed = 0
 const t = (name, fn) => { fn(); passed++; console.log('  ✓', name) }
@@ -38,14 +38,25 @@ t('resolves the campaign contact tokens from context', () => {
   )
 })
 
-t('falls back to a safe neutral for a missing scheduling link (never a raw token)', () => {
-  const out = personalize('Schedule: {{scheduling_link}}', {})
-  assert.ok(!out.includes('{{'), 'raw token leaked')
-  assert.ok(out.length > 'Schedule: '.length, 'expected a non-empty fallback link')
+t('a missing scheduling link FAILS CLOSED (blocking token, never a raw token or relative link)', () => {
+  // Fail-closed contract: scheduling_link is a blocking-tier token. When unresolved it is
+  // FLAGGED (so the send path blocks + escalates) and never rendered as a raw {{token}} or a
+  // relative "/schedule" link (relative links break in a delivered email).
+  assert.deepEqual(unresolvedBlockingTokens('Schedule: {{scheduling_link}}', {}), ['scheduling_link'])
+  assert.ok(!personalize('Schedule: {{scheduling_link}}', {}).includes('{{'), 'raw token leaked')
 })
 
-t('missing advisor phone/email resolve to empty, not a raw token', () => {
-  assert.equal(personalize('Call {{advisor_phone}} or {{advisor_email}}', {}), 'Call  or ')
+t('a RELATIVE scheduling link is unresolved (absolute-URL enforcement)', () => {
+  assert.deepEqual(unresolvedBlockingTokens('{{scheduling_link}}', { scheduling_link: '/schedule' }), ['scheduling_link'])
+  assert.deepEqual(unresolvedBlockingTokens('{{scheduling_link}}', { scheduling_link: 'https://x/y' }), [])
+})
+
+t('missing advisor identity FAILS CLOSED (blocking tokens flagged, never a raw token)', () => {
+  const missing = unresolvedBlockingTokens('Call {{advisor_phone}} or {{advisor_email}} — {{fsa_name}} at {{agency_name}}', {})
+  for (const tok of ['advisor_phone', 'advisor_email', 'fsa_name', 'agency_name']) {
+    assert.ok(missing.includes(tok), `expected ${tok} flagged unresolved`)
+  }
+  assert.ok(!personalize('Call {{advisor_phone}}', {}).includes('{{'), 'raw token leaked')
 })
 
 t('existing tokens are unchanged (regression)', () => {

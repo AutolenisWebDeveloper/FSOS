@@ -11,12 +11,17 @@ import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
 import { canTransition, controlTargetState, interpretControlClaim, type ControlAction } from './states'
 import { computeTouchPlan, deferToBusinessDay } from './schedule'
+import { CONTROL_ROLE_NAMES, type ResumeBehaviorName, type ReplayPolicyName } from './control-contract'
 import type { Role } from '@/lib/auth/rbac'
 
-export const CONTROL_ROLES: Role[] = ['admin', 'ops', 'super_admin', 'fsa']
+// Derived from the single source of truth in ./control-contract (§6). The pure contract keeps the
+// names as strings so it stays framework-free + offline-testable; here we bind them to the RBAC
+// Role[] the typed requirePermission() gate expects.
+export const CONTROL_ROLES: Role[] = [...CONTROL_ROLE_NAMES] as Role[]
 
-export type ResumeBehavior = 'all_active' | 'only_admin_paused' | 'restart_day_1' | 'only_new'
-export type ReplayPolicy = 'skip' | 'replay'
+// Re-exported from the pure contract so the resume-strategy vocabulary has one definition (§6).
+export type ResumeBehavior = ResumeBehaviorName
+export type ReplayPolicy = ReplayPolicyName
 
 export interface ControlResult {
   ok: boolean

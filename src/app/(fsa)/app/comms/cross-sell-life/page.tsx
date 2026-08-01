@@ -102,6 +102,12 @@ function CampaignPanel({ campaign, analytics }: { campaign: CampaignRow; analyti
           <Badge variant={STATUS_TONE[campaign.status] ?? 'outline'}>{campaign.status.replace(/_/g, ' ')}</Badge>
           {campaign.is_assumption && <AssumptionBadge />}
           <Link
+            href="/app/comms/console?mode=test&campaign=cross_sell_life"
+            className="rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-muted"
+          >
+            Test this campaign
+          </Link>
+          <Link
             href={`/app/comms/cross-sell-life/${campaign.id}`}
             className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90"
           >

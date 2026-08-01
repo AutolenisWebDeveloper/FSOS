@@ -25,6 +25,7 @@ const GROUPS: { label: string; items: { href: string; label: string }[] }[] = [
   {
     label: 'Conversations',
     items: [
+      { href: '/app/comms/console', label: 'Console' },
       { href: '/app/comms/inbox', label: 'Inbox' },
       { href: '/app/comms/sms', label: 'SMS' },
       { href: '/app/comms/email', label: 'Email' },

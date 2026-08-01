@@ -162,6 +162,24 @@ export interface SendContext {
    * specific-claim constraint (generic invitations are unaffected).
    */
   dataConfidence?: { makesSpecificClaims: boolean; claims: ClaimField[]; minConfidence?: number }
+  /**
+   * Communications Command Console send provenance (spec §3.1). Purely descriptive
+   * metadata persisted on the comm_messages row so a console send is traceable to its
+   * source and a TEST send is excludable from production analytics. It NEVER affects the
+   * gate — the console adds no send path (spec §0). Absent → source_kind defaults to
+   * 'blank' at the DB level; existing callers are unaffected.
+   */
+  sourceKind?: 'blank' | 'campaign_asset' | 'agent_seed' | 'test'
+  sourceCampaignKey?: string | null
+  sourceAssetId?: string | null
+  sourceAssetTable?: string | null
+  /**
+   * Marks a per-campaign TEST send (spec §B4). Still a REAL gated send to a verified self
+   * destination — it proves the pipeline — but the row is flagged so production campaign
+   * KPIs exclude it. The gate, consent, quiet hours, STOP/HELP and AI authority all still
+   * apply exactly as for a live send; is_test grants NO exemption.
+   */
+  isTest?: boolean
 }
 
 export interface SendOutcome {
@@ -541,6 +559,13 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
         identity_disclosure_reason: identityReason,
         // Slice 3 — record the classified purpose (§9: frequency counting + analytics).
         purpose: ctx.purpose ?? null,
+        // Communications Command Console — send provenance (spec §3.1). Descriptive only;
+        // does not affect the gate. is_test excludes the row from production analytics.
+        source_kind: ctx.sourceKind ?? 'blank',
+        source_campaign_key: ctx.sourceCampaignKey ?? null,
+        source_asset_id: ctx.sourceAssetId ?? null,
+        source_asset_table: ctx.sourceAssetTable ?? null,
+        is_test: ctx.isTest === true,
         queued_at: new Date().toISOString(),
       })
       .select('id')

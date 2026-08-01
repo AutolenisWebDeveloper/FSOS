@@ -117,6 +117,12 @@ export default async function PipelineWinbackPage() {
         <div className="flex items-center gap-2">
           <Badge variant={STATUS_TONE[config.status] ?? 'outline'}>{config.status.replace(/_/g, ' ')}</Badge>
           {config.is_assumption && <AssumptionBadge />}
+          <Link
+            href="/app/comms/console?mode=test&campaign=pipeline_winback"
+            className="rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-muted"
+          >
+            Test this campaign
+          </Link>
         </div>
       }
       rail={<Rail unapprovedCount={unapprovedCount} />}

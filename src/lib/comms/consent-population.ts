@@ -198,13 +198,19 @@ export function planPopulation(
   return { decisions, report }
 }
 
-/** The channel-wide `granted` consents row for one member+channel (insert shape). */
+/**
+ * The channel-wide `granted` consents row for one member+channel (insert shape). The
+ * `disclosure` records the DOCUMENTED BASIS of the grant for the TCPA/audit trail; callers
+ * that seed consent from a different basis (e.g. an import consent group) pass their own so
+ * the row honestly states why consent exists — it is never a generic blanket claim.
+ */
 export function buildConsentGrantRow(
   memberId: string,
   householdId: string,
   channel: PopChannel,
   source: string,
   capturedAtIso: string,
+  disclosure = 'Existing client — communications opt-in on file at population.',
 ): {
   member_id: string
   household_id: string
@@ -220,7 +226,7 @@ export function buildConsentGrantRow(
     channel,
     status: 'granted',
     source,
-    disclosure: 'Existing client — communications opt-in on file at population.',
+    disclosure,
     captured_at: capturedAtIso,
   }
 }

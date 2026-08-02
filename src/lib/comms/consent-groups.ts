@@ -35,6 +35,16 @@ export interface ConsentGroup {
   source: string
   /** Contact tag stamped on imported contacts so the group is visible on the record. */
   tag: string
+  /**
+   * The `contacts.tags` values that identify a member as ALREADY-IMPORTED into this group.
+   * Used by the retroactive backfill (consent-group-backfill-run.ts) to resolve the existing
+   * population when consent was never seeded at import time. This is a REVIEWABLE, editable
+   * config default (CLAUDE.md §4.3): it always includes this group's own `tag` plus the
+   * marker(s) the legacy per-group importers stamped (which predate the consent-group tag).
+   * A contact matching any one of these tags is in-population; the operator still reviews the
+   * resolved count and ATTESTS before any consent is written, and suppression always wins.
+   */
+  importTags: string[]
   /** Channels this group is permitted to seed. A per-import selection is intersected with this. */
   channels: PopChannel[]
 }
@@ -48,6 +58,8 @@ export const CONSENT_GROUPS: Record<ConsentGroupKey, ConsentGroup> = {
       'District Book import — existing agency book-of-business client with communications opt-in on file at the referring agency. Prior express consent asserted by the licensed FSA at import.',
     source: 'import_group:district_book',
     tag: 'district-book',
+    // 'fnwl-book' is the marker the in-force / district book importer stamps.
+    importTags: ['district-book', 'fnwl-book'],
     channels: ['sms', 'email'],
   },
   cross_sell_life: {
@@ -58,6 +70,8 @@ export const CONSENT_GROUPS: Record<ConsentGroupKey, ConsentGroup> = {
       'Cross-Sell Life import — existing client of the practice with prior express consent to be contacted about life products. Consent asserted by the licensed FSA at import.',
     source: 'import_group:cross_sell_life',
     tag: 'cross-sell-life',
+    // 'cross-sell' is the marker the cross-sell importer stamps.
+    importTags: ['cross-sell-life', 'cross-sell'],
     channels: ['sms', 'email'],
   },
   win_back: {
@@ -68,6 +82,8 @@ export const CONSENT_GROUPS: Record<ConsentGroupKey, ConsentGroup> = {
       'Win-Back import — former client with communications opt-in on file, re-engaged for lapsed coverage. Prior express consent asserted by the licensed FSA at import.',
     source: 'import_group:win_back',
     tag: 'win-back',
+    // The win-back importer stamps the same 'win-back' marker as the consent-group tag.
+    importTags: ['win-back'],
     channels: ['sms', 'email'],
   },
   life_conversion: {
@@ -78,6 +94,8 @@ export const CONSENT_GROUPS: Record<ConsentGroupKey, ConsentGroup> = {
       'Life Conversion import — existing term policyholder with prior express consent to be contacted about conversion options. Consent asserted by the licensed FSA at import.',
     source: 'import_group:life_conversion',
     tag: 'life-conversion',
+    // 'term-conversion' is the marker the conversion-list importer stamps.
+    importTags: ['life-conversion', 'term-conversion'],
     channels: ['sms', 'email'],
   },
 }
@@ -92,6 +110,17 @@ export function isConsentGroupKey(x: unknown): x is ConsentGroupKey {
 /** Resolve a group by key, or null if the key is unknown. */
 export function resolveConsentGroup(key: unknown): ConsentGroup | null {
   return isConsentGroupKey(key) ? CONSENT_GROUPS[key] : null
+}
+
+/**
+ * The de-duplicated, normalized `contacts.tags` values that mark a member as already-imported
+ * into this group — the population the retroactive backfill grants consent to. Always non-empty
+ * (every group at least matches its own `tag`). Tags are lower-cased/trimmed to match the way
+ * importers stamp them, so the resolver's overlap query is exact.
+ */
+export function groupImportTags(group: ConsentGroup): string[] {
+  const tags = [group.tag, ...group.importTags].map((t) => String(t).trim().toLowerCase()).filter(Boolean)
+  return Array.from(new Set(tags))
 }
 
 /**

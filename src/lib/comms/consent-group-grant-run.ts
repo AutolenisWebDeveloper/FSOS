@@ -39,6 +39,13 @@ export interface GrantConsentForGroupOptions {
   channels: PopChannel[]
   /** Audit actor (the authenticated licensed operator). */
   actor: string
+  /**
+   * Preview only: read the world + plan the grants, but write NOTHING (no consents, no audit,
+   * no timeline). Returns the PLANNED report (intended grants + per-reason skips) so a caller
+   * can show the operator exactly what a commit would do before they attest. Suppression is
+   * still fully applied, so the preview never overstates what would be granted.
+   */
+  dryRun?: boolean
 }
 
 export interface GrantConsentForGroupResult extends PopulationReport {
@@ -122,6 +129,17 @@ export async function grantConsentForGroup(
   }
 
   const { decisions, report } = planGroupGrants(members, existing, dnc, dncHouseholdIds, channels)
+
+  // ── Preview: return the PLANNED report, write nothing ────────────────────────────
+  if (opts.dryRun) {
+    return {
+      ...report,
+      groupKey: group.key,
+      source: group.source,
+      channels,
+      capturedAt,
+    }
+  }
 
   // ── Insert grants idempotently; only ACTUALLY-created rows get audited/timelined ──
   const grants = decisions.filter((d) => d.grant)

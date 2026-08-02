@@ -54,8 +54,26 @@ export async function setAppointmentStatus(
   const patch: Record<string, unknown> = { status: toStatus, updated_at: new Date().toISOString() }
   if (opts.opportunityId) patch.opportunity_id = opts.opportunityId
 
-  const upd = await db.from('appointments').update(patch).eq('id', appointmentId).select('id').maybeSingle()
+  // Atomic, conditional write (D1): guard the UPDATE on the SAME `from` status we validated the
+  // transition against, closing the TOCTOU window between the SELECT above and this write. If a
+  // concurrent action already moved the row (e.g. cancelled/completed between read and write), the
+  // guarded update matches zero rows and we FAIL CLOSED with a 409 rather than applying a
+  // transition that is no longer valid from the current state.
+  const upd = await db
+    .from('appointments')
+    .update(patch)
+    .eq('id', appointmentId)
+    .eq('status', from)
+    .select('id')
+    .maybeSingle()
   if (upd.error) return { error: upd.error.message }
+  if (!upd.data) {
+    return {
+      error: 'This appointment was just changed elsewhere. Please refresh and try again.',
+      reason: 'stale_status',
+      status: 409,
+    }
+  }
 
   await writeAudit({
     actor,

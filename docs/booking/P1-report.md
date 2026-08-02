@@ -187,9 +187,14 @@ part of the P4 harness decision or a human review pass.
 
 ## 9. Known limitations / follow-ups
 
-1. **No automated a11y/visual/e2e verification** — all such items are inspection-only (§5.2). A
-   bounded Playwright + axe harness is the P4 decision; a human browser pass is recommended before
-   ship.
+1. **No automated a11y/visual/e2e verification — HARD prerequisite before ship, not assumed done.**
+   All accessibility, responsive, and screen-reader items are **inspection-only** (§5.2); no
+   Playwright/axe/Lighthouse harness exists here. Accepted **Ready for Review** on that basis, but
+   real WCAG 2.2 AA conformance (keyboard path, focus order, SR announcements, measured contrast)
+   and responsive behavior at real breakpoints **must be actually verified before go-live** — to be
+   closed by the **P4 bounded test-harness decision** (Playwright + axe) or an equivalent human
+   browser + assistive-tech pass. Tracked as a pre-ship gate in `docs/booking/deploy-notes.md`. Do
+   not treat the inspection-level review as harness-backed conformance.
 2. **Out-of-month trailing days** inside the 42-day fetch window render de-emphasized/inert; they
    become bookable when the user pages into that month (which refetches). No availability is lost.
 3. **Backend items D1 (cancel TOCTOU) and D3 (equality-only double-book guard)** remain documented

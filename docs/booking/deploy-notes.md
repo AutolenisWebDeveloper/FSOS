@@ -25,6 +25,50 @@ environment that serves real booking links) **before this ships.**
 **Rollback:** this is config, not code — setting the env var resolves it immediately with no
 redeploy of application logic required. Do **not** reintroduce a hardcoded fallback.
 
+## Required migrations (forward-only, apply under the repo's migration workflow)
+
+### D3 — appointment overlap exclusion — `supabase/migrations/091_appointments_overlap_exclusion.sql`
+**Introduced by:** the D1/D3 backend hardening slice. Adds a GiST `EXCLUDE` constraint so the
+**database** rejects two *scheduled* appointments for the same host with overlapping
+`[starts_at, ends_at)` ranges (defense-in-depth over the app-layer buffer math; complements, does
+not replace, `uq_appointments_host_slot`).
+
+**Apply steps (human, forward-only — do NOT run against prod from this environment):**
+1. Run the **pre-apply overlap check** in the migration header — it must return **0 rows**. If any
+   overlaps exist, resolve them first, or `ADD CONSTRAINT` will fail.
+2. Apply `091_appointments_overlap_exclusion.sql` via the repo migration workflow. It installs
+   `btree_gist` and adds `excl_appointments_host_overlap`. Takes an `ACCESS EXCLUSIVE` lock +
+   one validating scan; fast on the current (small) table — otherwise use a maintenance window.
+3. **Rollback:** `alter table appointments drop constraint excl_appointments_host_overlap;`
+   (leaving `btree_gist` installed is harmless.)
+
+**Apply-time cautions (owner-directed):**
+1. **The pre-apply overlap check MUST return 0 rows before the constraint is created.** If it
+   returns any rows, **STOP** — do not force or `NOT VALID`-bypass the constraint. Surface the exact
+   overlapping row pairs (the check selects `a_id, b_id, host_user_id`) to the owner and resolve
+   them first; a forced constraint would either fail or hide real double-bookings.
+2. **Confirm every live *scheduled* appointment populates `ends_at` before relying on this guard.**
+   The partial predicate (`… and ends_at is not null`) **silently skips** any scheduled row with a
+   null `ends_at`, so such rows are NOT protected by the exclusion. Run a coverage check first —
+   `select count(*) from appointments where status='scheduled' and ends_at is null;` should be 0;
+   if not, backfill `ends_at` (from `starts_at` + the type's `duration_minutes`) before treating the
+   overlap guard as complete. (`uq_appointments_host_slot` still guards exact-start collisions on
+   those rows in the meantime.)
+
+**Backward compatibility:** additive only; no app change depends on it. The D1 code fix
+(status-guarded conditional cancel/transition write) ships independently and needs no migration.
+
+## Pre-ship verification gates (not config — must be closed before go-live)
+
+### P1 — accessibility / responsive / screen-reader verification is INSPECTION-ONLY 🔒
+P1 was accepted **Ready for Review**, but its a11y, responsive, and screen-reader conformance were
+**verified by inspection only — no automated harness exists in this repo** (no Playwright / axe /
+Lighthouse; see `docs/booking/P1-report.md` §5.2). This is a **hard prerequisite before ship**, not
+an assumed pass: WCAG 2.2 AA (keyboard path, focus order, SR announcements, measured contrast) and
+responsive behavior at real breakpoints must be **actually verified** — to be closed by the **P4
+bounded test-harness decision** (Playwright + axe) or an equivalent human browser + assistive-tech
+pass. Do **not** treat P1's inspection-level review as harness-backed conformance.
+
 ## Phase rollback levers
 - **P1 (public UI):** presentation-only, no migration; revert the P1 commits to restore the prior
   `/schedule` UI. No data or contract impact.

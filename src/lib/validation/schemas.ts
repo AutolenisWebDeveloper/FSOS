@@ -7,6 +7,10 @@ import { z } from 'zod'
 // Relative (not @/) so the offline P0/P1 gate tests can compile this file with tsc.
 import { MESSAGE_PURPOSES } from '../comms/purpose'
 import { CLAIM_FIELD_KEYS } from '../comms/claims'
+// The fixed RBAC role set — single source of truth in src/lib/auth/rbac.ts.
+// rbac.ts is pure/dependency-free, so importing it keeps this schema compilable by
+// the offline P0/P1 gate proofs (they tsc-compile schemas.ts standalone).
+import { ROLES } from '../auth/rbac'
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 export const uuid = z.string().uuid()
@@ -705,6 +709,29 @@ export type WebhookCreate = z.infer<typeof WebhookCreateSchema>
 export const WebhookPatchSchema = z.object({
   enabled: z.boolean(),
 })
+
+// ─── Super · provision a portal user ─────────────────────────────────────────
+// A super_admin creates an authenticated portal user and assigns the role(s) that
+// gate portal access (the "features" the operator grants). No password is set here:
+// the user receives a single-use link to choose their own password (see
+// src/lib/services/users.ts + src/lib/notifications/account.ts). `roles` must be a
+// non-empty subset of the fixed RBAC set; `securities_scope` is the optional
+// app_metadata flag mirrored from scripts/create-user.mjs (defaults false).
+export const UserCreateSchema = z.object({
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .min(1, 'Email is required')
+    .email('Enter a valid email')
+    .max(254),
+  roles: z
+    .array(z.enum(ROLES))
+    .min(1, 'Select at least one role')
+    .max(ROLES.length),
+  securities_scope: z.boolean().optional().default(false),
+})
+export type UserCreate = z.infer<typeof UserCreateSchema>
 
 // ─── P3 (Phase 4) — custom dashboards + advanced forecasting ─────────────────────
 // A dashboard's layout is an ordered list of widget keys from the analytics catalog

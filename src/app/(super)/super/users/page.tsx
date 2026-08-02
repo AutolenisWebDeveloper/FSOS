@@ -1,66 +1,88 @@
 import { Users } from 'lucide-react'
 import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Numeric } from '@/components/ui/typography'
-import { load } from '@/lib/data/query'
+import { CreateUserForm } from '@/components/super/CreateUserForm'
+import { listPortalUsers } from '@/lib/services/users'
 
 export const dynamic = 'force-dynamic'
 
-// Super · Users (A2). Lists provisioned users and their assigned roles. A user may
-// hold multiple user_roles rows, so we group by user_id. Invite/provisioning flow
-// lives elsewhere — this is a read-only roster.
-export default async function SuperUsersPage() {
-  const roles = await load<{ user_id: string; role: string }[]>(
-    (db) => db.from('user_roles').select('user_id, role').order('user_id', { ascending: true }),
-    [],
-  )
+// Super · Users (A2). Provision new portal users (assign roles + email them a
+// single-use password-setup link) and see the roster of provisioned users with their
+// roles and activation status. Auth user + user_roles are joined in listPortalUsers().
+function fmtDate(iso: string | null): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString('en-US')
+}
 
-  let body: React.ReactNode
-  if (!roles.ok) {
-    body =
-      roles.kind === 'not_configured' ? (
+export default async function SuperUsersPage() {
+  const result = await listPortalUsers()
+
+  let roster: React.ReactNode
+  if (!result.ok) {
+    roster =
+      result.kind === 'not_configured' ? (
         <EmptyState title="Database not configured" description="Set Supabase env vars to load users." />
       ) : (
-        <ErrorState description={roles.message} />
+        <ErrorState description="We couldn’t load the user roster. Please try again." />
       )
-  } else if (roles.data.length === 0) {
-    body = (
+  } else if (result.users.length === 0) {
+    roster = (
       <EmptyState
         icon={Users}
         title="No users provisioned yet"
-        description="Users appear here once provisioned. The invite flow lives elsewhere."
+        description="Create the first user above — they’ll receive a secure link to set their password."
       />
     )
   } else {
-    const byUser = new Map<string, string[]>()
-    for (const r of roles.data) {
-      const list = byUser.get(r.user_id) ?? []
-      if (!list.includes(r.role)) list.push(r.role)
-      byUser.set(r.user_id, list)
-    }
-    const users = Array.from(byUser.entries())
-    body = (
+    roster = (
       <div className="rounded-lg border">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>User ID</TableHead>
+              <TableHead>User</TableHead>
               <TableHead>Roles</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Created</TableHead>
+              <TableHead>Last sign-in</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {users.map(([userId, userRoles]) => (
-              <TableRow key={userId}>
-                <TableCell><Numeric className="text-xs">{userId}</Numeric></TableCell>
+            {result.users.map((u) => (
+              <TableRow key={u.id}>
+                <TableCell>
+                  {u.email ? (
+                    <span className="font-medium">{u.email}</span>
+                  ) : (
+                    <Numeric className="text-xs text-muted-foreground">{u.id}</Numeric>
+                  )}
+                </TableCell>
                 <TableCell>
                   <div className="flex flex-wrap gap-1">
-                    {userRoles.map((role) => (
-                      <Badge key={role} variant="secondary">
-                        {role}
-                      </Badge>
-                    ))}
+                    {u.roles.length === 0 ? (
+                      <span className="text-xs text-muted-foreground">— none —</span>
+                    ) : (
+                      u.roles.map((role) => (
+                        <Badge key={role} variant="secondary">
+                          {role}
+                        </Badge>
+                      ))
+                    )}
                   </div>
+                </TableCell>
+                <TableCell>
+                  <Badge variant={u.status === 'active' ? 'won' : 'pending'}>
+                    {u.status === 'active' ? 'active' : 'pending setup'}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-muted-foreground">
+                  <Numeric className="text-xs">{fmtDate(u.createdAt)}</Numeric>
+                </TableCell>
+                <TableCell className="text-muted-foreground">
+                  <Numeric className="text-xs">{fmtDate(u.lastSignInAt)}</Numeric>
                 </TableCell>
               </TableRow>
             ))}
@@ -73,10 +95,24 @@ export default async function SuperUsersPage() {
   return (
     <ListShell
       title="Users"
-      description="Provisioned users and their assigned roles."
+      description="Provision portal users and manage their assigned roles. New users receive a single-use link to set their own password."
       breadcrumb={[{ label: 'Super', href: '/super' }, { label: 'Users' }]}
     >
-      {body}
+      <div className="space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Create user</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <CreateUserForm />
+          </CardContent>
+        </Card>
+
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold">Provisioned users</h2>
+          {roster}
+        </section>
+      </div>
     </ListShell>
   )
 }

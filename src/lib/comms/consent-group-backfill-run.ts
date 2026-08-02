@@ -17,83 +17,21 @@
 // resolved count + per-reason skips BEFORE any write — the mapping is never a silent guess.
 // Thin service: business logic out of the route (CLAUDE.md §3.1).
 
-import { getDb } from '@/lib/supabase/client'
 import { groupImportTags, type ConsentGroup } from './consent-groups'
 import { grantConsentForGroup, type GrantConsentForGroupResult } from './consent-group-grant-run'
+import { resolveContactTagPopulation, type ResolvedTagPopulation } from './bulk-consent-run'
 import type { PopChannel } from './consent-population'
 
-const READ_CHUNK = 300
-
-function chunk<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = []
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
-  return out
-}
-
-const uniq = (xs: string[]): string[] => Array.from(new Set(xs.filter(Boolean)))
-
-export interface ResolvedGroupPopulation {
-  /** Non-deleted contacts whose tags overlap the group's import-tag set. */
-  contactsMatched: number
-  /** Of those, how many are materialized into a household_member (campaign-reachable). */
-  membersResolved: number
-  /** Contacts matched but NOT yet materialized into a member — consent can't be member-keyed
-   *  for them until they are (surfaced so the operator knows the gap, not silently dropped). */
-  contactsWithoutMember: number
-  /** The resolved member ids to seed consent for. */
-  memberIds: string[]
-}
+/** Alias kept for the existing backfill route/UI; the shared resolver is tag-driven. */
+export type ResolvedGroupPopulation = ResolvedTagPopulation
 
 /**
- * Resolve the already-imported population for a group: tag-matched contacts → their members.
- * Reads only (no writes). A contact with no materialized member contributes to
- * `contactsWithoutMember` but not `memberIds` — consent is member-keyed, so it can't be seeded
- * until the daily materialization (or a manual create) links the contact into the spine.
+ * Resolve the already-imported population for a group: its import-tags → matched contacts →
+ * their materialized members. Reads only. Delegates to the shared tag-population resolver
+ * (bulk-consent-run.ts) so the backfill and the bulk-tag tool resolve populations identically.
  */
 export async function resolveImportedGroupPopulation(group: ConsentGroup): Promise<ResolvedGroupPopulation> {
-  const db = getDb()
-  const tags = groupImportTags(group)
-
-  // Contacts whose tags overlap the group's import-tag set (active, non-deleted).
-  const contactIds: string[] = []
-  {
-    const { data, error } = await db
-      .from('contacts')
-      .select('id')
-      .overlaps('tags', tags)
-      .is('deleted_at', null)
-    if (error) throw error
-    for (const r of (data ?? []) as { id: string }[]) contactIds.push(r.id)
-  }
-  const uniqueContacts = uniq(contactIds)
-
-  if (uniqueContacts.length === 0) {
-    return { contactsMatched: 0, membersResolved: 0, contactsWithoutMember: 0, memberIds: [] }
-  }
-
-  // Map contacts → materialized members via household_members.source_contact_id.
-  const memberIds: string[] = []
-  const linkedContactIds = new Set<string>()
-  for (const ids of chunk(uniqueContacts, READ_CHUNK)) {
-    const { data, error } = await db
-      .from('household_members')
-      .select('id, source_contact_id')
-      .in('source_contact_id', ids)
-    if (error) throw error
-    for (const r of (data ?? []) as { id: string; source_contact_id: string | null }[]) {
-      if (!r.id) continue
-      memberIds.push(r.id)
-      if (r.source_contact_id) linkedContactIds.add(r.source_contact_id)
-    }
-  }
-  const uniqueMembers = uniq(memberIds)
-
-  return {
-    contactsMatched: uniqueContacts.length,
-    membersResolved: uniqueMembers.length,
-    contactsWithoutMember: uniqueContacts.filter((id) => !linkedContactIds.has(id)).length,
-    memberIds: uniqueMembers,
-  }
+  return resolveContactTagPopulation(groupImportTags(group))
 }
 
 export interface BackfillGroupConsentOptions {

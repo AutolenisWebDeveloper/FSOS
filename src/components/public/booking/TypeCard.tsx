@@ -41,16 +41,11 @@ export function TypeCard({ type }: { type: TypeCardData }) {
   return (
     <Link
       href={`/schedule?type=${encodeURIComponent(type.slug)}`}
-      className="group relative flex items-start gap-4 overflow-hidden rounded-xl border border-border bg-card p-5 shadow-elev-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-elev-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+      className="group flex items-start gap-4 rounded-xl border border-border bg-card p-5 shadow-elev-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-elev-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
     >
-      {/* Signature accent: a hairline primary bar that fills on hover/focus. */}
       <span
         aria-hidden
-        className="absolute inset-y-0 left-0 w-1 origin-top scale-y-0 bg-primary transition-transform duration-200 group-hover:scale-y-100 group-focus-visible:scale-y-100"
-      />
-      <span
-        aria-hidden
-        className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
+        className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground"
       >
         <ModeGlyph mode={type.meetingMode} />
       </span>

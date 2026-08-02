@@ -421,7 +421,7 @@ export function ConsoleWorkbench() {
               </label>
             )}
             <p className="text-xs text-muted-foreground">
-              Every send passes the same 7-step compliance gate as a campaign. A blocked send shows the failing step and reason — there is no override.
+              Individual and test sends don&apos;t require consent on file. Every other gate step still runs — quiet hours, DNC/opt-out, the securities firewall, and the recommendation red-line. A blocked send shows the failing step and reason.
             </p>
             <GateBanner outcome={outcome} />
           </CardContent>
@@ -465,7 +465,7 @@ function RecipientPanel(props: {
               inputMode={props.channel === 'email' ? 'email' : 'tel'}
             />
             <p className="text-xs text-muted-foreground">
-              The advisor + agency identity and consent/DNC/quiet-hours are resolved and enforced by the gate at send time.
+              The advisor + agency identity, DNC/opt-out, and quiet hours are resolved and enforced by the gate at send time. An individual send does not require consent on file — but an explicit opt-out still blocks it.
             </p>
           </div>
         )}

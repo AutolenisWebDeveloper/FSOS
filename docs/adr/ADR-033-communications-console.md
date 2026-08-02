@@ -49,6 +49,21 @@ Concretely:
   check (ADR-013/§12). To make a test to an operator's own device actually exercise the
   pipeline, registering a test destination records the operator's self-consent for that
   device — legitimate consent, not a bypass.
+- **Consent-on-file is WAIVED for operator individual sends and verified-self tests
+  (`SendContext.consentWaived`).** A licensed operator sending a single 1:1 SMS/email, an
+  operator-initiated AI conversation opener, and a test to a destination the operator owns and
+  verified are not the automated mass-marketing case that "valid channel consent on file"
+  (gate step 1) exists to gate — so those three console surfaces set `consentWaived`, which
+  relaxes **only** step 1. The waiver is **opt-out-safe**: it never fires when the recipient
+  has an explicit opt-out/revoke at any level (member-channel `consents.status='revoked'`, a
+  purpose-scoped revoke, or a latest contact-level `revoked` — `send.ts consentRevoked`, which
+  fails safe to "revoked"), and STOP opt-outs are still caught independently at gate step 3.
+  **Every other gate step still applies**: quiet hours (2), DNC/STOP (3), approved-template/
+  AI-policy (4), personalization (4b), the recommendation red-line (5), the securities firewall
+  (6), data confidence (6b), delegation, A2P go-live, and frequency/collision. The waiver is
+  scoped to these operator-initiated console/test call sites only — no bulk, campaign, or agent
+  send path sets it, so automated outreach still requires consent (§12). There is still no
+  "force-send" that can reach an opted-out recipient or send a securities recommendation.
 
 ## Rationale
 Reusing the one send path is what keeps the three guardrails (§4), the dispatcher (ADR-003),
@@ -74,6 +89,10 @@ reuse structurally (one `union all` per campaign) rather than as scattered speci
 - Test sends prove the whole pipeline (real gate) without touching production data.
 
 **Negative / trade-offs**
+- The console/self-test consent waiver means an individual operator send or a self-test can
+  reach a recipient with no consent row on file. This is deliberate (a 1:1 licensed-operator
+  send is not automated marketing), bounded to those call sites, and opt-out-safe (an explicit
+  revoke and DNC/STOP still block); it does not extend to any automated/campaign/agent path.
 - Campaign **email** assets have no subject column on `comm_templates`; the console renders
   body/plaintext and takes the subject from the asset name or the operator (known limitation;
   subject-from-render-registry is a follow-up).

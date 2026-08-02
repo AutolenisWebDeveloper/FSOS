@@ -117,6 +117,10 @@ export async function POST(req: NextRequest) {
         aiGenerated: true,
         aiAuthorAgentKey: d.agent_key,
         aiMessageClass: openerClassFor(seededFrom),
+        // Operator-initiated individual AI conversation — consent-on-file is waived (ADR-033).
+        // Opt-out-safe (an explicit revoke still blocks) and the opener still clears the AI-
+        // authority matrix + DNC/quiet-hours/securities/recommendation gate steps.
+        consentWaived: true,
         purpose: d.purpose as MessagePurpose,
         sourceKind: 'agent_seed',
         sourceCampaignKey,

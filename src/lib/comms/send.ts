@@ -35,6 +35,7 @@ import { evaluateOutboundMessage } from './evaluations'
 import type { AiMessageClass } from './ai-authority'
 import { evaluateDataConfidence, type ClaimField } from './data-confidence'
 import { latestConsentGranted, smsTail } from './contact-consent'
+import { purposeToConsentPurpose } from './purpose'
 
 export interface SendContext {
   channel: Channel
@@ -62,6 +63,27 @@ export interface SendContext {
    * (2), recommendation (5), and securities (6) are STILL enforced independently.
    */
   durableConsentGranted?: boolean
+  /**
+   * Console / self-test CONSENT WAIVER (ADR-033). Set ONLY by the operator-initiated
+   * individual-send surfaces — the Communications Console's 1:1 SMS/email send, an operator-
+   * initiated AI conversation opener, and a verified-self test send. It relaxes EXACTLY ONE
+   * thing: the "valid channel consent on file" requirement (gate step 1), because a licensed
+   * operator sending a single 1:1 message, and a test to a destination the operator owns and
+   * verified, are not the automated mass-marketing case that consent-on-file exists to gate.
+   *
+   * It is NARROW and OPT-OUT-SAFE:
+   *   • It never fires when the recipient has an EXPLICIT opt-out/revoke (member-level
+   *     `consents.status='revoked'`, a purpose-scoped revoke, or a latest contact-level
+   *     `revoked`) — an opt-out always wins (consentRevoked below, fail-safe).
+   *   • It relaxes ONLY step 1. Quiet hours (2), DNC/STOP (3), approved-template/AI-policy (4),
+   *     personalization (4b), recommendation red-line (5), the securities firewall (6),
+   *     data confidence (6b), delegation, A2P go-live, and frequency/collision ALL still apply
+   *     exactly as for any other send. There is still no way to send a securities recommendation
+   *     or reach an opted-out recipient from the console.
+   * Absent/false → unchanged behavior (consent-on-file is required), so no bulk/campaign/agent
+   * caller is affected.
+   */
+  consentWaived?: boolean
   householdId?: string | null
   agencyId?: string | null
   policyId?: string | null
@@ -275,6 +297,71 @@ async function durableContactConsentGranted(contact: string, channel: Channel): 
 }
 
 /**
+ * Explicit opt-out / revoke on this channel — used ONLY to keep the console/self-test
+ * consent WAIVER (ctx.consentWaived, ADR-033) opt-out-safe. Returns true when the recipient
+ * has told us to stop at ANY level:
+ *   • member-level channel revoke (`consents.status='revoked'`),
+ *   • purpose-scoped revoke (`comm_consent_purposes.status='revoked'`) when a purpose is set,
+ *   • the latest contact-level action is `revoked` (comm_contact_consents, public-intake store).
+ * A revoke here disables the waiver so the normal consent gate (step 1) blocks the send. STOP
+ * opt-outs are ALSO caught independently at gate step 3 (DNC); this is defense in depth for a
+ * consent-store revoke that may not be mirrored to the DNC list. Fails SAFE (true = treat as
+ * revoked → waiver does not apply) so a lookup failure can never turn a waiver into an unwanted
+ * send. Only called when ctx.consentWaived is set.
+ */
+async function consentRevoked(
+  memberId: string | null | undefined,
+  contact: string,
+  channel: Channel,
+  purpose?: MessagePurpose,
+): Promise<boolean> {
+  try {
+    const db = getDb()
+    if (memberId) {
+      const { data } = await db.from('consents').select('status').eq('member_id', memberId).eq('channel', channel).maybeSingle()
+      if (data?.status === 'revoked') return true
+      if (purpose) {
+        const consentPurpose = purposeToConsentPurpose(purpose, channel)
+        const { data: pr } = await db
+          .from('comm_consent_purposes')
+          .select('status')
+          .eq('member_id', memberId)
+          .eq('channel', channel)
+          .eq('purpose', consentPurpose)
+          .maybeSingle()
+        if (pr?.status === 'revoked') return true
+      }
+    }
+    // Contact-level latest-wins revoke (matches durableContactConsentGranted's read shape).
+    if (channel === 'sms') {
+      const tail = smsTail(contact)
+      if (tail.length < 10) return false
+      const { data } = await db
+        .from('comm_contact_consents')
+        .select('action, captured_at')
+        .eq('channel', 'sms')
+        .ilike('contact', `%${tail}`)
+        .order('captured_at', { ascending: false })
+        .limit(1)
+      const rows = data as { action: string; captured_at: string }[] | null
+      return Array.isArray(rows) && rows.length > 0 && !latestConsentGranted(rows) && rows[0]?.action === 'revoked'
+    }
+    const { data } = await db
+      .from('comm_contact_consents')
+      .select('action, captured_at')
+      .eq('channel', channel)
+      .eq('contact', contact.toLowerCase())
+      .order('captured_at', { ascending: false })
+      .limit(1)
+    const rows = data as { action: string; captured_at: string }[] | null
+    return Array.isArray(rows) && rows.length > 0 && !latestConsentGranted(rows) && rows[0]?.action === 'revoked'
+  } catch {
+    // Fail safe: if we cannot verify, treat as revoked so the waiver does NOT apply.
+    return true
+  }
+}
+
+/**
  * "Approved AI policy" for gate step 4 — the non-template path for AI-authored
  * green-zone messages (CLAUDE.md §7: "approved template OR approved AI policy").
  * A policy is approved only when BOTH kill switches are on: the global AI gateway
@@ -450,18 +537,25 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
   // A durable, contact-resolvable public-intake grant only applies BEFORE the contact has a
   // household member — once a member exists, the member-keyed `consents` row is authoritative
   // (and STOP/DNC always governs independently), so this can never re-grant a member revoke.
-  const [memberConsent, contactConsent, dnc, templateApproved, hoursPolicy] = await Promise.all([
+  const [memberConsent, contactConsent, dnc, templateApproved, hoursPolicy, waiverRevoked] = await Promise.all([
     hasConsent(convMemberId, ctx.channel),
     convMemberId ? Promise.resolve(false) : durableContactConsentGranted(to, ctx.channel),
     onDNC(to, ctx.channel),
     isTemplateApproved(ctx.templateId),
     loadHoursPolicy(),
+    // Only when the console/self-test waiver is set do we spend a read to confirm there is no
+    // explicit opt-out that the waiver would have to respect (opt-out always wins).
+    ctx.consentWaived === true ? consentRevoked(convMemberId, to, ctx.channel, ctx.purpose) : Promise.resolve(false),
   ])
   // Gate step 1: member-keyed consent OR a domain-owned durable per-channel grant
   // (workshops) OR a durable PUBLIC-INTAKE contact grant (comm_contact_consents, mig 074).
   // The OR can only ADD consent an existing caller never asserted; it never removes it.
   // DNC/quiet-hours/recommendation/securities remain enforced below.
-  let consent = memberConsent || contactConsent || ctx.durableConsentGranted === true
+  // Console / self-test waiver (ADR-033): a licensed operator's 1:1 send or a verified-self
+  // test does not require consent-on-file — but the waiver is OPT-OUT-SAFE (never fires on an
+  // explicit revoke) and relaxes ONLY step 1; every other gate step still applies below.
+  const consentWaiverApplies = ctx.consentWaived === true && !waiverRevoked
+  let consent = memberConsent || contactConsent || ctx.durableConsentGranted === true || consentWaiverApplies
 
   // Purpose policy (Slice 3, §9/§10): purpose-scoped consent + frequency caps + priority
   // collision. Opt-in via ctx.purpose. Purpose-scoped consent (when a row exists) REPLACES
@@ -481,7 +575,10 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
       activeCampaignPurpose: ctx.activeCampaignPurpose ?? null,
     })
     if (policy.consentForPurpose !== null) {
-      consent = policy.consentForPurpose || ctx.durableConsentGranted === true
+      // A purpose-scoped grant/revoke replaces the channel-wide read. The console/self-test
+      // waiver still ORs in — it is already purpose-revoke-aware (consentRevoked checked the
+      // purpose-scoped row), so consentWaiverApplies is false whenever this purpose was revoked.
+      consent = policy.consentForPurpose || ctx.durableConsentGranted === true || consentWaiverApplies
     }
     withinFrequencyCaps = policy.frequency.allowed
     frequencyReason = policy.frequency.reason

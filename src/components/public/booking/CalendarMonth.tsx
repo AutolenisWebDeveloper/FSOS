@@ -15,6 +15,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { WEEKDAYS } from '@/lib/booking/display'
 import { buildMonthMatrix, dayState } from './month-grid'
+import { type MonthCursor, canGoToPrevMonth } from './calendar-model'
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -37,7 +38,7 @@ export interface CalendarMonthProps {
   availableDayKeys: Set<string>
   /** Today in the booker's chosen zone (YYYY-MM-DD) — the floor for navigation + past days. */
   todayKey: string
-  monthCursor: { year: number; month0: number }
+  monthCursor: MonthCursor
   selectedDay: string | null
   onSelectDay: (key: string) => void
   onMonthChange: (delta: -1 | 1) => void
@@ -55,9 +56,7 @@ export function CalendarMonth({
   const monthTitle = `${MONTH_NAMES[monthCursor.month0]} ${monthCursor.year}`
 
   // Don't allow navigating to a month entirely in the past (todayKey is the floor).
-  const todayAbs = Number(todayKey.slice(0, 4)) * 12 + (Number(todayKey.slice(5, 7)) - 1)
-  const cursorAbs = monthCursor.year * 12 + monthCursor.month0
-  const canGoPrev = cursorAbs > todayAbs
+  const canGoPrev = canGoToPrevMonth(monthCursor, todayKey)
 
   return (
     <div className="rounded-xl border border-border bg-card p-3 shadow-elev-sm sm:p-4">

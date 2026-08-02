@@ -13,14 +13,17 @@ import { postJson } from '@/lib/client/api'
 import type { ApiError } from '@/lib/client/api'
 import { PublicBookingInput, isValidIanaZone } from '@/lib/booking/config-schemas'
 import type { PublicBookingInputType } from '@/lib/booking/config-schemas'
-import {
-  COMMON_TIMEZONES,
-  formatWallTime,
-  meetingModeLabel,
-  timeOfDayBucket,
-  TIME_OF_DAY_SECTIONS,
-} from '@/lib/booking/display'
+import { COMMON_TIMEZONES, meetingModeLabel } from '@/lib/booking/display'
+import { SlotTimeList } from './SlotTimeList'
 import { groupSlotsByDay } from './month-grid'
+import {
+  type MonthCursor,
+  monthPrefixOf,
+  addMonths,
+  fetchFromKey,
+  firstOpenDayInMonth,
+  initialMonth,
+} from './calendar-model'
 import { deriveStep, BOOKING_STEPS } from './step-model'
 import { BookingStepper } from './BookingStepper'
 import { CalendarMonth } from './CalendarMonth'
@@ -55,10 +58,6 @@ interface Confirmation {
   joinUrl: string | null
   meetingStatus: 'none' | 'provisioned' | 'pending'
 }
-interface MonthCursor {
-  year: number
-  month0: number
-}
 type FormState = { name: string; email: string; phone: string; notes: string; company: string }
 
 // The visible month grid is 6 weeks. Fetching 42 days from the first of the month covers the
@@ -82,20 +81,6 @@ function localTodayISO(tz: string): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(
     new Date(),
   )
-}
-/** The month a YYYY-MM-DD key falls in. */
-function monthOf(dateKey: string): MonthCursor {
-  return { year: Number(dateKey.slice(0, 4)), month0: Number(dateKey.slice(5, 7)) - 1 }
-}
-/** First day (YYYY-MM-DD) of the cursor's month. */
-function firstOfMonthKey(c: MonthCursor): string {
-  const mm = String(c.month0 + 1).padStart(2, '0')
-  return `${c.year}-${mm}-01`
-}
-/** Shift a month cursor by whole months (handles year rollover). */
-function addMonths(c: MonthCursor, delta: number): MonthCursor {
-  const abs = c.year * 12 + c.month0 + delta
-  return { year: Math.floor(abs / 12), month0: ((abs % 12) + 12) % 12 }
 }
 /** Full date + time in the booker's chosen zone. */
 function fullWhen(iso: string, tz: string): string {
@@ -158,7 +143,7 @@ export function BookingFlow({ type, backHref }: { type: PublicType; backHref?: s
     const t = localTodayISO(detected)
     setTz(detected)
     setToday(t)
-    setMonthCursor(monthOf(t))
+    setMonthCursor(initialMonth(t))
   }, [])
 
   // Monotonic request id: month paging / timezone switches fire overlapping fetches, so we ignore
@@ -170,9 +155,8 @@ export function BookingFlow({ type, backHref }: { type: PublicType; backHref?: s
       setLoading(true)
       setLoadError(null)
       // Fetch from the later of today or the first of the visible month (never request the past).
-      const first = firstOfMonthKey(cursor)
-      const from = first > todayKey ? first : todayKey
-      const monthPrefix = first.slice(0, 7) // "YYYY-MM" of the visible month
+      const from = fetchFromKey(cursor, todayKey)
+      const monthPrefix = monthPrefixOf(cursor)
       try {
         const params = new URLSearchParams({ type: type.slug, tz: zone, from, days: String(FETCH_DAYS) })
         const res = await fetch(`/api/public/booking/availability?${params.toString()}`)
@@ -189,8 +173,7 @@ export function BookingFlow({ type, backHref }: { type: PublicType; backHref?: s
         // Auto-select the first open day IN THE VISIBLE MONTH so the calendar and the time list
         // always agree. The 42-day fetch can spill into the next month; those days render as
         // trailing, non-selectable cells and must never become the selection.
-        const openThisMonth = [...groupSlotsByDay(next).keys()].filter((k) => k.startsWith(monthPrefix)).sort()
-        setSelectedDay(openThisMonth[0] ?? null)
+        setSelectedDay(firstOpenDayInMonth(groupSlotsByDay(next).keys(), monthPrefix))
       } catch {
         if (seq !== reqSeq.current) return
         setLoadError('We couldn’t reach the server. Please check your connection and try again.')
@@ -314,7 +297,7 @@ export function BookingFlow({ type, backHref }: { type: PublicType; backHref?: s
     setErrors({})
     setFormError(null)
     setSelectedDay(null)
-    setMonthCursor(monthOf(today)) // returns to the current month + triggers a refetch
+    setMonthCursor(initialMonth(today)) // returns to the current month + triggers a refetch
   }
 
   const setField = (k: keyof FormState, v: string) => setForm((f) => ({ ...f, [k]: v }))
@@ -375,7 +358,7 @@ export function BookingFlow({ type, backHref }: { type: PublicType; backHref?: s
   // ── Slot-picker step ─────────────────────────────────────────────────────────
   // Openings are counted for the VISIBLE month only — a next-month day inside the 42-day fetch
   // window must not suppress this month's empty state (and selectedDay is always in-month).
-  const monthPrefix = monthCursor ? firstOfMonthKey(monthCursor).slice(0, 7) : ''
+  const monthPrefix = monthCursor ? monthPrefixOf(monthCursor) : ''
   const dayCount = [...byDay.keys()].filter((k) => k.startsWith(monthPrefix)).length
   const daySlots = selectedDay ? byDay.get(selectedDay) ?? [] : []
 
@@ -463,7 +446,7 @@ export function BookingFlow({ type, backHref }: { type: PublicType; backHref?: s
                     </div>
                   </div>
                 ) : selectedDay ? (
-                  <TimeList dayLabel={selectedDayLabel(selectedDay)} slots={daySlots} onPick={setChosen} />
+                  <SlotTimeList dayLabel={selectedDayLabel(selectedDay)} slots={daySlots} onPick={setChosen} />
                 ) : (
                   <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-border px-4 py-8 text-center">
                     <p className="text-sm text-muted-foreground">Select an available day to see open times.</p>
@@ -474,49 +457,6 @@ export function BookingFlow({ type, backHref }: { type: PublicType; backHref?: s
           )}
         </div>
       </PublicCard>
-    </div>
-  )
-}
-
-/** The open times for the selected day, grouped Morning / Afternoon / Evening. */
-function TimeList({ dayLabel, slots, onPick }: { dayLabel: string; slots: Slot[]; onPick: (s: Slot) => void }) {
-  const groups = React.useMemo(() => {
-    const m = new Map<string, Slot[]>()
-    for (const s of slots) {
-      const b = timeOfDayBucket(s.localTime)
-      const arr = m.get(b)
-      if (arr) arr.push(s)
-      else m.set(b, [s])
-    }
-    return m
-  }, [slots])
-
-  return (
-    <div>
-      <div className="mb-3 text-sm font-semibold text-foreground">{dayLabel}</div>
-      <div className="space-y-4">
-        {TIME_OF_DAY_SECTIONS.map(({ key, label }) => {
-          const items = groups.get(key)
-          if (!items || items.length === 0) return null
-          return (
-            <div key={key}>
-              <div className="mono-label mb-1.5 text-muted-foreground">{label}</div>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {items.map((s) => (
-                  <button
-                    key={s.startsAt}
-                    type="button"
-                    onClick={() => onPick(s)}
-                    className="rounded-lg border border-border bg-card px-3 py-2.5 text-sm font-medium text-foreground transition-colors hover:border-primary hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    {formatWallTime(s.localTime)}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )
-        })}
-      </div>
     </div>
   )
 }

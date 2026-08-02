@@ -20,7 +20,8 @@ const LABEL: Record<string, string> = {
   cross_sell: 'Cross-Sell',
   term_conversion: 'Term Conversion',
   referral_followup: 'Referral Follow-Up',
-  marketing_automation: 'Marketing / Win-Back',
+  life_winback: 'Life Win-Back',
+  marketing_automation: 'Marketing / Win-Back', // legacy row label (pre-ADR-034); kept for back-compat display
 }
 
 // Super editor for the per-agent daily contact quotas. Saving a row clears its

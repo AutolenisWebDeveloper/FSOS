@@ -169,6 +169,45 @@ async function termConversionCandidates(channel: 'sms' | 'email'): Promise<Outre
   return out
 }
 
+// Life Win-Back — former life-insurance households whose coverage lapsed (the
+// re-engagement book lives in `contacts` where source='winback_life'; see
+// lib/dashboards/winback.ts). Only contacts LINKED to a household are queued here,
+// because the dispatch path resolves the recipient + consent through a household
+// member (resolveRecipient). An unlinked contact has no member/consent mapping yet, so
+// it is intentionally not contacted — no invented consent for a former client (TCPA,
+// §4.2). The gate re-checks consent/quiet-hours/DNC at send time; a lapsed household
+// without granted consent is dropped (selectForQuota → skipped), never contacted.
+// Recency proxy: time since the contact was imported (there is no tracked lapse date —
+// same proxy the win-back dashboard documents), fresher ⇒ higher priority.
+async function lifeWinbackCandidates(channel: 'sms' | 'email'): Promise<OutreachCandidate[]> {
+  const db = getDb()
+  const { data } = await db
+    .from('contacts')
+    .select('id, full_name, first_name, household_id, status, created_at')
+    .eq('source', 'winback_life')
+    .is('deleted_at', null)
+    .not('household_id', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(CAP_PER_SOURCE)
+  const now = Date.now()
+  const MONTH = 30 * 86400000
+  const out: OutreachCandidate[] = []
+  for (const r of data ?? []) {
+    if (r.status === 'archived') continue // already worked/closed
+    const rec = await resolveRecipient(r.household_id, channel, r.first_name ?? r.full_name)
+    const lapsedMonths = r.created_at ? Math.max(0, Math.floor((now - new Date(r.created_at).getTime()) / MONTH)) : 24
+    out.push({
+      source: 'win_back', agentKey: 'life_winback', entityType: 'contact', entityId: r.id,
+      householdId: r.household_id, memberId: rec.memberId, channel,
+      contactable: rec.contactable, hasConsent: rec.hasConsent, onDNC: rec.onDNC, isSecurity: false,
+      signal: { lapsedMonths },
+      reason: 'Former life household — educational reconnect invitation',
+      recipientName: rec.name,
+    })
+  }
+  return out
+}
+
 async function referralFollowupCandidates(channel: 'sms' | 'email'): Promise<OutreachCandidate[]> {
   const db = getDb()
   const { data } = await db
@@ -203,8 +242,7 @@ async function candidatesFor(agentKey: OutreachAgentKey, channel: 'sms' | 'email
     case 'cross_sell': return crossSellCandidates(channel)
     case 'term_conversion': return termConversionCandidates(channel)
     case 'referral_followup': return referralFollowupCandidates(channel)
-    // win-back → member/consent mapping is a pending config (§2.3); no candidates yet.
-    case 'marketing_automation': return []
+    case 'life_winback': return lifeWinbackCandidates(channel)
     default: return []
   }
 }

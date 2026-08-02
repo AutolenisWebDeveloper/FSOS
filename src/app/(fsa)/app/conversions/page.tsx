@@ -77,12 +77,12 @@ export default async function ConversionsPage() {
     </div>
   )
 
-  const breadcrumb = [{ label: 'FSA', href: '/app' }, { label: 'Production Operations' }, { label: 'Life Conversion' }]
+  const breadcrumb = [{ label: 'FSA', href: '/app' }, { label: 'Production Operations' }, { label: 'Conversion Windows' }]
 
   if (!res.ok) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Life Conversion" description="Term-to-permanent conversion windows across the own-book." breadcrumb={breadcrumb} actions={actions} />
+        <PageHeader title="Conversion Windows" description="Term-to-permanent conversion windows across the own-book." breadcrumb={breadcrumb} actions={actions} />
         <ErrorState description={res.kind === 'not_configured' ? 'Database not configured.' : res.message} />
       </div>
     )
@@ -143,7 +143,7 @@ export default async function ConversionsPage() {
   return (
     <div className="space-y-7">
       <PageHeader
-        title="Life Conversion"
+        title="Conversion Windows"
         description="Term-to-permanent opportunities across the own-book. Detect approaching conversion windows and invite to a review — educational only, never product-specific."
         breadcrumb={breadcrumb}
         actions={actions}

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
-import { readJson, escapeHtml, dbErrorResponse } from '@/lib/http'
+import { readJson, dbErrorResponse } from '@/lib/http'
 import { sendEmail, emailConfigured } from '@/lib/messaging'
+import { renderEmailShell, paragraphHtml, detailTableHtml, calloutHtml } from '@/lib/notifications/email-shell'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -102,16 +103,21 @@ export async function POST(req: NextRequest) {
   // diagnosable instead of leaving registrants with no confirmation and no trace.
   if (emailConfigured()) {
     const when = w.scheduled_at ? new Date(w.scheduled_at).toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' }) : 'TBA'
-    const sent = await sendEmail(
-      email,
-      `You're registered — ${w.title}`,
-      `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#1a2332">
-        <h2 style="color:#0f1e36">You're registered!</h2>
-        <p>Hi ${escapeHtml(name)}, thanks for registering for <b>${escapeHtml(w.title)}</b>.</p>
-        <p><b>When:</b> ${escapeHtml(when)}<br/><b>Where:</b> ${escapeHtml(w.location || 'Details to follow')}</p>
-        <p>We'll send a reminder before the event. See you there!</p>
-      </div>`,
-    )
+    const confirmationHtml = renderEmailShell({
+      preheader: `You're registered for ${w.title}`,
+      eyebrow: 'Registration Confirmed',
+      heading: `You're registered, ${name}!`,
+      contentHtml: [
+        paragraphHtml(`Thank you for registering for ${w.title}. We're looking forward to seeing you.`),
+        detailTableHtml([
+          { label: 'Event', value: w.title },
+          { label: 'When', value: when },
+          { label: 'Where', value: w.location || 'Details to follow' },
+        ]),
+        calloutHtml("We'll send a reminder before the event — nothing else to do for now."),
+      ].join('\n'),
+    })
+    const sent = await sendEmail(email, `You're registered — ${w.title}`, confirmationHtml)
     if (!sent.ok) {
       console.error('[workshop-register] confirmation email failed (registration kept):', sent.error)
     }

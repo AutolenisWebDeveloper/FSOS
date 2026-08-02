@@ -1,23 +1,23 @@
 // src/emails/annual-review-invite.tsx — Slice 9B (ADR-025). Green-zone, recommendation-free.
 import * as React from 'react'
-import { Heading, Text } from '@react-email/components'
 import { EmailLayout } from './_layout'
-
-const h: React.CSSProperties = { color: '#1C428B', fontSize: '20px', fontWeight: 700, margin: '0 0 12px' }
-const p: React.CSSProperties = { color: '#1a1a1a', fontSize: '15px', lineHeight: '24px', margin: '0 0 16px' }
+import { Eyebrow, H1, Lead, Callout, CtaButton, SecondaryNote } from './_components'
 
 export function AnnualReviewInvite() {
   return (
     <EmailLayout preview="A quick, no-pressure check-in on your coverage">
-      <Heading style={h}>Time for a quick coverage check-in, {'{{first_name}}'}?</Heading>
-      <Text style={p}>
+      <Eyebrow>Annual Coverage Review</Eyebrow>
+      <H1>Time for a quick coverage check-in, {'{{first_name}}'}?</H1>
+      <Lead>
         Hi {'{{first_name}}'}, it has been a little while since we last reviewed your coverage together. Life
         changes — a new home, a growing family, a new job — can change what matters most.
-      </Text>
-      <Text style={p}>
-        Would you be open to a short, no-pressure review so everything still lines up with where you are today?
-        Just reply and we will find a time that works for you.
-      </Text>
+      </Lead>
+      <Callout>
+        A review is a short, no-pressure conversation to make sure everything still lines up with where you are
+        today. Nothing to prepare — just bring your questions.
+      </Callout>
+      <CtaButton href="{{scheduling_link}}">Find a time that works</CtaButton>
+      <SecondaryNote>Prefer to reply instead? Just hit reply and we&rsquo;ll take it from there.</SecondaryNote>
     </EmailLayout>
   )
 }

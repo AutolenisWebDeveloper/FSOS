@@ -38,6 +38,7 @@ const GROUPS: { label: string; items: { href: string; label: string }[] }[] = [
   {
     label: 'Governance',
     items: [
+      { href: '/app/comms/consent', label: 'Consent' },
       { href: '/app/comms/suppression', label: 'Suppression' },
       { href: '/app/comms/assignments', label: 'Assignment Review' },
       { href: '/app/comms/identity', label: 'Identity Disclosure' },

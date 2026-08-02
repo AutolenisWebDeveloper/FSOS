@@ -12,7 +12,7 @@ export const runtime = 'nodejs'
 // cron last ran. Read-only; FSA portal. Cron last-run is read from job_runs (the durable dedupe
 // ledger written by every cron handler via runIdempotent).
 //
-// Pre-migration tolerance (D9): the dead-letter/retry counts depend on migration 087's columns.
+// Pre-migration tolerance (D9): the dead-letter/retry counts depend on migration 089's columns.
 // Each count query is isolated — if the schema isn't migrated yet, that count reports null
 // ("unavailable") instead of failing the whole endpoint, so the panel degrades gracefully (§16).
 const CRON_JOBS = ['life-conversion-tick', 'life-conversion-retry'] as const

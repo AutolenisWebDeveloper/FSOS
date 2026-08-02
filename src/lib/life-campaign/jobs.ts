@@ -6,7 +6,7 @@
 // retryDecision (retry.ts).
 //
 // Pre-migration tolerance: the retry columns (attempts, next_retry_at, idempotency_key) and the
-// 'dead_letter' status arrive in migration 087. If this job runs before that migration is applied,
+// 'dead_letter' status arrive in migration 089. If this job runs before that migration is applied,
 // the first query returns a schema error — we FAIL SOFT (no-op with a note) rather than crash the
 // cron, so code and migration can deploy in either order (§16 graceful degradation).
 import { getDb } from '@/lib/supabase/client'

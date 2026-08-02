@@ -9,10 +9,24 @@ import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Field } from '@/components/forms/Field'
 import { PublicCard, PublicAlert } from '@/components/public/PublicShell'
-import { postJson, firstFieldError } from '@/lib/client/api'
+import { postJson } from '@/lib/client/api'
+import type { ApiError } from '@/lib/client/api'
 import { PublicBookingInput, isValidIanaZone } from '@/lib/booking/config-schemas'
-import { COMMON_TIMEZONES, formatWallTime, meetingModeLabel } from '@/lib/booking/display'
+import type { PublicBookingInputType } from '@/lib/booking/config-schemas'
+import {
+  COMMON_TIMEZONES,
+  formatWallTime,
+  meetingModeLabel,
+  timeOfDayBucket,
+  TIME_OF_DAY_SECTIONS,
+} from '@/lib/booking/display'
+import { groupSlotsByDay } from './month-grid'
+import { deriveStep, BOOKING_STEPS } from './step-model'
+import { BookingStepper } from './BookingStepper'
+import { CalendarMonth } from './CalendarMonth'
+import { ReviewSummary } from './ReviewSummary'
 import { buildIcs } from '@/lib/booking/ics'
+import { BUSINESS, CONTACT } from '@/lib/site'
 
 interface PublicType {
   slug: string
@@ -41,8 +55,19 @@ interface Confirmation {
   joinUrl: string | null
   meetingStatus: 'none' | 'provisioned' | 'pending'
 }
+interface MonthCursor {
+  year: number
+  month0: number
+}
+type FormState = { name: string; email: string; phone: string; notes: string; company: string }
 
-const WINDOW_DAYS = 14
+// The visible month grid is 6 weeks. Fetching 42 days from the first of the month covers the
+// in-month + trailing-week cells (leading filler belongs to the previous month) and stays within
+// the availability API's 45-day clamp. The engine remains authoritative for what is actually open.
+const FETCH_DAYS = 42
+
+// Fields the intake form renders inline; anything else that fails validation is surfaced generically.
+const KNOWN_FIELDS = new Set(['name', 'email', 'phone', 'notes'])
 
 function detectTimezone(): string {
   try {
@@ -58,17 +83,21 @@ function localTodayISO(tz: string): string {
     new Date(),
   )
 }
-function addDaysISO(dateIso: string, days: number): string {
-  const d = new Date(`${dateIso}T00:00:00Z`)
-  d.setUTCDate(d.getUTCDate() + days)
-  return d.toISOString().slice(0, 10)
+/** The month a YYYY-MM-DD key falls in. */
+function monthOf(dateKey: string): MonthCursor {
+  return { year: Number(dateKey.slice(0, 4)), month0: Number(dateKey.slice(5, 7)) - 1 }
 }
-/** "Mon, Jul 27" from a YYYY-MM-DD (rendered zone-neutrally). */
-function dayLabel(dateIso: string): string {
-  return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' }).format(
-    new Date(`${dateIso}T00:00:00Z`),
-  )
+/** First day (YYYY-MM-DD) of the cursor's month. */
+function firstOfMonthKey(c: MonthCursor): string {
+  const mm = String(c.month0 + 1).padStart(2, '0')
+  return `${c.year}-${mm}-01`
 }
+/** Shift a month cursor by whole months (handles year rollover). */
+function addMonths(c: MonthCursor, delta: number): MonthCursor {
+  const abs = c.year * 12 + c.month0 + delta
+  return { year: Math.floor(abs / 12), month0: ((abs % 12) + 12) % 12 }
+}
+/** Full date + time in the booker's chosen zone. */
 function fullWhen(iso: string, tz: string): string {
   return new Intl.DateTimeFormat('en-US', {
     timeZone: tz,
@@ -80,231 +109,460 @@ function fullWhen(iso: string, tz: string): string {
     minute: '2-digit',
   }).format(new Date(iso))
 }
+/** "Monday, August 3" — the selected-day heading over the time list. */
+function selectedDayLabel(dateKey: string): string {
+  return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'long', month: 'long', day: 'numeric' }).format(
+    new Date(`${dateKey}T12:00:00Z`),
+  )
+}
 function modeNote(mode: string, status?: 'none' | 'provisioned' | 'pending'): string {
   if (mode === 'video') {
     return status === 'provisioned'
-      ? 'Use the video link below to join. It&rsquo;s also in your confirmation email.'
+      ? 'Use the video link below to join. It’s also in your confirmation email.'
       : 'A video meeting link will be included in your confirmation email.'
   }
-  if (mode === 'phone') return 'We&rsquo;ll call you at the number you provided at the scheduled time.'
+  if (mode === 'phone') return 'We’ll call you at the number you provided at the scheduled time.'
   return 'Meeting location details will be included in your confirmation email.'
+}
+/** Map a failed submit to safe, plain-language copy — never surfaces internal detail (§16). */
+function bookingErrorMessage(status: number): string {
+  if (status === 429) return 'Too many requests right now. Please wait a moment, then try again.'
+  if (status === 0) return 'We couldn’t reach the server. Check your connection and try again.'
+  return 'We couldn’t complete your booking. Please try again in a moment.'
 }
 
 export function BookingFlow({ type, backHref }: { type: PublicType; backHref?: string }) {
   const [tz, setTz] = React.useState<string>('America/Chicago')
-  const [rangeStart, setRangeStart] = React.useState<string>('') // YYYY-MM-DD, booker-local
-  const [today, setToday] = React.useState<string>('')
+  const [today, setToday] = React.useState<string>('') // YYYY-MM-DD, booker-local
+  const [monthCursor, setMonthCursor] = React.useState<MonthCursor | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [loadError, setLoadError] = React.useState<string | null>(null)
   const [slots, setSlots] = React.useState<Slot[]>([])
-  const [selectedDate, setSelectedDate] = React.useState<string | null>(null)
+  const [selectedDay, setSelectedDay] = React.useState<string | null>(null)
   const [chosen, setChosen] = React.useState<Slot | null>(null)
-  const [confirmation, setConfirmation] = React.useState<Confirmation | null>(null)
 
-  // Detect the booker's timezone once, client-side, and seed the range at "today".
+  // Details form state is lifted here so it survives details → review → edit round-trips.
+  const [form, setForm] = React.useState<FormState>({ name: '', email: '', phone: '', notes: '', company: '' })
+  const [errors, setErrors] = React.useState<Record<string, string>>({})
+  const [formError, setFormError] = React.useState<string | null>(null)
+  const [reviewing, setReviewing] = React.useState(false)
+  const [payload, setPayload] = React.useState<PublicBookingInputType | null>(null)
+  const [submitting, setSubmitting] = React.useState(false)
+
+  const [confirmation, setConfirmation] = React.useState<Confirmation | null>(null)
+  const confirmInFlight = React.useRef(false)
+
+  // Detect the booker's timezone once, client-side, and seed the cursor at the current month.
   React.useEffect(() => {
     const detected = detectTimezone()
     const t = localTodayISO(detected)
     setTz(detected)
     setToday(t)
-    setRangeStart(t)
+    setMonthCursor(monthOf(t))
   }, [])
 
+  // Monotonic request id: month paging / timezone switches fire overlapping fetches, so we ignore
+  // any response that isn't the latest (last-resolved-wins would otherwise show the wrong month).
+  const reqSeq = React.useRef(0)
   const loadAvailability = React.useCallback(
-    async (zone: string, from: string) => {
+    async (zone: string, cursor: MonthCursor, todayKey: string) => {
+      const seq = ++reqSeq.current
       setLoading(true)
       setLoadError(null)
+      // Fetch from the later of today or the first of the visible month (never request the past).
+      const first = firstOfMonthKey(cursor)
+      const from = first > todayKey ? first : todayKey
+      const monthPrefix = first.slice(0, 7) // "YYYY-MM" of the visible month
       try {
-        const params = new URLSearchParams({ type: type.slug, tz: zone, from, days: String(WINDOW_DAYS) })
+        const params = new URLSearchParams({ type: type.slug, tz: zone, from, days: String(FETCH_DAYS) })
         const res = await fetch(`/api/public/booking/availability?${params.toString()}`)
         const json = await res.json().catch(() => ({}))
+        if (seq !== reqSeq.current) return // superseded by a newer request — drop stale data
         if (!res.ok) {
-          setLoadError(json?.error || 'Could not load availability.')
+          setLoadError('We couldn’t load available times. Please try again.')
           setSlots([])
+          setSelectedDay(null)
           return
         }
         const next = (json.slots ?? []) as Slot[]
         setSlots(next)
-        setSelectedDate(next.length ? next[0].localDate : null)
+        // Auto-select the first open day IN THE VISIBLE MONTH so the calendar and the time list
+        // always agree. The 42-day fetch can spill into the next month; those days render as
+        // trailing, non-selectable cells and must never become the selection.
+        const openThisMonth = [...groupSlotsByDay(next).keys()].filter((k) => k.startsWith(monthPrefix)).sort()
+        setSelectedDay(openThisMonth[0] ?? null)
       } catch {
-        setLoadError('Could not load availability. Please check your connection and try again.')
+        if (seq !== reqSeq.current) return
+        setLoadError('We couldn’t reach the server. Please check your connection and try again.')
         setSlots([])
+        setSelectedDay(null)
       } finally {
-        setLoading(false)
+        if (seq === reqSeq.current) setLoading(false)
       }
     },
     [type.slug],
   )
 
   React.useEffect(() => {
-    if (tz && rangeStart) loadAvailability(tz, rangeStart)
-  }, [tz, rangeStart, loadAvailability])
+    if (tz && today && monthCursor) loadAvailability(tz, monthCursor, today)
+  }, [tz, today, monthCursor, loadAvailability])
 
-  const byDate = React.useMemo(() => {
-    const m = new Map<string, Slot[]>()
-    for (const s of slots) {
-      const arr = m.get(s.localDate)
-      if (arr) arr.push(s)
-      else m.set(s.localDate, [s])
+  const byDay = React.useMemo(() => groupSlotsByDay(slots), [slots])
+  const availableDayKeys = React.useMemo(() => new Set(byDay.keys()), [byDay])
+
+  const current = deriveStep({ hasType: true, hasSlot: !!chosen, reviewing, confirmed: !!confirmation })
+  // A single-type booking (no chooser → no backHref) never performs a "Meeting type" step, so it's
+  // omitted from the stepper; a multi-type booking chose a type on the landing, so it's shown done.
+  const stepperSteps = backHref ? BOOKING_STEPS : BOOKING_STEPS.filter((s) => s !== 'type')
+
+  function refetch() {
+    if (tz && today && monthCursor) loadAvailability(tz, monthCursor, today)
+  }
+
+  function handleSlotGone() {
+    setChosen(null)
+    setReviewing(false)
+    setPayload(null)
+    setFormError(null)
+    toast.error('That time was just taken. Please pick another.')
+    refetch()
+  }
+
+  function handleDetailsSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!chosen) return
+    setErrors({})
+    setFormError(null)
+    const candidate = {
+      typeSlug: type.slug,
+      startsAt: chosen.startsAt,
+      bookerTimezone: tz,
+      name: form.name.trim(),
+      email: form.email.trim(),
+      phone: form.phone.trim() || null,
+      notes: form.notes.trim() || null,
+      company: form.company, // honeypot — passed through unmodified
     }
-    return m
-  }, [slots])
-  const days = React.useMemo(() => Array.from(byDate.keys()).sort(), [byDate])
-  const canGoEarlier = rangeStart > today
+    const parsed = PublicBookingInput.safeParse(candidate)
+    if (!parsed.success) {
+      const fe = parsed.error.flatten().fieldErrors
+      const next: Record<string, string> = {}
+      let hasUnknown = false
+      for (const [k, v] of Object.entries(fe)) {
+        if (v?.[0]) {
+          next[k] = v[0]
+          if (!KNOWN_FIELDS.has(k)) hasUnknown = true
+        }
+      }
+      setErrors(next)
+      if (hasUnknown) setFormError('Please check your details and try again.')
+      return
+    }
+    setPayload(parsed.data)
+    setReviewing(true)
+  }
 
-  // ── Success state ────────────────────────────────────────────────────────────
+  async function handleConfirm() {
+    // Ref latch closes the micro-window before `submitting` re-renders the button disabled —
+    // two synchronous clicks can't both POST (server double-booking guard is the backstop).
+    if (!payload || confirmInFlight.current) return
+    confirmInFlight.current = true
+    setSubmitting(true)
+    setFormError(null)
+    let res
+    try {
+      res = await postJson<{ ok: boolean; confirmation: Confirmation }>('/api/public/booking', payload)
+    } finally {
+      setSubmitting(false)
+      confirmInFlight.current = false
+    }
+    if (!res.ok) {
+      const reason = res.error.reason
+      if (reason === 'taken' || reason === 'unavailable') return handleSlotGone()
+      if (res.status === 400) {
+        // Fell out of validation on the server — send the booker back to fix their details.
+        const fe = (res.error as ApiError).details?.fieldErrors
+        const next: Record<string, string> = {}
+        if (fe) for (const [k, v] of Object.entries(fe)) if (v?.[0] && KNOWN_FIELDS.has(k)) next[k] = v[0]
+        setErrors(next)
+        setReviewing(false)
+        setFormError(Object.keys(next).length ? null : 'Please check your details and try again.')
+        return
+      }
+      setFormError(bookingErrorMessage(res.status))
+      return
+    }
+    setConfirmation(res.data.confirmation)
+  }
+
+  function handleEdit(step: 'slot' | 'details') {
+    setReviewing(false)
+    setFormError(null)
+    if (step === 'slot') {
+      setChosen(null)
+      setPayload(null)
+      refetch()
+    }
+  }
+
+  function handleBookAnother() {
+    setConfirmation(null)
+    setChosen(null)
+    setReviewing(false)
+    setPayload(null)
+    setForm({ name: '', email: '', phone: '', notes: '', company: '' })
+    setErrors({})
+    setFormError(null)
+    setSelectedDay(null)
+    setMonthCursor(monthOf(today)) // returns to the current month + triggers a refetch
+  }
+
+  const setField = (k: keyof FormState, v: string) => setForm((f) => ({ ...f, [k]: v }))
+
+  // ── Success step ─────────────────────────────────────────────────────────────
   if (confirmation) {
-    return <BookingConfirmed confirmation={confirmation} onBookAnother={() => { setConfirmation(null); setChosen(null); if (tz) loadAvailability(tz, today); setRangeStart(today) }} />
+    return (
+      <div className="w-full">
+        <BookingStepper current={current} steps={stepperSteps} />
+        <BookingConfirmed confirmation={confirmation} bookerEmail={form.email || null} onBookAnother={handleBookAnother} />
+      </div>
+    )
+  }
+
+  // ── Review step ──────────────────────────────────────────────────────────────
+  if (reviewing && chosen) {
+    return (
+      <div className="w-full">
+        <BookingStepper current={current} steps={stepperSteps} />
+        <ReviewSummary
+          typeName={type.name}
+          startsAt={chosen.startsAt}
+          timezone={tz}
+          durationMinutes={type.durationMinutes}
+          meetingMode={type.meetingMode}
+          name={form.name.trim()}
+          email={form.email.trim()}
+          phone={form.phone.trim() || null}
+          onEdit={handleEdit}
+          onConfirm={handleConfirm}
+          submitting={submitting}
+          error={formError}
+        />
+      </div>
+    )
   }
 
   // ── Details step ─────────────────────────────────────────────────────────────
   if (chosen) {
     return (
-      <DetailsForm
-        type={type}
-        slot={chosen}
-        tz={tz}
-        onBack={() => setChosen(null)}
-        onBooked={(c) => setConfirmation(c)}
-        onSlotGone={() => {
-          setChosen(null)
-          toast.error('That time was just taken. Please pick another.')
-          if (tz && rangeStart) loadAvailability(tz, rangeStart)
-        }}
-      />
+      <div className="w-full">
+        <BookingStepper current={current} steps={stepperSteps} />
+        <DetailsForm
+          type={type}
+          slot={chosen}
+          tz={tz}
+          values={form}
+          errors={errors}
+          formError={formError}
+          onChange={setField}
+          onSubmit={handleDetailsSubmit}
+          onBack={() => handleEdit('slot')}
+        />
+      </div>
     )
   }
 
   // ── Slot-picker step ─────────────────────────────────────────────────────────
+  // Openings are counted for the VISIBLE month only — a next-month day inside the 42-day fetch
+  // window must not suppress this month's empty state (and selectedDay is always in-month).
+  const monthPrefix = monthCursor ? firstOfMonthKey(monthCursor).slice(0, 7) : ''
+  const dayCount = [...byDay.keys()].filter((k) => k.startsWith(monthPrefix)).length
+  const daySlots = selectedDay ? byDay.get(selectedDay) ?? [] : []
+
   return (
-    <PublicCard subtitle={`${type.durationMinutes}-minute ${meetingModeLabel(type.meetingMode).toLowerCase()} meeting`} className="max-w-2xl">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-lg font-semibold text-foreground">{type.name}</h1>
-          {type.description ? <p className="mt-1 text-sm text-muted-foreground">{type.description}</p> : null}
+    <div className="w-full">
+      <BookingStepper current={current} steps={stepperSteps} />
+      <PublicCard
+        subtitle={`${type.durationMinutes}-minute ${meetingModeLabel(type.meetingMode).toLowerCase()} meeting`}
+        className="max-w-2xl"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-lg font-semibold text-foreground">{type.name}</h1>
+            {type.description ? <p className="mt-1 text-sm text-muted-foreground">{type.description}</p> : null}
+          </div>
+          {backHref ? (
+            <Button asChild variant="ghost" size="sm">
+              <Link href={backHref}>Change</Link>
+            </Button>
+          ) : null}
         </div>
-        {backHref ? (
-          <Button asChild variant="ghost" size="sm">
-            <Link href={backHref}>Change</Link>
-          </Button>
-        ) : null}
-      </div>
 
-      {/* Timezone control — the booker always knows what zone they're booking in. */}
-      <div className="mt-4 flex flex-wrap items-center gap-2 text-sm">
-        <span className="text-muted-foreground">Times shown in</span>
-        <label className="sr-only" htmlFor="booking-tz">
-          Timezone
-        </label>
-        <Select
-          id="booking-tz"
-          value={COMMON_TIMEZONES.includes(tz as (typeof COMMON_TIMEZONES)[number]) ? tz : ''}
-          onChange={(e) => setTz(e.target.value || tz)}
-          className="h-8 w-auto min-w-[12rem] text-sm"
-        >
-          {!COMMON_TIMEZONES.includes(tz as (typeof COMMON_TIMEZONES)[number]) ? <option value="">{tz} (detected)</option> : null}
-          {COMMON_TIMEZONES.map((z) => (
-            <option key={z} value={z}>
-              {z}
-            </option>
-          ))}
-        </Select>
-      </div>
-
-      {/* Range navigation */}
-      <div className="mt-4 flex items-center justify-between">
-        <Button variant="outline" size="sm" disabled={!canGoEarlier || loading} onClick={() => setRangeStart(addDaysISO(rangeStart, -WINDOW_DAYS) < today ? today : addDaysISO(rangeStart, -WINDOW_DAYS))}>
-          ← Earlier
-        </Button>
-        <span className="text-xs text-muted-foreground">{loading ? 'Loading…' : `Next ${WINDOW_DAYS} days`}</span>
-        <Button variant="outline" size="sm" disabled={loading} onClick={() => setRangeStart(addDaysISO(rangeStart, WINDOW_DAYS))}>
-          Later →
-        </Button>
-      </div>
-
-      <div className="mt-4 min-h-[12rem]">
-        {loading ? (
-          <PickerSkeleton />
-        ) : loadError ? (
-          <div className="space-y-3">
-            <PublicAlert>{loadError}</PublicAlert>
-            <Button variant="outline" size="sm" onClick={() => loadAvailability(tz, rangeStart)}>
-              Try again
-            </Button>
-          </div>
-        ) : days.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center">
-            <p className="text-sm font-medium text-foreground">No openings in this range</p>
-            <p className="mt-1 text-sm text-muted-foreground">Try the next set of dates.</p>
-            <Button className="mt-4" variant="outline" size="sm" onClick={() => setRangeStart(addDaysISO(rangeStart, WINDOW_DAYS))}>
-              Show later dates →
-            </Button>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {/* Day selector */}
-            <div className="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Available days">
-              {days.map((d) => {
-                const active = d === selectedDate
-                return (
-                  <button
-                    key={d}
-                    role="tab"
-                    aria-selected={active}
-                    onClick={() => setSelectedDate(d)}
-                    className={
-                      'shrink-0 rounded-lg border px-3 py-2 text-center text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ' +
-                      (active
-                        ? 'border-primary bg-primary text-primary-foreground'
-                        : 'border-border bg-card text-foreground hover:border-ring/60')
-                    }
-                  >
-                    <div className="font-medium">{dayLabel(d)}</div>
-                    <div className={active ? 'text-primary-foreground/80' : 'text-muted-foreground'}>
-                      {byDate.get(d)?.length} open
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
-
-            {/* Time slots for the selected day */}
-            {selectedDate ? (
-              <div>
-                <div className="mb-2 text-sm font-medium text-foreground">{dayLabel(selectedDate)}</div>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {(byDate.get(selectedDate) ?? []).map((s) => (
-                    <button
-                      key={s.startsAt}
-                      onClick={() => setChosen(s)}
-                      className="rounded-lg border border-border bg-card px-3 py-2.5 text-sm font-medium text-foreground transition-colors hover:border-primary hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                    >
-                      {formatWallTime(s.localTime)}
-                    </button>
-                  ))}
-                </div>
-              </div>
+        {/* Timezone control — the booker always knows what zone they're booking in. */}
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Times shown in</span>
+          <label className="sr-only" htmlFor="booking-tz">
+            Timezone
+          </label>
+          <Select
+            id="booking-tz"
+            value={COMMON_TIMEZONES.includes(tz as (typeof COMMON_TIMEZONES)[number]) ? tz : ''}
+            onChange={(e) => {
+              const z = e.target.value || tz
+              setTz(z)
+              // Keep "today" in the CHOSEN zone so day past/available classification stays correct.
+              setToday(localTodayISO(z))
+            }}
+            className="h-8 w-auto min-w-[12rem] text-sm"
+          >
+            {!COMMON_TIMEZONES.includes(tz as (typeof COMMON_TIMEZONES)[number]) ? (
+              <option value="">{tz} (detected)</option>
             ) : null}
-          </div>
-        )}
+            {COMMON_TIMEZONES.map((z) => (
+              <option key={z} value={z}>
+                {z}
+              </option>
+            ))}
+          </Select>
+        </div>
+
+        <div className="mt-4">
+          {loadError ? (
+            <div className="space-y-3">
+              <PublicAlert>{loadError}</PublicAlert>
+              <Button variant="outline" size="sm" onClick={refetch}>
+                Try again
+              </Button>
+            </div>
+          ) : loading || !monthCursor ? (
+            <PickerSkeleton />
+          ) : (
+            <div className="grid gap-5 md:grid-cols-[minmax(0,20rem)_1fr]">
+              <CalendarMonth
+                availableDayKeys={availableDayKeys}
+                todayKey={today}
+                monthCursor={monthCursor}
+                selectedDay={selectedDay}
+                onSelectDay={setSelectedDay}
+                onMonthChange={(delta) => setMonthCursor((c) => (c ? addMonths(c, delta) : c))}
+              />
+
+              <div className="min-w-0">
+                {dayCount === 0 ? (
+                  <div className="flex h-full flex-col justify-center rounded-xl border border-dashed border-border px-4 py-8 text-center">
+                    <p className="text-sm font-medium text-foreground">No openings this month</p>
+                    <p className="mt-1 text-sm text-muted-foreground">Use the arrows to check another month.</p>
+                    <div className="mt-4">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setMonthCursor((c) => (c ? addMonths(c, 1) : c))}
+                      >
+                        Next month →
+                      </Button>
+                    </div>
+                  </div>
+                ) : selectedDay ? (
+                  <TimeList dayLabel={selectedDayLabel(selectedDay)} slots={daySlots} onPick={setChosen} />
+                ) : (
+                  <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-border px-4 py-8 text-center">
+                    <p className="text-sm text-muted-foreground">Select an available day to see open times.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </PublicCard>
+    </div>
+  )
+}
+
+/** The open times for the selected day, grouped Morning / Afternoon / Evening. */
+function TimeList({ dayLabel, slots, onPick }: { dayLabel: string; slots: Slot[]; onPick: (s: Slot) => void }) {
+  const groups = React.useMemo(() => {
+    const m = new Map<string, Slot[]>()
+    for (const s of slots) {
+      const b = timeOfDayBucket(s.localTime)
+      const arr = m.get(b)
+      if (arr) arr.push(s)
+      else m.set(b, [s])
+    }
+    return m
+  }, [slots])
+
+  return (
+    <div>
+      <div className="mb-3 text-sm font-semibold text-foreground">{dayLabel}</div>
+      <div className="space-y-4">
+        {TIME_OF_DAY_SECTIONS.map(({ key, label }) => {
+          const items = groups.get(key)
+          if (!items || items.length === 0) return null
+          return (
+            <div key={key}>
+              <div className="mono-label mb-1.5 text-muted-foreground">{label}</div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {items.map((s) => (
+                  <button
+                    key={s.startsAt}
+                    type="button"
+                    onClick={() => onPick(s)}
+                    className="rounded-lg border border-border bg-card px-3 py-2.5 text-sm font-medium text-foreground transition-colors hover:border-primary hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {formatWallTime(s.localTime)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )
+        })}
       </div>
-    </PublicCard>
+    </div>
   )
 }
 
 function PickerSkeleton() {
   return (
-    <div className="animate-pulse space-y-4" aria-hidden>
-      <div className="flex gap-2">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className="h-12 w-16 shrink-0 rounded-lg bg-muted" />
-        ))}
+    <div className="grid animate-pulse gap-5 md:grid-cols-[minmax(0,20rem)_1fr]" aria-hidden>
+      <div className="rounded-xl border border-border bg-card p-3 shadow-elev-sm sm:p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="h-8 w-8 rounded-md bg-muted" />
+          <div className="h-4 w-28 rounded bg-muted" />
+          <div className="h-8 w-8 rounded-md bg-muted" />
+        </div>
+        <div className="grid grid-cols-7 gap-1.5">
+          {Array.from({ length: 42 }).map((_, i) => (
+            <div key={i} className="mx-auto h-9 w-9 rounded-lg bg-muted" />
+          ))}
+        </div>
       </div>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="h-10 rounded-lg bg-muted" />
-        ))}
+      <div className="space-y-3">
+        <div className="h-4 w-32 rounded bg-muted" />
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-10 rounded-lg bg-muted" />
+          ))}
+        </div>
       </div>
+    </div>
+  )
+}
+
+function ErrorSummary({ errors }: { errors: Record<string, string> }) {
+  const entries = Object.entries(errors).filter(([k]) => KNOWN_FIELDS.has(k))
+  if (entries.length === 0) return null
+  return (
+    <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3">
+      <p className="text-sm font-semibold text-destructive">Please fix the following before continuing:</p>
+      <ul className="mt-1.5 list-disc space-y-1 pl-5 text-sm text-destructive">
+        {entries.map(([field, message]) => (
+          <li key={field}>
+            <a href={`#bk-${field}`} className="underline underline-offset-2">
+              {message}
+            </a>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }
@@ -313,62 +571,28 @@ function DetailsForm({
   type,
   slot,
   tz,
+  values,
+  errors,
+  formError,
+  onChange,
+  onSubmit,
   onBack,
-  onBooked,
-  onSlotGone,
 }: {
   type: PublicType
   slot: Slot
   tz: string
+  values: FormState
+  errors: Record<string, string>
+  formError: string | null
+  onChange: (k: keyof FormState, v: string) => void
+  onSubmit: (e: React.FormEvent) => void
   onBack: () => void
-  onBooked: (c: Confirmation) => void
-  onSlotGone: () => void
 }) {
-  const [form, setForm] = React.useState({ name: '', email: '', phone: '', notes: '', company: '' })
-  const [errors, setErrors] = React.useState<Record<string, string>>({})
-  const [submitting, setSubmitting] = React.useState(false)
-  const [formError, setFormError] = React.useState<string | null>(null)
-  const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }))
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault()
-    setErrors({})
-    setFormError(null)
-    const payload = {
-      typeSlug: type.slug,
-      startsAt: slot.startsAt,
-      bookerTimezone: tz,
-      name: form.name.trim(),
-      email: form.email.trim(),
-      phone: form.phone.trim() || null,
-      notes: form.notes.trim() || null,
-      company: form.company, // honeypot
-    }
-    const parsed = PublicBookingInput.safeParse(payload)
-    if (!parsed.success) {
-      const fe = parsed.error.flatten().fieldErrors
-      const next: Record<string, string> = {}
-      for (const [k, v] of Object.entries(fe)) if (v?.[0]) next[k] = v[0]
-      setErrors(next)
-      return
-    }
-    setSubmitting(true)
-    const res = await postJson<{ ok: boolean; confirmation: Confirmation }>('/api/public/booking', parsed.data)
-    setSubmitting(false)
-    if (!res.ok) {
-      const reason = res.error.reason
-      if (reason === 'taken' || reason === 'unavailable') return onSlotGone()
-      const fe = firstFieldError(res.error)
-      if (fe.field) setErrors({ [fe.field]: fe.message })
-      setFormError(fe.message)
-      return
-    }
-    onBooked(res.data.confirmation)
-  }
-
   return (
-    <PublicCard subtitle="Confirm your details" className="max-w-2xl">
-      <div className="rounded-lg border border-border bg-accent/30 px-4 py-3">
+    <PublicCard subtitle="Your details" className="max-w-2xl">
+      <h1 className="text-lg font-semibold text-foreground">Confirm your details</h1>
+
+      <div className="mt-3 rounded-lg border border-border bg-accent/30 px-4 py-3">
         <div className="text-sm font-semibold text-foreground">{type.name}</div>
         <div className="mt-0.5 text-sm text-muted-foreground">
           {fullWhen(slot.startsAt, tz)} · {type.durationMinutes} min
@@ -376,26 +600,54 @@ function DetailsForm({
         <div className="text-xs text-muted-foreground">Times shown in {tz}</div>
       </div>
 
-      <form onSubmit={submit} className="mt-5 space-y-4" noValidate>
+      <form onSubmit={onSubmit} className="mt-5 space-y-4" noValidate>
+        {Object.keys(errors).some((k) => KNOWN_FIELDS.has(k)) ? <ErrorSummary errors={errors} /> : null}
+
         <Field id="bk-name" label="Full name" required error={errors.name}>
-          <Input name="name" autoComplete="name" value={form.name} onChange={(e) => set('name', e.target.value)} />
+          <Input
+            name="name"
+            autoComplete="name"
+            value={values.name}
+            onChange={(e) => onChange('name', e.target.value)}
+          />
         </Field>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field id="bk-email" label="Email" required error={errors.email} hint="Your confirmation is sent here">
-            <Input name="email" type="email" autoComplete="email" value={form.email} onChange={(e) => set('email', e.target.value)} />
+            <Input
+              name="email"
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              value={values.email}
+              onChange={(e) => onChange('email', e.target.value)}
+            />
           </Field>
-          <Field id="bk-phone" label="Phone" error={errors.phone} hint="Optional">
-            <Input name="phone" type="tel" autoComplete="tel" value={form.phone} onChange={(e) => set('phone', e.target.value)} />
+          <Field id="bk-phone" label="Phone" error={errors.phone} hint="Optional — helpful for phone meetings">
+            <Input
+              name="phone"
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              value={values.phone}
+              onChange={(e) => onChange('phone', e.target.value)}
+            />
           </Field>
         </div>
         <Field id="bk-notes" label="Anything we should know?" error={errors.notes} hint="Optional">
-          <Textarea name="notes" rows={2} value={form.notes} onChange={(e) => set('notes', e.target.value)} />
+          <Textarea name="notes" rows={3} value={values.notes} onChange={(e) => onChange('notes', e.target.value)} />
         </Field>
 
         {/* Honeypot — hidden from humans + assistive tech; bots that fill it are dropped. */}
         <div className="sr-only" aria-hidden>
           <label htmlFor="bk-company">Company</label>
-          <input id="bk-company" name="company" tabIndex={-1} autoComplete="off" value={form.company} onChange={(e) => set('company', e.target.value)} />
+          <input
+            id="bk-company"
+            name="company"
+            tabIndex={-1}
+            autoComplete="off"
+            value={values.company}
+            onChange={(e) => onChange('company', e.target.value)}
+          />
         </div>
 
         {formError ? <PublicAlert>{formError}</PublicAlert> : null}
@@ -406,10 +658,8 @@ function DetailsForm({
         </p>
 
         <div className="flex items-center gap-2">
-          <Button type="submit" loading={submitting}>
-            {submitting ? 'Booking…' : 'Confirm booking'}
-          </Button>
-          <Button type="button" variant="outline" onClick={onBack} disabled={submitting}>
+          <Button type="submit">Continue to review</Button>
+          <Button type="button" variant="outline" onClick={onBack}>
             Back
           </Button>
         </div>
@@ -418,12 +668,20 @@ function DetailsForm({
   )
 }
 
-function BookingConfirmed({ confirmation, onBookAnother }: { confirmation: Confirmation; onBookAnother: () => void }) {
+function BookingConfirmed({
+  confirmation,
+  bookerEmail,
+  onBookAnother,
+}: {
+  confirmation: Confirmation
+  bookerEmail: string | null
+  onBookAnother: () => void
+}) {
   function downloadIcs() {
     const ics = buildIcs({
       uid: `${confirmation.reference}@fsos`,
       title: confirmation.typeName,
-      description: modeNote(confirmation.meetingMode).replace(/&rsquo;/g, '’'),
+      description: modeNote(confirmation.meetingMode),
       startsAt: confirmation.startsAt,
       endsAt: confirmation.endsAt,
     })
@@ -441,7 +699,10 @@ function BookingConfirmed({ confirmation, onBookAnother }: { confirmation: Confi
   return (
     <PublicCard subtitle="You're booked" className="max-w-2xl">
       <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-status-won/15 text-status-won" aria-hidden>
+        <div
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-status-won/15 text-status-won"
+          aria-hidden
+        >
           <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
             <path
               fillRule="evenodd"
@@ -458,28 +719,42 @@ function BookingConfirmed({ confirmation, onBookAnother }: { confirmation: Confi
         </div>
       </div>
 
-      <dl className="mt-5 space-y-2 rounded-lg border border-border bg-accent/30 px-4 py-3 text-sm">
-        <div className="flex justify-between gap-4">
+      <dl className="mt-5 divide-y divide-border rounded-lg border border-border bg-accent/30 px-4 py-1 text-sm">
+        <div className="flex justify-between gap-4 py-2">
           <dt className="text-muted-foreground">What</dt>
           <dd className="text-right font-medium text-foreground">{confirmation.typeName}</dd>
         </div>
-        <div className="flex justify-between gap-4">
+        <div className="flex justify-between gap-4 py-2">
           <dt className="text-muted-foreground">When</dt>
-          <dd className="text-right font-medium text-foreground">{fullWhen(confirmation.startsAt, confirmation.bookerTimezone)}</dd>
+          <dd className="text-right font-medium text-foreground">
+            {fullWhen(confirmation.startsAt, confirmation.bookerTimezone)}
+          </dd>
         </div>
-        <div className="flex justify-between gap-4">
+        <div className="flex justify-between gap-4 py-2">
           <dt className="text-muted-foreground">Timezone</dt>
           <dd className="text-right text-foreground">{confirmation.bookerTimezone}</dd>
         </div>
-        <div className="flex justify-between gap-4">
+        <div className="flex justify-between gap-4 py-2">
+          <dt className="text-muted-foreground">Duration</dt>
+          <dd className="text-right text-foreground">{confirmation.durationMinutes} min</dd>
+        </div>
+        <div className="flex justify-between gap-4 py-2">
           <dt className="text-muted-foreground">Format</dt>
           <dd className="text-right text-foreground">{meetingModeLabel(confirmation.meetingMode)}</dd>
         </div>
       </dl>
 
-      <p className="mt-3 text-sm text-muted-foreground">
-        {modeNote(confirmation.meetingMode, confirmation.meetingStatus).replace(/&rsquo;/g, '’')}
-      </p>
+      {/* Next steps — neutral email copy (we don't claim delivery, only that it's on its way). */}
+      <div className="mt-4 rounded-lg border border-border bg-card px-4 py-3">
+        <div className="mono-label text-muted-foreground">What happens next</div>
+        <ul className="mt-2 space-y-1.5 text-sm text-muted-foreground">
+          <li>
+            A confirmation email is on its way{bookerEmail ? <> to <span className="text-foreground">{bookerEmail}</span></> : null}.
+          </li>
+          <li>{modeNote(confirmation.meetingMode, confirmation.meetingStatus)}</li>
+          <li>Need to change it? Use the reschedule or cancel link in that email.</li>
+        </ul>
+      </div>
 
       <div className="mt-5 flex flex-wrap items-center gap-2">
         {confirmation.joinUrl ? (
@@ -496,6 +771,18 @@ function BookingConfirmed({ confirmation, onBookAnother }: { confirmation: Confi
           Book another
         </Button>
       </div>
+
+      <p className="mt-5 border-t border-border pt-4 text-xs text-muted-foreground">
+        Questions? Contact {BUSINESS.agent} at{' '}
+        <a href={`tel:${CONTACT.phoneE164}`} className="font-medium text-foreground underline underline-offset-2">
+          {CONTACT.phoneDisplay}
+        </a>{' '}
+        or{' '}
+        <a href={`mailto:${CONTACT.email}`} className="font-medium text-foreground underline underline-offset-2">
+          {CONTACT.email}
+        </a>
+        .
+      </p>
     </PublicCard>
   )
 }

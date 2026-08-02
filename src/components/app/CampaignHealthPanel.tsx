@@ -89,12 +89,15 @@ export function CampaignHealthPanel({ endpoint }: { endpoint: string }) {
   const cronEntries = Object.entries(health?.cron ?? {})
 
   // Overall status: attention if any assessable problem metric is > 0; healthy if all problem
-  // metrics are known and zero; degraded if the problem metrics are null (schema not yet migrated).
-  const problemValues = [...PROBLEM_KEYS].map((k) => counts[k]).filter((v): v is number => typeof v === 'number')
-  const assessable = problemValues.length > 0
-  const anyProblem = problemValues.some((v) => v > 0)
-  const dotClass = !assessable ? 'bg-status-pending' : anyProblem ? 'bg-status-lost' : 'bg-status-won'
-  const statusLabel = !assessable ? 'Monitoring degraded' : anyProblem ? 'Attention needed' : 'Healthy'
+  // metrics are known and zero; degraded otherwise (a problem metric is null — schema not yet
+  // migrated or that count query failed). Precedence: Attention > Degraded > Healthy — a KNOWN
+  // problem (> 0) is reported even if another metric is unknown, but we only claim Healthy when
+  // EVERY problem metric is known and zero (an unknown metric must not read as healthy).
+  const problemValues = [...PROBLEM_KEYS].map((k) => counts[k])
+  const anyProblem = problemValues.some((v) => typeof v === 'number' && v > 0)
+  const allKnown = problemValues.every((v) => typeof v === 'number')
+  const dotClass = anyProblem ? 'bg-status-lost' : allKnown ? 'bg-status-won' : 'bg-status-pending'
+  const statusLabel = anyProblem ? 'Attention needed' : allKnown ? 'Healthy' : 'Monitoring degraded'
 
   return (
     <div className="space-y-4">

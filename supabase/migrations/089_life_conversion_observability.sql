@@ -1,4 +1,8 @@
--- 087_life_conversion_observability.sql
+-- 089_life_conversion_observability.sql
+-- (Renumbered from 087 to resolve a migration version collision: 087_comms_console.sql, from a
+--  separate PR, also claimed version 087 in main. This migration is idempotent and its ledger
+--  insert had always failed on the duplicate version, so it was never recorded anywhere — applying
+--  it fresh as 089 is safe in every environment.)
 -- Observability parity for the Life Conversion Campaign execution ledger (D9), bringing
 -- life_campaign_executions to the same retry/dead-letter shape the reference Cross-Sell Life
 -- engine already carries (migration 085). Forward-only and idempotent — safe to re-run.

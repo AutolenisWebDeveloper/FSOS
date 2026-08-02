@@ -352,7 +352,7 @@ export async function lifeConversionTick(): Promise<JobResult> {
 }
 
 // life-conversion-retry — retry/dead-letter sweep for stuck Life Conversion executions (§20,
-// observability parity D9). Fails soft before migration 087 is applied (no-op, never a cron error).
+// observability parity D9). Fails soft before migration 089 is applied (no-op, never a cron error).
 export async function lifeConversionRetry(): Promise<JobResult> {
   const { runRetrySweep } = await import('@/lib/life-campaign/jobs')
   const r = await runRetrySweep()

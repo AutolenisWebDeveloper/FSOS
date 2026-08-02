@@ -49,7 +49,7 @@ export const JOBS: Record<string, JobHandler> = {
   // rechecking eligibility before every touch and routing every send through the gate.
   'life-conversion-tick': async () => (await h()).lifeConversionTick(),
   // Life Conversion retry/dead-letter sweep (§20 observability parity). Hourly; fails soft until
-  // migration 087 lands.
+  // migration 089 lands.
   'life-conversion-retry': async () => (await h()).lifeConversionRetry(),
   // Pipeline Win-Back Campaign scheduler — daily enrollment sweep + advances the multi-channel
   // 24-touch timeline, rechecking eligibility before every touch, all sends through the gate.

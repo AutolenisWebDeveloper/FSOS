@@ -141,6 +141,12 @@ const FSA: Workspace[] = [
     nav: [
       { href: '/app/comms', label: 'Overview', icon: 'LayoutDashboard', exact: true },
       { href: '/app/comms/campaigns', label: 'Campaigns', icon: 'Radio' },
+      // Native campaign engines (D12): make the three multi-channel engines discoverable from the
+      // primary sidebar, not only the in-page CommsSubnav. Routes already live under the
+      // Communications workspace (/app/comms/*), so these are its sub-pages.
+      { href: '/app/comms/life-conversion', label: 'Life Conversion', icon: 'CalendarClock' },
+      { href: '/app/comms/cross-sell-life', label: 'Cross-Sell Life', icon: 'Shuffle' },
+      { href: '/app/comms/pipeline-winback', label: 'Win-Back', icon: 'Repeat' },
       { href: '/app/comms/sequences', label: 'Sequences', icon: 'Workflow' },
       { href: '/app/comms/templates', label: 'Templates', icon: 'ClipboardList' },
       { href: '/app/comms/library', label: 'Library', icon: 'BookOpen' },
@@ -205,13 +211,16 @@ const FSA: Workspace[] = [
   },
   {
     id: 'winback',
-    label: 'Life Win-Back',
+    // Relabeled (D12) to resolve the sidebar name collision with the native Win-Back CAMPAIGN
+    // ENGINE (/app/comms/pipeline-winback). This workspace is the IMPORTED lapsed-life book
+    // (contacts source=win_back, ADR-031), a distinct population from the internal-pipeline engine.
+    label: 'Lapsed-Life Book (Imported)',
     portal: 'fsa',
     section: 'Pipeline',
     icon: 'RotateCcw',
     home: '/app/winback',
     match: ['/app/winback'],
-    description: 'Re-engage lapsed and surrendered life policies.',
+    description: 'Re-engage lapsed and surrendered life policies (imported book).',
     nav: [
       { href: '/app/winback', label: 'Overview', icon: 'LayoutDashboard', exact: true },
       { href: '/app/winback/import', label: 'Import', icon: 'FileUp' },
@@ -219,7 +228,10 @@ const FSA: Workspace[] = [
   },
   {
     id: 'conversions',
-    label: 'Life Conversion',
+    // Relabeled (D12) to resolve the sidebar name collision with the native Life Conversion
+    // CAMPAIGN ENGINE (/app/comms/life-conversion). This workspace is the term-conversion
+    // origination surface (policy-window detection / eligible book), distinct from the engine.
+    label: 'Conversion Windows',
     portal: 'fsa',
     section: 'Pipeline',
     icon: 'Repeat',

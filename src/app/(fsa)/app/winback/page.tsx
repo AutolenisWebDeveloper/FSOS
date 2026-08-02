@@ -73,12 +73,12 @@ export default async function WinbackPage() {
     </div>
   )
 
-  const breadcrumb = [{ label: 'FSA', href: '/app' }, { label: 'Production Operations' }, { label: 'Life Win-Back' }]
+  const breadcrumb = [{ label: 'FSA', href: '/app' }, { label: 'Production Operations' }, { label: 'Lapsed-Life Book (Imported)' }]
 
   if (!res.ok) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Life Win-Back" description="Re-engage lapsed and former Life clients across every partnered agency's book." breadcrumb={breadcrumb} actions={actions} />
+        <PageHeader title="Lapsed-Life Book (Imported)" description="Re-engage lapsed and former Life clients across every partnered agency's book." breadcrumb={breadcrumb} actions={actions} />
         <ErrorState description={res.kind === 'not_configured' ? 'Database not configured.' : res.message} />
       </div>
     )
@@ -127,7 +127,7 @@ export default async function WinbackPage() {
   return (
     <div className="space-y-7">
       <PageHeader
-        title="Life Win-Back"
+        title="Lapsed-Life Book (Imported)"
         description="Lapsed & former Life clients across every partnered agency's book. Identify and invite to re-engage — never a securities record, never a product recommendation."
         breadcrumb={breadcrumb}
         actions={actions}

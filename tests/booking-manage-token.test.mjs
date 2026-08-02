@@ -68,9 +68,17 @@ t('rejects malformed input (no dot / empty / non-string)', () => {
   assert.equal(verifyManageToken('', KEY, NOW), null)
   assert.equal(verifyManageToken(undefined, KEY, NOW), null)
 })
-t('manageTokenKey falls back deterministically for dev', () => {
-  assert.equal(typeof manageTokenKey({}), 'string')
+t('manageTokenKey FAILS CLOSED when no signing key is configured (no hardcoded fallback)', () => {
+  // Security (D2): an unconfigured key must throw, never return a guessable/hardcoded secret —
+  // otherwise anyone could forge a valid cancel/reschedule token for any appointment.
+  assert.throws(() => manageTokenKey({}), /not configured/i)
+})
+t('manageTokenKey resolves from BOOKING_TOKEN_KEY, then FSOS_API_SECRET, then SOCIAL_TOKEN_KEY', () => {
   assert.equal(manageTokenKey({ BOOKING_TOKEN_KEY: 'x' }), 'x')
+  assert.equal(manageTokenKey({ FSOS_API_SECRET: 'y' }), 'y')
+  assert.equal(manageTokenKey({ SOCIAL_TOKEN_KEY: 'z' }), 'z')
+  // Precedence: BOOKING_TOKEN_KEY wins over the shared secrets.
+  assert.equal(manageTokenKey({ BOOKING_TOKEN_KEY: 'x', FSOS_API_SECRET: 'y' }), 'x')
 })
 t('TTL is a positive duration (120 days)', () => {
   assert.equal(MANAGE_TOKEN_TTL_MS, 120 * 24 * 60 * 60 * 1000)

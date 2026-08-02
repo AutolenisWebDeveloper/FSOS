@@ -242,7 +242,7 @@ human approval** before behavior changes. None of these block the P1 public-UI r
 | ID | Severity | Finding | Location | Handling |
 |---|---|---|---|---|
 | **D1** | Low | Cancel path is read-then-write (SELECT status → check → UPDATE on `id` only, no `.eq('status', from)` guard) — a TOCTOU window. Cannot double-book (only frees a slot). | `src/lib/appointments/service.ts:33-69` | Backend correctness fix; needs human approval. Out of P1 scope. |
-| **D2** | Med (config) | `manageTokenKey()` last-resort fallback is a hardcoded literal dev key; a prod misconfig would allow manage-token forgery. | `src/lib/booking/manage-tokens.ts:26` | Ops/config hardening + a fail-closed check; propose separately. Out of P1 scope. |
+| **D2** | ~~Med~~ **High** | `manageTokenKey()` last-resort fallback was a hardcoded literal dev key; a prod misconfig would allow manage-token forgery. | `src/lib/booking/manage-tokens.ts` | ✅ **FIXED** (owner-approved, own security slice) — now fails closed (throws) when no signing key env var is set; no hardcoded fallback. Deploy prereq recorded in `docs/booking/deploy-notes.md`. |
 | **D3** | Low (design) | Double-book guard is exact-equality only; no DB range/overlap `EXCLUDE`. Overlap for differing starts relies on app buffer math. | mig `069:154-156` + `availability.ts:140-145` | Design characteristic, not a P1 blocker. Note for a future DB hardening ADR. |
 | **P5-scope** | n/a | Single-interval, email-only reminders; no booking SMS. | `notify.ts` / cron | **Expected** — this is the deliverable of P5, not a defect. |
 

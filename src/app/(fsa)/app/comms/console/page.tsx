@@ -1,5 +1,4 @@
 import { ListShell } from '@/components/archetypes'
-import { Badge } from '@/components/ui/badge'
 import { ConsoleWorkbench } from './console-workbench'
 
 export const dynamic = 'force-dynamic'
@@ -14,12 +13,11 @@ export default function CommsConsolePage() {
   return (
     <ListShell
       title="Communications Console"
-      description="Compose an individual message, reuse any campaign asset, or start an AI conversation — every send passes the same compliance gate as a campaign. There is no override."
+      description="Compose an individual message, reuse any campaign asset, or start an AI conversation. Individual and test sends don't require consent on file — quiet hours, DNC/opt-out, the securities firewall, and the recommendation red-line still apply."
       breadcrumb={[
         { label: 'Communications', href: '/app/comms' },
         { label: 'Console' },
       ]}
-      actions={<Badge variant="outline">Gate-enforced · no force-send</Badge>}
     >
       <ConsoleWorkbench />
     </ListShell>

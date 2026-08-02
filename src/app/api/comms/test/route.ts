@@ -105,6 +105,9 @@ export async function POST(req: NextRequest) {
             aiAuthorAgentKey: d.agent_key,
             aiMessageClass: openerClassFor(asset ? 'approved_template' : 'blank'),
             purpose: 'RELATIONSHIP',
+            // A test to a destination the operator OWNS and verified needs no consent-on-file
+            // (ADR-033) — you don't consent to yourself. Every other gate step still runs.
+            consentWaived: true,
             isTest: true,
             sourceKind: 'test',
             sourceCampaignKey: d.campaign_key ?? null,
@@ -141,6 +144,9 @@ export async function POST(req: NextRequest) {
         actor,
         templateId,
         humanAuthored,
+        // Verified-self test destination — consent-on-file is waived (ADR-033). Opt-out-safe;
+        // quiet-hours/DNC/securities/recommendation/A2P still apply exactly as for a live send.
+        consentWaived: true,
         isTest: true,
         sourceKind: 'test',
         sourceCampaignKey: d.campaign_key ?? null,

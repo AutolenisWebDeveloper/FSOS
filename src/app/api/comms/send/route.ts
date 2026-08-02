@@ -124,6 +124,10 @@ export async function POST(req: NextRequest) {
         templateId,
         isSecurity: d.is_security === true,
         humanAuthored,
+        // Individual 1:1 operator send — consent-on-file is waived (ADR-033). Opt-out-safe:
+        // an explicit revoke still blocks, and DNC/quiet-hours/securities/recommendation all
+        // still apply. This is not the automated mass-marketing case consent gates.
+        consentWaived: true,
         purpose: d.purpose as MessagePurpose | undefined,
         sourceKind,
         sourceCampaignKey,

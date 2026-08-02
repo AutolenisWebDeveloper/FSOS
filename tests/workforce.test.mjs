@@ -54,6 +54,13 @@ t('a bigger cross-sell gap ranks higher, clamped to 0..100', () => {
   assert.equal(priorityOf({ source: 'cross_sell', signal: { gapScore: 9999 } }), 100)
 })
 
+t('win_back: a fresher lapse ranks higher, clamped to 20..80 (life win-back)', () => {
+  assert.ok(priorityOf({ source: 'win_back', signal: { lapsedMonths: 0 } }) > priorityOf({ source: 'win_back', signal: { lapsedMonths: 12 } }))
+  assert.equal(priorityOf({ source: 'win_back', signal: { lapsedMonths: 0 } }), 80)
+  assert.equal(priorityOf({ source: 'win_back', signal: { lapsedMonths: 999 } }), 20)
+  assert.equal(priorityOf({ source: 'win_back', signal: {} }), 32) // default 24mo lapse
+})
+
 console.log('Selectability (firewall + consent + DNC + contactability)')
 
 t('a securities-flagged candidate is NEVER selectable (firewall §2.1)', () => {
@@ -115,6 +122,12 @@ t('every outreach agent has a prompt that forbids recommendations', () => {
     assert.match(p, /NEVER/)
     assert.match(p, /recommend/i)
   }
+})
+
+t('life_winback is a first-class outreach agent (win-back promoted off marketing_automation)', () => {
+  assert.ok(OUTREACH_AGENTS.includes('life_winback'), 'life_winback must be a registered outreach agent')
+  assert.ok(!OUTREACH_AGENTS.includes('marketing_automation'), 'marketing_automation is no longer an outreach agent (campaign-dispatch actor only)')
+  assert.match(OUTREACH_PROMPTS.life_winback, /re-?engage|reconnect/i)
 })
 
 console.log(`\nAI Workforce: ${passed} assertions passed.`)

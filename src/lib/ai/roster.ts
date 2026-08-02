@@ -9,7 +9,7 @@
 // audit (ADR-008 / §11.1). Bump this whenever an agent's mission, system prompt, or
 // tool set changes materially, so a stored run can be traced to the exact prompt
 // contract that produced it.
-export const PROMPT_VERSION = 'roster-2026-07-1'
+export const PROMPT_VERSION = 'roster-2026-08-1'
 
 // The complete green-zone tool vocabulary. There is deliberately NO recommend/advise/
 // suitability/allocate tool anywhere in this list.
@@ -46,6 +46,12 @@ export const AGENT_ROSTER: Record<string, AgentDef> = {
   referral_followup: { key: 'referral_followup', mission: 'Draft consented first-touch outreach.', tools: ['invite', 'remind', 'follow_up', 'escalate', 'log'], triggers: 'SLA timer / no first touch', confidenceThreshold: 0.75 },
   pipeline: { key: 'pipeline', mission: 'Flag stalled opportunities; draft green-zone follow-up.', tools: ['follow_up', 'remind', 'escalate', 'log'], triggers: 'Stage age threshold', confidenceThreshold: 0.7 },
   cross_sell: { key: 'cross_sell', mission: 'Score coverage gaps; enroll in review invitations (never recommend).', tools: ['identify', 'educate', 'invite', 'schedule', 'escalate', 'log'], triggers: 'cross-sell-scan job', confidenceThreshold: 0.75 },
+  // Life Win-Back (ADR-034) — re-engage former life-insurance households whose coverage
+  // lapsed (the `winback_life` book). Green-zone reconnect INVITE only; never a product
+  // rec, never "you should re-buy." Promoted from the former marketing_automation
+  // win-back stub to a first-class, kill-switch-gated agent. Disabled by default until
+  // the member/consent mapping is verified (no invented consent for a former client).
+  life_winback: { key: 'life_winback', mission: 'Re-engage former life-insurance households whose coverage lapsed — educational reconnect invitation only (never a product rec).', tools: ['identify', 'educate', 'invite', 'schedule', 'remind', 'follow_up', 'escalate', 'log'], triggers: 'life-winback outreach queue', confidenceThreshold: 0.8 },
   term_conversion: { key: 'term_conversion', mission: 'Run the educational conversion cadence (no product steering).', tools: ['identify', 'educate', 'invite', 'schedule', 'remind', 'escalate', 'log'], triggers: 'conversion-watch job', confidenceThreshold: 0.8 },
   case_management: { key: 'case_management', mission: 'Track milestones; draft consented status updates.', tools: ['assemble_data', 'follow_up', 'escalate', 'log'], triggers: 'Case status change', confidenceThreshold: 0.7 },
   document_intelligence: { key: 'document_intelligence', mission: 'Assemble prep snapshots; flag missing documents.', tools: ['assemble_data', 'identify', 'escalate', 'log'], triggers: 'Review prep / case requirement', confidenceThreshold: 0.7 },

@@ -447,6 +447,7 @@ The identity is consistent across homepage, public pages, login, forgot-password
 | ADR-031 | Pipeline Win-Back Campaign (stalled internal-opportunity re-engagement; separate from imported `win_back`; shared campaign-engine primitives) |
 | ADR-032 | Cross-Sell Life Campaign (existing non-life client, no active life; multi-channel 35-touch/180-day timeline; `xsell_life_*` namespace, distinct from the Cross-Sell agent) |
 | ADR-033 | Communications Command Console (orchestration over the one send path; cross-campaign asset catalog view; individual/AI/test sends; no new send path, no override) |
+| ADR-034 | Life Win-Back agent (first-class win-back outreach; promotes the former `marketing_automation` stub; `winback_life` book; disabled by default until member/consent mapping verified) |
 
 New architectural decisions get a new ADR using `docs/adr/ADR-000-template.md`. Status values: Proposed → Accepted → Superseded (link the superseding ADR).
 

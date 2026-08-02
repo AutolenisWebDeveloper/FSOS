@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
@@ -319,86 +319,6 @@ export function CampaignControls({ campaignId, status }: { campaignId: string; s
   )
 }
 
-interface HealthState {
-  ok: boolean
-  status?: string
-  checks?: { label: string; ok: boolean; detail?: string }[]
-  [k: string]: unknown
-}
-
-// Monitoring & Health — fetched client-side so a health-endpoint outage never blocks the (server-
-// rendered) management page. If the route is missing or errors, we show an informative note (§16
-// graceful degradation) instead of failing.
-export function HealthPanel() {
-  const [state, setState] = useState<'loading' | 'ready' | 'unavailable'>('loading')
-  const [health, setHealth] = useState<HealthState | null>(null)
-
-  const refresh = useCallback(async () => {
-    setState('loading')
-    try {
-      const res = await fetch('/api/cross-sell-life/health', { cache: 'no-store' })
-      if (!res.ok) {
-        setState('unavailable')
-        return
-      }
-      const body = (await res.json()) as HealthState
-      setHealth(body)
-      setState('ready')
-    } catch {
-      setState('unavailable')
-    }
-  }, [])
-
-  useEffect(() => {
-    void refresh()
-  }, [refresh])
-
-  if (state === 'loading') {
-    return <p className="text-sm text-muted-foreground" aria-live="polite">Checking campaign health…</p>
-  }
-
-  if (state === 'unavailable') {
-    return (
-      <div className="space-y-2">
-        <p className="text-sm text-muted-foreground">
-          Live health monitoring is temporarily unavailable. The campaign continues to run on its schedule; retry to check again.
-        </p>
-        <Button variant="outline" size="sm" onClick={() => void refresh()}>
-          Retry
-        </Button>
-      </div>
-    )
-  }
-
-  const checks = health?.checks ?? []
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        <span
-          className={`inline-block h-2.5 w-2.5 rounded-full ${health?.ok ? 'bg-status-won' : 'bg-status-lost'}`}
-          aria-hidden
-        />
-        <span className="text-sm font-medium">{health?.ok ? 'Healthy' : 'Attention needed'}</span>
-        {health?.status && <span className="text-xs text-muted-foreground">({String(health.status).replace(/_/g, ' ')})</span>}
-      </div>
-      {checks.length > 0 ? (
-        <ul className="space-y-1.5">
-          {checks.map((c, i) => (
-            <li key={i} className="flex items-start gap-2 text-sm">
-              <span className={`mt-1 inline-block h-2 w-2 shrink-0 rounded-full ${c.ok ? 'bg-status-won' : 'bg-status-pending'}`} aria-hidden />
-              <span>
-                <span className="font-medium">{c.label}</span>
-                {c.detail && <span className="text-muted-foreground"> — {c.detail}</span>}
-              </span>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="text-sm text-muted-foreground">No health checks reported.</p>
-      )}
-      <Button variant="outline" size="sm" onClick={() => void refresh()}>
-        Refresh
-      </Button>
-    </div>
-  )
-}
+// Monitoring & Health moved to the shared <CampaignHealthPanel> (components/app), which renders the
+// actual {counts, cron} shape the /health route returns. The previous panel here read a {ok, checks}
+// shape the route never emitted, so it always showed "No health checks reported".

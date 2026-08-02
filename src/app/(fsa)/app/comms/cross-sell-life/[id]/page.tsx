@@ -7,7 +7,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { load } from '@/lib/data/query'
 import { loadCampaignDetail } from '@/lib/cross-sell-life/detail'
 import { campaignAnalytics } from '@/lib/cross-sell-life/analytics'
-import { CampaignControls, HealthPanel } from './controls'
+import { CampaignControls } from './controls'
+import { CampaignHealthPanel } from '@/components/app/CampaignHealthPanel'
 
 export const dynamic = 'force-dynamic'
 
@@ -172,7 +173,7 @@ export default async function CrossSellLifeDetailPage(props: { params: Promise<{
         </Section>
 
         <Section title="Monitoring & health" hint="Live campaign-health checks. Loaded client-side; if monitoring is unavailable the campaign keeps running on its schedule.">
-          <HealthPanel />
+          <CampaignHealthPanel endpoint="/api/cross-sell-life" />
         </Section>
 
         {/* ── Campaign Schedule ─────────────────────────────────────────────── */}

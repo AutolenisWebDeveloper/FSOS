@@ -9,6 +9,7 @@ import { loadCampaignDetail } from '@/lib/pipeline-winback/detail'
 import { PLAYBOOKS, ADVISOR_SCRIPTS, EVENT_DRIVEN_SMS } from '@/lib/pipeline-winback/playbooks'
 import { WINBACK_CANDIDATE_STAGES } from '@/lib/pipeline-winback/eligibility'
 import { CampaignControls } from '@/components/app/CampaignEngineControls'
+import { CampaignHealthPanel } from '@/components/app/CampaignHealthPanel'
 
 export const dynamic = 'force-dynamic'
 
@@ -148,6 +149,13 @@ export default async function PipelineWinbackPage() {
           {!config.simulated_at && config.status !== 'active' && (
             <p className="mt-2 text-xs text-muted-foreground">A read-only simulation is recommended before activation (ADR-021).</p>
           )}
+        </Card>
+      </Section>
+
+      {/* ── Monitoring & health (§21) ───────────────────────── */}
+      <Section title="Monitoring & health" description="Live retry/dead-letter and enrollment counts + last cron runs. Loaded client-side; if monitoring is unavailable the campaign keeps running on its schedule.">
+        <Card className="p-5">
+          <CampaignHealthPanel endpoint="/api/pipeline-winback" />
         </Card>
       </Section>
 

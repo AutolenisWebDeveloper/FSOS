@@ -8,6 +8,7 @@ import { load } from '@/lib/data/query'
 import { loadCampaignDetail } from '@/lib/life-campaign/detail'
 import { campaignAnalytics } from '@/lib/life-campaign/analytics'
 import { CampaignControls } from '@/components/app/CampaignEngineControls'
+import { CampaignHealthPanel } from '@/components/app/CampaignHealthPanel'
 
 export const dynamic = 'force-dynamic'
 
@@ -69,6 +70,11 @@ export default async function LifeConversionDetailPage(props: { params: Promise<
           {!s.simulated_at && s.status !== 'active' && (
             <p className="mt-3 text-xs text-muted-foreground">A read-only simulation is recommended before activation (ADR-021).</p>
           )}
+        </Section>
+
+        {/* Monitoring & health (§21) */}
+        <Section title="Monitoring & health" hint="Live retry/dead-letter and enrollment counts + last cron runs. Loaded client-side; if monitoring is unavailable the campaign keeps running on its schedule.">
+          <CampaignHealthPanel endpoint="/api/life-campaign" />
         </Section>
 
         {/* Analytics (§15) */}

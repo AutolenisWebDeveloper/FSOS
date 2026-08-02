@@ -1,5 +1,9 @@
 {
   "mcpServers": {
+    "graphify": {
+      "type": "http",
+      "url": "https://api.graphify.com/mcp"
+    },
     "twilio": {
       "type": "http",
       "url": "https://mcp.twilio.com/docs"

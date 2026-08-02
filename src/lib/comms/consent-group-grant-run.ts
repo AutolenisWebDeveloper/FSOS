@@ -55,6 +55,34 @@ export interface GrantConsentForGroupResult extends PopulationReport {
   capturedAt: string
 }
 
+/**
+ * Member-level grant options — the generalized core shared by the import/backfill consent-group
+ * grant AND the bulk-tag "Group Consents" grant. The caller supplies the documented basis
+ * (`source` + `disclosure`) directly, so the same suppression-aware, idempotent, audited path
+ * serves any provenance (a consent group, or an arbitrary contact tag) — one grant path, §6.
+ */
+export interface GrantConsentForMembersOptions {
+  memberIds: string[]
+  /** Provenance recorded in `consents.source` + the audit/timeline entry. */
+  source: string
+  /** Documented basis written verbatim onto every seeded row (TCPA/audit, §13.9). */
+  disclosure: string
+  channels: PopChannel[]
+  actor: string
+  /** Preview only — read + plan, write nothing. */
+  dryRun?: boolean
+  /** `audit_log.entity` for the run-summary row (defaults to a consent-group grant). */
+  auditEntity?: string
+  /** Extra fields merged into the run-summary audit diff (e.g. the selected tags). */
+  auditDiffExtra?: Record<string, unknown>
+}
+
+export interface GrantConsentForMembersResult extends PopulationReport {
+  source: string
+  channels: PopChannel[]
+  capturedAt: string
+}
+
 const READ_CHUNK = 300
 const WRITE_CHUNK = 500
 
@@ -67,22 +95,44 @@ function chunk<T>(arr: T[], size: number): T[][] {
 const uniq = (xs: string[]): string[] => Array.from(new Set(xs.filter(Boolean)))
 
 /**
- * Seed group consent for a specific set of members. Idempotent and suppression-aware.
- * Returns the report (members processed, sms/email created, each skip bucket). A member with
- * no selected channel to grant, or one fully suppressed, simply contributes zero grants.
+ * Seed group consent for a specific set of members using a consent GROUP's provenance. Thin
+ * wrapper over grantConsentForMembers (the shared core) — preserved so existing callers (the
+ * importer + retroactive backfill) are unchanged.
  */
 export async function grantConsentForGroup(
   opts: GrantConsentForGroupOptions,
 ): Promise<GrantConsentForGroupResult> {
-  const { group, actor } = opts
+  const { group } = opts
+  const res = await grantConsentForMembers({
+    memberIds: opts.memberIds,
+    source: group.source,
+    disclosure: group.disclosure,
+    channels: opts.channels,
+    actor: opts.actor,
+    dryRun: opts.dryRun,
+    auditEntity: 'consent_group_grant',
+    auditDiffExtra: { group: group.key },
+  })
+  return { ...res, groupKey: group.key }
+}
+
+/**
+ * Seed consent for a specific set of members from an explicit documented basis. Idempotent and
+ * suppression-aware: a later opt-out ALWAYS wins (existing revoke, channel DNC, do_not_contact
+ * household), an already-granted member is a no-op, and re-running never duplicates or
+ * overrides. Returns the report (members processed, sms/email created, each skip bucket).
+ */
+export async function grantConsentForMembers(
+  opts: GrantConsentForMembersOptions,
+): Promise<GrantConsentForMembersResult> {
+  const { source, disclosure, actor } = opts
   const channels = (['sms', 'email'] as PopChannel[]).filter((c) => opts.channels.includes(c))
   const memberIds = uniq(opts.memberIds)
   const capturedAt = new Date().toISOString()
 
-  const empty: GrantConsentForGroupResult = {
+  const empty: GrantConsentForMembersResult = {
     ...emptyReport(),
-    groupKey: group.key,
-    source: group.source,
+    source,
     channels,
     capturedAt,
   }
@@ -132,13 +182,7 @@ export async function grantConsentForGroup(
 
   // ── Preview: return the PLANNED report, write nothing ────────────────────────────
   if (opts.dryRun) {
-    return {
-      ...report,
-      groupKey: group.key,
-      source: group.source,
-      channels,
-      capturedAt,
-    }
+    return { ...report, source, channels, capturedAt }
   }
 
   // ── Insert grants idempotently; only ACTUALLY-created rows get audited/timelined ──
@@ -151,7 +195,7 @@ export async function grantConsentForGroup(
 
   for (const gchunk of chunk(grants, WRITE_CHUNK)) {
     const rows = gchunk.map((d) =>
-      buildConsentGrantRow(d.memberId, d.householdId, d.channel, group.source, capturedAt, group.disclosure),
+      buildConsentGrantRow(d.memberId, d.householdId, d.channel, source, capturedAt, disclosure),
     )
     const { data: insertedRows, error } = await db
       .from('consents')
@@ -170,8 +214,8 @@ export async function grantConsentForGroup(
         channel: r.channel,
         newStatus: 'granted',
         previousStatus: 'none',
-        source: group.source,
-        reason: group.disclosure,
+        source,
+        reason: disclosure,
         memberId: r.member_id,
         householdId: r.household_id,
       }
@@ -195,15 +239,15 @@ export async function grantConsentForGroup(
     }
   }
 
-  // The bulk group grant is itself an audited event (§B) — one summary row with the report.
+  // The bulk grant is itself an audited event (§B) — one summary row with the report.
   await writeAudit({
     actor,
     action: 'config.changed',
-    entity: 'consent_group_grant',
+    entity: opts.auditEntity ?? 'consent_group_grant',
     entityId: null,
     diff: {
-      group: group.key,
-      source: group.source,
+      ...(opts.auditDiffExtra ?? {}),
+      source,
       channels,
       captured_at: capturedAt,
       members_processed: created.membersProcessed,
@@ -216,5 +260,5 @@ export async function grantConsentForGroup(
     },
   })
 
-  return { ...created, groupKey: group.key, source: group.source, channels, capturedAt }
+  return { ...created, source, channels, capturedAt }
 }

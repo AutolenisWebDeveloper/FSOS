@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 
 // Shared monitoring & health panel for the native campaign engines (Life Conversion, Pipeline
@@ -47,18 +47,27 @@ function formatTime(iso: string | null | undefined): string {
 export function CampaignHealthPanel({ endpoint }: { endpoint: string }) {
   const [state, setState] = useState<'loading' | 'ready' | 'unavailable'>('loading')
   const [health, setHealth] = useState<HealthState | null>(null)
+  // Monotonic request id — only the most recently started refresh may apply its result, so an
+  // overlapping/slower in-flight fetch (rapid Refresh clicks, or an endpoint change) can never
+  // clobber the panel with stale data.
+  const reqIdRef = useRef(0)
 
   const refresh = useCallback(async () => {
+    const myReq = ++reqIdRef.current
     setState('loading')
     try {
       const res = await fetch(`${endpoint}/health`, { cache: 'no-store' })
+      if (myReq !== reqIdRef.current) return // superseded by a newer refresh
       if (!res.ok) {
         setState('unavailable')
         return
       }
-      setHealth((await res.json()) as HealthState)
+      const body = (await res.json()) as HealthState
+      if (myReq !== reqIdRef.current) return // superseded while parsing
+      setHealth(body)
       setState('ready')
     } catch {
+      if (myReq !== reqIdRef.current) return
       setState('unavailable')
     }
   }, [endpoint])

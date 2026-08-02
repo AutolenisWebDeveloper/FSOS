@@ -81,7 +81,7 @@
 
 ### Marketing & Communications (OS-12)
 - **Tables:** `campaigns, campaign_enrollments, templates (versions, approval), messages, suppression, consents`
-- **API:** `api/comms/send` 🛡 (the dispatcher), `api/comms/templates`, `api/comms/campaigns`
+- **API:** `api/comms/send` 🛡 (the dispatcher), `api/comms/templates`, `api/comms/templates/[id]` (submit/approve/reject/edit), `api/comms/templates/bulk` (bulk approve/unapprove/delete — approver authority for approve+unapprove; delete = archive), `api/comms/campaigns`
 - **Jobs:** `campaign-dispatch` 🛡 (per-recipient 13-step gate — `../data-guardrails.md` §5)
 - **Integrations:** Twilio 🔌 (`webhooks/twilio` inbound STOP), email provider 🔌 (`webhooks/email`)
 - **Audit:** template create/edit/approve, campaign activate, every send AND block

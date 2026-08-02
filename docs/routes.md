@@ -210,7 +210,7 @@ api/opportunities/route.ts  api/opportunities/[id]/route.ts  api/opportunities/[
 api/cases/route.ts  api/cases/[id]/route.ts  api/cases/[id]/requirements/route.ts
 api/commissions/route.ts  api/commissions/[id]/route.ts  api/commissions/splits/route.ts
 api/comms/send/route.ts        # → lib/comms/dispatcher (compliance gate)
-api/comms/templates/route.ts  api/comms/campaigns/route.ts
+api/comms/templates/route.ts  api/comms/templates/[id]/route.ts  api/comms/templates/bulk/route.ts  api/comms/campaigns/route.ts
 api/documents/route.ts  api/documents/[id]/route.ts  api/documents/upload/route.ts
 api/tasks/route.ts  api/calendar/route.ts  api/appointments/route.ts
 api/ai/run/route.ts            # enqueue an agent run (durable job)

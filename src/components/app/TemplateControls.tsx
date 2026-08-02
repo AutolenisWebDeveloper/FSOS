@@ -1,12 +1,16 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { Badge } from '@/components/ui/badge'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Field } from '@/components/forms/Field'
 import { TEMPLATE_CATEGORY, TemplateCreateSchema } from '@/lib/validation/schemas'
 import { postJson, patchJson, firstFieldError } from '@/lib/client/api'
@@ -99,6 +103,162 @@ export function TemplateBodyEditor({ id, body }: { id: string; body: string }) {
       <Textarea value={value} onChange={(e) => setValue(e.target.value)} rows={6} aria-label="Template body" />
       <div className="flex justify-end"><Button size="sm" onClick={save} disabled={saving || value === body}>{saving ? 'Saving…' : 'Save (new version)'}</Button></div>
       <p className="text-xs text-muted-foreground">Editing an approved template creates a new version and resets approval to draft — it cannot send until re-approved.</p>
+    </div>
+  )
+}
+
+export interface TemplateRow {
+  id: string
+  name: string
+  channel: string
+  category: string | null
+  approval_status: string
+  version: number
+}
+
+function approvalBadgeVariant(status: string): 'won' | 'pending' | 'draft' {
+  return status === 'approved' ? 'won' : status === 'submitted' ? 'pending' : 'draft'
+}
+
+// A token-resolved native checkbox (accessible; `accent-primary` themes the check).
+function RowCheckbox({ checked, indeterminate, onChange, label }: { checked: boolean; indeterminate?: boolean; onChange: () => void; label: string }) {
+  const ref = React.useRef<HTMLInputElement>(null)
+  React.useEffect(() => {
+    if (ref.current) ref.current.indeterminate = !!indeterminate && !checked
+  }, [indeterminate, checked])
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      checked={checked}
+      onChange={onChange}
+      aria-label={label}
+      className="h-4 w-4 cursor-pointer rounded border-input accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+    />
+  )
+}
+
+// OS-12 Templates list with bulk administration (§8 command-bar pattern). Selection
+// surfaces a scoped command bar: Approve / Unapprove (approvers only) + Delete
+// (confirmed). Server enforces authority + state transitions — this is UX only.
+export function TemplateBulkTable({ templates, canApprove }: { templates: TemplateRow[]; canApprove: boolean }) {
+  const router = useRouter()
+  const [selected, setSelected] = React.useState<Set<string>>(new Set())
+  const [busy, setBusy] = React.useState(false)
+  const [confirmDelete, setConfirmDelete] = React.useState(false)
+
+  // Drop selections that no longer exist after a refresh (e.g. deleted rows).
+  React.useEffect(() => {
+    setSelected((prev) => {
+      const live = new Set(templates.map((t) => t.id))
+      const next = new Set([...prev].filter((id) => live.has(id)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [templates])
+
+  const allSelected = templates.length > 0 && selected.size === templates.length
+  const someSelected = selected.size > 0
+
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleAll() {
+    setSelected((prev) => (prev.size === templates.length ? new Set() : new Set(templates.map((t) => t.id))))
+  }
+
+  async function runBulk(action: 'approve' | 'unapprove' | 'delete') {
+    if (selected.size === 0) return
+    setBusy(true)
+    const res = await postJson<{ affected: number; requested: number }>('/api/comms/templates/bulk', {
+      action,
+      ids: [...selected],
+    })
+    setBusy(false)
+    setConfirmDelete(false)
+    if (!res.ok) {
+      toast.error(firstFieldError(res.error).message)
+      return
+    }
+    const { affected, requested } = res.data
+    const verb = action === 'approve' ? 'Approved' : action === 'unapprove' ? 'Unapproved' : 'Deleted'
+    if (affected === 0) toast.message(`No templates ${verb.toLowerCase()} — none of the ${requested} selected were eligible.`)
+    else if (affected < requested) toast.success(`${verb} ${affected} of ${requested}. ${requested - affected} were not eligible and were skipped.`)
+    else toast.success(`${verb} ${affected} template${affected === 1 ? '' : 's'}.`)
+    setSelected(new Set())
+    router.refresh()
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Command bar (§8) — appears on selection: count + scoped actions + clear. */}
+      {someSelected ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2" role="region" aria-label="Bulk actions">
+          <span className="text-sm font-medium">{selected.size} selected</span>
+          <div className="ml-auto flex flex-wrap gap-2">
+            {canApprove ? (
+              <>
+                <Button size="sm" onClick={() => runBulk('approve')} disabled={busy}>Approve</Button>
+                <Button size="sm" variant="outline" onClick={() => runBulk('unapprove')} disabled={busy}>Unapprove</Button>
+              </>
+            ) : null}
+            <Button size="sm" variant="destructive" onClick={() => setConfirmDelete(true)} disabled={busy}>Delete</Button>
+            <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())} disabled={busy}>Clear</Button>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="rounded-lg border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-10">
+                <RowCheckbox checked={allSelected} indeterminate={someSelected} onChange={toggleAll} label="Select all templates" />
+              </TableHead>
+              <TableHead>Name</TableHead>
+              <TableHead>Channel</TableHead>
+              <TableHead>Category</TableHead>
+              <TableHead>Version</TableHead>
+              <TableHead>Approval</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {templates.map((t) => (
+              <TableRow key={t.id} data-state={selected.has(t.id) ? 'selected' : undefined}>
+                <TableCell>
+                  <RowCheckbox checked={selected.has(t.id)} onChange={() => toggle(t.id)} label={`Select ${t.name}`} />
+                </TableCell>
+                <TableCell><Link href={`/app/comms/templates/${t.id}`} className="font-medium text-primary hover:underline">{t.name}</Link></TableCell>
+                <TableCell><Badge variant="outline">{t.channel}</Badge></TableCell>
+                <TableCell className="capitalize text-muted-foreground">{(t.category ?? '').replace(/_/g, ' ')}</TableCell>
+                <TableCell>v{t.version}</TableCell>
+                <TableCell><Badge variant={approvalBadgeVariant(t.approval_status)}>{t.approval_status}</Badge></TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+
+      <Dialog open={confirmDelete} onOpenChange={(o) => !busy && setConfirmDelete(o)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete {selected.size} template{selected.size === 1 ? '' : 's'}?</DialogTitle>
+            <DialogDescription>
+              Deleted templates are archived and can no longer be used by any campaign or agent. Message and campaign
+              history is preserved. This cannot be undone from here.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDelete(false)} disabled={busy}>Cancel</Button>
+            <Button variant="destructive" onClick={() => runBulk('delete')} disabled={busy}>{busy ? 'Deleting…' : 'Delete'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

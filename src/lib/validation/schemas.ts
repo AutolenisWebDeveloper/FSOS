@@ -430,6 +430,16 @@ export const TemplateApprovalSchema = z.object({
   action: z.enum(['submit', 'approve', 'reject']),
 })
 
+// Bulk template administration (approve / unapprove / delete) over a selection.
+// Approve/unapprove authority is enforced server-side (compliance/supervisor/super);
+// the schema only validates the shape of the request. Capped to keep a single
+// mutation bounded (larger sets belong in a background job, DESIGN.md §performance).
+export const TemplateBulkSchema = z.object({
+  action: z.enum(['approve', 'unapprove', 'delete']),
+  ids: z.array(uuid).min(1, 'Select at least one template').max(200, 'Select at most 200 templates at a time'),
+})
+export type TemplateBulkInput = z.infer<typeof TemplateBulkSchema>
+
 // Slice 5 — a contacts-based segment rule (mirrors src/lib/segments/rules.ts
 // SegmentRule). Free-form over contact fields + an optional campaign preset that
 // consults a household signal. Validated at the edge; the resolver enforces membership.

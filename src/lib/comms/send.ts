@@ -26,6 +26,7 @@ import { advisorMergeContext } from '@/lib/site'
 import { emailUnsubscribeUrl } from './unsubscribe'
 import { smsLiveFor } from './a2p'
 import { instrumentEmailHtml } from './tracking'
+import { wrapMarketingEmailBody } from '@/lib/notifications/email-shell'
 import { resolveDelegation, enqueueAssignmentReview } from './ownership'
 import { resolveIdentityDisclosure, type IdentityContext } from './identity-resolver'
 import { prependIdentityDisclosure } from './identity'
@@ -688,10 +689,23 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
     /* best-effort; dispatcher still writes the durable audit + escalation */
   }
 
-  // Instrument outbound email with open/click tracking (needs the message id). The body
-  // already includes any auto-prepended identity disclosure (identityBody).
+  // Premium branding at the single send choke-point (DESIGN.md §31): wrap the personalized
+  // email body in the shared branded shell (Farmers logo header + CAN-SPAM marketing footer
+  // with this recipient's resolved unsubscribe link). A body that is ALREADY a full HTML
+  // document (the react-email templates in src/emails/*, ADR-025) is passed through
+  // untouched — never double-wrapped. This upgrades EVERY campaign email (library blueprints,
+  // seed-migration templates, FSA-authored, AI) to premium HTML regardless of its source,
+  // instead of only the react-email-authored subset. SMS is unaffected.
+  const emailReady =
+    ctx.channel === 'email'
+      ? wrapMarketingEmailBody(identityBody, { preheader: ctx.subject, unsubscribeUrl: recipientCtx.unsubscribe_url })
+      : identityBody
+
+  // Instrument outbound email with open/click tracking (needs the message id). Runs AFTER
+  // the wrap so the tracking pixel lands inside <body> and the branded CTA links are
+  // click-tracked. The body already includes any auto-prepended identity disclosure.
   const sendBody =
-    ctx.channel === 'email' && messageId ? instrumentEmailHtml(identityBody, messageId) : identityBody
+    ctx.channel === 'email' && messageId ? instrumentEmailHtml(emailReady, messageId) : emailReady
 
   const req: DispatchRequest = {
     channel: ctx.channel,

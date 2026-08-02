@@ -11,6 +11,8 @@ import { emailLc, phoneDigits } from '@/lib/contacts/normalize'
 import { buildContactIndex, resolveContact, mergeFields, type Resolution } from '@/lib/import/resolution'
 import { createBatch, writeRecords, loadContactCandidates, type RecordInput } from '@/lib/import/auditWriter'
 import { materializeContact, type MaterializableContact } from '@/lib/services/householdMaterialize'
+import { resolveConsentGroup, selectableChannels, isConsentGroupKey } from '@/lib/comms/consent-groups'
+import { grantConsentForGroup, type GrantConsentForGroupResult } from '@/lib/comms/consent-group-grant-run'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -65,6 +67,41 @@ export async function POST(req: NextRequest) {
   const source = String(formData.get('source') || '').trim() || `import:${ext || 'file'}`
   const useAi = String(formData.get('ai') || 'true').trim().toLowerCase() !== 'false'
   const useRouting = String(formData.get('ai_route') || 'true').trim().toLowerCase() !== 'false'
+
+  // Optional consent-group assignment (§12/TCPA). If the operator attaches a group, the
+  // system generates the member-keyed `consents` rows for the imported contacts instead of
+  // opening each one by hand — but ONLY on an explicit attestation that the batch already
+  // has prior express consent (this is a legal assertion the licensed operator owns, not a
+  // silent blanket grant). A group without the attestation is rejected. Suppression (a later
+  // opt-out) is still enforced downstream, so a grant can never re-consent someone who
+  // opted out.
+  const consentGroupKeyRaw = String(formData.get('consent_group') || '').trim()
+  const consentAttested = String(formData.get('consent_attest') || '').trim().toLowerCase() === 'true'
+  const consentChannelsRaw = String(formData.get('consent_channels') || '')
+    .split(',')
+    .map((c) => c.trim().toLowerCase())
+    .filter(Boolean)
+  let consentGroup = null as ReturnType<typeof resolveConsentGroup>
+  let consentChannels: ('sms' | 'email')[] = []
+  if (consentGroupKeyRaw) {
+    if (!isConsentGroupKey(consentGroupKeyRaw)) {
+      return NextResponse.json({ error: 'Unknown consent group.', reason: 'bad_consent_group' }, { status: 422 })
+    }
+    if (!consentAttested) {
+      return NextResponse.json(
+        { error: 'To assign a consent group you must confirm these contacts have already provided prior express consent for the selected channels.', reason: 'consent_attestation_required' },
+        { status: 422 },
+      )
+    }
+    consentGroup = resolveConsentGroup(consentGroupKeyRaw)
+    consentChannels = selectableChannels(consentGroup!, consentChannelsRaw)
+    if (consentChannels.length === 0) {
+      return NextResponse.json({ error: 'Select at least one channel (SMS or email) for the consent group.', reason: 'no_consent_channel' }, { status: 422 })
+    }
+    // The group's tag rides along on every imported contact so the assignment is visible on
+    // the record (unioned with any operator-supplied tags — never a replace).
+    if (!batchTags.includes(consentGroup!.tag)) batchTags.push(consentGroup!.tag)
+  }
 
   let headers: string[]
   let rows: Array<Record<string, string>>
@@ -199,6 +236,7 @@ export async function POST(req: NextRequest) {
     }
   })
   let materialized = 0
+  const memberIdsForConsent: string[] = []
   if (insertRows.length) {
     const { data: inserted, error } = await db
       .from('contacts')
@@ -211,6 +249,36 @@ export async function POST(req: NextRequest) {
     for (const c of (inserted ?? []) as MaterializableContact[]) {
       const r = await materializeContact(db, c)
       if (r.householdId && r.action !== 'error') materialized++
+      if (consentGroup && r.memberId && r.action !== 'error') memberIdsForConsent.push(r.memberId)
+    }
+  }
+
+  // Merged rows matched an EXISTING contact — they belong to the batch/group too, so seed
+  // their members as well (idempotent + suppression-aware, so an already-consented or
+  // opted-out member is a safe no-op). Resolve the members of the merged target contacts.
+  if (consentGroup && toMerge.length) {
+    const mergedContactIds = Array.from(new Set(toMerge.map((p) => p.res.targetId!).filter(Boolean)))
+    for (let i = 0; i < mergedContactIds.length; i += CHUNK) {
+      const { data: mm } = await db
+        .from('household_members')
+        .select('id')
+        .in('source_contact_id', mergedContactIds.slice(i, i + CHUNK))
+      for (const m of (mm ?? []) as { id: string }[]) memberIdsForConsent.push(m.id)
+    }
+  }
+
+  // Consent-group generation (§12/TCPA). Turn the imported members into member-keyed
+  // `consents` rows for the attested group + channels. The runner is idempotent and
+  // suppression-aware (an existing revoke / channel DNC / do_not_contact household always
+  // wins), writes the group's documented disclosure onto every row, and audits each grant.
+  // Best-effort: a consent-write failure surfaces in the response but never fails the
+  // contact import (the contacts are already durably stored).
+  let consentReport: (GrantConsentForGroupResult & { error?: string }) | null = null
+  if (consentGroup && memberIdsForConsent.length) {
+    try {
+      consentReport = await grantConsentForGroup({ memberIds: memberIdsForConsent, group: consentGroup, channels: consentChannels, actor })
+    } catch (e) {
+      consentReport = { membersProcessed: memberIdsForConsent.length, smsCreated: 0, emailCreated: 0, skippedAlreadyGranted: 0, skippedRevoked: 0, skippedDnc: 0, skippedHouseholdDnc: 0, groupKey: consentGroup.key, source: consentGroup.source, channels: consentChannels, capturedAt: new Date().toISOString(), error: e instanceof Error ? e.message : 'Consent generation failed' }
     }
   }
 
@@ -226,7 +294,7 @@ export async function POST(req: NextRequest) {
   const batchId = await createBatch(db, { source: 'contacts', filename: file.name, actor, ownerScope, stats: { total: rows.length, counts, format: ext || 'csv' } })
   if (batchId) await writeRecords(db, records.map((r) => ({ ...r, batchId })))
 
-  await writeAudit({ actor, action: 'import.committed', entity: 'contacts_import', entityId: null, diff: { filename: file.name, format: ext || 'csv', total: rows.length, counts, routing: useRouting ? routeCounts : null } })
+  await writeAudit({ actor, action: 'import.committed', entity: 'contacts_import', entityId: null, diff: { filename: file.name, format: ext || 'csv', total: rows.length, counts, routing: useRouting ? routeCounts : null, consent_group: consentGroup ? { group: consentGroup.key, channels: consentChannels, attested: true, sms_created: consentReport?.smsCreated ?? 0, email_created: consentReport?.emailCreated ?? 0 } : null } })
 
   return NextResponse.json({
     success: true,
@@ -239,6 +307,18 @@ export async function POST(req: NextRequest) {
     ai_used: !!aiResult,
     batch_id: batchId,
     routing: { enabled: useRouting, ai_used: classify.aiUsed, counts: routeCounts, capped: classify.aiCapped },
+    consent: consentReport
+      ? {
+          group: consentReport.groupKey,
+          channels: consentReport.channels,
+          members: consentReport.membersProcessed,
+          sms_created: consentReport.smsCreated,
+          email_created: consentReport.emailCreated,
+          skipped_already_granted: consentReport.skippedAlreadyGranted,
+          skipped_opted_out: consentReport.skippedRevoked + consentReport.skippedDnc + consentReport.skippedHouseholdDnc,
+          error: consentReport.error ?? null,
+        }
+      : null,
     rows: results,
   })
 }

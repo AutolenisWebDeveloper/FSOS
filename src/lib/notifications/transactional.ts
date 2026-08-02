@@ -20,8 +20,8 @@
 // stored/reflected-XSS defense (§13.8).
 
 import { sendEmail, emailConfigured, type SendResult } from '@/lib/messaging'
-import { escapeHtml } from '@/lib/http'
 import { BUSINESS, CONTACT } from '@/lib/site'
+import { renderEmailShell, paragraphHtml, detailTableHtml, fineHtml } from './email-shell'
 
 /**
  * The inbox that receives internal FSA ops alerts. Env-overridable so the owner can route
@@ -52,55 +52,21 @@ interface EmailContent {
   note?: string
 }
 
-/** A branded, self-contained transactional email (HTML). All dynamic text is escaped here. */
+/**
+ * A branded, self-contained transactional email (HTML), rendered through the shared
+ * premium shell (email-shell.ts) so it matches the campaign templates + DESIGN.md.
+ * All dynamic text is HTML-escaped inside the shell helpers (§13.8).
+ */
 function renderHtml(content: EmailContent): string {
-  const rows = (content.rows ?? []).filter((r) => r.value != null && String(r.value).trim() !== '')
-  const rowsHtml = rows
-    .map(
-      (r) =>
-        `<tr>
-          <td style="padding:6px 0;font-size:12px;color:#7a7060;width:150px;vertical-align:top;">${escapeHtml(r.label)}</td>
-          <td style="padding:6px 0;font-size:14px;color:#1a2332;">${escapeHtml(r.value)}</td>
-        </tr>`,
-    )
-    .join('')
+  const contentHtml = [
+    paragraphHtml(content.lede),
+    detailTableHtml((content.rows ?? []).map((r) => ({ label: r.label, value: r.value }))),
+    content.note ? fineHtml(content.note) : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
 
-  const noteHtml = content.note
-    ? `<p style="font-size:13px;color:#3d3830;line-height:1.7;margin:20px 0 0;">${escapeHtml(content.note)}</p>`
-    : ''
-
-  const detailsBlock = rowsHtml
-    ? `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin:20px 0 0;border-top:1px solid #e4e8ef;">${rowsHtml}</table>`
-    : ''
-
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
-<body style="margin:0;padding:0;background:#f4f6f9;font-family:'Segoe UI',Arial,sans-serif;">
-  <div style="max-width:560px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e4e8ef;">
-    <div style="background:#0f1e36;padding:24px 32px;">
-      <div style="font-size:13px;font-weight:700;color:#fff;letter-spacing:.04em;">${escapeHtml(BUSINESS.short.toUpperCase())}</div>
-      <div style="font-size:11px;color:rgba(255,255,255,.6);margin-top:2px;">${escapeHtml(BUSINESS.title)} · ${escapeHtml(BUSINESS.carrier)}</div>
-    </div>
-    <div style="padding:32px;">
-      <p style="font-size:17px;color:#1a2332;margin:0 0 12px;font-weight:600;">${escapeHtml(content.heading)}</p>
-      <p style="font-size:14px;color:#3d3830;line-height:1.7;margin:0;">${escapeHtml(content.lede)}</p>
-      ${detailsBlock}
-      ${noteHtml}
-    </div>
-    <div style="background:#f4f6f9;padding:16px 32px;border-top:1px solid #e4e8ef;">
-      <p style="font-size:11px;color:#a8b4c0;margin:0;line-height:1.6;">
-        ${escapeHtml(BUSINESS.agent)} · ${escapeHtml(BUSINESS.carrier)}<br>
-        ${escapeHtml(CONTACT.address.line1)}, ${escapeHtml(CONTACT.address.city)}, ${escapeHtml(CONTACT.address.region)} ${escapeHtml(CONTACT.address.postal)}<br>
-        ${escapeHtml(CONTACT.phoneDisplay)} · ${escapeHtml(CONTACT.email)}
-      </p>
-    </div>
-  </div>
-</body>
-</html>`
+  return renderEmailShell({ preheader: content.lede, heading: content.heading, contentHtml })
 }
 
 /** A plaintext part mirroring the HTML (deliverability + accessible fallback). */

@@ -8,6 +8,7 @@ import { TRAIGA_SMS_FOOTER } from '@/lib/compliance'
 import { generateFormToken } from '@/lib/tokens'
 import { escapeHtml } from '@/lib/http'
 import { sendEmail } from '@/lib/messaging'
+import { renderEmailShell, paragraphHtml, buttonHtml, fineHtml } from '@/lib/notifications/email-shell'
 
 export const FORM_TITLES: Record<string, string> = {
   'customer-questionnaire': 'Customer Questionnaire',
@@ -228,50 +229,27 @@ function buildLink(form_id: string, token: string, client_name?: string | null):
 }
 
 function buildEmailHTML(clientName: string, formTitle: string, link: string, formId: string): string {
-  const name = escapeHtml(clientName)
-  const title = escapeHtml(formTitle)
   const isProfileForm = formId === 'customer-profile' || formId === 'financial-needs-analysis'
   const estimatedTime = isProfileForm ? '8–10 minutes' : '3–5 minutes'
 
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
-<body style="margin:0;padding:0;background:#f4f6f9;font-family:'Segoe UI',Arial,sans-serif;">
-  <div style="max-width:560px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e4e8ef;">
-    <div style="background:#0f1e36;padding:24px 32px;">
-      <div style="font-size:13px;font-weight:700;color:#fff;letter-spacing:.04em;">FARMERS FINANCIAL SOLUTIONS</div>
-      <div style="font-size:11px;color:rgba(255,255,255,.5);margin-top:2px;">Markist · Licensed FSA</div>
-    </div>
-    <div style="padding:32px;">
-      <p style="font-size:16px;color:#1a2332;margin:0 0 8px;font-weight:600;">Hi ${name},</p>
-      <p style="font-size:14px;color:#3d3830;line-height:1.7;margin:0 0 20px;">
-        Please take a few minutes to complete your <strong>${title}</strong> before our appointment.
-        This helps me prepare a more personalized review for you.
-        It takes approximately <strong>${estimatedTime}</strong>.
-      </p>
-      <a href="${link}" style="display:inline-block;background:#2b6cb0;color:#fff;text-decoration:none;padding:14px 28px;border-radius:7px;font-size:14px;font-weight:600;margin-bottom:20px;">
-        Complete Your Form →
-      </a>
-      <p style="font-size:12px;color:#7a7060;line-height:1.6;margin:0 0 8px;">
-        This link is secure and expires in 30 days. Your information is kept strictly confidential
-        and used only to prepare for your financial review.
-      </p>
-      <p style="font-size:11px;color:#a8b4c0;margin:0;">
-        If the button doesn't work, copy this link:<br>
-        <span style="color:#2b6cb0;word-break:break-all;">${escapeHtml(link)}</span>
-      </p>
-    </div>
-    <div style="background:#f4f6f9;padding:16px 32px;border-top:1px solid #e4e8ef;">
-      <p style="font-size:11px;color:#a8b4c0;margin:0;line-height:1.6;">
-        Markist · Farmers Financial Solutions, LLC<br>
-        Securities offered through Farmers Financial Solutions, LLC, Member FINRA &amp; SIPC<br>
-        To opt out of future communications, reply STOP to any SMS or contact us directly.
-      </p>
-    </div>
-  </div>
-</body>
-</html>`
+  // Rendered through the shared premium shell (email-shell.ts) so this transactional
+  // email matches the campaign design system. Raw text is escaped INSIDE the shell +
+  // helpers — pass unescaped values (the manual link block below escapes its own URL).
+  const contentHtml = [
+    paragraphHtml(`Hi ${clientName},`),
+    paragraphHtml(
+      `Please take a few minutes to complete your ${formTitle} before our appointment. It helps us prepare a more ` +
+        `personalized review for you, and takes about ${estimatedTime}.`,
+    ),
+    buttonHtml('Complete your form', link),
+    fineHtml('This link is secure and expires in 30 days. Your information is kept strictly confidential and used only to prepare for your financial review.'),
+    `<p style="margin:0;color:#8A94A6;font-size:11px;line-height:1.6;">If the button doesn&rsquo;t work, copy this link:<br><span style="color:#2C4C9C;word-break:break-all;">${escapeHtml(link)}</span></p>`,
+  ].join('\n')
+
+  return renderEmailShell({
+    preheader: `Complete your ${formTitle} before our appointment`,
+    eyebrow: 'Action Required',
+    heading: `Your ${formTitle} is ready, ${clientName}`,
+    contentHtml,
+  })
 }

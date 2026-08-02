@@ -663,10 +663,46 @@ button, §12) pending the routing migration in `CLAUDE.md §20`.
 
 ---
 
-## 31. Email template footer (CAN-SPAM) [STANDARD]
+## 31. Email design system [STANDARD]
 
-Every marketing email is rendered through the shared `src/emails/_layout.tsx` shell (ADR-025:
-React → stored, immutable HTML + plaintext). Its footer is a compliance surface, not decoration:
+FSOS emails are a first-class, Fortune-500-fintech surface, not an afterthought. There is **one**
+email design system, expressed in the two contexts email rendering unavoidably requires, both
+resolving every color/size through the shared brand tokens in **`src/lib/email/brand.ts`** (email
+clients can't read CSS-variable tokens, so this file mirrors the §5.2 / §17.2 Farmers palette as
+inline literals **once**):
+
+1. **Campaign / marketing templates** — authored as React Email components under `src/emails/*`
+   (build-time only, ADR-025), rendered to stored, immutable HTML + plaintext. The shared shell is
+   `src/emails/_layout.tsx`; reusable primitives live in `src/emails/_components.tsx`.
+2. **Transactional / operational emails** — form links, booking acks, FSA ops alerts, the morning
+   briefing. These send at request time and so **cannot** import react-email (ADR-025 keeps it a
+   devDependency, out of the runtime bundle); they render the same design as pure HTML strings via
+   **`src/lib/notifications/email-shell.ts`**.
+
+**Visual system (both contexts).** A centered white card (max-width 600px, 14px radius) on a cool
+`canvas` background, with a 4px Farmers-blue signature accent along the card's top edge; an
+approved-logo letterhead (the Farmers **color** lockup on a white header band — §5.1/§17.1 — never
+recolored or placed on low contrast) with the FSA identity line beneath; a scannable body using an
+**eyebrow → H1 → lead → body** hierarchy; and a footer that doubles as a compliance surface.
+
+**Reusable components** (`_components.tsx` for React, mirrored string helpers in `email-shell.ts`):
+`Eyebrow`, `H1`, `Lead`, `P`, `CtaButton` (bulletproof — MSO padding shim so the fill renders in
+Outlook), `Callout` (soft brand-wash card with a Farmers-blue left accent), `DetailTable`
+(label/value rows, e.g. appointment specifics), `BulletList`, `Rule`, `Spacer`, `SecondaryNote`.
+CTAs point at merge-token URLs (`{{scheduling_link}}`, `{{reschedule_url}}`, …) resolved
+per-recipient at send. Copy stays **green-zone** — a CTA never becomes a product call-to-action
+(build-gated by the recommendation-language check in `tests/email-determinism.test.mjs`).
+
+**Cross-client + responsive.** Table-based structure, inline styles as the source of truth, a
+web-safe deterministic font stack, and a progressive-enhancement `<style>` block (mobile padding +
+dark-mode hint) that clients may honor but never depend on. Renders consistently on Gmail, Outlook,
+Apple Mail, Yahoo, and mobile. Determinism is a hard contract (ADR-025): the same component always
+renders byte-identical HTML + plaintext, pinned by `render_sha`.
+
+### 31.1 Email footer (CAN-SPAM) [STANDARD]
+
+Every **marketing** email is rendered through `src/emails/_layout.tsx`. Its footer is a compliance
+surface, not decoration:
 
 - **Educational disclaimer** — "for educational and informational purposes only; not a product
   recommendation or suitability determination" (§4.2 red line, reinforced by the build-gated
@@ -680,7 +716,12 @@ React → stored, immutable HTML + plaintext). Its footer is a compliance surfac
   Opting out writes the **enforced DNC store** (`dnc_entries`) the send-time gate reads, so it truly
   suppresses future sends — it is not cosmetic.
 
-Tokens (styling `--shell`/`--muted-foreground` equivalents, inline for email-client safety) live in
-`_layout.tsx`. Do **not** bake the SMS TRAIGA opt-out ("Reply STOP") into an email template — that is
-appended by the dispatcher for SMS only. Deliverability specifics (SPF/DKIM/DMARC, reply-to, RFC 8058
+**Transactional emails** (`email-shell.ts`) are a direct response to a user action, not marketing, so
+they are **exempt** from the CAN-SPAM unsubscribe requirement: their footer carries sender
+identification (NAP + licensing) **without** an opt-out link, and they are never gated by the
+marketing consent table.
+
+Tokens (styling `--shell`/`--muted-foreground` equivalents, inline for email-client safety) resolve
+through `src/lib/email/brand.ts`. Do **not** bake the SMS TRAIGA opt-out ("Reply STOP") into an email
+template — that is appended by the dispatcher for SMS only. Deliverability specifics (SPF/DKIM/DMARC, reply-to, RFC 8058
 List-Unsubscribe headers) are documented in `docs/comms-native/launch-slice-2-email-deliverability.md`.

@@ -50,5 +50,7 @@ Hand-authoring 30 cross-client HTML strings is error-prone (Outlook, Gmail dark 
 - CLAUDE.md §12; master build instruction Slice 9 Part B
 - ADR-003, ADR-013, ADR-023
 - Migration `supabase/migrations/061_comm_template_render.sql`
-- `src/emails/*` (components, `_layout`, `registry`, `render.ts`), `scripts/build-email-templates.ts`, `src/lib/comms/dispatcher.ts`, `send.ts`, `campaign.ts`
+- `src/emails/*` (components, `_layout`, `_components`, `registry`, `render.ts`), `src/lib/email/brand.ts` (shared email design tokens), `scripts/build-email-templates.ts`, `src/lib/comms/dispatcher.ts`, `send.ts`, `campaign.ts`
+- Runtime transactional email shell (same design system, no react-email): `src/lib/notifications/email-shell.ts`, consumed by `src/lib/notifications/transactional.ts`, `src/lib/forms.ts`, `src/app/api/briefing/send/route.ts`
+- Design system of record for email: `DESIGN.md` §31
 - Tests: `tests/email-determinism.test.mjs`, `tests/rls-firewall.test.mjs` (applies 061)

@@ -18,7 +18,7 @@ import { randomBytes } from 'node:crypto'
 import { getDb, ConfigError } from '@/lib/supabase/client'
 import { siteUrl } from '@/lib/site'
 import { sendPasswordSetupEmail } from '@/lib/notifications/account'
-import { reconcileRoles } from './user-roles'
+import { reconcileRoles, isLastSuperAdmin } from './user-roles'
 import type { Role } from '@/lib/auth/rbac'
 
 type Db = ReturnType<typeof getDb>
@@ -129,17 +129,7 @@ export async function provisionUser(
   // 3 — Mirror the roles into user_roles (RLS source of truth). Roll back the auth
   // user on failure so we never strand an access-less account and a retry can succeed.
   try {
-    const { data: current, error: readErr } = await db.from('user_roles').select('role').eq('user_id', userId)
-    if (readErr) throw new Error(readErr.message)
-    const { stale, toUpsert } = reconcileRoles((current ?? []).map((r: { role: string }) => r.role), input.roles)
-    if (stale.length > 0) {
-      const { error: delErr } = await db.from('user_roles').delete().eq('user_id', userId).in('role', stale)
-      if (delErr) throw new Error(delErr.message)
-    }
-    const { error: upErr } = await db
-      .from('user_roles')
-      .upsert(toUpsert.map((role) => ({ user_id: userId, role })), { onConflict: 'user_id,role' })
-    if (upErr) throw new Error(upErr.message)
+    await syncUserRoles(db, userId, input.roles)
   } catch (e) {
     // Best-effort rollback; ignore cleanup errors (the primary failure is what matters).
     await db.auth.admin.deleteUser(userId).catch(() => {})
@@ -172,6 +162,7 @@ export interface PortalUser {
   id: string
   email: string | null
   roles: string[]
+  securitiesScope: boolean
   status: 'active' | 'pending'
   createdAt: string | null
   lastSignInAt: string | null
@@ -218,6 +209,7 @@ export async function listPortalUsers(): Promise<ListPortalUsersResult> {
           id: u.id,
           email: u.email ?? null,
           roles,
+          securitiesScope: (u.app_metadata as Record<string, unknown> | undefined)?.securities_scope === true,
           status: u.email_confirmed_at ? 'active' : 'pending',
           createdAt: u.created_at ?? null,
           lastSignInAt: u.last_sign_in_at ?? null,
@@ -229,7 +221,7 @@ export async function listPortalUsers(): Promise<ListPortalUsersResult> {
     // Surface any role rows whose auth user wasn't returned (never hide a grant).
     for (const [userId, roles] of rolesByUser) {
       if (seen.has(userId)) continue
-      users.push({ id: userId, email: null, roles, status: 'pending', createdAt: null, lastSignInAt: null })
+      users.push({ id: userId, email: null, roles, securitiesScope: false, status: 'pending', createdAt: null, lastSignInAt: null })
     }
 
     users.sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
@@ -237,5 +229,129 @@ export async function listPortalUsers(): Promise<ListPortalUsersResult> {
   } catch {
     // Never leak provider/DB internals to the page (§16.1) — the page shows a generic error.
     return { ok: false, kind: 'error', message: 'Failed to load users.' }
+  }
+}
+
+// ─── Edit / delete a provisioned user ────────────────────────────────────────
+
+/** Replace a user's user_roles rows to exactly `nextRoles` (prune + upsert). Throws on error. */
+async function syncUserRoles(db: Db, userId: string, nextRoles: readonly string[]): Promise<void> {
+  const { data: current, error: readErr } = await db.from('user_roles').select('role').eq('user_id', userId)
+  if (readErr) throw new Error(readErr.message)
+  const { stale, toUpsert } = reconcileRoles((current ?? []).map((r: { role: string }) => r.role), nextRoles)
+  if (stale.length > 0) {
+    const { error: delErr } = await db.from('user_roles').delete().eq('user_id', userId).in('role', stale)
+    if (delErr) throw new Error(delErr.message)
+  }
+  const { error: upErr } = await db
+    .from('user_roles')
+    .upsert(toUpsert.map((role) => ({ user_id: userId, role })), { onConflict: 'user_id,role' })
+  if (upErr) throw new Error(upErr.message)
+}
+
+/** User ids currently holding super_admin (RLS source of truth) — for the last-admin guard. */
+async function superAdminIds(db: Db): Promise<Set<string>> {
+  const { data, error } = await db.from('user_roles').select('user_id').eq('role', 'super_admin')
+  if (error) throw new Error(error.message)
+  return new Set((data ?? []).map((r: { user_id: string }) => r.user_id))
+}
+
+export interface UpdateUserInput {
+  roles?: Role[]
+  securitiesScope?: boolean
+}
+
+export type MutateUserResult =
+  | { ok: true; userId: string; email: string | null; roles: string[]; securitiesScope: boolean }
+  | { ok: false; code: 'not_found' | 'last_super_admin' | 'self' | 'auth_error' | 'config'; message: string }
+
+/**
+ * Update a user's roles and/or securities-scope flag. Writes BOTH sources the app
+ * reads (the JWT `app_metadata` claim and the `user_roles` table). Refuses to remove
+ * super_admin from the last remaining Super Admin so the platform can't be locked out.
+ */
+export async function updateUser(userId: string, input: UpdateUserInput): Promise<MutateUserResult> {
+  let db: Db
+  try {
+    db = getDb()
+  } catch (e) {
+    if (e instanceof ConfigError) return { ok: false, code: 'config', message: e.message }
+    throw e
+  }
+
+  try {
+    const { data: got, error: getErr } = await db.auth.admin.getUserById(userId)
+    if (getErr || !got?.user) return { ok: false, code: 'not_found', message: 'User not found.' }
+    const user = got.user
+    const existingMeta = (user.app_metadata ?? {}) as Record<string, unknown>
+
+    const { data: currentRows, error: cErr } = await db.from('user_roles').select('role').eq('user_id', userId)
+    if (cErr) throw new Error(cErr.message)
+    const currentRoles = (currentRows ?? []).map((r: { role: string }) => r.role)
+
+    const nextRoles = (input.roles ?? currentRoles) as string[]
+    const nextScope = input.securitiesScope ?? existingMeta.securities_scope === true
+
+    // Guard: never remove super_admin from the LAST super_admin (avoids lockout).
+    if (currentRoles.includes('super_admin') && !nextRoles.includes('super_admin')) {
+      const admins = await superAdminIds(db)
+      if (isLastSuperAdmin(admins.has(userId), admins.size)) {
+        return {
+          ok: false,
+          code: 'last_super_admin',
+          message: 'You can’t remove the last Super Admin. Grant Super Admin to another user first.',
+        }
+      }
+    }
+
+    const { error: updErr } = await db.auth.admin.updateUserById(userId, {
+      app_metadata: { ...existingMeta, roles: nextRoles, securities_scope: nextScope },
+    })
+    if (updErr) return { ok: false, code: 'auth_error', message: updErr.message }
+
+    await syncUserRoles(db, userId, nextRoles)
+
+    return { ok: true, userId, email: user.email ?? null, roles: nextRoles, securitiesScope: nextScope }
+  } catch (e) {
+    return { ok: false, code: 'auth_error', message: e instanceof Error ? e.message : 'Update failed.' }
+  }
+}
+
+/**
+ * Delete a user (auth account + role mapping). Refuses to delete your own account
+ * (`ctx.actor`) or the last remaining Super Admin.
+ */
+export async function deleteUser(userId: string, ctx: { actor: string }): Promise<MutateUserResult> {
+  let db: Db
+  try {
+    db = getDb()
+  } catch (e) {
+    if (e instanceof ConfigError) return { ok: false, code: 'config', message: e.message }
+    throw e
+  }
+
+  if (userId === ctx.actor) {
+    return { ok: false, code: 'self', message: 'You can’t delete your own account.' }
+  }
+
+  try {
+    const { data: got, error: getErr } = await db.auth.admin.getUserById(userId)
+    if (getErr || !got?.user) return { ok: false, code: 'not_found', message: 'User not found.' }
+    const email = got.user.email ?? null
+
+    const admins = await superAdminIds(db)
+    if (isLastSuperAdmin(admins.has(userId), admins.size)) {
+      return { ok: false, code: 'last_super_admin', message: 'You can’t delete the last Super Admin.' }
+    }
+
+    const { error: delErr } = await db.auth.admin.deleteUser(userId)
+    if (delErr) return { ok: false, code: 'auth_error', message: delErr.message }
+
+    // Clean up the app role mapping (no FK cascade from auth.users to user_roles).
+    await db.from('user_roles').delete().eq('user_id', userId)
+
+    return { ok: true, userId, email, roles: [], securitiesScope: false }
+  } catch (e) {
+    return { ok: false, code: 'auth_error', message: e instanceof Error ? e.message : 'Delete failed.' }
   }
 }

@@ -5,7 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Numeric } from '@/components/ui/typography'
 import { CreateUserForm } from '@/components/super/CreateUserForm'
+import { UserRowActions } from '@/components/super/UserRowActions'
 import { listPortalUsers } from '@/lib/services/users'
+import { getServerSession } from '@/lib/auth/session'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,7 +21,8 @@ function fmtDate(iso: string | null): string {
 }
 
 export default async function SuperUsersPage() {
-  const result = await listPortalUsers()
+  const [result, session] = await Promise.all([listPortalUsers(), getServerSession()])
+  const currentUserId = session?.userId ?? null
 
   let roster: React.ReactNode
   if (!result.ok) {
@@ -48,6 +51,7 @@ export default async function SuperUsersPage() {
               <TableHead>Status</TableHead>
               <TableHead>Created</TableHead>
               <TableHead>Last sign-in</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -83,6 +87,12 @@ export default async function SuperUsersPage() {
                 </TableCell>
                 <TableCell className="text-muted-foreground">
                   <Numeric className="text-xs">{fmtDate(u.lastSignInAt)}</Numeric>
+                </TableCell>
+                <TableCell>
+                  <UserRowActions
+                    user={{ id: u.id, email: u.email, roles: u.roles, securitiesScope: u.securitiesScope }}
+                    isSelf={u.id === currentUserId}
+                  />
                 </TableCell>
               </TableRow>
             ))}

@@ -28,6 +28,15 @@ export function reconcileRoles(current: readonly string[], requested: readonly s
   return { stale, toUpsert: want }
 }
 
+/**
+ * Lockout guard (pure): true when the target holds super_admin AND is the only one,
+ * so removing or deleting them would leave the platform with no Super Admin. Used by
+ * both updateUser (role removal) and deleteUser in src/lib/services/users.ts.
+ */
+export function isLastSuperAdmin(targetIsSuperAdmin: boolean, superAdminCount: number): boolean {
+  return targetIsSuperAdmin && superAdminCount <= 1
+}
+
 function dedupe(list: readonly string[]): string[] {
   const seen = new Set<string>()
   const out: string[] = []

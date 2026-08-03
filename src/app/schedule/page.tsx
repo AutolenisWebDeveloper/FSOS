@@ -1,12 +1,13 @@
 import type { Metadata } from 'next'
-import Link from 'next/link'
-import { PublicPage, PublicBrandLockup, PublicCard } from '@/components/public/PublicShell'
+import { PublicPage, PublicCard } from '@/components/public/PublicShell'
 import { EmptyState } from '@/components/archetypes'
 import { load } from '@/lib/data/query'
 import type { BookableType } from '@/lib/booking/slots'
-import { meetingModeLabel } from '@/lib/booking/display'
 import { BookingFlow } from '@/components/public/booking/BookingFlow'
 import { ManageFlow } from '@/components/public/booking/ManageFlow'
+import { PublicBrandHeader } from '@/components/public/booking/PublicBrandHeader'
+import { ScheduleHero } from '@/components/public/booking/ScheduleHero'
+import { TypeCard } from '@/components/public/booking/TypeCard'
 import { BUSINESS } from '@/lib/site'
 
 export const dynamic = 'force-dynamic'
@@ -31,7 +32,7 @@ export default async function SchedulePage(props: {
     return (
       <PublicPage>
         <div className="w-full max-w-2xl">
-          <PublicBrandLockup />
+          <PublicBrandHeader />
           <ManageFlow token={manage} />
         </div>
       </PublicPage>
@@ -57,7 +58,7 @@ export default async function SchedulePage(props: {
     return (
       <PublicPage>
         <div className="w-full max-w-2xl">
-          <PublicBrandLockup />
+          <PublicBrandHeader />
           <BookingFlow
             type={{
               slug: selected.slug,
@@ -73,47 +74,43 @@ export default async function SchedulePage(props: {
     )
   }
 
+  // Distinct meeting formats actually offered — factual input for the hero (no invented data).
+  const formats = Array.from(new Set(types.map((t) => t.meeting_mode)))
+
   return (
     <PublicPage align={types.length ? 'top' : 'center'}>
-      <div className="w-full max-w-2xl">
-        <PublicBrandLockup />
-        <PublicCard subtitle="Schedule a consultation">
-          <h1 className="text-lg font-semibold text-foreground">Book a meeting</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Choose the type of meeting that fits. You&rsquo;ll pick a time in your own timezone next.
-          </p>
+      <div className="w-full max-w-3xl">
+        <PublicBrandHeader />
 
-          {types.length === 0 ? (
-            <div className="mt-6">
-              <EmptyState
-                title="No meeting types available yet"
-                description="Online booking isn't open right now. Please use the contact options on our site to reach us."
-              />
+        {types.length === 0 ? (
+          <PublicCard subtitle="Schedule a consultation">
+            <EmptyState
+              title="Online booking isn't open right now"
+              description="We're not taking online appointments at the moment. Please use the contact options on our site and we'll be glad to help."
+            />
+          </PublicCard>
+        ) : (
+          <>
+            <ScheduleHero formats={formats} />
+            <div>
+              <h2 className="mono-label mb-3 text-muted-foreground">Choose a meeting</h2>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {types.map((t) => (
+                  <TypeCard
+                    key={t.id}
+                    type={{
+                      slug: t.slug,
+                      name: t.name,
+                      description: t.description,
+                      durationMinutes: t.duration_minutes,
+                      meetingMode: t.meeting_mode,
+                    }}
+                  />
+                ))}
+              </div>
             </div>
-          ) : (
-            <ul className="mt-6 space-y-3">
-              {types.map((t) => (
-                <li key={t.id}>
-                  <Link
-                    href={`/schedule?type=${encodeURIComponent(t.slug)}`}
-                    className="group flex items-center justify-between gap-4 rounded-lg border border-border bg-card px-4 py-3.5 transition-colors hover:border-ring/60 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                  >
-                    <div className="min-w-0">
-                      <div className="font-medium text-foreground">{t.name}</div>
-                      {t.description ? (
-                        <div className="mt-0.5 truncate text-sm text-muted-foreground">{t.description}</div>
-                      ) : null}
-                    </div>
-                    <div className="shrink-0 text-right text-xs text-muted-foreground">
-                      <div>{t.duration_minutes} min</div>
-                      <div>{meetingModeLabel(t.meeting_mode)}</div>
-                    </div>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </PublicCard>
+          </>
+        )}
       </div>
     </PublicPage>
   )

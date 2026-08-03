@@ -17,13 +17,25 @@ interface Envelope {
   exp: number
 }
 
-/** HMAC key for manage links — falls back so a single app secret configures dev. */
+/**
+ * HMAC key for manage links. There is deliberately NO hardcoded fallback: signing or verifying
+ * with a publicly-known key would let anyone forge a valid cancel/reschedule token for ANY
+ * appointment (the opaque token in the envelope is the only secret, and the HMAC is what binds
+ * it). When no key is configured we FAIL CLOSED — throw — rather than sign/verify with a
+ * guessable secret. This mirrors the internal-auth config-gate posture (a misconfigured deploy
+ * denies rather than exposing a forgeable surface). A missing key surfaces loudly at first use
+ * instead of silently shipping forgeable links.
+ *
+ * Configure via BOOKING_TOKEN_KEY (preferred) or the shared FSOS_API_SECRET / SOCIAL_TOKEN_KEY —
+ * any single high-entropy app secret configures signing everywhere, including local dev.
+ */
 export function manageTokenKey(env: NodeJS.ProcessEnv = process.env): string {
-  return (
-    env.BOOKING_TOKEN_KEY ||
-    env.FSOS_API_SECRET ||
-    env.SOCIAL_TOKEN_KEY ||
-    'fsos-dev-booking-token-key-change-me'
+  const key = env.BOOKING_TOKEN_KEY || env.FSOS_API_SECRET || env.SOCIAL_TOKEN_KEY
+  if (key) return key
+  throw new Error(
+    'Booking manage-token signing key is not configured. Set BOOKING_TOKEN_KEY ' +
+      '(or FSOS_API_SECRET / SOCIAL_TOKEN_KEY). Refusing to sign or verify manage links with a ' +
+      'hardcoded fallback key — failing closed so cancel/reschedule tokens can never be forged.',
   )
 }
 

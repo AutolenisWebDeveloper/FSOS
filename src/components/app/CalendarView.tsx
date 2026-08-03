@@ -11,7 +11,8 @@ export interface AppointmentRow {
   external_ref: string | null
 }
 
-const STATUS_MAP: Record<string, { key: StatusKey; label: string }> = {
+/** Appointment status → StatusBadge key + label. Shared so the agenda and the list never drift. */
+export const STATUS_MAP: Record<string, { key: StatusKey; label: string }> = {
   scheduled: { key: 'pending', label: 'scheduled' },
   completed: { key: 'won', label: 'completed' },
   cancelled: { key: 'lost', label: 'cancelled' },

@@ -112,6 +112,18 @@
 | compliance | ✅(read) | 🚫 | 🚫 | 🚫 | ✅ | 🚫 |
 | client | 🔶(non-securities milestones, where allowed) | 🚫 | 🚫 | 🚫 | 🚫 | 🚫 |
 
+### Appointment & Booking
+| Role | V | C | E | D | X | M | G(config) |
+|---|---|---|---|---|---|---|---|
+| super_admin | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| fsa | 🔶 | 🔶(note/task) | 🔶(status/reschedule📝) | 🔶📝 | 🔶 | 🔶(approved appt template) | 🔶(own availability/types) |
+| licensed_staff | 🔶 | 🔶(note/task) | 🔶(status/reschedule) | 🚫 | 🔶 | 🔶(approved appt template) | 🚫 |
+| admin/ops | 🔶 | 🚫 | 🚫 | 🚫 | 🔶 | 🚫 | 🚫 |
+| compliance/supervisor | ✅(read) | 🚫 | 🚫 | 🚫 | ✅ | 🚫 | 🚫 |
+| agency_owner | 🚫 | 🚫 | 🚫 | 🚫 | 🚫 | 🚫 | 🚫 |
+| client | 🚫 | 🚫 | 🚫 | 🚫 | 🚫 | 🚫 | 🚫 |
+> Enforced on every `/api/app/appointments/*` action: `requireApiRole('fsa')` + `requirePermission(fsa/licensed_staff/super_admin)` + `actorOf` + `writeAudit`. **E** = confirm→scheduled / complete / no_show / cancel (validated state machine) **and** the FSA time-change reschedule (shared mover, status-guarded, re-anchors reminders). **C** = add-note + single follow-up task. **M** re-sends only the **approved** appointment confirmation through the §12 gate (no free-text, no AI-authored content, no securities). Cancel is a status transition (**E**), not a hard delete. Clients self-manage their own booking (reschedule/cancel) via a signed, single-purpose **manage token** — not a role grant — and public self-service booking creates rows without a session. All appointment rows are `is_security=false`.
+
 ### Commission (+ splits config)
 | Role | V | C | E | D | X | G(splits) |
 |---|---|---|---|---|---|---|

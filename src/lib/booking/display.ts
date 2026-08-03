@@ -48,3 +48,26 @@ export function formatWallTime(hhmm: string): string {
   h = h % 12 || 12
   return `${h}:${min} ${ampm}`
 }
+
+// ── Time-of-day grouping (public booking time picker) ──────────────────────────────
+// Pure presentational bucketing so the day's open times can be shown under Morning /
+// Afternoon / Evening headings. Operates on the availability API's `localTime` ("HH:MM",
+// already in the booker's chosen zone) — no clock, no timezone math, no engine logic.
+
+export type TimeOfDay = 'morning' | 'afternoon' | 'evening'
+
+/** Bucket an "HH:MM" wall time: <12:00 morning, 12:00–16:59 afternoon, ≥17:00 evening. */
+export function timeOfDayBucket(hhmm: string): TimeOfDay {
+  const m = /^(\d{1,2}):/.exec(hhmm)
+  const h = m ? Number.parseInt(m[1], 10) : NaN
+  if (Number.isNaN(h) || h < 12) return 'morning'
+  if (h < 17) return 'afternoon'
+  return 'evening'
+}
+
+/** The time-of-day sections in render order (label + bucket key). */
+export const TIME_OF_DAY_SECTIONS: { key: TimeOfDay; label: string }[] = [
+  { key: 'morning', label: 'Morning' },
+  { key: 'afternoon', label: 'Afternoon' },
+  { key: 'evening', label: 'Evening' },
+]

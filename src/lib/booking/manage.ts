@@ -62,6 +62,23 @@ export async function resolveManageToken(signedToken: string): Promise<ResolveRe
   }
 }
 
+/**
+ * Resolve an appointment for an authenticated (non-token) reschedule — by id, with the same
+ * MANAGE_SELECT shape the token flow uses. Lets the FSA-side endpoint reuse the ONE shared
+ * rescheduleAppointment mover instead of a second write path. RLS on the read still applies.
+ */
+export async function loadManagedAppointment(
+  id: string,
+): Promise<{ appt: ManagedAppointment; typeSlug: string | null } | null> {
+  const db = getDb()
+  const { data } = await db.from('appointments').select(MANAGE_SELECT).eq('id', id).maybeSingle()
+  if (!data) return null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const row = data as any
+  const type = Array.isArray(row.appointment_types) ? row.appointment_types[0] : row.appointment_types
+  return { appt: row as ManagedAppointment, typeSlug: type?.slug ?? null }
+}
+
 export type CancelResult =
   | { ok: true }
   | { ok: false; kind: 'not_cancellable' | 'error'; message: string }
@@ -114,6 +131,7 @@ export async function rescheduleAppointment(
   typeSlug: string | null,
   newStartsAt: string,
   now: string,
+  actor: string,
 ): Promise<RescheduleResult> {
   if (appt.status !== 'scheduled') {
     return { ok: false, kind: 'not_reschedulable', message: 'This appointment can no longer be rescheduled.' }
@@ -142,6 +160,11 @@ export async function rescheduleAppointment(
       starts_at: slot.startsAt,
       ends_at: slot.endsAt,
       scheduled_at: slot.startsAt,
+      // Re-anchor the reminder to the new time: clearing the claim lets the reminder cron
+      // (notify.ts sends only when reminder_sent_at IS NULL) send a fresh reminder for the new
+      // slot. Without this, an appointment whose reminder already fired keeps its stale claim and
+      // never reminds for the moved time.
+      reminder_sent_at: null,
       updated_at: now,
     })
     .eq('id', appt.id)
@@ -163,16 +186,16 @@ export async function rescheduleAppointment(
       durationMinutes: appt.duration_minutes ?? 30,
     })
     if (!z.ok) {
-      await writeAudit({ actor: 'public', action: 'config.changed', entity: 'appointment', entityId: appt.id, diff: { zoom_update_failed: z.error ?? true } })
+      await writeAudit({ actor, action: 'config.changed', entity: 'appointment', entityId: appt.id, diff: { zoom_update_failed: z.error ?? true } })
     }
   }
 
   await writeAudit({
-    actor: 'public',
+    actor,
     action: 'entity.updated',
     entity: 'appointment',
     entityId: appt.id,
-    diff: { rescheduled_to: slot.startsAt, from: appt.starts_at },
+    diff: { event: 'rescheduled', rescheduled_to: slot.startsAt, from: appt.starts_at },
   })
 
   // Re-send the confirmation with the new time (approved confirmation template).

@@ -141,15 +141,17 @@ async function sendAppointmentEmail(
  * Send the booking confirmation. Best-effort — the appointment already exists; a deferred or
  * blocked email never fails the booking. Called right after a successful booking.
  */
-export async function sendBookingConfirmation(appointmentId: string): Promise<NotifyOutcome> {
+export async function sendBookingConfirmation(appointmentId: string, actor = 'public'): Promise<NotifyOutcome> {
   const db = getDb()
   const { data } = await db.from('appointments').select(APPT_SELECT).eq('id', appointmentId).maybeSingle()
   if (!data) return { sent: false, reason: 'not_found' }
-  // The booker just opted into email at booking time (Slice 3 consent_intent) → durable email consent.
+  // The booker opted into email at booking time (Slice 3 consent_intent) → durable email consent;
+  // a re-send of the SAME approved transactional confirmation is within that consent. `actor`
+  // attributes an FSA-initiated re-send to the advisor (defaults to 'public' for the auto path).
   return sendAppointmentEmail(db, {
     sourceKey: 'appointment-confirmation',
     appt: data as unknown as ApptRow,
-    actor: 'public',
+    actor,
     durableConsentGranted: true,
   })
 }

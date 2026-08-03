@@ -11,8 +11,8 @@ import { createRequire } from 'node:module'
 
 const out = mkdtempSync(join(tmpdir(), 'fsos-availsum-'))
 execSync(
-  `npx tsc src/lib/booking/availability-summary.ts src/lib/booking/availability.ts --outDir ${out} ` +
-    `--module commonjs --target es2020 --moduleResolution node --skipLibCheck --esModuleInterop --lib es2020,dom`,
+  `npx tsc src/lib/booking/availability-summary.ts src/lib/booking/availability.ts src/lib/booking/display.ts ` +
+    `--outDir ${out} --module commonjs --target es2020 --moduleResolution node --skipLibCheck --esModuleInterop --lib es2020,dom`,
   { stdio: 'inherit' },
 )
 const require = createRequire(import.meta.url)
@@ -60,9 +60,11 @@ t('returns all 7 days Sun→Sat; empty days are unavailable', () => {
   assert.equal(days[1].label, 'Monday')
 })
 
-t('formatWallTime handles noon/midnight; summaryTimezone collapses one zone', () => {
-  assert.equal(S.formatWallTime('00:00'), '12:00 AM')
-  assert.equal(S.formatWallTime('12:00'), '12:00 PM')
+t('noon/midnight format correctly via the SHARED display formatter; summaryTimezone collapses one zone', () => {
+  // Exercised through describeWeeklyAvailability, which now uses display.formatWallTime (no local dupe).
+  const days = S.describeWeeklyAvailability([rule({ weekday: 0, startTime: '00:00', endTime: '12:00' })])
+  assert.equal(days[0].windows[0].start, '12:00 AM')
+  assert.equal(days[0].windows[0].end, '12:00 PM')
   assert.equal(S.summaryTimezone(S.describeWeeklyAvailability([rule({})])), 'America/Chicago')
 })
 

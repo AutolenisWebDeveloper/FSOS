@@ -8,6 +8,9 @@
 // / one-off exceptions apply on top and are noted by the UI, not recomputed here).
 
 import type { AvailabilityRule } from './availability'
+// Reuse the ONE booking wall-clock formatter (the same one AvailabilityRulesManager renders rows
+// with) — do not reintroduce a second time-interpretation.
+import { formatWallTime } from './display'
 
 const WEEKDAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const
 
@@ -24,17 +27,6 @@ export interface DayAvailability {
   weekday: number // 0=Sun … 6=Sat
   label: string
   windows: AvailabilityWindow[] // empty = unavailable that day
-}
-
-/** "09:00" (24h wall) → "9:00 AM". */
-export function formatWallTime(hhmm: string): string {
-  const [hStr, mStr] = hhmm.split(':')
-  const h = Number.parseInt(hStr, 10)
-  const m = Number.parseInt(mStr ?? '0', 10)
-  if (!Number.isFinite(h)) return hhmm
-  const period = h < 12 ? 'AM' : 'PM'
-  const h12 = h % 12 === 0 ? 12 : h % 12
-  return `${h12}:${String(Number.isFinite(m) ? m : 0).padStart(2, '0')} ${period}`
 }
 
 /**

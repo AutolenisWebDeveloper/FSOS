@@ -65,9 +65,16 @@ P1 was accepted **Ready for Review**, but its a11y, responsive, and screen-reade
 **verified by inspection only — no automated harness exists in this repo** (no Playwright / axe /
 Lighthouse; see `docs/booking/P1-report.md` §5.2). This is a **hard prerequisite before ship**, not
 an assumed pass: WCAG 2.2 AA (keyboard path, focus order, SR announcements, measured contrast) and
-responsive behavior at real breakpoints must be **actually verified** — to be closed by the **P4
-bounded test-harness decision** (Playwright + axe) or an equivalent human browser + assistive-tech
-pass. Do **not** treat P1's inspection-level review as harness-backed conformance.
+responsive behavior at real breakpoints must be **actually verified** — Do **not** treat P1's
+inspection-level review as conformance.
+
+**P4 decision (2026-08-03, ADR-035): closed via a MANUAL pre-ship checklist, not an automated
+harness.** FSOS is a single-FSA internal tool, so a browser-test platform (Playwright/axe-core/CI
+browser job + auth fixtures) was judged disproportionate. Instead, run the documented
+**`docs/booking/a11y-preship-checklist.md`** once before each ship — keyboard tab-through + axe
+DevTools browser-extension scan + screen-reader spot-check + responsive breakpoints — and record the
+sign-off in that file. This is the closure procedure for this gate. (Visual-regression / pixel-diff
+remains a separate, unaddressed concern.)
 
 ### Comms RLS is APP-LAYER ONLY — DB row-isolation not enforced on comm tables 🔒
 `comm_messages` (no row policy) and `comm_message_events` (only the role-coarse `mevt_read`) are

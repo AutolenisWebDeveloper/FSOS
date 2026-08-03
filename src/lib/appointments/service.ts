@@ -86,6 +86,87 @@ export async function setAppointmentStatus(
   return { ok: true, id: appointmentId, from, to: toStatus }
 }
 
+/**
+ * Add an internal note to an appointment. Writes BOTH an `activities` row
+ * (kind='appointment_note' — the signal the command-center "Missing notes" KPI reads) AND an
+ * `audit_log` row (so the note appears in the appointment's unified timeline, its text gated by
+ * the viewer's reveal.bodies). Green-zone: an internal record, sends nothing.
+ */
+export async function addAppointmentNote(
+  actor: string,
+  appointmentId: string,
+  note: string,
+): Promise<{ ok: true; id: string } | { error: string; status?: number }> {
+  const db = getDb()
+
+  const current = await db.from('appointments').select('id').eq('id', appointmentId).maybeSingle()
+  if (current.error) return { error: current.error.message }
+  if (!current.data) return { error: 'Appointment not found', status: 404 }
+
+  const ins = await db
+    .from('activities')
+    .insert({ entity_type: 'appointment', entity_id: appointmentId, kind: 'appointment_note', note, actor })
+  if (ins.error) return { error: ins.error.message }
+
+  await writeAudit({ actor, action: 'entity.updated', entity: 'appointment', entityId: appointmentId, diff: { event: 'note_added', note } })
+
+  return { ok: true, id: appointmentId }
+}
+
+const FOLLOWUP_DEFAULT_DUE_DAYS = 3
+
+/**
+ * Create a single internal follow-up task for an appointment. Deduplicated against an existing
+ * OPEN manual task for the same appointment (so a double-click doesn't pile up duplicates), which
+ * also keeps the "Follow-ups due" KPI honest. Green-zone: an internal task, contacts no one.
+ */
+export async function createAppointmentFollowupTask(
+  actor: string,
+  appointmentId: string,
+  opts: { title?: string; dueInDays?: number } = {},
+): Promise<{ ok: true; id: string; deduped: boolean } | { error: string; status?: number }> {
+  const db = getDb()
+
+  const current = await db.from('appointments').select('id').eq('id', appointmentId).maybeSingle()
+  if (current.error) return { error: current.error.message }
+  if (!current.data) return { error: 'Appointment not found', status: 404 }
+
+  // Dedup: an OPEN manual task already covering this appointment is returned instead of a second.
+  const existing = await db
+    .from('work_tasks')
+    .select('id')
+    .eq('entity_type', 'appointment')
+    .eq('entity_id', appointmentId)
+    .eq('source', 'manual')
+    .eq('completed', false)
+    .limit(1)
+    .maybeSingle()
+  if (existing.error) return { error: existing.error.message }
+  if (existing.data) return { ok: true, id: existing.data.id as string, deduped: true }
+
+  const days = Math.min(Math.max(1, Math.round(opts.dueInDays ?? FOLLOWUP_DEFAULT_DUE_DAYS)), 365)
+  const due = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
+  const title = opts.title?.trim() || 'Appointment follow-up'
+
+  const insertRes = await db
+    .from('work_tasks')
+    .insert({ title, entity_type: 'appointment', entity_id: appointmentId, source: 'manual', due_at: due, owner_scope: actor })
+    .select('id')
+    .maybeSingle()
+  if (insertRes.error) return { error: insertRes.error.message }
+  if (!insertRes.data) return { error: 'Could not create the follow-up task' }
+
+  await writeAudit({
+    actor,
+    action: 'entity.created',
+    entity: 'appointment',
+    entityId: appointmentId,
+    diff: { event: 'task_created', task_id: insertRes.data.id, title, due_at: due },
+  })
+
+  return { ok: true, id: insertRes.data.id as string, deduped: false }
+}
+
 export interface RecoveryResult {
   created: number
   skippedAlreadyRecovered: number

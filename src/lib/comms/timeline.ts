@@ -215,10 +215,24 @@ export function mapEvent(e: CommEventRow, reveal: TimelineReveal): TimelineEntry
   }
 }
 
-/** An audit record → a timeline entry. Raw diff is NOT dumped; only a note (if present) is
- *  surfaced, and only when the viewer may see bodies. */
+// Friendly timeline titles. A semantic `diff.event` (set by the writer) wins; then a per-action
+// override; else the title-cased raw action. Keeps generic audit verbs (entity.updated/created)
+// readable without leaking the raw diff.
+const EVENT_TITLES: Record<string, string> = {
+  note_added: 'Note added',
+  task_created: 'Follow-up task created',
+  rescheduled: 'Rescheduled',
+}
+const ACTION_TITLES: Record<string, string> = {
+  'stage.changed': 'Status changed',
+}
+
+/** An audit record → a timeline entry. Raw diff is NOT dumped; a note is surfaced only when the
+ *  viewer may see bodies, and a non-sensitive summary (e.g. a task title) otherwise. */
 export function mapAudit(a: AuditRow, reveal: TimelineReveal): TimelineEntry {
+  const event = a.diff && typeof a.diff.event === 'string' ? (a.diff.event as string) : null
   const note = reveal.bodies && a.diff && typeof a.diff.note === 'string' ? (a.diff.note as string) : null
+  const summary = a.diff && typeof a.diff.title === 'string' ? (a.diff.title as string) : null
   return {
     id: `audit:${a.id}`,
     at: a.at,
@@ -226,8 +240,8 @@ export function mapAudit(a: AuditRow, reveal: TimelineReveal): TimelineEntry {
     channel: null,
     direction: null,
     status: null,
-    title: titleCase(a.action),
-    detail: note,
+    title: (event && EVENT_TITLES[event]) || ACTION_TITLES[a.action] || titleCase(a.action),
+    detail: note ?? summary,
     body: null,
     recipient: null,
     providerId: null,

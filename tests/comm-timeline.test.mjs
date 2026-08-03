@@ -69,6 +69,22 @@ t('audit note is surfaced only when bodies are revealed; raw diff is never dumpe
   assert.equal(T.mapAudit(a, { bodies: true, recipients: true, providerIds: true }).title, 'Appointment Status Changed')
 })
 
+t('mapAudit renders friendly titles from diff.event and a non-sensitive task summary', () => {
+  const noteRow = { id: 8, actor: 'u', action: 'entity.updated', diff: { event: 'note_added', note: 'called client' }, at: '2026-08-02T12:00:00Z' }
+  assert.equal(T.mapAudit(noteRow, T.revealFor(['fsa'])).title, 'Note added')
+  assert.equal(T.mapAudit(noteRow, T.revealFor(['fsa'])).detail, 'called client')
+  assert.equal(T.mapAudit(noteRow, T.revealFor(['agency_owner'])).detail, null) // note gated when bodies not revealed
+
+  const taskRow = { id: 9, actor: 'u', action: 'entity.created', diff: { event: 'task_created', title: 'Appointment follow-up', task_id: 't1' }, at: '2026-08-02T13:00:00Z' }
+  const mapped = T.mapAudit(taskRow, T.revealFor(['agency_owner']))
+  assert.equal(mapped.title, 'Follow-up task created')
+  assert.equal(mapped.detail, 'Appointment follow-up') // task title is a non-sensitive summary, shown even without bodies
+
+  // stage.changed gets a friendly per-action title
+  const stage = { id: 10, actor: 'u', action: 'stage.changed', diff: { from: 'scheduled', to: 'completed' }, at: '2026-08-02T14:00:00Z' }
+  assert.equal(T.mapAudit(stage, T.revealFor(['fsa'])).title, 'Status changed')
+})
+
 t('mergeTimeline orders newest-first across all three sources', () => {
   const messages = [{ id: 'm1', channel: 'email', direction: 'outbound', recipient: 'a@b.com', body: 'x', delivery_status: 'sent', created_at: '2026-08-01T09:00:00Z' }]
   const events = [{ id: 'e1', event: 'delivered', channel: 'email', detail: null, provider_id: 'p', created_at: '2026-08-01T09:05:00Z' }]

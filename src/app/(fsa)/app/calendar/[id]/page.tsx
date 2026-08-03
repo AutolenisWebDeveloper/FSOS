@@ -7,6 +7,7 @@ import { getServerSession } from '@/lib/auth/session'
 import { loadCommTimeline } from '@/lib/comms/timeline-load'
 import { CommTimeline } from '@/components/comms/CommTimeline'
 import { AppointmentStatusControls } from '@/components/app/AppointmentStatusControls'
+import { AppointmentActions } from '@/components/app/AppointmentActions'
 import { STATUS_MAP } from '@/components/app/CalendarView'
 import { meetingModeLabel } from '@/lib/booking/display'
 
@@ -131,6 +132,10 @@ export default async function AppointmentDetailPage(props: { params: Promise<{ i
             <p className="mt-1 text-muted-foreground">{a.cancellation_reason}</p>
           </div>
         ) : null}
+
+        <Section title="Actions" description="Log an internal note or queue a follow-up task. Neither contacts the client.">
+          <AppointmentActions appointmentId={a.id} />
+        </Section>
 
         <Section
           title="Activity"

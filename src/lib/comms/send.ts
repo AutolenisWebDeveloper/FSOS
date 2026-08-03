@@ -29,6 +29,7 @@ import { instrumentEmailHtml } from './tracking'
 import { wrapMarketingEmailBody } from '@/lib/notifications/email-shell'
 import { resolveDelegation, enqueueAssignmentReview, resolveAgentOfRecord, type AgentOfRecord } from './ownership'
 import { buildRecipientContext } from './variables'
+import { resolvePolicySource } from './policy-context'
 import { resolveIdentityDisclosure, type IdentityContext } from './identity-resolver'
 import { prependIdentityDisclosure } from './identity'
 import { resolveSendPolicy } from './policy-resolver'
@@ -488,11 +489,15 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
   // agency on the spine — reused for both the body variables and the identity disclosure below.
   const agencyForOwner = ctx.ownership?.representedAgencyId ?? ctx.delegation?.agencyId ?? convAgencyId ?? null
   const agentOfRecord: AgentOfRecord | null = await resolveAgentOfRecord(agencyForOwner)
+  // Load the recipient's policy (when a policyId is supplied, e.g. the life-conversion campaign)
+  // so the policy/conversion variables resolve from the spine. Fails soft to null → those
+  // variables then fail closed at the gate if referenced (never a blank/guessed value).
+  const policySource = await resolvePolicySource(ctx.policyId)
 
   // Build the per-recipient merge context through the ONE centralized resolver (variables.ts):
-  // advisor + agency identity, scheduling/reply-to/sender, the resolved agent of record, and the
-  // recipient's name. A caller-supplied value (e.g. a campaign that pre-resolved policy variables)
-  // still wins; the per-recipient unsubscribe_url is FORCED for email (never overridable, §13.8).
+  // advisor + agency identity, scheduling/reply-to/sender, the resolved agent of record, the
+  // recipient's name, and the policy/conversion facts. A caller-supplied value still wins; the
+  // per-recipient unsubscribe_url is FORCED for email (never overridable, §13.8).
   const recipientCtx: RecipientContext = {
     ...buildRecipientContext({
       contact: {
@@ -501,6 +506,7 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
         last_name: ctx.recipientContext?.last_name ?? null,
       },
       agentOfRecord,
+      policy: policySource,
     }),
     ...(ctx.recipientContext ?? {}),
     ...(ctx.channel === 'email' ? { unsubscribe_url: emailUnsubscribeUrl(to) } : {}),

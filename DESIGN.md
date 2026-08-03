@@ -797,8 +797,13 @@ second resolver and no per-campaign variable logic: an author inserts a variable
   snake_case tokens (`{{fsa_name}}`, the send-injected `{{unsubscribe_url}}`, booking
   `{{appointment_time}}`) keep resolving unchanged. Adding a future variable = one registry entry +
   its source in `buildRecipientContext`; every current and future campaign shares it automatically.
-- **Data gaps (flagged, not faked).** `PolicyEffectiveDate` has no column in the `policies` schema
-  (only `issue_date`), and policy rows are not yet threaded per-recipient into the campaign send
-  context — so policy/conversion variables resolve when a campaign supplies a `policy` source and
-  otherwise **fail closed** (never a placeholder). Wiring per-campaign policy loading (and an
-  `effective_date` column) is the follow-on.
+- **Policy/conversion wiring.** The send path resolves the recipient's policy from `ctx.policyId`
+  (`resolvePolicySource` → `household_policies`) and passes it to `buildRecipientContext`, so
+  `{{PolicyNumber}}`, `{{PolicyType}}`, `{{PolicyIssueDate}}`, `{{PolicyEffectiveDate}}`,
+  `{{PolicyFaceAmount}}`, `{{ConversionExpirationDate}}`, and `{{DaysUntilConversionExpires}}`
+  resolve live for any campaign that supplies a policy (the life-conversion campaign passes its
+  enrollment's `policy_id`). Migration `095` added the summary fields the set needs
+  (`issue_date`, `face_amount`, `policy_type`; `effective_date`/`conversion_deadline` already
+  existed). A policy variable referenced without a resolvable value still **fails closed** — never
+  a placeholder. Only policy-summary fields are read — never securities account/transaction data
+  (firewall §4.1).

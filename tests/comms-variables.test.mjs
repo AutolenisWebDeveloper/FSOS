@@ -110,4 +110,20 @@ t('tokensIn returns canonical keys regardless of authoring casing', () => {
   assert.deepEqual(tokensIn('{{FirstName}} {{first_name}} {{AgencyName}}').sort(), ['agency_name', 'first_name'])
 })
 
+t('a policy-heavy template FULLY resolves when a policy source is supplied (nothing unresolved)', () => {
+  const body =
+    'Hi {{FirstName}}, your {{PolicyType}} policy {{PolicyNumber}} (issued {{PolicyIssueDate}}, effective ' +
+    '{{PolicyEffectiveDate}}, face {{PolicyFaceAmount}}) has a conversion window closing ' +
+    '{{ConversionExpirationDate}} — {{DaysUntilConversionExpires}} days away.'
+  const ctx = V.buildRecipientContext({
+    contact: { full_name: 'Dana Rivers' },
+    policy: { policy_number: 'L1234', policy_type: 'Term Life', issue_date: '2019-06-01', effective_date: '2019-06-15', face_amount: 750000, conversion_deadline: '2027-06-15' },
+    now: '2026-06-15T00:00:00Z',
+  })
+  assert.deepEqual(unresolvedBlockingTokens(body, ctx), [], 'every policy variable resolved')
+  const out = personalize(body, ctx)
+  assert.ok(!out.includes('{{'), 'no raw token leaked')
+  assert.ok(out.includes('Term Life policy L1234') && out.includes('face $750,000') && out.includes('365 days away'))
+})
+
 console.log(`\n✓ comms-variables: ${passed} assertions passed`)

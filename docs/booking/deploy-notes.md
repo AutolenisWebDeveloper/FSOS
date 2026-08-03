@@ -58,6 +58,24 @@ not replace, `uq_appointments_host_slot`).
 **Backward compatibility:** additive only; no app change depends on it. The D1 code fix
 (status-guarded conditional cancel/transition write) ships independently and needs no migration.
 
+### P5 — booking notification deliveries + schedule_version + reminder config — `supabase/migrations/093_booking_notification_deliveries.sql`
+**Introduced by:** P5 Stage 1 (notification automation). Adds the per-offset/channel delivery ledger
+(`booking_notification_deliveries`, fire-once via its UNIQUE key), `appointments.schedule_version`
+(bumped by the reschedule mover so re-anchoring is correct), and `booking_reminder_config`
+(`sms_enabled` default false = the SMS feature flag; values `is_assumption`).
+
+**Apply steps (human, forward-only — do NOT run against prod from this environment):**
+1. Apply `093_booking_notification_deliveries.sql` via the repo migration workflow. Additive; the
+   `schedule_version` column's constant default backfills existing rows as metadata (no rewrite, no
+   null gap). Fast on the current small table.
+2. The P5 **email-lifecycle** slice (Stage 2) is gated on this migration being applied — it reads/
+   writes these tables. Until applied, keep the P5 email-lifecycle code un-deployed (or the reminder
+   job will error). `reminder_sent_at` remains in place until Stage 2 retires it.
+3. **Rollback:** drop the two tables + `alter table appointments drop column schedule_version;`
+   (`reminder_sent_at` is retained precisely so this rollback is safe).
+
+**Backward compatibility:** additive only; nothing depends on it until the P5 Stage-2 code ships.
+
 ## Pre-ship verification gates (not config — must be closed before go-live)
 
 ### P1 — accessibility / responsive / screen-reader verification is INSPECTION-ONLY 🔒
@@ -91,6 +109,13 @@ isolation. **Owner: comms/campaign security model — NOT booking** (do not slic
 migration; collision with active campaign Phase-2 work in the same files, §3). Tracked finding +
 full analysis: `docs/security/comms-row-isolation-finding.md`. (Recorded 2026-08-03; surfaced during
 P2.3, verified via `fsos-security-audit`; escalated to platform security.)
+
+**P5 addition (2026-08-03):** the new `booking_notification_deliveries` + `booking_reminder_config`
+tables (mig 093) join this SAME app-layer-only cohort — RLS enabled with a role-gated staff read,
+service-role writes, **NOT FORCE'd, NOT tenant-scoped** (deliberately the existing posture, not a
+third pattern). Single-FSA acceptable; the same **pre-multi-tenant** FORCE + tenant-scoping hardening
+applies before any second-tenant/partner read path. The delivery ledger carries no recipient/body
+PII (appointment_id/version/event/offset/channel/status only).
 
 ### Availability-edit orphan check is point-in-time, not serialized — pre-multi-tenant 🔒
 The availability-rule editor refuses a NARROWING change (update/delete) that would leave future

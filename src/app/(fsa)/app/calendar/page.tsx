@@ -131,6 +131,9 @@ export default async function CalendarPage() {
       actions={
         <div className="flex items-center gap-2">
           <Button asChild variant="outline" size="sm">
+            <Link href="/app/calendar/analytics">Analytics</Link>
+          </Button>
+          <Button asChild variant="outline" size="sm">
             <Link href="/app/booking">Booking settings</Link>
           </Button>
           <RunAppointmentRecoveryButton />

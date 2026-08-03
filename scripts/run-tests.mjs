@@ -18,6 +18,7 @@ const RLS = new Set([
   'ghl-optout-rollback.test.mjs',
   'booking-double-booking.test.mjs',
   'booking-reminder-idempotency.test.mjs',
+  'booking-delivery-ledger.test.mjs',
   'booking-reschedule-move.test.mjs',
   'booking-google-connection.test.mjs',
   'booking-calendly-reconcile.test.mjs',

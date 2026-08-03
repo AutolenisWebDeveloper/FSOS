@@ -17,7 +17,7 @@ import { setAppointmentStatus } from '@/lib/appointments/service'
 import { deleteZoomMeeting, updateZoomMeeting } from '@/lib/zoom/client'
 import { verifyManageToken, manageTokenKey, type ManagePurpose } from './manage-tokens'
 import { computeSlotsForType } from './slots'
-import { sendBookingConfirmation, sendCancellationNotice } from './notify'
+import { sendAppointmentNotice } from './notify'
 
 export interface ManagedAppointment {
   id: string
@@ -29,10 +29,11 @@ export interface ManagedAppointment {
   status: string
   meeting_mode: string | null
   zoom_meeting_id: string | null
+  schedule_version: number | null
 }
 
 const MANAGE_SELECT =
-  'id, appointment_type_id, starts_at, ends_at, duration_minutes, booker_timezone, status, meeting_mode, zoom_meeting_id, ' +
+  'id, appointment_type_id, starts_at, ends_at, duration_minutes, booker_timezone, status, meeting_mode, zoom_meeting_id, schedule_version, ' +
   'appointment_types:appointment_type_id(slug, name)'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -107,7 +108,7 @@ export async function cancelAppointment(appt: ManagedAppointment, reason?: strin
     }
   }
   try {
-    await sendCancellationNotice(appt.id)
+    await sendAppointmentNotice(appt.id, 'cancellation')
   } catch {
     /* best-effort — cancellation already committed */
   }
@@ -160,10 +161,13 @@ export async function rescheduleAppointment(
       starts_at: slot.startsAt,
       ends_at: slot.endsAt,
       scheduled_at: slot.startsAt,
-      // Re-anchor the reminder to the new time: clearing the claim lets the reminder cron
-      // (notify.ts sends only when reminder_sent_at IS NULL) send a fresh reminder for the new
-      // slot. Without this, an appointment whose reminder already fired keeps its stale claim and
-      // never reminds for the moved time.
+      // Re-anchor every notification to the new time by BUMPING schedule_version (P5, mig 093):
+      // the delivery ledger is keyed by (appointment, schedule_version, event, offset, channel),
+      // so a bumped version has no delivery rows yet → each configured reminder offset fires once
+      // for the new slot (correct even if moved back to a previously-used time — the version
+      // differs). `reminder_sent_at` is reset too, retained one release for rollback safety only
+      // (the new ledger-backed reminder pass no longer reads it).
+      schedule_version: (appt.schedule_version ?? 1) + 1,
       reminder_sent_at: null,
       updated_at: now,
     })
@@ -198,9 +202,12 @@ export async function rescheduleAppointment(
     diff: { event: 'rescheduled', rescheduled_to: slot.startsAt, from: appt.starts_at },
   })
 
-  // Re-send the confirmation with the new time (approved confirmation template).
+  // A reschedule is a `rescheduled` event — NOT a fresh "you're booked" confirmation (P5). The
+  // approved appointment-rescheduled template announces the new time (grounded in the moved
+  // starts_at via the enforced {{appointment_time}} token); the ledger fires it once for the
+  // bumped schedule_version.
   try {
-    await sendBookingConfirmation(appt.id)
+    await sendAppointmentNotice(appt.id, 'rescheduled', { actor })
   } catch {
     /* best-effort — reschedule already committed */
   }

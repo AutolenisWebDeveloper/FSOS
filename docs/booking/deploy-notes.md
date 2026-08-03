@@ -69,10 +69,21 @@ not replace, `uq_appointments_host_slot`).
    `schedule_version` column's constant default backfills existing rows as metadata (no rewrite, no
    null gap). Fast on the current small table.
 2. The P5 **email-lifecycle** slice (Stage 2) is gated on this migration being applied — it reads/
-   writes these tables. Until applied, keep the P5 email-lifecycle code un-deployed (or the reminder
-   job will error). `reminder_sent_at` remains in place until Stage 2 retires it.
+   writes these tables. Until applied, the ledger claim returns a safe "ledger_error" and every
+   notice defers (no crash, no double-send); the reminder pass degrades to the legacy single 24h
+   offset via `BOOKING_REMINDER_LEAD_HOURS`. `reminder_sent_at` remains in place (nullable) until a
+   later release retires it — the new ledger-backed reminder pass no longer reads it for email.
 3. **Rollback:** drop the two tables + `alter table appointments drop column schedule_version;`
    (`reminder_sent_at` is retained precisely so this rollback is safe).
+
+**Stage-2 template step (author-time, after the migration):** two NEW appointment email templates
+ship with Stage 2 — `appointment-rescheduled` and `appointment-noshow`. Run `npm run templates:build`
+(writes DRAFT `comm_templates`) and **approve** them before the `rescheduled` / `no_show_followup`
+events can send — until approved, those legs defer (template-not-approved), exactly like the existing
+appointment templates. Events 1/2/4/6 reuse already-registered templates. `sms_enabled` stays **false**
+(Stage 4). The multi-offset reminder cadence is edited in `booking_reminder_config.offsets_minutes`
+(default `{1440}`); note the FSA booking-settings UI still displays only the legacy single lead-hours
+value — surfacing the multi-offset config there is a follow-up, not a Stage-2 blocker.
 
 **Backward compatibility:** additive only; nothing depends on it until the P5 Stage-2 code ships.
 

@@ -5,6 +5,10 @@ import { AvailabilityRulesManager, type AvailabilityRuleRow } from '@/components
 import { BlackoutsManager, type BlackoutRow } from '@/components/app/booking/BlackoutsManager'
 import { GoogleCalendarConnect, type CalendarConnection } from '@/components/app/booking/GoogleCalendarConnect'
 import { googleCalendarConfigured } from '@/lib/booking/google/oauth'
+import { NotificationSettings } from '@/components/app/booking/NotificationSettings'
+import { CommTimeline } from '@/components/comms/CommTimeline'
+import { BOOKING_CONFIG_ENTITIES, toTimelineEntry, type ConfigAuditRow } from '@/lib/booking/config-history'
+import { DEFAULT_REMINDER_LEAD_HOURS } from '@/lib/booking/notify-core'
 
 interface CalendarConnRow {
   id: string
@@ -26,7 +30,7 @@ export const dynamic = 'force-dynamic'
 // portal layout has gated the FSA role (RLS on these tables is default-deny). The public
 // booking flow (Slice 3) consumes exactly this configuration.
 export default async function BookingSettingsPage() {
-  const [typesRes, rulesRes, blackoutsRes, calendarRes] = await Promise.all([
+  const [typesRes, rulesRes, blackoutsRes, calendarRes, historyRes] = await Promise.all([
     load<AppointmentTypeRow[]>(
       (db) =>
         db
@@ -65,6 +69,19 @@ export default async function BookingSettingsPage() {
           .is('deleted_at', null)
           .order('connected_at', { ascending: false })
           .limit(1),
+      [],
+    ),
+    // Read-only settings-change history (config.changed audit rows), rendered via the reusable
+    // CommTimeline. Best-effort — a failure degrades to an empty history, never blanks the page.
+    load<ConfigAuditRow[]>(
+      (db) =>
+        db
+          .from('audit_log')
+          .select('id, actor, entity, action, diff, at')
+          .eq('action', 'config.changed')
+          .in('entity', BOOKING_CONFIG_ENTITIES as unknown as string[])
+          .order('at', { ascending: false })
+          .limit(50),
       [],
     ),
   ])
@@ -112,6 +129,14 @@ export default async function BookingSettingsPage() {
   const activeTypes = types.filter((t) => t.active).length
   const activeRules = rules.filter((r) => r.active).length
 
+  // Notification config (§9.6 — expose EXISTING config read-only; the reminder lead is env-driven).
+  const leadRaw = Number.parseInt(process.env.BOOKING_REMINDER_LEAD_HOURS || '', 10)
+  const leadIsDefault = !(Number.isFinite(leadRaw) && leadRaw > 0)
+  const reminderLeadHours = leadIsDefault ? DEFAULT_REMINDER_LEAD_HOURS : leadRaw
+
+  // Settings-change history → reusable timeline entries (no bodies/PII in config audits).
+  const historyEntries = (historyRes.ok ? historyRes.data : []).map(toTimelineEntry)
+
   return (
     <SettingsShell
       title="Booking"
@@ -149,6 +174,23 @@ export default async function BookingSettingsPage() {
         description="Connect your Google Calendar so booked time is blocked automatically. Read-only and one-way — FSOS reads only your busy times and never changes your calendar."
       >
         <GoogleCalendarConnect configured={googleCalendarConfigured()} connection={calendarConnection} />
+      </SettingsSection>
+
+      <SettingsSection
+        title="Notifications"
+        description="How clients are notified about their appointments. Read-only — reminder timing is set via deployment configuration."
+      >
+        <NotificationSettings leadHours={reminderLeadHours} leadIsDefault={leadIsDefault} />
+      </SettingsSection>
+
+      <SettingsSection
+        title="Recent changes"
+        description="Audit trail of changes to your appointment types, weekly hours, and blackout dates."
+      >
+        <CommTimeline
+          entries={historyEntries}
+          emptyHint="Changes to types, hours, and blackouts will appear here as you make them."
+        />
       </SettingsSection>
     </SettingsShell>
   )

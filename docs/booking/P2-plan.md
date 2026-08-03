@@ -68,6 +68,16 @@ comm-from-FSA) as narrowly scoped endpoints; an explicit **RBAC row** for appoin
 
 ## Decisions (resolve before the slices they gate)
 
+**D-P2-1 — RESOLVED (owner, 2026-08-03): option (a), the shared-helper endpoint.** Build it at
+P2.4 and **show the diff before committing.** The diff must confirm: (1) it reuses the D1
+status-guarded transition — **no second write path**; (2) it **re-anchors reminders** (invalidate
+the old schedule's pending reminders, generate from the new time); (3) **server-enforced advisor
+auth + state validation before the move** (requireApiRole/requirePermission + the appointment is
+still `scheduled` + the new slot is valid). Extract the atomic move + Zoom-sync + notify out of the
+public `manage.ts` into ONE shared helper both flows call. Original decision text kept below.
+
+---
+
 **D-P2-1 — FSA-side time-change reschedule (new write path). NEEDS OWNER APPROVAL before build.**
 Today the FSA can only flip status `no_show/cancelled → scheduled` (not move the time). A true
 "reschedule to a new slot" from the FSA side does **not** exist — only the public signed-token flow
@@ -111,7 +121,11 @@ wire into the calendar page (a "List" view alongside the agenda).
 - Joins: contact, household, opportunity, review, type, meeting/Zoom (client `join_url` only —
   **never `start_url`**, FSA-only), booked_via, cancellation_reason, reminder_sent_at.
 - **Unified timeline** = `activities` + `comm_messages`(entity=appointment) + `work_tasks` +
-  `audit_log`, merged chronologically — this is the "notification history" (P2.13 §8.4 continuity).
+  `audit_log`, merged chronologically — the "notification history" (§8.4). **Build it as a REUSABLE
+  component over `comm_messages` / `comm_message_events` / audit records — NOT P2-only.** P5.13
+  (communication history / send-decision audit) needs the same surface, so keep it DRY and generic
+  (a `CommTimeline`-style component keyed by `{entity_type, entity_id}`) so **P5 extends it rather
+  than forking a second timeline.** (Owner directive, 2026-08-03.)
 - Links out to the client/household/opportunity records. Read-only; all mutation via P2.4 actions.
 
 ### P2.4 — Actions (reuse existing endpoints; add only the narrow gaps)

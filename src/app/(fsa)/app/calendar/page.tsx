@@ -2,8 +2,9 @@ import Link from 'next/link'
 import { ListShell, Section, ErrorState, EmptyState, IntegrationShell, StatTile } from '@/components/archetypes'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
-import { load } from '@/lib/data/query'
+import { load, unwrapOne } from '@/lib/data/query'
 import { CalendarView, type AppointmentRow } from '@/components/app/CalendarView'
+import { AppointmentList, type AppointmentListRow } from '@/components/app/AppointmentList'
 import { RunAppointmentRecoveryButton } from '@/components/app/RunAppointmentRecoveryButton'
 import { AppointmentStatusControls } from '@/components/app/AppointmentStatusControls'
 import { appointmentFunnel, isOverdue, needsRecovery, type Appointment } from '@/lib/appointments/recovery'
@@ -14,9 +15,17 @@ export const dynamic = 'force-dynamic'
 // FSA business timezone for the "today" bucket (config default — Plano/TX practice, Central).
 const BUSINESS_TZ = 'America/Chicago'
 
+interface NamedRel {
+  name?: string | null
+  full_name?: string | null
+}
 interface ApptRow extends AppointmentRow {
   opportunity_id: string | null
   starts_at: string | null
+  meeting_mode: string | null
+  booked_via: string | null
+  appointment_types: NamedRel | NamedRel[] | null
+  contacts: NamedRel | NamedRel[] | null
 }
 
 function fmt(when: string | null): string {
@@ -35,7 +44,10 @@ export default async function CalendarPage() {
       (db) =>
         db
           .from('appointments')
-          .select('id, household_id, review_id, scheduled_at, starts_at, status, external_ref, opportunity_id')
+          .select(
+            'id, household_id, review_id, scheduled_at, starts_at, status, external_ref, opportunity_id, ' +
+              'meeting_mode, booked_via, appointment_types:appointment_type_id(name), contacts:contact_id(full_name)',
+          )
           .order('scheduled_at', { ascending: true, nullsFirst: false }),
       [],
     ),
@@ -70,6 +82,22 @@ export default async function CalendarPage() {
   const appts = res.data
   const names = new Map((householdsRes.ok ? householdsRes.data : []).map((h) => [h.id, h.primary_name]))
   const nameOf = (id: string | null) => (id ? names.get(id) ?? 'Household' : 'Household')
+
+  // Rows for the filterable operational list — contact name (native bookings) first, else the
+  // household name, else a neutral fallback; type name + format from the joined relations.
+  const listRows: AppointmentListRow[] = appts.map((a) => {
+    const contactName = unwrapOne(a.contacts)?.full_name ?? null
+    const householdName = a.household_id ? names.get(a.household_id) ?? null : null
+    return {
+      id: a.id,
+      whenIso: a.starts_at ?? a.scheduled_at,
+      personName: contactName ?? householdName ?? 'Appointment',
+      typeName: unwrapOne(a.appointment_types)?.name ?? null,
+      status: a.status,
+      meetingMode: a.meeting_mode,
+      bookedVia: a.booked_via,
+    }
+  })
 
   const now = new Date()
   const funnel = appointmentFunnel(appts as Appointment[])
@@ -194,6 +222,13 @@ export default async function CalendarPage() {
             </div>
           </Section>
         ) : null}
+
+        <Section
+          title="All appointments"
+          description="Search, filter by status, and sort your whole book. Triage scheduled rows inline."
+        >
+          <AppointmentList rows={listRows} />
+        </Section>
 
         <Section title="Agenda" description="All appointments by day.">
           <CalendarView rows={appts} />

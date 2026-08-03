@@ -177,4 +177,52 @@ t('prepend helper composes disclosure + body without duplicating when already pr
   assert.equal(prependIdentityDisclosure(disclosure, composed), composed)
 })
 
+// ── Agent of record: the {{agency_owner.reference}} token names the client's OWN agent when
+// known and degrades to the generic "your Farmers agent" when not (ADR-016, §4.3). Uses the
+// FSA's APPROVED production wording (migration 094_identity_disclosure_agent_of_record).
+console.log('renderIdentityDisclosure — agent-of-record reference (approved wording)')
+
+const prodConfig = {
+  fsaRoleLabel: 'a Financial Services Agent with Farmers Financial Solutions',
+  fullTemplate:
+    'This is {{sender.full_name}} with Farmers Financial Solutions. I work with {{agency_owner.reference}}, and assist the agency’s clients with life insurance and financial services.',
+  abbreviatedTemplate: 'This is {{sender.first_name}} with Farmers Financial Solutions, working with {{agency_owner.reference}}.',
+}
+
+t('names the client’s ACTUAL agent of record when it is resolved', () => {
+  const text = renderIdentityDisclosure(
+    prodConfig,
+    { sender: { full_name: 'Markist Athelus' }, agency_owner: { full_name: 'Dana Reed' } },
+    'full',
+  )
+  assert.match(text, /This is Markist Athelus with Farmers Financial Solutions\./)
+  assert.match(text, /I work with your Farmers agent, Dana Reed, and assist/)
+  // Never a doubled generic, never an empty/broken clause.
+  assert.doesNotMatch(text, /your Farmers agent, your Farmers agent/)
+  assert.doesNotMatch(text, /\{\{/)
+})
+
+t('degrades to the generic "your Farmers agent" (never a guessed name) when unresolved', () => {
+  const text = renderIdentityDisclosure(
+    prodConfig,
+    { sender: { full_name: 'Markist Athelus' }, agency_owner: {} },
+    'full',
+  )
+  // Reads correctly with NO name — not "your Farmers agent, your Farmers agent", not ", ,".
+  assert.match(text, /I work with your Farmers agent, and assist/)
+  assert.doesNotMatch(text, /your Farmers agent, your Farmers agent/)
+  assert.doesNotMatch(text, /,\s*,/)
+})
+
+t('the sender is the FSA, the agent of record is the represented party (no impersonation)', () => {
+  const text = renderIdentityDisclosure(
+    prodConfig,
+    { sender: { full_name: 'Markist Athelus' }, agency_owner: { full_name: 'Dana Reed' } },
+    'full',
+  )
+  // "This is Markist" (sender) — never "This is Dana" (the agent of record is not the sender).
+  assert.match(text, /^This is Markist Athelus/)
+  assert.doesNotMatch(text, /This is Dana Reed/)
+})
+
 console.log(`\nAll ${passed} identity-disclosure assertions passed.`)

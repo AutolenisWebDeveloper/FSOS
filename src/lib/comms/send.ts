@@ -22,12 +22,12 @@ import { getOrCreateConversation, touchConversation, normalizeContact, type Chan
 import { loadHoursPolicy, isWithinOperatingHours } from './hours'
 import { recordMessageEvent } from './events'
 import { personalize, unresolvedBlockingTokens, type RecipientContext } from './personalize'
-import { advisorMergeContext } from '@/lib/site'
+import { advisorMergeContext, BUSINESS } from '@/lib/site'
 import { emailUnsubscribeUrl } from './unsubscribe'
 import { smsLiveFor } from './a2p'
 import { instrumentEmailHtml } from './tracking'
 import { wrapMarketingEmailBody } from '@/lib/notifications/email-shell'
-import { resolveDelegation, enqueueAssignmentReview } from './ownership'
+import { resolveDelegation, enqueueAssignmentReview, resolveAgentOfRecordName } from './ownership'
 import { resolveIdentityDisclosure, type IdentityContext } from './identity-resolver'
 import { prependIdentityDisclosure } from './identity'
 import { resolveSendPolicy } from './policy-resolver'
@@ -514,10 +514,33 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
   let identityBody = personalized
   let identityText = personalizedText
   if (ctx.identity) {
+    // Resolve the recipient's AGENT OF RECORD (their Farmers agency owner) from the represented
+    // agency on the spine, so the platform disclosure names the CLIENT'S OWN agent — never a
+    // guessed one. A caller-supplied name wins; otherwise we look it up from the agency; if it
+    // cannot be resolved, agency_owner stays empty and the engine degrades to the approved
+    // generic "your Farmers agent" (§4.3, ADR-016). The sender defaults to the single FSA.
+    const agencyForOwner =
+      ctx.ownership?.representedAgencyId ?? ctx.delegation?.agencyId ?? convAgencyId ?? null
+    const suppliedOwnerName = ctx.identity.vars?.agency_owner?.full_name?.trim() || ''
+    const agentOfRecordName = suppliedOwnerName || (await resolveAgentOfRecordName(agencyForOwner)) || null
+    const identityWithOwner: IdentityContext = {
+      ...ctx.identity,
+      vars: {
+        ...ctx.identity.vars,
+        sender: {
+          full_name: ctx.identity.vars?.sender?.full_name?.trim() || BUSINESS.agent,
+          first_name: ctx.identity.vars?.sender?.first_name ?? null,
+        },
+        agency_owner: {
+          full_name: agentOfRecordName,
+          first_name: ctx.identity.vars?.agency_owner?.first_name ?? null,
+        },
+      },
+    }
     const idr = await resolveIdentityDisclosure({
       channel: ctx.channel,
       conversationId,
-      ctx: ctx.identity,
+      ctx: identityWithOwner,
     })
     // identity_full_intro records what was ACTUALLY prepended, not merely what was
     // required: when no approved config exists, idr.disclosure is null and no full intro

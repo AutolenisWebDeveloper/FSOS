@@ -129,6 +129,16 @@ export const QUOTE_URL = 'https://agents.farmers.com/tx/plano/markist-athelus/'
 export const HEADSHOT_PATH = '/images/markist-headshot.jpg'
 
 /**
+ * Stable sender-identity token for the single FSA (Markist), used by the first-contact identity
+ * disclosure engine (ADR-016) as `senderUserId`. It is a system change-detection token — NOT a
+ * securities/PII field and NOT an auth FK — so a fixed value is correct: it keeps the disclosure
+ * decision "sender unchanged" across a campaign, so the platform gives ONE full introduction per
+ * channel and does not re-introduce on every follow-up. (comm_conversations.identity_sender_user_id
+ * is an unconstrained uuid tracking column.) Single-FSA system today (BUSINESS.agent).
+ */
+export const FSA_SENDER_ID = '00000000-0000-4000-8000-00000000f5a1'
+
+/**
  * The FSA's standard email-signature FOOTPRINT — the practice tagline, the offerings list, and
  * the required disclosures used on the agent's production emails. Green-zone marketing identity
  * (§4.2): a general capabilities list + a no-obligation review invitation, never an individualized

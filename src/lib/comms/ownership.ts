@@ -97,9 +97,35 @@ export async function resolveDelegation(
 export interface OwnershipSnapshot {
   representedAgencyId: string | null
   representedAgencyOwnerId: string | null
+  /** The agent-of-record's display name (agency_owners.full_name) — for identity disclosure. */
+  representedAgencyOwnerName: string | null
   representedAgentId: string | null
   contactOwnerId: string | null
   bookOfBusinessRef: string | null
+}
+
+/**
+ * Resolve the client's AGENT OF RECORD name — the display name of the agency owner for the
+ * given agency (households.referring_agency_id → agency_owners.full_name). Deterministic
+ * (earliest owner) to mirror resolveOwnershipForSend. Fails SOFT: any lookup error or missing
+ * owner returns null so the caller degrades to the approved generic "your Farmers agent"
+ * (§4.3 — never name a guessed agent), never blocking the send on this alone.
+ */
+export async function resolveAgentOfRecordName(agencyId: string | null | undefined): Promise<string | null> {
+  if (!agencyId) return null
+  try {
+    const { data } = await getDb()
+      .from('agency_owners')
+      .select('full_name')
+      .eq('agency_id', agencyId)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    const name = String((data as { full_name?: string | null } | null)?.full_name ?? '').trim()
+    return name || null
+  } catch {
+    return null
+  }
 }
 
 export interface OwnershipResolveInput {
@@ -132,6 +158,7 @@ export async function resolveOwnershipForSend(input: OwnershipResolveInput): Pro
   const ownership: OwnershipSnapshot = {
     representedAgencyId: input.agencyId ?? null,
     representedAgencyOwnerId: null,
+    representedAgencyOwnerName: null,
     representedAgentId: null,
     contactOwnerId: null,
     bookOfBusinessRef: null,
@@ -151,13 +178,15 @@ export async function resolveOwnershipForSend(input: OwnershipResolveInput): Pro
     if (ownership.representedAgencyId) {
       const { data: owner } = await db
         .from('agency_owners')
-        .select('id')
+        .select('id, full_name')
         .eq('agency_id', ownership.representedAgencyId)
         .order('created_at', { ascending: true })
         .limit(1)
         .maybeSingle()
-      ownership.representedAgencyOwnerId = owner?.id ?? null
-      ownership.representedAgentId = owner?.id ?? null
+      const ownerRow = owner as { id?: string; full_name?: string | null } | null
+      ownership.representedAgencyOwnerId = ownerRow?.id ?? null
+      ownership.representedAgentId = ownerRow?.id ?? null
+      ownership.representedAgencyOwnerName = String(ownerRow?.full_name ?? '').trim() || null
     }
   } catch {
     return { resolved: false, conflict: 'Ownership lookup failed (fail-closed).', ownership }

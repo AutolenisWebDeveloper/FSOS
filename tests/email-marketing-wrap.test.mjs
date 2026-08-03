@@ -185,9 +185,24 @@ t('appends the same rich signature when the body has none', () => {
   assert.ok(html.includes('Markist Athelus') && html.includes('markist-headshot.jpg'), 'rich signature (name + headshot) appended')
 })
 
-t('renders a trailing disclaimer as quiet fine-print, not a headline', () => {
+t('drops the redundant per-campaign disclaimer (superseded by footprint + CAN-SPAM footer)', () => {
   const html = S.wrapMarketingEmailBody(STRUCTURED_BODY, { unsubscribeUrl: UNSUB })
-  assert.ok(/font-size:12px[^>]*>This email is educational/.test(html), 'disclaimer rendered at fine-print size')
+  // The body's own trailing disclaimer is NOT rendered as a body block...
+  assert.ok(!/This email is educational and is not a recommendation/i.test(html), 'per-campaign disclaimer dropped')
+  // ...but the required disclosures are still carried by the CAN-SPAM footer.
+  assert.ok(/educational and informational purposes only/i.test(html), 'CAN-SPAM educational disclaimer retained')
+  assert.ok(html.includes('Plano') && html.includes('75024'), 'physical mailing address retained')
+  assert.ok(/Unsubscribe from marketing emails/i.test(html), 'unsubscribe retained')
+})
+
+t('renders the standard FSA signature footprint (tagline + offerings + disclosures)', () => {
+  const html = S.wrapMarketingEmailBody(STRUCTURED_BODY, { unsubscribeUrl: UNSUB })
+  assert.ok(html.includes('protect what matters most with life insurance'), 'practice tagline')
+  assert.ok(html.includes('529 College Savings Plans') && html.includes('<strong'), 'offerings list with label')
+  assert.ok(html.includes('Member FINRA &amp; SIPC'), 'FINRA/SIPC securities disclosure (ampersand escaped)')
+  assert.ok(html.includes('intended for the recipient named above'), 'confidentiality line')
+  // Footprint is green-zone identity copy — no product/securities call-to-action.
+  assert.ok(!/\byou\s+should\s+(buy|purchase|invest)\b/i.test(html), 'no product call-to-action in the footprint')
 })
 
 t('carries the responsive + dark-mode progressive-enhancement style block', () => {

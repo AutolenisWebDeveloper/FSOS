@@ -311,11 +311,31 @@ function sigActionLink(label: string, href: string): string {
 }
 
 /**
+ * The FSA's standard signature FOOTPRINT (DESIGN.md §31.2): practice tagline, offerings list,
+ * and required disclosures (FINRA/SIPC securities disclosure + confidentiality). Static, trusted
+ * constants from EMAIL_SIGNATURE, so — unlike personalized body text — they ARE escaped here
+ * (raw "&" in "FINRA & SIPC" must render as &amp;). Green-zone identity copy, never a
+ * recommendation (§4.2); the CAN-SPAM footer with the mailing address + unsubscribe still follows.
+ */
+function signatureFootprintHtml(): string {
+  const f = SIG.footprint
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0 0;border-top:1px solid ${C.border};">
+      <tr><td style="padding-top:14px;">
+        <p style="margin:0 0 10px;color:${C.brand};font-size:${T.small}px;line-height:1.6;font-style:italic;">${esc(f.tagline)}</p>
+        <p style="margin:0 0 6px;color:${C.body};font-size:${T.fine}px;line-height:1.6;"><strong style="color:${C.ink};">Offering:</strong> ${esc(f.offering)}</p>
+        <p style="margin:0 0 10px;color:${C.muted};font-size:${T.micro}px;line-height:1.6;">${esc(f.securities)}</p>
+        <p style="margin:0;color:${C.faint};font-size:${T.micro}px;line-height:1.6;">${esc(f.confidentiality)}</p>
+      </td></tr>
+    </table>`
+}
+
+/**
  * The rich, branded FSA email signature block (DESIGN.md §31.2): a headshot letterhead, the
  * agent name + designation, descriptive title + financial firm, direct/office/email contact
- * rows, and two green-zone action links (booking + free quote). One canonical identity from
- * EMAIL_SIGNATURE (src/lib/email/brand.ts) so every campaign email signs off identically. The
- * `closer` (e.g. "Warm regards,") is the message's own approved sign-off word, kept verbatim.
+ * rows, two green-zone action links (booking + free quote), and the standard footprint
+ * (tagline + offerings + disclosures). One canonical identity from EMAIL_SIGNATURE
+ * (src/lib/email/brand.ts) so every campaign email signs off identically. The `closer`
+ * (e.g. "Warm regards,") is the message's own approved sign-off word, kept verbatim.
  */
 function signatureBlockHtml(closer: string): string {
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0 0;border-top:1px solid ${C.border};">
@@ -333,12 +353,8 @@ function signatureBlockHtml(closer: string): string {
         ${sigActionLink('Schedule a Meeting with Me', SIG.bookingUrl)}
         ${sigActionLink('Get a Free Quote', SIG.quoteUrl)}
       </td></tr>
-    </table>`
-}
-
-/** Trailing compliance fine-print (educational disclaimer inside the body). */
-function mktFine(html: string): string {
-  return `<p style="margin:16px 0 0;color:${C.muted};font-size:${T.fine}px;line-height:1.6;">${linkify(html).replace(/\n/g, '<br>')}</p>`
+    </table>
+    ${signatureFootprintHtml()}`
 }
 
 // ── Block classification ─────────────────────────────────────────────────────
@@ -434,9 +450,12 @@ function renderMarketingBody(body: string): RenderedBody {
       return
     }
 
-    // Trailing educational disclaimer → fine print.
+    // Trailing per-campaign educational disclaimer → superseded by the standard signature
+    // footprint (securities + confidentiality) and the CAN-SPAM footer (the required
+    // "educational / not a product recommendation or suitability determination" line + mailing
+    // address + unsubscribe). Detected so it is NOT rendered as a body paragraph, then dropped to
+    // avoid a duplicate disclaimer block — the core disclosures are retained by those two surfaces.
     if (DISCLAIMER_RE.test(block)) {
-      parts.push(mktFine(block.replace(/\n/g, ' ')))
       return
     }
 

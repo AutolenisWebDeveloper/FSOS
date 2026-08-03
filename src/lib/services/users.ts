@@ -16,21 +16,28 @@
 
 import { randomBytes } from 'node:crypto'
 import { getDb, ConfigError } from '@/lib/supabase/client'
-import { EMAIL_ORIGIN } from '@/lib/email/brand'
+import { siteUrl } from '@/lib/site'
 import { sendPasswordSetupEmail } from '@/lib/notifications/account'
 import { reconcileRoles } from './user-roles'
 import type { Role } from '@/lib/auth/rbac'
 
 type Db = ReturnType<typeof getDb>
 
-/** Where the emailed recovery link lands (the existing set-password page). */
+/**
+ * Where the emailed recovery link lands (the existing set-password page).
+ *
+ * This MUST be a single, STABLE origin: Supabase only honors a recovery link's
+ * `redirect_to` when it matches the project's Redirect-URLs allow-list, and
+ * otherwise silently falls back to the project's Site URL. A per-deployment Vercel
+ * hostname (VERCEL_URL) changes every deploy and can never be reliably allow-listed,
+ * so we use the canonical `siteUrl()` (NEXT_PUBLIC_SITE_URL/APP_URL → the production
+ * domain) — the same origin the other transactional email links use. Allow-list
+ * `<siteUrl>/reset-password/continue` (or `<siteUrl>/**`) in Supabase Auth, and set
+ * the project's Site URL to that domain, so the link resolves to this page instead
+ * of the local-dev default.
+ */
 function passwordSetupRedirect(): string {
-  const raw =
-    process.env.NEXT_PUBLIC_APP_URL ||
-    process.env.APP_URL ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '') ||
-    EMAIL_ORIGIN
-  return `${raw.replace(/\/$/, '')}/reset-password/continue`
+  return `${siteUrl()}/reset-password/continue`
 }
 
 /** A strong, unguessable throwaway password (never shown — the user sets their own). */

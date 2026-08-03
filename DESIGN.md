@@ -679,6 +679,18 @@ inline literals **once**):
    devDependency, out of the runtime bundle); they render the same design as pure HTML strings via
    **`src/lib/notifications/email-shell.ts`**.
 
+**Campaign bodies stored as plain text** (seed migrations, library blueprints, FSA-authored, AI)
+are elevated to the same premium system at the **single send choke-point** (`send.ts` →
+`wrapMarketingEmailBody`, CLAUDE.md §6). `email-shell.ts` parses the personalized plain text into
+the shared component vocabulary — the Subject line becomes the card **H1**, the greeting a warm
+lead, `* ` lines a brand **bullet list**, a `Label <url>` line a **bulletproof CTA button**, a
+`Warm regards, …` closer a **styled signature** (name/agency in Farmers-blue + a quiet linkified
+contact line; the shell appends no duplicate when the body carries its own), and a trailing
+educational note quiet **fine-print**. This only changes *presentation*: the approval-gated copy is
+never rewritten (ADR-023). Every Cross-Sell Life, Life Win-Back, Life Conversion, and pipeline
+win-back email is therefore elite and on-brand regardless of its source — one design system, one
+choke-point, not a per-template one-off.
+
 **Visual system (both contexts).** A centered white card (max-width 600px, 14px radius) on a cool
 `canvas` background, with a 4px Farmers-blue signature accent along the card's top edge; an
 approved-logo letterhead (the Farmers **color** lockup on a white header band — §5.1/§17.1 — never

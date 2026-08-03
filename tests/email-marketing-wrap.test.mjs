@@ -116,6 +116,74 @@ t('does NOT double-wrap a body that is already a full HTML document', () => {
   assert.equal(S.isFullHtmlDocument('Hi Jordan, plain text.'), false)
 })
 
+// ── Premium structural rendering (elite campaign email redesign) ──────────────
+// A realistic personalized campaign body carrying the full structural vocabulary the seed
+// migrations use: Subject + Preview headers, greeting, a "* " bullet list, a "Label <url>" CTA,
+// a "Warm regards, {name} {agency} {phone} {email}" sign-off, and a trailing disclaimer.
+const STRUCTURED_BODY =
+  'Subject: When Did You Last Review Your Coverage?\n' +
+  'Preview: A quick review can help ensure your coverage still fits.\n\n' +
+  'Hi Jordan,\n\n' +
+  'Many people go years without reviewing their life insurance needs.\n\n' +
+  'Your needs may change because of:\n\n' +
+  '* Marriage\n* Children\n* A new home\n\n' +
+  'Schedule a Complimentary Review https://www.markistfsa.com/book/markist\n\n' +
+  'Warm regards, Markist Athelus Athelus Insurance Agency (253) 242-0597 mathelus@farmersagent.com\n\n' +
+  'This email is educational and is not a recommendation regarding any specific policy.'
+
+t('surfaces the body Subject line as an H1 headline (premium hierarchy)', () => {
+  const html = S.wrapMarketingEmailBody(STRUCTURED_BODY, { unsubscribeUrl: UNSUB })
+  assert.ok(/<h1[^>]*>\s*When Did You Last Review Your Coverage\?\s*<\/h1>/.test(html), 'subject rendered as H1')
+  assert.ok(!/Subject:/i.test(html.slice(html.indexOf('<h1'))), 'no literal "Subject:" prefix in the body')
+})
+
+t('uses the body Preview line as the inbox preheader', () => {
+  const html = S.wrapMarketingEmailBody(STRUCTURED_BODY, { preheader: 'fallback' })
+  assert.ok(html.includes('A quick review can help ensure your coverage still fits'), 'preview text present as preheader')
+})
+
+t('renders a "* " list as a real bullet list, not run-together text', () => {
+  const html = S.wrapMarketingEmailBody(STRUCTURED_BODY, { unsubscribeUrl: UNSUB })
+  assert.ok(html.includes('&bull;'), 'brand bullet markers rendered')
+  assert.ok(html.includes('>Marriage<') && html.includes('>Children<') && html.includes('>A new home<'), 'each item is its own row')
+  assert.ok(!html.includes('* Marriage'), 'raw "* " markers are consumed, not shown')
+})
+
+t('renders a "Label <url>" line as a bulletproof CTA button', () => {
+  const html = S.wrapMarketingEmailBody(STRUCTURED_BODY, { unsubscribeUrl: UNSUB })
+  assert.ok(html.includes('<!--[if mso]>'), 'Outlook VML shim present (bulletproof button)')
+  assert.ok(
+    /<a href="https:\/\/www\.markistfsa\.com\/book\/markist"[^>]*>Schedule a Complimentary Review<\/a>/.test(html),
+    'CTA label + href rendered as a button anchor',
+  )
+})
+
+t('renders the in-body sign-off and does NOT append a duplicate', () => {
+  const html = S.wrapMarketingEmailBody(STRUCTURED_BODY, { unsubscribeUrl: UNSUB })
+  const closers = (html.match(/Warm regards,/g) || []).length
+  assert.equal(closers, 1, 'exactly one sign-off (no double signature)')
+  assert.ok(html.includes('Markist Athelus Athelus Insurance Agency'), 'name/agency in the signature')
+  assert.ok(html.includes('href="tel:2532420597"') && html.includes('href="mailto:mathelus@farmersagent.com"'), 'contacts linkified')
+})
+
+t('appends the default FSA sign-off only when the body has none', () => {
+  const html = S.wrapMarketingEmailBody('Hi Jordan,\n\nA quick educational note about coverage.', { unsubscribeUrl: UNSUB })
+  assert.ok(/Warm regards,/.test(html), 'default sign-off appended for a body without one')
+  assert.ok(html.includes('Markist Athelus'), 'FSA identity in the appended sign-off')
+})
+
+t('renders a trailing disclaimer as quiet fine-print, not a headline', () => {
+  const html = S.wrapMarketingEmailBody(STRUCTURED_BODY, { unsubscribeUrl: UNSUB })
+  assert.ok(/font-size:12px[^>]*>This email is educational/.test(html), 'disclaimer rendered at fine-print size')
+})
+
+t('carries the responsive + dark-mode progressive-enhancement style block', () => {
+  const html = S.wrapMarketingEmailBody(STRUCTURED_BODY, { unsubscribeUrl: UNSUB })
+  assert.ok(/@media only screen and \(max-width:600px\)/.test(html), 'mobile padding media query')
+  assert.ok(/prefers-color-scheme:dark/.test(html), 'dark-mode hint')
+  assert.ok(html.includes('class="fsos-card"') && html.includes('class="fsos-pad"'), 'responsive class hooks present')
+})
+
 t('adds no recommendation / call-to-action language via the chrome', () => {
   const html = S.wrapMarketingEmailBody('Hi Jordan, a quick educational note about coverage.', { unsubscribeUrl: UNSUB })
   assert.ok(!/\b(i|we)\s+recommend\b/i.test(html), 'no "we recommend" in chrome')

@@ -27,7 +27,7 @@ create table if not exists booking_notification_deliveries (
   id               uuid primary key default gen_random_uuid(),
   appointment_id   uuid not null references appointments(id) on delete cascade,
   schedule_version int  not null,
-  event            text not null check (event in ('confirmation','reminder','rescheduled','cancellation')),
+  event            text not null check (event in ('confirmation','reminder','rescheduled','cancellation','no_show_followup','recap')),
   offset_minutes   int  not null default 0,   -- reminders: minutes-before-start (e.g. 1440=24h); 0 = immediate events
   channel          text not null check (channel in ('email','sms')),
   status           text not null default 'sent' check (status in ('sent','deferred','blocked','failed')),

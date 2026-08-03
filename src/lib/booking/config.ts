@@ -10,6 +10,8 @@
 
 import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
+import { ruleFromRow, type AvailabilityRule, type AvailabilityRuleRow } from './availability'
+import { appointmentsOutsideTemplate } from './availability-rules-validate'
 import type {
   AppointmentTypeCreateInput,
   AppointmentTypeUpdateInput,
@@ -21,6 +23,81 @@ import type {
 export type ConfigResult<T> =
   | { ok: true; data: T }
   | { ok: false; kind: 'not_found' | 'conflict' | 'error'; message: string }
+
+// ── Availability-change conflict detection (narrowing hours vs already-booked appointments) ──────
+// A template change governs FUTURE slots, not commitments already made. So we NEVER auto-cancel or
+// move an existing appointment. Instead, before a NARROWING change (update / delete) commits, we
+// count future scheduled appointments that would fall outside the new template and, unless the
+// caller explicitly acknowledges, refuse with `availability_conflict` so the FSA sees them first.
+//
+// Concurrency: this is a point-in-time read (candidate rules + future appointments) followed by a
+// single atomic rule write — NOT one serialized transaction. A booking or rule edit landing between
+// the check and the write is not folded in. This is an accepted risk for the single-FSA deployment
+// (one actor); the appointments are never destroyed regardless, only surfaced, so the worst case is
+// a stale count, never data loss. A serializable txn / advisory lock is the hardening path if FSOS
+// ever runs concurrent editors.
+export interface OutsideAppointment {
+  id: string
+  starts_at: string
+}
+export interface AvailabilityConflict {
+  ok: false
+  kind: 'availability_conflict'
+  message: string
+  outside: OutsideAppointment[]
+}
+
+interface RawRuleRow {
+  id: string
+  weekday: number
+  start_time: string
+  end_time: string
+  timezone: string
+  effective_start: string | null
+  effective_end: string | null
+  active: boolean
+}
+const RULE_COLS = 'id, weekday, start_time, end_time, timezone, effective_start, effective_end, active'
+
+/** All availability rules applying to this host (own + practice-wide), for conflict evaluation. */
+async function ruleRowsForHost(actor: string): Promise<RawRuleRow[]> {
+  const { data } = await getDb()
+    .from('availability_rules')
+    .select(RULE_COLS)
+    .or(`host_user_id.eq.${actor},host_user_id.is.null`)
+  return (data ?? []) as RawRuleRow[]
+}
+
+/** The active candidate rules (post-change), mapped through the SAME engine mapper the slot
+ *  calculator uses — so "outside" is judged exactly as the engine reads rules. */
+function candidateActive(rows: RawRuleRow[]): AvailabilityRule[] {
+  return rows.filter((r) => r.active !== false).map((r) => ruleFromRow(r as unknown as AvailabilityRuleRow))
+}
+
+/** Future scheduled appointments whose start falls outside the candidate active template. */
+async function futureAppointmentsOutside(candidate: AvailabilityRule[]): Promise<OutsideAppointment[]> {
+  const nowIso = new Date().toISOString()
+  const { data } = await getDb()
+    .from('appointments')
+    .select('id, starts_at')
+    .eq('status', 'scheduled')
+    .gt('starts_at', nowIso)
+    .limit(2000)
+  return appointmentsOutsideTemplate((data ?? []) as { id: string; starts_at: string | null }[], candidate).map((a) => ({
+    id: a.id,
+    starts_at: a.starts_at as string,
+  }))
+}
+
+function availabilityConflict(outside: OutsideAppointment[]): AvailabilityConflict {
+  const n = outside.length
+  return {
+    ok: false,
+    kind: 'availability_conflict',
+    message: `${n} upcoming appointment${n === 1 ? '' : 's'} would fall outside the new availability. They are kept unchanged — acknowledge to save this change.`,
+    outside,
+  }
+}
 
 // PostgREST/Postgres unique-violation code.
 const UNIQUE_VIOLATION = '23505'
@@ -111,8 +188,17 @@ export async function updateAvailabilityRule(
   actor: string,
   id: string,
   patch: AvailabilityRuleUpdateInput,
-): Promise<ConfigResult<{ id: string }>> {
+  opts: { acknowledge?: boolean } = {},
+): Promise<ConfigResult<{ id: string }> | AvailabilityConflict> {
   if (Object.keys(patch).length === 0) return { ok: false, kind: 'error', message: 'No fields to update.' }
+  // A narrowing edit is checked against future appointments unless explicitly acknowledged.
+  if (!opts.acknowledge) {
+    const rows = await ruleRowsForHost(actor)
+    if (!rows.some((r) => r.id === id)) return { ok: false, kind: 'not_found', message: 'Availability rule not found.' }
+    const candidate = candidateActive(rows.map((r) => (r.id === id ? { ...r, ...patch } : r)))
+    const outside = await futureAppointmentsOutside(candidate)
+    if (outside.length > 0) return availabilityConflict(outside)
+  }
   const { data, error } = await getDb()
     .from('availability_rules')
     .update({ ...patch, updated_at: new Date().toISOString() })
@@ -125,7 +211,19 @@ export async function updateAvailabilityRule(
   return { ok: true, data: { id } }
 }
 
-export async function deleteAvailabilityRule(actor: string, id: string): Promise<ConfigResult<{ id: string }>> {
+export async function deleteAvailabilityRule(
+  actor: string,
+  id: string,
+  opts: { acknowledge?: boolean } = {},
+): Promise<ConfigResult<{ id: string }> | AvailabilityConflict> {
+  // Removing a window narrows availability — check future appointments unless acknowledged.
+  if (!opts.acknowledge) {
+    const rows = await ruleRowsForHost(actor)
+    if (!rows.some((r) => r.id === id)) return { ok: false, kind: 'not_found', message: 'Availability rule not found.' }
+    const candidate = candidateActive(rows.filter((r) => r.id !== id))
+    const outside = await futureAppointmentsOutside(candidate)
+    if (outside.length > 0) return availabilityConflict(outside)
+  }
   const { data, error } = await getDb().from('availability_rules').delete().eq('id', id).select('id').maybeSingle()
   if (error) return { ok: false, kind: 'error', message: error.message }
   if (!data) return { ok: false, kind: 'not_found', message: 'Availability rule not found.' }

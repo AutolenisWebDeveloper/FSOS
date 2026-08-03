@@ -85,6 +85,19 @@ migration; collision with active campaign Phase-2 work in the same files, §3). 
 full analysis: `docs/security/comms-row-isolation-finding.md`. (Recorded 2026-08-03; surfaced during
 P2.3, verified via `fsos-security-audit`; escalated to platform security.)
 
+### Availability-edit orphan check is point-in-time, not serialized — pre-multi-tenant 🔒
+The availability-rule editor refuses a NARROWING change (update/delete) that would leave future
+scheduled appointments outside the new template, unless the FSA explicitly acknowledges (409
+`availability_conflict`) — it never auto-cancels or moves an appointment (a template change governs
+future slots, not commitments already made). The check is a **point-in-time read** (candidate rules
++ future appointments) followed by a **single atomic rule write** — NOT one serializable
+transaction. A booking or rule edit landing between the check and the write is not folded in.
+**Accepted for single-FSA** (one actor, near-zero race; appointments are only surfaced, never
+destroyed, so the worst case is a stale count, never data loss). **Pre-multi-tenant hardening:** a
+serializable transaction or advisory lock around validate→check→write is required before concurrent
+editors. Implementation: `lib/booking/config.ts` (see the conflict-detection comment). (Recorded
+2026-08-03, P3.2.)
+
 ## Phase rollback levers
 - **P1 (public UI):** presentation-only, no migration; revert the P1 commits to restore the prior
   `/schedule` UI. No data or contract impact.

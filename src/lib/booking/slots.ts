@@ -10,7 +10,7 @@
 // type, never other rows. No securities data is touched (booking stores scheduling only).
 
 import { getDb } from '@/lib/supabase/client'
-import { computeAvailableSlots, type AvailabilityRule, type BusyBlock, type RenderedSlot } from './availability'
+import { computeAvailableSlots, ruleFromRow, type AvailabilityRule, type AvailabilityRuleRow, type BusyBlock, type RenderedSlot } from './availability'
 import { loadGoogleBusy } from './google/busy'
 
 export interface BookableType {
@@ -102,15 +102,7 @@ export async function computeSlotsForType(args: {
   if (blackoutsRes.error) return { ok: false, kind: 'error', message: blackoutsRes.error.message }
   if (busyRes.error) return { ok: false, kind: 'error', message: busyRes.error.message }
 
-  const rules: AvailabilityRule[] = (rulesRes.data ?? []).map((r) => ({
-    weekday: r.weekday as number,
-    startTime: String(r.start_time).slice(0, 5),
-    endTime: String(r.end_time).slice(0, 5),
-    timezone: r.timezone as string,
-    effectiveStart: (r.effective_start as string | null) ?? null,
-    effectiveEnd: (r.effective_end as string | null) ?? null,
-    active: r.active !== false,
-  }))
+  const rules: AvailabilityRule[] = (rulesRes.data ?? []).map((r) => ruleFromRow(r as unknown as AvailabilityRuleRow))
   const blackouts: BusyBlock[] = (blackoutsRes.data ?? []).map((b) => ({
     startsAt: b.starts_at as string,
     endsAt: b.ends_at as string,

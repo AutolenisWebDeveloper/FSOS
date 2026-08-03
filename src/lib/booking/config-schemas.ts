@@ -134,7 +134,27 @@ export const PublicBookingInput = z.object({
     .nullable()
     .transform((v) => (v ? v : null)),
   notes: z.string().trim().max(1000).optional().nullable(),
+  /**
+   * Separate, affirmative, default-UNCHECKED SMS opt-in (TCPA prior express written consent,
+   * P5.3). NEVER inferred from booking or the email opt-in. When true, a valid mobile number is
+   * required (the superRefine below) — you cannot consent to texts without a number to text.
+   */
+  sms_opt_in: z.boolean().optional().default(false),
   /** Honeypot — a bot filling this is silently dropped by the route (not a validation error). */
   company: z.string().max(200).optional(),
+}).superRefine((val, ctx) => {
+  // Phone is optional UNLESS the attendee affirmatively opted into SMS — then it is required and
+  // must be E.164-normalizable (≥10 digits). Enforced here so no SMS-consent evidence can be
+  // written for a number we don't actually have (a false, unusable consent record).
+  if (val.sms_opt_in) {
+    const digits = (val.phone ?? '').replace(/\D/g, '')
+    if (digits.length < 10) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['phone'],
+        message: 'A valid mobile number is required to receive text messages.',
+      })
+    }
+  }
 })
 export type PublicBookingInputType = z.infer<typeof PublicBookingInput>

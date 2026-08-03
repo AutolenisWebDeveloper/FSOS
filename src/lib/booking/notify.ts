@@ -14,12 +14,9 @@ import { unwrapOne } from '@/lib/data/query'
 import { CONTACT, siteUrl } from '@/lib/site'
 import { sendThroughGate } from '@/lib/comms/send'
 import { signManageToken, manageTokenKey, MANAGE_TOKEN_TTL_MS } from './manage-tokens'
-import {
-  buildBookingContext,
-  isReminderDue,
-  DEFAULT_REMINDER_LEAD_HOURS,
-  type ReminderCandidate,
-} from './notify-core'
+import { buildBookingContext, DEFAULT_REMINDER_LEAD_HOURS } from './notify-core'
+import { type LifecycleEvent, sourceKeyFor, dueReminderOffsets } from './notify-events'
+import { smsA2pApproved } from '@/lib/comms/a2p'
 
 const OFFICE_LOCATION = `${CONTACT.address.line1}, ${CONTACT.address.city}, ${CONTACT.address.region} ${CONTACT.address.postal}`
 
@@ -48,6 +45,7 @@ interface ApptRow {
   join_url: string | null
   booked_at: string | null
   status: string
+  schedule_version: number | null
   reminder_sent_at: string | null
   cancel_token: string | null
   reschedule_token: string | null
@@ -56,7 +54,7 @@ interface ApptRow {
 }
 
 const APPT_SELECT =
-  'id, contact_id, starts_at, booker_timezone, meeting_mode, join_url, booked_at, status, reminder_sent_at, ' +
+  'id, contact_id, starts_at, booker_timezone, meeting_mode, join_url, booked_at, status, schedule_version, reminder_sent_at, ' +
   'cancel_token, reschedule_token, ' +
   'contacts:contact_id(full_name, first_name, email, phone), appointment_types:appointment_type_id(name, meeting_mode)'
 
@@ -93,83 +91,212 @@ async function loadApprovedTemplate(db: Db, sourceKey: string) {
   return data as { id: string; subject: string | null; body: string; body_text: string | null } | null
 }
 
-export type NotifyOutcome = { sent: boolean; reason?: string }
+export type NotifyOutcome = { sent: boolean; reason?: string; messageId?: string }
 
-/** Send one appointment email (confirmation or reminder) through the gate. */
-async function sendAppointmentEmail(
+/** Send one appointment message on a channel (email or SMS) through the gate. */
+async function sendAppointmentMessage(
   db: Db,
-  opts: { sourceKey: string; appt: ApptRow; actor: string; durableConsentGranted: boolean },
+  opts: { channel: 'email' | 'sms'; sourceKey: string; appt: ApptRow; actor: string; durableConsentGranted: boolean },
 ): Promise<NotifyOutcome> {
   const contact = unwrapOne(opts.appt.contacts)
   const type = unwrapOne(opts.appt.appointment_types)
-  if (!contact?.email) return { sent: false, reason: 'no_email' }
   if (!opts.appt.starts_at) return { sent: false, reason: 'no_start' }
+  const to = opts.channel === 'email' ? contact?.email : contact?.phone
+  if (!to) return { sent: false, reason: opts.channel === 'email' ? 'no_email' : 'no_phone' }
 
   // Deferred if the template isn't approved yet (mirrors the workshop template-not-approved
-  // deferral) — booking itself already succeeded; the email simply waits for approval.
+  // deferral) — the appointment already succeeded; the notice simply waits for approval.
   const tpl = await loadApprovedTemplate(db, opts.sourceKey)
   if (!tpl) return { sent: false, reason: 'template_not_approved' }
 
   const ctx = buildBookingContext({
-    fullName: contact.full_name,
+    fullName: contact?.full_name,
     startsAt: opts.appt.starts_at,
     bookerTimezone: opts.appt.booker_timezone,
     meetingMode: opts.appt.meeting_mode ?? type?.meeting_mode ?? 'video',
     joinUrl: opts.appt.join_url,
-    phone: contact.phone,
+    phone: contact?.phone,
     location: OFFICE_LOCATION,
   })
 
   const outcome = await sendThroughGate({
-    channel: 'email',
-    to: contact.email,
-    subject: tpl.subject ?? undefined,
+    channel: opts.channel,
+    to,
+    subject: opts.channel === 'email' ? tpl.subject ?? undefined : undefined,
     body: tpl.body,
-    bodyText: tpl.body_text ?? undefined,
+    bodyText: opts.channel === 'email' ? tpl.body_text ?? undefined : undefined,
     templateId: tpl.id,
-    durableConsentGranted: opts.durableConsentGranted, // email booking consent (non-member)
+    // EMAIL rides the durable booking-email consent (non-member transactional basis). SMS must
+    // NEVER waive: it requires the SEPARATE AFFIRMATIVE opt-in, which the gate resolves from
+    // comm_contact_consents by the recipient phone (Stage 3). Passing a waiver on SMS would
+    // bypass TCPA prior-express-written consent — so it is forced false for SMS.
+    durableConsentGranted: opts.channel === 'email' ? opts.durableConsentGranted : false,
     isSecurity: false,
     actor: opts.actor,
     entity: { type: 'appointment', id: opts.appt.id },
     // Merge context + signed reschedule/cancel manage links (unused tokens render empty).
     recipientContext: { ...ctx, ...manageUrls(opts.appt) },
   })
-  return { sent: outcome.sent, reason: outcome.sent ? undefined : outcome.reason ?? 'gate_blocked' }
+  return {
+    sent: outcome.sent,
+    reason: outcome.sent ? undefined : outcome.reason ?? 'gate_blocked',
+    messageId: outcome.messageId,
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// P5 delivery ledger (mig 093) — the fire-once correctness core. One row per notice
+// actually acted on, keyed UNIQUE(appointment_id, schedule_version, event, offset_minutes,
+// channel). The claim is an atomic INSERT … ON CONFLICT DO NOTHING (upsert + ignoreDuplicates):
+// a returned row = we won the claim and must send; no row = already delivered → skip. On a
+// deferred/blocked leg the claim is DELETED so a later tick re-claims and retries (mirrors the
+// legacy reminder_sent_at null→now→release). schedule_version (bumped by the reschedule mover)
+// ties each delivery to a specific scheduled instant, so a reschedule re-arms every leg once.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DELIVERY_CONFLICT = 'appointment_id,schedule_version,event,offset_minutes,channel'
+
+type ClaimResult = { id: string } | { skip: 'exists' | 'error' }
+
+/** Atomically claim a delivery leg. Returns the new row id, or why it was not claimed. */
+async function claimDelivery(
+  db: Db,
+  c: { appointmentId: string; scheduleVersion: number; event: LifecycleEvent; offsetMinutes: number; channel: 'email' | 'sms' },
+): Promise<ClaimResult> {
+  const { data, error } = await db
+    .from('booking_notification_deliveries')
+    .upsert(
+      {
+        appointment_id: c.appointmentId,
+        schedule_version: c.scheduleVersion,
+        event: c.event,
+        offset_minutes: c.offsetMinutes,
+        channel: c.channel,
+        status: 'sent',
+      },
+      { onConflict: DELIVERY_CONFLICT, ignoreDuplicates: true },
+    )
+    .select('id')
+    .maybeSingle()
+  if (error) return { skip: 'error' }
+  if (!data) return { skip: 'exists' } // ON CONFLICT DO NOTHING returned no row → already delivered
+  return { id: data.id as string }
+}
+
+/** Persist the successful send's comm_messages link on the claimed ledger row. */
+async function markDeliverySent(db: Db, id: string, messageId?: string): Promise<void> {
+  await db
+    .from('booking_notification_deliveries')
+    .update({ status: 'sent', comm_message_id: messageId ?? null })
+    .eq('id', id)
+}
+
+/** Release a claim (deferred/blocked leg) so a later tick can re-claim and retry. */
+async function releaseDelivery(db: Db, id: string): Promise<void> {
+  await db.from('booking_notification_deliveries').delete().eq('id', id)
 }
 
 /**
- * Send the booking confirmation. Best-effort — the appointment already exists; a deferred or
- * blocked email never fails the booking. Called right after a successful booking.
+ * Deliver ONE leg (email or SMS) for a lifecycle event through the ledger: claim → send →
+ * record/release. Fire-once is the UNIQUE-key claim; a deferred/blocked send releases the claim to
+ * retry. The gate is unchanged — consent, quiet-hours, DNC, approved-template, recommendation, and
+ * the securities firewall all re-check at send time. The SMS leg additionally holds until A2P
+ * 10DLC is live (SMS_A2P_APPROVED) — checked BEFORE claiming so a later tick claims once it is,
+ * and the gate's own smsLive step is the backstop.
  */
-export async function sendBookingConfirmation(appointmentId: string, actor = 'public'): Promise<NotifyOutcome> {
+async function deliverLeg(
+  db: Db,
+  appt: ApptRow,
+  args: { event: LifecycleEvent; offsetMinutes: number; channel: 'email' | 'sms'; actor: string; durableConsentGranted: boolean },
+): Promise<NotifyOutcome> {
+  // A2P 10DLC hold: never claim an SMS leg while SMS is not yet live — leave it unclaimed so a
+  // later tick delivers it once A2P is approved (mirrors the campaign tick's sms_a2p_hold).
+  if (args.channel === 'sms' && !smsA2pApproved()) {
+    return { sent: false, reason: 'sms_a2p_hold' }
+  }
+  const scheduleVersion = appt.schedule_version ?? 1
+  const claim = await claimDelivery(db, {
+    appointmentId: appt.id,
+    scheduleVersion,
+    event: args.event,
+    offsetMinutes: args.offsetMinutes,
+    channel: args.channel,
+  })
+  if ('skip' in claim) {
+    return { sent: false, reason: claim.skip === 'exists' ? 'already_delivered' : 'ledger_error' }
+  }
+  const outcome = await sendAppointmentMessage(db, {
+    channel: args.channel,
+    sourceKey: sourceKeyFor(args.event, args.channel),
+    appt,
+    actor: args.actor,
+    durableConsentGranted: args.durableConsentGranted,
+  })
+  if (outcome.sent) {
+    await markDeliverySent(db, claim.id, outcome.messageId)
+    return outcome
+  }
+  // Not sent (template not approved yet, quiet hours, no SMS consent, transient block) → release
+  // the claim so a later tick (reminders) or a re-invocation (immediate events) can retry.
+  await releaseDelivery(db, claim.id)
+  return outcome
+}
+
+/** Immediate lifecycle events (everything except the per-offset reminder) fire at offset 0. */
+const IMMEDIATE = 0
+
+/**
+ * The single lifecycle-notice entry point (P5). Classifies the event to its approved stored
+ * template and delivers the email leg through the fire-once ledger. Email-only in Stage 2; the
+ * SMS leg is gated OFF by booking_reminder_config.sms_enabled until Stage 4 (consent verified).
+ * Best-effort — the appointment change already committed, so a deferred/blocked notice never
+ * fails the caller. `reminder` is handled by runBookingReminderPass (per-offset), not here.
+ */
+export async function sendAppointmentNotice(
+  appointmentId: string,
+  event: Exclude<LifecycleEvent, 'reminder'>,
+  opts: { actor?: string } = {},
+): Promise<NotifyOutcome> {
   const db = getDb()
   const { data } = await db.from('appointments').select(APPT_SELECT).eq('id', appointmentId).maybeSingle()
   if (!data) return { sent: false, reason: 'not_found' }
-  // The booker opted into email at booking time (Slice 3 consent_intent) → durable email consent;
-  // a re-send of the SAME approved transactional confirmation is within that consent. `actor`
-  // attributes an FSA-initiated re-send to the advisor (defaults to 'public' for the auto path).
-  return sendAppointmentEmail(db, {
-    sourceKey: 'appointment-confirmation',
-    appt: data as unknown as ApptRow,
+  const appt = data as unknown as ApptRow
+  const actor = opts.actor ?? 'public'
+  // Every immediate lifecycle notice is transactional (appointment-consent basis): the attendee
+  // just booked / rescheduled / cancelled, or the advisor marked the outcome. Recap and no-show
+  // stay transactional (thank-you / rebook only, no promo) so they ride the same durable email
+  // consent — the moment either carries a product nudge it needs separate marketing consent.
+  const emailOutcome = await deliverLeg(db, appt, {
+    event,
+    offsetMinutes: IMMEDIATE,
+    channel: 'email',
     actor,
     durableConsentGranted: true,
   })
+  // SMS leg (Stage 4) — only when the booking SMS feature flag is on. The affirmative SMS consent
+  // (Stage 3, resolved by the gate from comm_contact_consents), A2P go-live, quiet hours, DNC, and
+  // approved-template checks EACH still independently gate the actual send. Best-effort alongside
+  // email; the EMAIL outcome stays the caller's headline result (book.ts keys its transactional
+  // fallback off it, and a reschedule/cancel/send caller only reads whether the notice went out).
+  const config = await loadReminderConfig(db)
+  if (config.smsEnabled) {
+    await deliverLeg(db, appt, { event, offsetMinutes: IMMEDIATE, channel: 'sms', actor, durableConsentGranted: false })
+  }
+  return emailOutcome
 }
 
 /**
- * Send the cancellation notice (Slice 6). Best-effort — the cancellation is already
- * committed. Transactional (the attendee just cancelled), so email consent is durable.
+ * Send the booking confirmation. Thin wrapper over the lifecycle classifier (a reschedule is a
+ * `rescheduled` event, never a fresh confirmation — see the manage mover). `actor` attributes an
+ * FSA-initiated re-send to the advisor (defaults to 'public' for the auto/public path).
  */
+export async function sendBookingConfirmation(appointmentId: string, actor = 'public'): Promise<NotifyOutcome> {
+  return sendAppointmentNotice(appointmentId, 'confirmation', { actor })
+}
+
+/** Send the cancellation notice. Thin wrapper over the lifecycle classifier. */
 export async function sendCancellationNotice(appointmentId: string): Promise<NotifyOutcome> {
-  const db = getDb()
-  const { data } = await db.from('appointments').select(APPT_SELECT).eq('id', appointmentId).maybeSingle()
-  if (!data) return { sent: false, reason: 'not_found' }
-  return sendAppointmentEmail(db, {
-    sourceKey: 'appointment-cancellation',
-    appt: data as unknown as ApptRow,
-    actor: 'public',
-    durableConsentGranted: true,
-  })
+  return sendAppointmentNotice(appointmentId, 'cancellation', { actor: 'public' })
 }
 
 /** True iff a durable email booking-consent record exists for this contact (Slice 3). */
@@ -192,77 +319,118 @@ export interface ReminderPassResult {
   skipped: number
 }
 
+interface ReminderConfig {
+  offsets: number[] // minutes-before-start, positive, de-duped
+  emailEnabled: boolean
+  smsEnabled: boolean
+}
+
 /**
- * Sweep upcoming appointments and send the single pre-appointment reminder, idempotently.
- * `reminder_sent_at` is the atomic claim: only the tick that flips null→now sends, so
- * overlapping cron ticks never double-send. A blocked/deferred send (e.g. quiet hours) resets
- * the claim so a later tick retries; a no-consent contact is skipped without a send.
+ * Load the reminder configuration (mig 093). When the config row/table is absent (e.g. before
+ * the migration is applied) fall back to the single legacy 24h offset (via the env override) so
+ * the pass degrades to the prior single-reminder behavior rather than erroring. `sms_enabled`
+ * defaults OFF — the Stage-4 SMS feature flag.
+ */
+async function loadReminderConfig(db: Db): Promise<ReminderConfig> {
+  const fallback: ReminderConfig = { offsets: [reminderLeadHours() * 60], emailEnabled: true, smsEnabled: false }
+  try {
+    const { data, error } = await db
+      .from('booking_reminder_config')
+      .select('offsets_minutes, email_enabled, sms_enabled')
+      .eq('id', 'global')
+      .maybeSingle()
+    if (error || !data) return fallback
+    const raw = Array.isArray(data.offsets_minutes) ? (data.offsets_minutes as number[]) : []
+    const offsets = [...new Set(raw.map((n) => Math.trunc(n)).filter((n) => Number.isFinite(n) && n > 0))]
+    return {
+      offsets: offsets.length ? offsets : fallback.offsets,
+      emailEnabled: data.email_enabled !== false,
+      smsEnabled: data.sms_enabled === true,
+    }
+  } catch {
+    return fallback
+  }
+}
+
+/**
+ * Sweep upcoming appointments and send each configured pre-appointment EMAIL reminder offset,
+ * idempotently, through the P5 delivery ledger. The ledger's UNIQUE(appointment, schedule_version,
+ * event, offset, channel) claim is the fire-once guarantee (replacing the single `reminder_sent_at`
+ * boolean): overlapping cron ticks send each offset at most once, and a reschedule (which bumps
+ * schedule_version) re-arms the new time's offsets exactly once each. A blocked/deferred send
+ * releases its claim so a later in-hours tick retries; a no-consent contact is skipped without a
+ * send. Email-only — SMS legs stay behind `sms_enabled` (Stage 4).
  */
 export async function runBookingReminderPass(
   now: Date,
-  opts: { leadHours?: number; limit?: number } = {},
+  opts: { limit?: number } = {},
 ): Promise<ReminderPassResult> {
   const db = getDb()
-  const leadHours = opts.leadHours ?? reminderLeadHours()
+  const result: ReminderPassResult = { scanned: 0, sent: 0, deferred: 0, skipped: 0 }
+
+  const config = await loadReminderConfig(db)
+  if (!config.emailEnabled || config.offsets.length === 0) return result // email reminder channel off
+
   const limit = Math.min(Math.max(1, opts.limit ?? 200), 1000)
   const nowIso = now.toISOString()
-  const windowEndIso = new Date(now.getTime() + leadHours * 3_600_000).toISOString()
+  const maxOffsetMin = Math.max(...config.offsets)
+  const windowEndIso = new Date(now.getTime() + maxOffsetMin * 60_000).toISOString()
 
+  // Scan every scheduled appointment whose start falls inside the WIDEST offset window; the
+  // per-appointment/per-offset due decision (and the ledger fire-once claim) narrows from there.
   const { data, error } = await db
     .from('appointments')
     .select(APPT_SELECT)
     .eq('status', 'scheduled')
-    .is('reminder_sent_at', null)
     .gt('starts_at', nowIso)
     .lte('starts_at', windowEndIso)
     .order('starts_at', { ascending: true })
     .limit(limit)
-  if (error) return { scanned: 0, sent: 0, deferred: 0, skipped: 0 }
+  if (error) return result
 
   const rows = (data ?? []) as unknown as ApptRow[]
-  const result: ReminderPassResult = { scanned: rows.length, sent: 0, deferred: 0, skipped: 0 }
+  result.scanned = rows.length
 
   for (const appt of rows) {
-    const candidate: ReminderCandidate = {
-      status: appt.status,
-      startsAt: appt.starts_at,
-      bookedAt: appt.booked_at,
-      reminderSentAt: appt.reminder_sent_at,
-    }
-    if (!isReminderDue(candidate, now, leadHours)) {
+    const due = dueReminderOffsets(
+      { status: appt.status, startsAt: appt.starts_at, bookedAt: appt.booked_at },
+      config.offsets,
+      now,
+    )
+    if (due.length === 0) {
       result.skipped++
       continue
     }
-    // Consent gate BEFORE claiming — a no-consent contact is skipped, not repeatedly retried.
+    // Consent gate BEFORE claiming any offset — a no-consent contact is skipped, not retried.
     if (!appt.contact_id || !(await hasBookingEmailConsent(db, appt.contact_id))) {
       result.skipped++
       continue
     }
-    // Atomic claim: only the tick that flips null→now proceeds.
-    const claim = await db
-      .from('appointments')
-      .update({ reminder_sent_at: nowIso, updated_at: nowIso })
-      .eq('id', appt.id)
-      .is('reminder_sent_at', null)
-      .select('id')
-      .maybeSingle()
-    if (claim.error || !claim.data) {
-      result.skipped++ // lost the race to a concurrent tick
-      continue
-    }
-    const outcome = await sendAppointmentEmail(db, {
-      sourceKey: 'appointment-reminder-email',
-      appt,
-      actor: 'agent:booking-reminders',
-      durableConsentGranted: true, // consent verified above
-    })
-    if (outcome.sent) {
-      result.sent++
-    } else {
-      // Not sent (template not approved yet, quiet hours, transient block) → release the claim
-      // so a later tick retries while the appointment is still upcoming.
-      await db.from('appointments').update({ reminder_sent_at: null }).eq('id', appt.id)
-      result.deferred++
+    for (const offset of due) {
+      const emailOutcome = await deliverLeg(db, appt, {
+        event: 'reminder',
+        offsetMinutes: offset,
+        channel: 'email',
+        actor: 'agent:booking-reminders',
+        durableConsentGranted: true, // email booking consent verified above
+      })
+      if (emailOutcome.sent) result.sent++
+      else if (emailOutcome.reason === 'already_delivered') result.skipped++
+      else result.deferred++ // template not approved / quiet hours / transient — claim released
+      // SMS reminder leg (Stage 4) — only when enabled; affirmative SMS consent + A2P + quiet
+      // hours are each independently gate-enforced (the email consent above does NOT waive it).
+      if (config.smsEnabled) {
+        const smsOutcome = await deliverLeg(db, appt, {
+          event: 'reminder',
+          offsetMinutes: offset,
+          channel: 'sms',
+          actor: 'agent:booking-reminders',
+          durableConsentGranted: false,
+        })
+        if (smsOutcome.sent) result.sent++
+        else if (smsOutcome.reason === 'already_delivered') result.skipped++
+        else result.deferred++ // a2p hold / no SMS consent / quiet hours / not approved
+      }
     }
   }
   return result

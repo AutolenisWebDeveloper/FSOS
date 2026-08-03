@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { Badge } from '@/components/ui/badge'
+import { StatusBadge } from '@/components/archetypes'
 import { Field } from '@/components/forms/Field'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { EmptyState } from '@/components/archetypes'
@@ -157,7 +157,7 @@ export function AppointmentTypesManager({ initialTypes }: { initialTypes: Appoin
                   </TableCell>
                   <TableCell className="whitespace-nowrap">{meetingModeLabel(t.meeting_mode)}</TableCell>
                   <TableCell>
-                    <Badge variant={t.active ? 'active' : 'secondary'}>{t.active ? 'Active' : 'Hidden'}</Badge>
+                    <StatusBadge status={t.active ? 'active' : 'draft'} label={t.active ? 'Active' : 'Hidden'} />
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">

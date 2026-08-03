@@ -72,11 +72,21 @@ export function AvailabilityRulesManager({ initialRules }: { initialRules: Avail
     router.refresh()
   }
 
-  async function remove(r: AvailabilityRuleRow) {
+  async function remove(r: AvailabilityRuleRow, acknowledge = false) {
     setBusyId(r.id)
-    const res = await deleteJson(`/api/app/booking/rules/${r.id}`)
+    const res = await deleteJson(`/api/app/booking/rules/${r.id}${acknowledge ? '?acknowledge=true' : ''}`)
     setBusyId(null)
-    if (!res.ok) return toast.error(firstFieldError(res.error).message)
+    if (!res.ok) {
+      // Narrowing this window would leave existing appointments outside your hours. Surface them and
+      // require an explicit acknowledge — never silently orphan, never auto-cancel/move them.
+      if (res.status === 409 && res.error.reason === 'availability_conflict') {
+        if (window.confirm(`${res.error.error}\n\nThe appointments are kept unchanged. Remove this window anyway?`)) {
+          await remove(r, true)
+        }
+        return
+      }
+      return toast.error(firstFieldError(res.error).message)
+    }
     toast.success('Removed availability window.')
     router.refresh()
   }

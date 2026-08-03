@@ -29,7 +29,7 @@ import { BookingStepper } from './BookingStepper'
 import { CalendarMonth } from './CalendarMonth'
 import { ReviewSummary } from './ReviewSummary'
 import { buildIcs } from '@/lib/booking/ics'
-import { BUSINESS, CONTACT } from '@/lib/site'
+import { BUSINESS, CONTACT, SMS_CONSENT } from '@/lib/site'
 
 interface PublicType {
   slug: string
@@ -128,6 +128,9 @@ export function BookingFlow({ type, backHref }: { type: PublicType; backHref?: s
 
   // Details form state is lifted here so it survives details → review → edit round-trips.
   const [form, setForm] = React.useState<FormState>({ name: '', email: '', phone: '', notes: '', company: '' })
+  // Separate, affirmative, default-UNCHECKED SMS opt-in (P5.3). Never inferred; independent of
+  // the email opt-in; kept in its own state (a boolean, not a FormState string field).
+  const [smsOptIn, setSmsOptIn] = React.useState(false)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [formError, setFormError] = React.useState<string | null>(null)
   const [reviewing, setReviewing] = React.useState(false)
@@ -224,6 +227,7 @@ export function BookingFlow({ type, backHref }: { type: PublicType; backHref?: s
       email: form.email.trim(),
       phone: form.phone.trim() || null,
       notes: form.notes.trim() || null,
+      sms_opt_in: smsOptIn, // separate affirmative SMS consent (default false)
       company: form.company, // honeypot — passed through unmodified
     }
     const parsed = PublicBookingInput.safeParse(candidate)
@@ -294,6 +298,7 @@ export function BookingFlow({ type, backHref }: { type: PublicType; backHref?: s
     setReviewing(false)
     setPayload(null)
     setForm({ name: '', email: '', phone: '', notes: '', company: '' })
+    setSmsOptIn(false)
     setErrors({})
     setFormError(null)
     setSelectedDay(null)
@@ -345,9 +350,11 @@ export function BookingFlow({ type, backHref }: { type: PublicType; backHref?: s
           slot={chosen}
           tz={tz}
           values={form}
+          smsOptIn={smsOptIn}
           errors={errors}
           formError={formError}
           onChange={setField}
+          onSmsOptInChange={setSmsOptIn}
           onSubmit={handleDetailsSubmit}
           onBack={() => handleEdit('slot')}
         />
@@ -512,9 +519,11 @@ function DetailsForm({
   slot,
   tz,
   values,
+  smsOptIn,
   errors,
   formError,
   onChange,
+  onSmsOptInChange,
   onSubmit,
   onBack,
 }: {
@@ -522,9 +531,11 @@ function DetailsForm({
   slot: Slot
   tz: string
   values: FormState
+  smsOptIn: boolean
   errors: Record<string, string>
   formError: string | null
   onChange: (k: keyof FormState, v: string) => void
+  onSmsOptInChange: (v: boolean) => void
   onSubmit: (e: React.FormEvent) => void
   onBack: () => void
 }) {
@@ -562,12 +573,20 @@ function DetailsForm({
               onChange={(e) => onChange('email', e.target.value)}
             />
           </Field>
-          <Field id="bk-phone" label="Phone" error={errors.phone} hint="Optional — helpful for phone meetings">
+          <Field
+            id="bk-phone"
+            label="Phone"
+            required={smsOptIn}
+            error={errors.phone}
+            hint={smsOptIn ? 'Required to receive text messages' : 'Optional — helpful for phone meetings'}
+          >
             <Input
               name="phone"
               type="tel"
               inputMode="tel"
               autoComplete="tel"
+              required={smsOptIn}
+              aria-required={smsOptIn}
               value={values.phone}
               onChange={(e) => onChange('phone', e.target.value)}
             />
@@ -591,6 +610,30 @@ function DetailsForm({
         </div>
 
         {formError ? <PublicAlert>{formError}</PublicAlert> : null}
+
+        {/* Separate, affirmative, default-UNCHECKED SMS opt-in (P5.3 / TCPA prior express written
+            consent). Independent of the email opt-in below — never pre-checked, never inferred.
+            The label is SMS_CONSENT.disclosure verbatim (the exact wording persisted as the TCPA
+            evidence-of-record), so the text shown and the text stored can never drift. */}
+        <div className="rounded-lg border border-border bg-accent/20 px-4 py-3">
+          <div className="flex items-start gap-3">
+            <input
+              type="checkbox"
+              id="bk-sms-consent"
+              name="sms_consent"
+              checked={smsOptIn}
+              onChange={(e) => onSmsOptInChange(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 rounded border-border text-primary focus-visible:ring-2 focus-visible:ring-ring"
+            />
+            <label htmlFor="bk-sms-consent" className="text-xs leading-relaxed text-muted-foreground">
+              <span className="font-medium text-foreground">Text me about this appointment (optional).</span>{' '}
+              {SMS_CONSENT.disclosure}
+            </label>
+          </div>
+          <p className="mt-2 pl-7 text-xs text-muted-foreground">
+            Consent is not a condition of booking. No mobile information is shared with third parties for marketing.
+          </p>
+        </div>
 
         <p className="text-xs text-muted-foreground">
           By booking, you agree to receive email about this appointment. This is a request to meet; it is not an offer

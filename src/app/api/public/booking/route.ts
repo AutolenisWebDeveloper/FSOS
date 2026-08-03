@@ -39,6 +39,10 @@ export async function POST(req: NextRequest) {
         email: v.data.email,
         phone: v.data.phone ?? null,
         notes: v.data.notes ?? null,
+        // Separate, affirmative SMS opt-in + server-derived TCPA/A2P evidence context (P5.3).
+        smsOptIn: v.data.sms_opt_in === true,
+        ip,
+        userAgent: req.headers.get('user-agent'),
       },
       new Date().toISOString(),
     )

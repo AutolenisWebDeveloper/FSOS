@@ -58,6 +58,50 @@ not replace, `uq_appointments_host_slot`).
 **Backward compatibility:** additive only; no app change depends on it. The D1 code fix
 (status-guarded conditional cancel/transition write) ships independently and needs no migration.
 
+### P5 — booking notification deliveries + schedule_version + reminder config — `supabase/migrations/093_booking_notification_deliveries.sql`
+**Introduced by:** P5 Stage 1 (notification automation). Adds the per-offset/channel delivery ledger
+(`booking_notification_deliveries`, fire-once via its UNIQUE key), `appointments.schedule_version`
+(bumped by the reschedule mover so re-anchoring is correct), and `booking_reminder_config`
+(`sms_enabled` default false = the SMS feature flag; values `is_assumption`).
+
+**Apply steps (human, forward-only — do NOT run against prod from this environment):**
+1. Apply `093_booking_notification_deliveries.sql` via the repo migration workflow. Additive; the
+   `schedule_version` column's constant default backfills existing rows as metadata (no rewrite, no
+   null gap). Fast on the current small table.
+2. The P5 **email-lifecycle** slice (Stage 2) is gated on this migration being applied — it reads/
+   writes these tables. Until applied, the ledger claim returns a safe "ledger_error" and every
+   notice defers (no crash, no double-send); the reminder pass degrades to the legacy single 24h
+   offset via `BOOKING_REMINDER_LEAD_HOURS`. `reminder_sent_at` remains in place (nullable) until a
+   later release retires it — the new ledger-backed reminder pass no longer reads it for email.
+3. **Rollback:** drop the two tables + `alter table appointments drop column schedule_version;`
+   (`reminder_sent_at` is retained precisely so this rollback is safe).
+
+**Stage-4 SMS go-live (author-time + env, all owner-controlled):** booking SMS is wired but sends only
+when ALL of these hold, each independent:
+1. `booking_reminder_config.sms_enabled = true` — the booking-SMS FEATURE flag. Mig 093 now defaults
+   it **true** (Stage 4). To keep booking SMS staged anyway, `update booking_reminder_config set
+   sms_enabled=false where id='global';`.
+2. `SMS_A2P_APPROVED=true` in the environment — the A2P 10DLC carrier go-live gate (default false;
+   `src/lib/comms/a2p.ts`). Until set, every SMS leg holds (no claim) and the gate's `smsLive` step is
+   the backstop. This is the SAME flag the campaign SMS uses — it may already be set.
+3. Run `npm run templates:build:sms` (writes the 6 booking SMS templates as DRAFT `comm_templates`
+   from `src/lib/booking/sms-templates.ts`) and **approve** each — until approved, the SMS leg defers
+   (template-not-approved), exactly like the email path.
+4. Affirmative per-contact SMS consent (Stage 3, `comm_contact_consents`) must resolve for the
+   recipient — the gate enforces it; the email booking consent never waives it.
+Reconcile the SMS wording against the approved Twilio A2P campaign templates before approving.
+
+**Stage-2 template step (author-time, after the migration):** two NEW appointment email templates
+ship with Stage 2 — `appointment-rescheduled` and `appointment-noshow`. Run `npm run templates:build`
+(writes DRAFT `comm_templates`) and **approve** them before the `rescheduled` / `no_show_followup`
+events can send — until approved, those legs defer (template-not-approved), exactly like the existing
+appointment templates. Events 1/2/4/6 reuse already-registered templates. `sms_enabled` stays **false**
+(Stage 4). The multi-offset reminder cadence is edited in `booking_reminder_config.offsets_minutes`
+(default `{1440}`); note the FSA booking-settings UI still displays only the legacy single lead-hours
+value — surfacing the multi-offset config there is a follow-up, not a Stage-2 blocker.
+
+**Backward compatibility:** additive only; nothing depends on it until the P5 Stage-2 code ships.
+
 ## Pre-ship verification gates (not config — must be closed before go-live)
 
 ### P1 — accessibility / responsive / screen-reader verification is INSPECTION-ONLY 🔒
@@ -65,9 +109,52 @@ P1 was accepted **Ready for Review**, but its a11y, responsive, and screen-reade
 **verified by inspection only — no automated harness exists in this repo** (no Playwright / axe /
 Lighthouse; see `docs/booking/P1-report.md` §5.2). This is a **hard prerequisite before ship**, not
 an assumed pass: WCAG 2.2 AA (keyboard path, focus order, SR announcements, measured contrast) and
-responsive behavior at real breakpoints must be **actually verified** — to be closed by the **P4
-bounded test-harness decision** (Playwright + axe) or an equivalent human browser + assistive-tech
-pass. Do **not** treat P1's inspection-level review as harness-backed conformance.
+responsive behavior at real breakpoints must be **actually verified** — Do **not** treat P1's
+inspection-level review as conformance.
+
+**P4 decision (2026-08-03, ADR-035): closed via a MANUAL pre-ship checklist, not an automated
+harness.** FSOS is a single-FSA internal tool, so a browser-test platform (Playwright/axe-core/CI
+browser job + auth fixtures) was judged disproportionate. Instead, run the documented
+**`docs/booking/a11y-preship-checklist.md`** once before each ship — keyboard tab-through + axe
+DevTools browser-extension scan + screen-reader spot-check + responsive breakpoints — and record the
+sign-off in that file. This is the closure procedure for this gate. (Visual-regression / pixel-diff
+remains a separate, unaddressed concern.)
+
+### Comms RLS is APP-LAYER ONLY — DB row-isolation not enforced on comm tables 🔒
+`comm_messages` (no row policy) and `comm_message_events` (only the role-coarse `mevt_read`) are
+RLS-**enabled but not tenant-scoped and not FORCE'd**. Every application path reads/writes via the
+service-role client (`getDb`, `BYPASSRLS`), so the **P2.3 appointment-timeline row isolation is
+enforced in application code, not the database** (the loader's `entity_type`/`entity_id` filter +
+role-based redaction). **Acceptable in single-FSA production today** (one advisor, one book, no
+second reader) — but a **hard blocker before any second-tenant / partner / multi-advisor context**,
+which is itself already deferred, so it lines up. Before any such multi-tenant / partner-facing read
+path touches these tables, a **comms-wide** tenant-scoping policy + write-path validation + FORCE
+(with `rls-firewall` coverage) is required. FORCE-only would be pure owner-bypass hardening (zero
+functional blast radius — service-role bypasses regardless) and does **not** by itself create
+isolation. **Owner: comms/campaign security model — NOT booking** (do not slice into a booking
+migration; collision with active campaign Phase-2 work in the same files, §3). Tracked finding +
+full analysis: `docs/security/comms-row-isolation-finding.md`. (Recorded 2026-08-03; surfaced during
+P2.3, verified via `fsos-security-audit`; escalated to platform security.)
+
+**P5 addition (2026-08-03):** the new `booking_notification_deliveries` + `booking_reminder_config`
+tables (mig 093) join this SAME app-layer-only cohort — RLS enabled with a role-gated staff read,
+service-role writes, **NOT FORCE'd, NOT tenant-scoped** (deliberately the existing posture, not a
+third pattern). Single-FSA acceptable; the same **pre-multi-tenant** FORCE + tenant-scoping hardening
+applies before any second-tenant/partner read path. The delivery ledger carries no recipient/body
+PII (appointment_id/version/event/offset/channel/status only).
+
+### Availability-edit orphan check is point-in-time, not serialized — pre-multi-tenant 🔒
+The availability-rule editor refuses a NARROWING change (update/delete) that would leave future
+scheduled appointments outside the new template, unless the FSA explicitly acknowledges (409
+`availability_conflict`) — it never auto-cancels or moves an appointment (a template change governs
+future slots, not commitments already made). The check is a **point-in-time read** (candidate rules
++ future appointments) followed by a **single atomic rule write** — NOT one serializable
+transaction. A booking or rule edit landing between the check and the write is not folded in.
+**Accepted for single-FSA** (one actor, near-zero race; appointments are only surfaced, never
+destroyed, so the worst case is a stale count, never data loss). **Pre-multi-tenant hardening:** a
+serializable transaction or advisory lock around validate→check→write is required before concurrent
+editors. Implementation: `lib/booking/config.ts` (see the conflict-detection comment). (Recorded
+2026-08-03, P3.2.)
 
 ## Phase rollback levers
 - **P1 (public UI):** presentation-only, no migration; revert the P1 commits to restore the prior

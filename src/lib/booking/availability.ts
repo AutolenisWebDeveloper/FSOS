@@ -54,6 +54,58 @@ export interface AvailabilityRule {
   active?: boolean // defaults true
 }
 
+/** A raw `availability_rules` DB row (the columns the mapper reads). */
+export interface AvailabilityRuleRow {
+  weekday: number
+  start_time: string
+  end_time: string
+  timezone: string
+  effective_start?: string | null
+  effective_end?: string | null
+  active?: boolean | null
+}
+
+/**
+ * Canonical DB-row → engine `AvailabilityRule` mapping. The ONE place a stored rule is interpreted,
+ * so the slot engine (slots.ts) and the FSA-facing weekly summary (availability-summary.ts) read a
+ * rule identically — active semantics (`active !== false`), "HH:MM" wall time, effective range.
+ */
+export function ruleFromRow(r: AvailabilityRuleRow): AvailabilityRule {
+  return {
+    weekday: r.weekday,
+    startTime: String(r.start_time).slice(0, 5),
+    endTime: String(r.end_time).slice(0, 5),
+    timezone: r.timezone,
+    effectiveStart: r.effective_start ?? null,
+    effectiveEnd: r.effective_end ?? null,
+    active: r.active !== false,
+  }
+}
+
+/**
+ * True iff a UTC instant falls inside the recurring availability TEMPLATE — i.e. within some active
+ * rule's window on that rule-local weekday, honoring the effective range. Reuses the SAME primitives
+ * the slot loop uses (wallParts for the rule-local date/time, weekday match, parseHHMM, effective
+ * range, `active !== false`), so the "appointment outside new hours" count cannot become a third,
+ * drifting interpretation of the rules. Window is [start, end) — end-exclusive, matching the slot
+ * loop's `slotMin + duration <= endMin`. This is template containment only (NOT slot alignment,
+ * min-notice, buffers, blackouts, or capacity — those govern bookable slots, not "within hours").
+ */
+export function isInstantWithinTemplate(startMs: number, rules: AvailabilityRule[]): boolean {
+  const instant = new Date(startMs)
+  for (const r of rules) {
+    if (r.active === false) continue
+    const p = wallParts(instant, r.timezone)
+    if (p.weekday !== r.weekday) continue
+    const dateKey = `${pad4(p.year)}-${pad2(p.month)}-${pad2(p.day)}`
+    if (r.effectiveStart && dateKey < r.effectiveStart) continue
+    if (r.effectiveEnd && dateKey > r.effectiveEnd) continue
+    const min = p.hour * 60 + p.minute
+    if (min >= parseHHMM(r.startTime) && min < parseHHMM(r.endTime)) return true
+  }
+  return false
+}
+
 /** A busy interval (existing appointment / blackout / external-calendar block), UTC ISO. */
 export interface BusyBlock {
   startsAt: string

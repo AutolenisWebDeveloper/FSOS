@@ -35,7 +35,7 @@ console.log('Email render determinism (ADR-025)')
 
 assert.ok(Array.isArray(EMAIL_TEMPLATES), 'registry is an array')
 // Lock the full library size so a dropped/duplicated registry entry fails the build.
-assert.equal(EMAIL_TEMPLATES.length, 31, 'registry has all 31 templates')
+assert.equal(EMAIL_TEMPLATES.length, 33, 'registry has all 33 templates')
 // source_key is the stable identity that ties a stored template to its component — must be unique.
 const sourceKeys = EMAIL_TEMPLATES.map((t) => t.sourceKey)
 assert.equal(new Set(sourceKeys).size, sourceKeys.length, 'every source_key is unique')

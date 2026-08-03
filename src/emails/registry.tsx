@@ -17,7 +17,7 @@ import { BeneficiaryReviewReminder, LifeEventCheckin, CoverageNeedsCheckup, Year
 import { LifeInsuranceBasics, EmergencyFundEducation, IncomeProtectionEducation, RetirementReadinessEducation, CollegeSavingsEducation, EstatePlanningBasics } from './education'
 import { WorkshopInviteEmail, WorkshopReminder } from './events'
 import { ReferralThankYou, ReferralRequest, AgencyPartnerIntro } from './referrals'
-import { AppointmentConfirmation, AppointmentReminderEmail, AppointmentRecap, RescheduleInvite, AppointmentCancellation } from './appointments'
+import { AppointmentConfirmation, AppointmentReminderEmail, AppointmentRecap, RescheduleInvite, AppointmentCancellation, AppointmentRescheduled, AppointmentNoShow } from './appointments'
 import { QuoteFollowUp, CoverageQuestionsFollowUp, ReconnectCheckin } from './followups'
 
 export interface EmailTemplateEntry {
@@ -67,8 +67,10 @@ export const EMAIL_TEMPLATES: EmailTemplateEntry[] = [
   // ── Appointment lifecycle ──
   { sourceKey: 'appointment-confirmation', name: 'Appointment confirmation', channel: 'email', category: 'appointment', element: <AppointmentConfirmation /> },
   { sourceKey: 'appointment-reminder-email', name: 'Appointment reminder (email)', channel: 'email', category: 'appointment', element: <AppointmentReminderEmail /> },
-  { sourceKey: 'appointment-recap', name: 'Appointment recap / follow-up', channel: 'email', category: 'appointment', element: <AppointmentRecap /> },
-  { sourceKey: 'reschedule-invite', name: 'Reschedule invitation', channel: 'email', category: 'appointment', element: <RescheduleInvite /> },
+  { sourceKey: 'appointment-recap', name: 'Appointment recap / thank-you (transactional)', channel: 'email', category: 'appointment', element: <AppointmentRecap /> },
+  { sourceKey: 'appointment-rescheduled', name: 'Appointment rescheduled — new time', channel: 'email', category: 'appointment', element: <AppointmentRescheduled /> },
+  { sourceKey: 'appointment-noshow', name: 'No-show follow-up (transactional)', channel: 'email', category: 'appointment', element: <AppointmentNoShow /> },
+  { sourceKey: 'reschedule-invite', name: 'Reschedule invitation (re-engagement)', channel: 'email', category: 'appointment', element: <RescheduleInvite /> },
   { sourceKey: 'appointment-cancellation', name: 'Appointment cancellation', channel: 'email', category: 'appointment', element: <AppointmentCancellation /> },
 
   // ── Gentle follow-ups ──

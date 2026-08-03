@@ -78,6 +78,42 @@ export function AppointmentRecap() {
   )
 }
 
+export function AppointmentRescheduled() {
+  return (
+    <EmailLayout preview="Your appointment has been rescheduled">
+      <Eyebrow>Appointment Rescheduled</Eyebrow>
+      <H1>Your appointment has been moved, {'{{first_name}}'}</H1>
+      <Lead>
+        Your appointment with our office has been rescheduled. Your previous time is no longer reserved &mdash; the new
+        time is below, and we&rsquo;re still looking forward to connecting.
+      </Lead>
+      <DetailTable
+        rows={[
+          { label: 'New time', children: '{{appointment_time}}' },
+          { label: 'Details', children: '{{meeting_details}}' },
+        ]}
+      />
+      <CtaButton href="{{reschedule_url}}">Reschedule again</CtaButton>
+      <SecondaryNote>Need to cancel instead? {'{{cancel_url}}'}</SecondaryNote>
+    </EmailLayout>
+  )
+}
+
+export function AppointmentNoShow() {
+  return (
+    <EmailLayout preview="Sorry we missed you — let's find a new time">
+      <Eyebrow>We Missed You</Eyebrow>
+      <H1>Sorry we missed you, {'{{first_name}}'}</H1>
+      <Lead>
+        We had your appointment ({'{{appointment_time}}'}) on the calendar and didn&rsquo;t get the chance to connect.
+        No problem at all &mdash; whenever it&rsquo;s convenient, we&rsquo;d still love to find a time that works for you.
+      </Lead>
+      <CtaButton href="{{scheduling_link}}">Book a new time</CtaButton>
+      <SecondaryNote>Or just reply to this email and we&rsquo;ll help you get something back on the calendar.</SecondaryNote>
+    </EmailLayout>
+  )
+}
+
 export function RescheduleInvite() {
   return (
     <EmailLayout preview="Let's find a better time">

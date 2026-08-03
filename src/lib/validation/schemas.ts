@@ -733,6 +733,20 @@ export const UserCreateSchema = z.object({
 })
 export type UserCreate = z.infer<typeof UserCreateSchema>
 
+// Update an existing user's access. Both fields are optional so the operator can
+// change roles, the securities-scope flag, or both — but at least one must be
+// present (an empty PATCH is rejected). When present, `roles` must stay a non-empty
+// subset of the fixed RBAC set (a user with zero roles can reach no portal).
+export const UserUpdateSchema = z
+  .object({
+    roles: z.array(z.enum(ROLES)).min(1, 'Select at least one role').max(ROLES.length).optional(),
+    securities_scope: z.boolean().optional(),
+  })
+  .refine((d) => d.roles !== undefined || d.securities_scope !== undefined, {
+    message: 'Nothing to update',
+  })
+export type UserUpdate = z.infer<typeof UserUpdateSchema>
+
 // ─── P3 (Phase 4) — custom dashboards + advanced forecasting ─────────────────────
 // A dashboard's layout is an ordered list of widget keys from the analytics catalog
 // (lib/analytics/catalog.ts). Every widget renders from a DB-derived metric — the

@@ -9,8 +9,8 @@
 // directly — no fragile standalone tsc invocation.
 // Run: npx tsx tests/super-user-provision.test.mts
 import assert from 'node:assert/strict'
-import { UserCreateSchema } from '../src/lib/validation/schemas'
-import { reconcileRoles } from '../src/lib/services/user-roles'
+import { UserCreateSchema, UserUpdateSchema } from '../src/lib/validation/schemas'
+import { reconcileRoles, isLastSuperAdmin } from '../src/lib/services/user-roles'
 
 const results: { pass: boolean; name: string; evidence: string }[] = []
 function check(name: string, fn: () => void, evidence: () => string) {
@@ -105,6 +105,60 @@ check(
     assert.deepEqual(r.stale, ['fsa', 'ops'])
   },
   () => 'duplicate inputs collapse; order stable',
+)
+
+// 9 — UserUpdateSchema: a role-only change is valid.
+check(
+  'UserUpdateSchema accepts a roles-only change',
+  () => {
+    const parsed = UserUpdateSchema.safeParse({ roles: ['fsa', 'admin'] })
+    assert.ok(parsed.success)
+    assert.deepEqual(parsed.data.roles, ['fsa', 'admin'])
+    assert.equal(parsed.data.securities_scope, undefined)
+  },
+  () => 'roles-only PATCH parses; scope stays undefined (unchanged)',
+)
+
+// 10 — UserUpdateSchema: a scope-only change is valid.
+check(
+  'UserUpdateSchema accepts a scope-only change',
+  () => {
+    const parsed = UserUpdateSchema.safeParse({ securities_scope: true })
+    assert.ok(parsed.success)
+    assert.equal(parsed.data.securities_scope, true)
+    assert.equal(parsed.data.roles, undefined)
+  },
+  () => 'scope-only PATCH parses; roles stays undefined (unchanged)',
+)
+
+// 11 — UserUpdateSchema: an empty PATCH is rejected.
+check(
+  'UserUpdateSchema rejects an empty update',
+  () => {
+    assert.equal(UserUpdateSchema.safeParse({}).success, false)
+  },
+  () => 'empty {} PATCH is rejected (nothing to update)',
+)
+
+// 12 — UserUpdateSchema: an explicit empty role set is rejected.
+check(
+  'UserUpdateSchema rejects roles:[] when roles is present',
+  () => {
+    assert.equal(UserUpdateSchema.safeParse({ roles: [] }).success, false)
+  },
+  () => 'roles:[] is rejected (a user must keep at least one role)',
+)
+
+// 13 — Lockout guard: block removing/deleting the only Super Admin; allow otherwise.
+check(
+  'isLastSuperAdmin guards the only remaining Super Admin',
+  () => {
+    assert.equal(isLastSuperAdmin(true, 1), true, 'only admin → guarded')
+    assert.equal(isLastSuperAdmin(true, 2), false, 'one of two admins → allowed')
+    assert.equal(isLastSuperAdmin(false, 1), false, 'not an admin → not guarded')
+    assert.equal(isLastSuperAdmin(true, 0), true, 'defensive: count 0 still guarded')
+  },
+  () => 'blocks only when target is an admin and is the sole admin',
 )
 
 let failed = 0

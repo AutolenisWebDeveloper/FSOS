@@ -7,22 +7,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Field } from '@/components/forms/Field'
 import { ROLES, type Role } from '@/lib/auth/rbac'
+import { ROLE_LABELS } from '@/lib/auth/role-labels'
 import { UserCreateSchema } from '@/lib/validation/schemas'
 import { postJson, firstFieldError } from '@/lib/client/api'
-
-// Human labels for the fixed RBAC role set (rbac.ts is the source of truth for the keys).
-const ROLE_LABELS: Record<Role, string> = {
-  super_admin: 'Super Admin',
-  fsa: 'FSA',
-  licensed_staff: 'Licensed Staff',
-  admin: 'Admin / Back-office',
-  ops: 'Operations',
-  case_manager: 'Case Manager',
-  compliance: 'Compliance',
-  supervisor: 'Supervisor',
-  agency_owner: 'Agency Owner',
-  client: 'Client',
-}
 
 interface CreateUserResponse {
   user: { id: string; email: string; roles: string[] }

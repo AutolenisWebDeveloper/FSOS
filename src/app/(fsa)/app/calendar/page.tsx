@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { load, unwrapOne } from '@/lib/data/query'
 import { CalendarView, type AppointmentRow } from '@/components/app/CalendarView'
 import { AppointmentList, type AppointmentListRow } from '@/components/app/AppointmentList'
+import { AppointmentCalendarGrid } from '@/components/app/AppointmentCalendarGrid'
 import { RunAppointmentRecoveryButton } from '@/components/app/RunAppointmentRecoveryButton'
 import { AppointmentStatusControls } from '@/components/app/AppointmentStatusControls'
 import { appointmentFunnel, isOverdue, needsRecovery, type Appointment } from '@/lib/appointments/recovery'
@@ -228,6 +229,10 @@ export default async function CalendarPage() {
           description="Search, filter by status, and sort your whole book. Triage scheduled rows inline."
         >
           <AppointmentList rows={listRows} />
+        </Section>
+
+        <Section title="Calendar" description="Your booked appointments by week or month.">
+          <AppointmentCalendarGrid rows={listRows} tz={BUSINESS_TZ} />
         </Section>
 
         <Section title="Agenda" description="All appointments by day.">

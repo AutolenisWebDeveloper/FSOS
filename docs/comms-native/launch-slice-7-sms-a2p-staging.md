@@ -1,9 +1,9 @@
 # Launch Slice 7 — Stage SMS behind the A2P 10DLC approval flag
 
-**Status:** Code complete + tested. SMS is fully built and staged; live SMS is held until A2P approval.
-**Date:** 2026-07-26
+**Status:** Code complete + tested. A2P 10DLC **approved by the carriers (confirmed 2026-08-03)**; SMS activates when `SMS_A2P_APPROVED=true` is set in the environment (see "Go-live" below). Until then SMS remains staged (held, not lost).
+**Date:** 2026-07-26 (staged) · 2026-08-03 (A2P approval confirmed)
 
-A2P 10DLC is **submitted, not yet approved**. This slice adds the **single go-live flag** that guarantees no SMS reaches a real contact before approval, and makes flipping that flag — the moment approval lands — activate SMS with **no further build**.
+A2P 10DLC was **submitted 2026-07-26** and is **approved as of 2026-08-03** (carrier brand + campaign approval confirmed in Twilio). This slice adds the **single go-live flag** that guaranteed no SMS reached a real contact before approval, and makes flipping that flag activate SMS with **no further build**. Approval has landed; the remaining go-live action is the env flag + confirming the approved campaign's messaging-service mapping.
 
 ## The flag
 

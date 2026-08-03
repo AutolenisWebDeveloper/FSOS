@@ -24,7 +24,7 @@
 //     with recipient values HTML-ESCAPED (personalize {escapeHtml:true}); the remaining
 //     static text is approval-gated author content. It therefore does NOT re-escape (that
 //     would double-escape the values) — it only structures the text into branded HTML.
-import { EMAIL_COLORS as C, EMAIL_FONT, EMAIL_TYPE as T, EMAIL_LAYOUT as L, EMAIL_ORIGIN, EMAIL_BRAND, EMAIL_IDENTITY as ID } from '@/lib/email/brand'
+import { EMAIL_COLORS as C, EMAIL_FONT, EMAIL_TYPE as T, EMAIL_LAYOUT as L, EMAIL_ORIGIN, EMAIL_BRAND, EMAIL_IDENTITY as ID, EMAIL_SIGNATURE as SIG } from '@/lib/email/brand'
 
 /** HTML-escape text content (and attribute values). */
 export function esc(s: string | null | undefined): string {
@@ -291,32 +291,49 @@ function mktButton(label: string, href: string): string {
   </table>`
 }
 
-/**
- * Styled sign-off card: closer line + signature (name/agency in Farmers-blue) and, when the
- * sign-off carries contact details, a quieter linkified contact line — divided from the body.
- */
-function mktSignoff(closer: string, primary: string, meta: string): string {
-  const metaLine = meta
-    ? `<p style="margin:3px 0 0;color:${C.muted};font-size:${T.small}px;line-height:1.5;">${meta}</p>`
-    : ''
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:22px 0 0;border-top:1px solid ${C.border};">
-      <tr><td style="padding-top:18px;">
-        <p style="margin:0 0 3px;color:${C.body};font-size:${T.body}px;line-height:1.5;">${closer}</p>
-        <p style="margin:0;color:${C.brand};font-size:${T.body}px;font-weight:700;line-height:1.5;">${primary}</p>
-        ${metaLine}
-      </td></tr>
-    </table>`
+/** Format a stored dash phone ("954-756-2609") for display as "(954) 756-2609". */
+function fmtPhone(p: string): string {
+  const d = String(p ?? '').replace(/\D/g, '')
+  return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : p
 }
 
-// Phone / email spans inside a sign-off (used to split name/agency from contact details).
-const EMAIL_RE = /[^\s]+@[^\s]+\.[^\s]+/
-const PHONE_RE = /\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4}/
+/** A labeled contact row inside the signature (e.g. "Cell  (954) 756-2609"). */
+function sigContactRow(label: string, value: string, href: string): string {
+  return `<tr>
+      <td style="padding:2px 0;font-size:${T.small}px;line-height:1.6;color:${C.muted};width:52px;font-weight:700;">${label}</td>
+      <td style="padding:2px 0;font-size:${T.small}px;line-height:1.6;"><a href="${href}" style="color:${C.body};text-decoration:none;">${value}</a></td>
+    </tr>`
+}
 
-/** Linkify phone numbers (tel:) and emails (mailto:) in a sign-off contact line. */
-function linkifyContacts(text: string): string {
-  return text
-    .replace(EMAIL_RE, (m) => `<a href="mailto:${m}" style="color:${C.primary};text-decoration:none;">${m}</a>`)
-    .replace(PHONE_RE, (m) => `<a href="tel:${m.replace(/[^\d+]/g, '')}" style="color:${C.primary};text-decoration:none;">${m}</a>`)
+/** A green-zone signature action link ("Schedule a Meeting with Me" / "Get a Free Quote"). */
+function sigActionLink(label: string, href: string): string {
+  return `<a href="${href}" style="display:inline-block;margin:0 0 6px;color:${C.primary};font-size:${T.small}px;font-weight:700;text-decoration:none;border-bottom:1px solid ${C.accent};padding-bottom:1px;">${esc(label)}&nbsp;&rarr;</a><br>`
+}
+
+/**
+ * The rich, branded FSA email signature block (DESIGN.md §31.2): a headshot letterhead, the
+ * agent name + designation, descriptive title + financial firm, direct/office/email contact
+ * rows, and two green-zone action links (booking + free quote). One canonical identity from
+ * EMAIL_SIGNATURE (src/lib/email/brand.ts) so every campaign email signs off identically. The
+ * `closer` (e.g. "Warm regards,") is the message's own approved sign-off word, kept verbatim.
+ */
+function signatureBlockHtml(closer: string): string {
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0 0;border-top:1px solid ${C.border};">
+      <tr><td style="padding-top:18px;">
+        <p style="margin:0 0 14px;color:${C.body};font-size:${T.body}px;line-height:1.5;">${closer}</p>
+        <img src="${SIG.headshotUrl}" alt="${esc(SIG.name)}" width="${SIG.headshotSize}" height="${SIG.headshotSize}" style="display:block;border:0;outline:none;text-decoration:none;border-radius:12px;margin:0 0 14px;">
+        <p style="margin:0;color:${C.brand};font-size:${T.h2}px;font-weight:700;line-height:1.35;">${esc(SIG.name)}<span style="color:${C.ink};font-weight:700;">, ${esc(SIG.credential)}</span></p>
+        <p style="margin:2px 0 0;color:${C.muted};font-size:${T.small}px;line-height:1.5;">${esc(SIG.title)}</p>
+        <p style="margin:2px 0 12px;color:${C.brand};font-size:${T.body}px;font-weight:700;line-height:1.5;">${esc(SIG.firm)}</p>
+        <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 14px;">
+          ${sigContactRow('Cell', fmtPhone(SIG.cell), SIG.cellHref)}
+          ${sigContactRow('Office', fmtPhone(SIG.office), SIG.officeHref)}
+          ${sigContactRow('Email', esc(SIG.email), SIG.emailHref)}
+        </table>
+        ${sigActionLink('Schedule a Meeting with Me', SIG.bookingUrl)}
+        ${sigActionLink('Get a Free Quote', SIG.quoteUrl)}
+      </td></tr>
+    </table>`
 }
 
 /** Trailing compliance fine-print (educational disclaimer inside the body). */
@@ -408,12 +425,12 @@ function renderMarketingBody(body: string): RenderedBody {
       }
     }
 
-    // Sign-off — "Warm regards, {name} …" → styled signature (dedupe: shell appends none after).
+    // Sign-off — "Warm regards, {name} …" → the rich branded signature block, keeping the
+    // message's own approved closer word (dedupe: the shell appends no signature after).
     const closer = block.match(CLOSER_RE)
     if (closer) {
       hasSignoff = true
-      const { primary, meta } = signatureParts(block, closer[0])
-      parts.push(mktSignoff(`${closer[1]},`, primary, meta))
+      parts.push(signatureBlockHtml(`${closer[1]},`))
       return
     }
 
@@ -448,21 +465,6 @@ function renderMarketingBody(body: string): RenderedBody {
   return { heading: subject, preview, html: parts.join('\n'), hasSignoff }
 }
 
-/**
- * Split a sign-off block into its signature line: `primary` = name/agency (Farmers-blue), and
- * `meta` = the trailing contact details (phone/email) rendered quieter + linkified. The split
- * point is the first phone number or email in the run; absent either, everything is `primary`.
- */
-function signatureParts(block: string, closerMatch: string): { primary: string; meta: string } {
-  const sig = block.slice(closerMatch.length).replace(/\n/g, ' ').replace(/\s+/g, ' ').trim()
-  if (!sig) return { primary: esc(ID.agent), meta: '' }
-  const phone = sig.search(PHONE_RE)
-  const email = sig.search(EMAIL_RE)
-  const cut = [phone, email].filter((n) => n >= 0).sort((a, b) => a - b)[0]
-  if (cut === undefined || cut <= 0) return { primary: sig, meta: '' }
-  return { primary: sig.slice(0, cut).trim(), meta: linkifyContacts(sig.slice(cut).trim()) }
-}
-
 export interface MarketingWrapOptions {
   /** Inbox preheader (typically the email subject). Overridden by a body "Preview:" line. */
   preheader?: string | null
@@ -492,17 +494,10 @@ export function wrapMarketingEmailBody(body: string, opts: MarketingWrapOptions 
     ? `<h1 style="margin:0 0 16px;color:${C.ink};font-size:${T.h1}px;line-height:1.28;font-weight:700;">${rendered.heading}</h1>`
     : ''
 
-  // If the body carried its own sign-off, do NOT append the default one (avoids a double
-  // signature). Otherwise append the standard FSA sign-off so the message never ends abruptly.
-  const fallbackSignoff = rendered.hasSignoff
-    ? ''
-    : `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:22px 0 0;border-top:1px solid ${C.border};">
-      <tr><td style="padding-top:18px;">
-        <p style="margin:0 0 3px;color:${C.body};font-size:${T.body}px;line-height:1.5;">Warm regards,</p>
-        <p style="margin:0;color:${C.brand};font-size:${T.body}px;font-weight:700;">${esc(ID.agent)}</p>
-        <p style="margin:3px 0 0;color:${C.muted};font-size:${T.small}px;">${esc(ID.title)} · ${esc(ID.carrier)}</p>
-      </td></tr>
-    </table>`
+  // If the body carried its own sign-off, the parser already rendered the rich signature there
+  // (no duplicate). Otherwise append the same branded signature so the message never ends
+  // abruptly and every campaign email signs off identically.
+  const fallbackSignoff = rendered.hasSignoff ? '' : signatureBlockHtml('Warm regards,')
 
   return chrome({
     preheader: rendered.preview ?? opts.preheader ?? undefined,

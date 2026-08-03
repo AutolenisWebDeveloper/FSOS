@@ -158,18 +158,31 @@ t('renders a "Label <url>" line as a bulletproof CTA button', () => {
   )
 })
 
-t('renders the in-body sign-off and does NOT append a duplicate', () => {
+t('renders ONE rich branded signature for an in-body sign-off (keeps the closer word)', () => {
   const html = S.wrapMarketingEmailBody(STRUCTURED_BODY, { unsubscribeUrl: UNSUB })
   const closers = (html.match(/Warm regards,/g) || []).length
   assert.equal(closers, 1, 'exactly one sign-off (no double signature)')
-  assert.ok(html.includes('Markist Athelus Athelus Insurance Agency'), 'name/agency in the signature')
-  assert.ok(html.includes('href="tel:2532420597"') && html.includes('href="mailto:mathelus@farmersagent.com"'), 'contacts linkified')
+  // The message's own approved closer is kept; the plain token run is replaced by the rich block.
+  assert.ok(html.includes('Markist Athelus') && html.includes('FSCP'), 'name + designation in the signature')
+  assert.ok(html.includes('Farmers Financial Solutions'), 'financial firm in the signature')
+  assert.ok(html.includes('Life Insurance &amp; Financial Services Agent') || html.includes('Life Insurance & Financial Services Agent'), 'descriptive title')
 })
 
-t('appends the default FSA sign-off only when the body has none', () => {
+t('the signature carries the headshot, canonical contacts, and green-zone action links', () => {
+  const html = S.wrapMarketingEmailBody(STRUCTURED_BODY, { unsubscribeUrl: UNSUB })
+  assert.ok(html.includes('markist-headshot.jpg'), 'approved headshot asset referenced')
+  assert.ok(html.includes('href="tel:+19547562609"'), 'cell linkified from canonical identity')
+  assert.ok(html.includes('href="tel:+13617174215"'), 'office linkified from canonical identity')
+  assert.ok(html.includes('href="mailto:mathelus@farmersagent.com"'), 'email linkified')
+  assert.ok(html.includes('(954) 756-2609') && html.includes('(361) 717-4215'), 'phones formatted for display')
+  assert.ok(html.includes('href="https://www.markistfsa.com/schedule"') && /Schedule a Meeting with Me/.test(html), 'booking action link')
+  assert.ok(html.includes('href="https://agents.farmers.com/tx/plano/markist-athelus/"') && /Get a Free Quote/.test(html), 'quote action link')
+})
+
+t('appends the same rich signature when the body has none', () => {
   const html = S.wrapMarketingEmailBody('Hi Jordan,\n\nA quick educational note about coverage.', { unsubscribeUrl: UNSUB })
   assert.ok(/Warm regards,/.test(html), 'default sign-off appended for a body without one')
-  assert.ok(html.includes('Markist Athelus'), 'FSA identity in the appended sign-off')
+  assert.ok(html.includes('Markist Athelus') && html.includes('markist-headshot.jpg'), 'rich signature (name + headshot) appended')
 })
 
 t('renders a trailing disclaimer as quiet fine-print, not a headline', () => {

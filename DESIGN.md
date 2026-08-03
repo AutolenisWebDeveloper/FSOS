@@ -733,6 +733,26 @@ they are **exempt** from the CAN-SPAM unsubscribe requirement: their footer carr
 identification (NAP + licensing) **without** an opt-out link, and they are never gated by the
 marketing consent table.
 
+### 31.2 Rich FSA signature block [STANDARD]
+
+Campaign emails close with **one canonical, branded signature** — never a plain run of name/phone
+tokens. The block renders (in order): the FSA **headshot** (approved square crop of the on-brand
+hero portrait, rounded), the **name + designation** (`Markist Athelus, FSCP®`, Farmers-blue), the
+**descriptive title** (`Life Insurance & Financial Services Agent`), the **financial firm**
+(`Farmers Financial Solutions`), labeled **Cell / Office / Email** contact rows (linkified
+`tel:` / `mailto:`), and two **green-zone action links** — "Schedule a Meeting with Me →" (native
+FSOS booking, ADR-027) and "Get a Free Quote →" (the FSA's official Farmers agent page). The
+message's **own approved closer word** (`Warm regards,` / `Sincerely,` / …) is kept verbatim above
+it; the block replaces only the plain identity line.
+
+One identity, one design: the signature data is **`EMAIL_SIGNATURE`** in `src/lib/email/brand.ts`
+(sourced from `src/lib/site.ts` — `BUSINESS.credential/titleLong/financialFirm`,
+`CONTACT.cellDisplay`, `QUOTE_URL`, `HEADSHOT_PATH`), rendered by `signatureBlockHtml()` in the
+runtime campaign wrap (`email-shell.ts`). Absolute asset/link URLs on the stable marketing origin so
+the headshot and links resolve in a delivered message (ADR-025 immutability). Green-zone only — the
+action links are an invitation to book or request a quote, never a product/securities
+call-to-action (§4.2), and are covered by the recommendation-language guard.
+
 Tokens (styling `--shell`/`--muted-foreground` equivalents, inline for email-client safety) resolve
 through `src/lib/email/brand.ts`. Do **not** bake the SMS TRAIGA opt-out ("Reply STOP") into an email
 template — that is appended by the dispatcher for SMS only. Deliverability specifics (SPF/DKIM/DMARC, reply-to, RFC 8058

@@ -168,7 +168,8 @@ export function AppointmentCalendarGrid({ rows, tz }: { rows: AppointmentListRow
                             setAnchor(cell.dateKey)
                             setView('week')
                           }}
-                          className="w-full rounded px-1 text-left text-[11px] text-muted-foreground hover:underline"
+                          aria-label={`${day.length - MONTH_CELL_MAX} more appointments on ${fmtDay(cell.dateKey)} — open week view`}
+                          className="w-full rounded px-1 text-left text-[11px] text-muted-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
                           +{day.length - MONTH_CELL_MAX} more
                         </button>

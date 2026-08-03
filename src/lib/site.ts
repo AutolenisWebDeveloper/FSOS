@@ -13,6 +13,12 @@ export const BUSINESS = {
   agent: 'Markist Athelus',
   /** Professional designation. */
   title: 'Financial Services Agent',
+  /** Post-nominal professional designation (rendered after the name in the email signature). */
+  credential: 'FSCP®',
+  /** Full descriptive title used in the rich email signature block. */
+  titleLong: 'Life Insurance & Financial Services Agent',
+  /** The financial-services firm the FSA operates through (FFS) — shown in the signature. */
+  financialFirm: 'Farmers Financial Solutions',
   /** Carrier represented. */
   carrier: 'Farmers Insurance',
   /** Brand identity used in SMS sender identity + consent language. */
@@ -30,6 +36,9 @@ export const BUSINESS = {
 export const CONTACT = {
   phoneDisplay: '361-717-4215',
   phoneE164: '+13617174215',
+  /** FSA direct mobile line — shown as "Cell" in the email signature (distinct from the office NAP). */
+  cellDisplay: '954-756-2609',
+  cellE164: '+19547562609',
   email: 'mathelus@farmersagent.com',
   address: {
     // Primary / registered business address — reconciled to the Twilio-vetted
@@ -108,6 +117,16 @@ export function dashboardUrl(): string {
 export function bookingUrl(): string {
   return '/schedule'
 }
+
+/**
+ * The public "Get a Free Quote" destination — the FSA's official Farmers agent page.
+ * Verified authoritative URL (not invented, §4.3); an insurance-quote invitation, not a
+ * securities call-to-action (§4.2 green zone).
+ */
+export const QUOTE_URL = 'https://agents.farmers.com/tx/plano/markist-athelus/'
+
+/** Approved FSA headshot for the email signature (square crop of the on-brand hero portrait). */
+export const HEADSHOT_PATH = '/images/markist-headshot.jpg'
 
 /**
  * The advisor + agency identity merge tokens shared by every outbound message (§13/§17).

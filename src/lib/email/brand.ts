@@ -19,7 +19,7 @@
 // the two contexts email rendering unavoidably requires.
 //
 // Never hardcode an email color/spacing elsewhere — resolve it through EMAIL here.
-import { BUSINESS, CONTACT, LICENSING } from '@/lib/site'
+import { BUSINESS, CONTACT, LICENSING, QUOTE_URL, HEADSHOT_PATH } from '@/lib/site'
 
 /**
  * Canonical marketing origin for absolutely-referenced email assets (the logo).
@@ -118,4 +118,30 @@ export const EMAIL_IDENTITY = {
   hours: CONTACT.hoursDisplay,
   /** Verified physical mailing address (CAN-SPAM sender identification). */
   mailingAddress: `${CONTACT.address.line1}, ${CONTACT.address.city}, ${CONTACT.address.region} ${CONTACT.address.postal}`,
+} as const
+
+/**
+ * The rich EMAIL SIGNATURE identity (DESIGN.md §31.2). Single source: site.ts. Absolute URLs
+ * (like the logo) so the headshot and links resolve in a delivered message, and stable/HARD-CODED
+ * origin so the stored, approved bytes don't drift per environment (ADR-025). Both email surfaces
+ * — the runtime campaign wrap (email-shell.ts) and the react-email templates (_components.tsx) —
+ * render this ONE identity, so every FSA signature is byte-consistent.
+ */
+export const EMAIL_SIGNATURE = {
+  name: BUSINESS.agent,
+  credential: BUSINESS.credential,
+  title: BUSINESS.titleLong,
+  firm: BUSINESS.financialFirm,
+  cell: CONTACT.cellDisplay,
+  cellHref: `tel:${CONTACT.cellE164}`,
+  office: CONTACT.phoneDisplay,
+  officeHref: `tel:${CONTACT.phoneE164}`,
+  email: CONTACT.email,
+  emailHref: `mailto:${CONTACT.email}`,
+  headshotUrl: `${EMAIL_ORIGIN}${HEADSHOT_PATH}`,
+  headshotSize: 116,
+  /** Native FSOS booking link ("Schedule a Meeting with Me"). */
+  bookingUrl: `${EMAIL_ORIGIN}/schedule`,
+  /** Public "Get a Free Quote" link (official Farmers agent page). */
+  quoteUrl: QUOTE_URL,
 } as const

@@ -69,6 +69,22 @@ responsive behavior at real breakpoints must be **actually verified** — to be 
 bounded test-harness decision** (Playwright + axe) or an equivalent human browser + assistive-tech
 pass. Do **not** treat P1's inspection-level review as harness-backed conformance.
 
+### Comms RLS is APP-LAYER ONLY — DB row-isolation not enforced on comm tables 🔒
+`comm_messages` (no row policy) and `comm_message_events` (only the role-coarse `mevt_read`) are
+RLS-**enabled but not tenant-scoped and not FORCE'd**. Every application path reads/writes via the
+service-role client (`getDb`, `BYPASSRLS`), so the **P2.3 appointment-timeline row isolation is
+enforced in application code, not the database** (the loader's `entity_type`/`entity_id` filter +
+role-based redaction). **Acceptable in single-FSA production today** (one advisor, one book, no
+second reader) — but a **hard blocker before any second-tenant / partner / multi-advisor context**,
+which is itself already deferred, so it lines up. Before any such multi-tenant / partner-facing read
+path touches these tables, a **comms-wide** tenant-scoping policy + write-path validation + FORCE
+(with `rls-firewall` coverage) is required. FORCE-only would be pure owner-bypass hardening (zero
+functional blast radius — service-role bypasses regardless) and does **not** by itself create
+isolation. **Owner: comms/campaign security model — NOT booking** (do not slice into a booking
+migration; collision with active campaign Phase-2 work in the same files, §3). Tracked finding +
+full analysis: `docs/security/comms-row-isolation-finding.md`. (Recorded 2026-08-03; surfaced during
+P2.3, verified via `fsos-security-audit`; escalated to platform security.)
+
 ## Phase rollback levers
 - **P1 (public UI):** presentation-only, no migration; revert the P1 commits to restore the prior
   `/schedule` UI. No data or contract impact.

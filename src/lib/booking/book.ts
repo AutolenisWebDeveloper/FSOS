@@ -21,7 +21,9 @@ import { createZoomMeeting, zoomEnabled } from '@/lib/zoom/client'
 import { sendBookingConfirmation } from './notify'
 import { computeSlotsForType } from './slots'
 import { notifyFsa, sendVisitorAck } from '@/lib/notifications/transactional'
-import { BUSINESS } from '@/lib/site'
+import { BUSINESS, SMS_CONSENT, siteUrl } from '@/lib/site'
+import { consentContactKey } from '@/lib/comms/contact-consent'
+import { smsConsentVersion } from '@/lib/comms/consent-version'
 
 export interface BookInput {
   typeSlug: string
@@ -32,6 +34,15 @@ export interface BookInput {
   email: string
   phone?: string | null
   notes?: string | null
+  /**
+   * Separate, affirmative SMS opt-in captured at booking (P5.3). NEVER inferred. When true (and
+   * a valid phone is present, enforced by PublicBookingInput), the booking writes a durable SMS
+   * consent grant to the store the send path reads. Absent/false ⇒ no SMS consent evidence.
+   */
+  smsOptIn?: boolean
+  /** Server-derived consent evidence (TCPA/A2P) — the capture surface's request context. */
+  ip?: string | null
+  userAgent?: string | null
 }
 
 export interface BookingConfirmation {
@@ -231,6 +242,60 @@ export async function bookAppointment(input: BookInput, now: string): Promise<Bo
     entityId: contactId,
     diff: { channel: 'email', scope: 'booking', version: CONSENT_DISCLOSURE_VERSION },
   })
+
+  // 5b. SEPARATE, AFFIRMATIVE SMS consent (P5.3 / TCPA / A2P 10DLC) — captured ONLY when the
+  //     attendee affirmatively opted in AND a valid phone is present (both enforced by
+  //     PublicBookingInput). NEVER inferred from booking or the email opt-in. The enforceable
+  //     grant is a durable `granted` row in comm_contact_consents — the CONTACT-RESOLVABLE store
+  //     the send path reads at gate time (send.ts → durableContactConsentGranted), the SAME store
+  //     the public contact form and STOP/HELP already use (one SMS consent source of truth, §6;
+  //     never a second path). The exact disclosure text + content-derived version are persisted
+  //     as first-class TCPA evidence, mirrored to the append-only audit_log. An UNCHECKED box
+  //     writes NO positive-consent row and enrolls nothing. No SMS is sent here (Stage 4, behind
+  //     booking_reminder_config.sms_enabled).
+  if (input.smsOptIn && input.phone) {
+    const consentVersion = smsConsentVersion()
+    await Promise.allSettled([
+      db.from('comm_contact_consents').insert({
+        contact: consentContactKey('sms', input.phone),
+        channel: 'sms',
+        action: 'granted',
+        consent_text: SMS_CONSENT.disclosure, // exact wording shown at the checkbox (verbatim-synced)
+        consent_version: consentVersion, // content-derived — proves the wording the booker saw
+        source_url: `${siteUrl()}/schedule`,
+        ip_address: input.ip ?? null,
+        user_agent: input.userAgent ?? null,
+        captured_at: now,
+      }),
+      db.from('activities').insert({
+        entity_type: 'contact',
+        entity_id: contactId,
+        kind: 'consent_intent',
+        note: `SMS booking-notification consent captured at booking (${consentVersion}).`,
+        actor: 'public',
+      }),
+    ])
+    // Immutable evidence-of-record (append-only, tamper-locked mig 077). Structured so a TCPA
+    // dispute can reconstruct who/when/where/what-they-saw; phone stored as last-4 only (no PII
+    // in the log). The enforceable read-path grant lives in comm_contact_consents above.
+    await writeAudit({
+      actor: 'public',
+      action: 'consent.captured',
+      entity: 'contact',
+      entityId: contactId,
+      diff: {
+        channel: 'sms',
+        scope: 'booking',
+        granted: true,
+        consentVersion,
+        consentText: SMS_CONSENT.disclosure,
+        sourceUrl: `${siteUrl()}/schedule`,
+        ipAddress: input.ip ?? null,
+        userAgent: input.userAgent ?? null,
+        phone_tail: input.phone.replace(/\D/g, '').slice(-4),
+      },
+    })
+  }
 
   // 6. Notifications (best-effort — the appointment already exists, so nothing here can fail
   //    the booking). Two audiences:

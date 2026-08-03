@@ -66,14 +66,13 @@ export function AppointmentReminderEmail() {
 
 export function AppointmentRecap() {
   return (
-    <EmailLayout preview="Thanks for your time — a quick recap">
-      <Eyebrow>Recap</Eyebrow>
-      <H1>Thanks for the conversation, {'{{first_name}}'}</H1>
+    <EmailLayout preview="Thanks for meeting with us today">
+      <Eyebrow>Thank You</Eyebrow>
+      <H1>Thanks for meeting with us today, {'{{first_name}}'}</H1>
       <Lead>
-        It was good to connect. We appreciate you taking the time to talk through your goals — the more we
-        understand what matters to you, the better we can help.
+        Thank you for taking the time to meet with our office today. We appreciate the conversation.
       </Lead>
-      <P>If any new questions come to mind after our conversation, just reply. We&rsquo;re here whenever you need us.</P>
+      <P>If any questions come to mind afterward, just reply &mdash; we&rsquo;re glad to help.</P>
     </EmailLayout>
   )
 }

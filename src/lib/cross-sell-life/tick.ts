@@ -10,7 +10,7 @@
 import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
 import { sendThroughGate, isTemplateApproved } from '@/lib/comms/send'
-import { campaignDispatchContext } from '@/lib/comms/campaign'
+import { campaignDispatchContext, campaignIdentityContext } from '@/lib/comms/campaign'
 import { smsA2pApproved } from '@/lib/comms/a2p'
 import { evaluateEligibility } from './eligibility'
 import { canDispatch } from './states'
@@ -186,6 +186,7 @@ async function fireMessageTouch(
     isSecurity: false, // firewall re-derived server-side inside the gate; never trusted from here
     recipientContext: { full_name: member?.full_name ?? null },
     purpose: dispatchCtx.purpose,
+    identity: campaignIdentityContext(dispatchCtx.purpose),
     delegation: dispatchCtx.delegation,
     ownership: dispatchCtx.ownership ?? { representedAgencyId: e.agency_id },
     aiGenerated: touch.kind === 'ai_conversation',

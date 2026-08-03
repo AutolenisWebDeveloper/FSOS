@@ -17,7 +17,9 @@ execSync(
   { stdio: 'inherit' },
 )
 const require = createRequire(import.meta.url)
-const { personalize, unresolvedBlockingTokens } = require(join(out, 'personalize.js'))
+// personalize.ts now imports ../variables → ../../site, so tsc infers rootDir=src/lib and
+// emits under comms/ (site.js at the root). Require from the emitted subpath accordingly.
+const { personalize, unresolvedBlockingTokens } = require(join(out, 'comms/personalize.js'))
 
 let passed = 0
 const t = (name, fn) => { fn(); passed++; console.log('  ✓', name) }

@@ -130,11 +130,18 @@ export interface IdentityVars {
  * resolve to a safe neutral so a raw {{token}} never leaks to a contact.
  */
 export function renderIdentityDisclosure(config: IdentityConfig, vars: IdentityVars, mode: DisclosureMode): string {
+  // The client's AGENT OF RECORD (their Farmers agency owner). When the specific name is not
+  // confidently on file we NEVER name a wrong/guessed agent (§4.3) — we degrade to the generic
+  // "your Farmers agent". `agency_owner.reference` folds that fallback into a single phrase so a
+  // template reads naturally either way: "your Farmers agent, Jane Smith" when known, just
+  // "your Farmers agent" when not — never the doubled "your Farmers agent, your Farmers agent".
+  const ownerName = vars.agency_owner.full_name?.trim() || ''
   const values: Record<string, string> = {
     'sender.first_name': vars.sender.first_name?.trim() || vars.sender.full_name?.trim()?.split(/\s+/)[0] || 'your Financial Services Agent',
     'sender.full_name': vars.sender.full_name?.trim() || 'your Financial Services Agent',
-    'agency_owner.first_name': vars.agency_owner.first_name?.trim() || vars.agency_owner.full_name?.trim()?.split(/\s+/)[0] || 'your Farmers agent',
-    'agency_owner.full_name': vars.agency_owner.full_name?.trim() || 'your Farmers agent',
+    'agency_owner.first_name': vars.agency_owner.first_name?.trim() || ownerName.split(/\s+/)[0] || 'your Farmers agent',
+    'agency_owner.full_name': ownerName || 'your Farmers agent',
+    'agency_owner.reference': ownerName ? `your Farmers agent, ${ownerName}` : 'your Farmers agent',
     'communication.reason': vars.communication?.reason?.trim() || 'your coverage',
     fsa_role_label: config.fsaRoleLabel,
   }

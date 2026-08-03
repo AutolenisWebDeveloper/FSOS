@@ -129,6 +129,16 @@ export const QUOTE_URL = 'https://agents.farmers.com/tx/plano/markist-athelus/'
 export const HEADSHOT_PATH = '/images/markist-headshot.jpg'
 
 /**
+ * Stable sender-identity token for the single FSA (Markist), used by the first-contact identity
+ * disclosure engine (ADR-016) as `senderUserId`. It is a system change-detection token — NOT a
+ * securities/PII field and NOT an auth FK — so a fixed value is correct: it keeps the disclosure
+ * decision "sender unchanged" across a campaign, so the platform gives ONE full introduction per
+ * channel and does not re-introduce on every follow-up. (comm_conversations.identity_sender_user_id
+ * is an unconstrained uuid tracking column.) Single-FSA system today (BUSINESS.agent).
+ */
+export const FSA_SENDER_ID = '00000000-0000-4000-8000-00000000f5a1'
+
+/**
  * The FSA's standard email-signature FOOTPRINT — the practice tagline, the offerings list, and
  * the required disclosures used on the agent's production emails. Green-zone marketing identity
  * (§4.2): a general capabilities list + a no-obligation review invitation, never an individualized
@@ -158,18 +168,31 @@ export const SIGNATURE_FOOTPRINT = {
  */
 export function advisorMergeContext(): {
   fsa_name: string
-  agency_name: string
+  advisor_name: string
+  advisor_title: string
   advisor_phone: string
   advisor_email: string
+  agency_name: string
+  agency_phone: string
+  agency_address: string
   scheduling_link: string
+  reply_to_email: string
+  sender_name: string
 } {
   return {
+    // fsa_name is the legacy key; advisor_name is the canonical registry key — both the FSA.
     fsa_name: BUSINESS.agent,
-    agency_name: BUSINESS.agency,
+    advisor_name: BUSINESS.agent,
+    advisor_title: BUSINESS.title,
     advisor_phone: CONTACT.phoneDisplay,
     advisor_email: CONTACT.email,
+    agency_name: BUSINESS.agency,
+    agency_phone: CONTACT.phoneDisplay,
+    agency_address: `${CONTACT.address.line1}, ${CONTACT.address.city}, ${CONTACT.address.region} ${CONTACT.address.postal}`,
     // Absolute booking link — the relative bookingUrl() ('/schedule') breaks in a delivered email.
     scheduling_link: `${siteUrl()}/schedule`,
+    reply_to_email: CONTACT.email,
+    sender_name: BUSINESS.agent,
   }
 }
 

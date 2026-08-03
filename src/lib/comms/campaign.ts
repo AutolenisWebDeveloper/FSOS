@@ -16,6 +16,8 @@ import { isTemplateApproved } from './send'
 import { writeAudit } from '@/lib/audit/log'
 import type { RecipientContext } from './personalize'
 import type { MessagePurpose } from './purpose'
+import type { IdentityContext } from './identity-resolver'
+import { FSA_SENDER_ID } from '@/lib/site'
 import { campaignSendConfig, delegationSendContext } from './campaign-config'
 import { campaignClaimKeys, buildDataConfidence } from './claims'
 import { resolveClaimFields } from './claim-resolver'
@@ -126,6 +128,23 @@ export interface CampaignDispatchContext {
   purpose?: MessagePurpose
   delegation?: { agencyId: string; campaignType?: string | null; senderUserId?: string | null }
   ownership?: { representedAgencyId?: string | null; representedAgencyOwnerId?: string | null; delegationId?: string | null }
+}
+
+/**
+ * The first-contact identity-disclosure context for a campaign send (ADR-016). Opting a campaign
+ * in makes the PLATFORM prepend the approved disclosure on the first touch per channel — naming
+ * the recipient's OWN agent of record (resolved per-recipient in send.ts), never a guessed one —
+ * so the author never writes the intro. The stable single-FSA sender token gives the disclosure
+ * ONCE per channel (not repeated on every follow-up). sender/agency-owner names are filled by
+ * send.ts (FSA default + the resolved agent of record, with the generic "your Farmers agent"
+ * fallback). Absent an APPROVED comm_identity_config nothing is disclosed (§4.3).
+ */
+export function campaignIdentityContext(purpose?: MessagePurpose | null): IdentityContext {
+  return {
+    senderUserId: FSA_SENDER_ID,
+    purpose: purpose ?? null,
+    vars: { sender: {}, agency_owner: {} },
+  }
 }
 
 /**
@@ -244,6 +263,9 @@ export async function dispatchCampaign(campaignId: string, actor: string): Promi
       recipientContext: recipientContext(r),
       // Slice 7 — message purpose drives purpose-scoped consent + frequency + collision.
       purpose: campCtx.purpose,
+      // ADR-016 — platform-inserted first-contact identity disclosure naming the recipient's
+      // own agent of record (resolved in send.ts), on the first touch per channel.
+      identity: campaignIdentityContext(campCtx.purpose),
       // Slice 1/7 — record the represented party (§7). A delegated campaign attributes the
       // represented agency owner + the authorizing delegation and passes the on-behalf-of
       // delegation context (re-checked fresh by the gate); a plain FSA broadcast records

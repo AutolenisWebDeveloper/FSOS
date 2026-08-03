@@ -22,9 +22,11 @@ execSync(
 const require = createRequire(import.meta.url)
 // tsc infers rootDir from the common parent of the inputs (src/lib/comms), so the
 // emitted files land directly under the out dir.
-const { classifyKeyword } = require(join(out, 'keywords.js'))
-const { personalize, tokensIn } = require(join(out, 'personalize.js'))
-const { instrumentEmailHtml, safeRedirectTarget } = require(join(out, 'tracking.js'))
+// personalize.ts now imports ../variables → ../../site, so tsc infers rootDir=src/lib and emits
+// these under comms/ (site.js at the root). Require from the emitted subpath accordingly.
+const { classifyKeyword } = require(join(out, 'comms/keywords.js'))
+const { personalize, tokensIn } = require(join(out, 'comms/personalize.js'))
+const { instrumentEmailHtml, safeRedirectTarget } = require(join(out, 'comms/tracking.js'))
 
 const results = []
 function check(name, fn) {

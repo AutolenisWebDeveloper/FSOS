@@ -37,14 +37,17 @@ create table if not exists booking_notification_deliveries (
 );
 create index if not exists idx_bnd_appt on booking_notification_deliveries (appointment_id, schedule_version);
 
--- Reminder configuration: which offsets fire, per channel. `sms_enabled` default false is the P5 SMS
--- feature flag (stays OFF until the Stage 3 consent surface is verified). Values are config defaults
--- (§4.3): editable, is_assumption=true (render the gold "config default — verify" badge on the UI).
+-- Reminder configuration: which offsets fire, per channel. `sms_enabled` is the P5 booking-SMS
+-- FEATURE flag; Stage 4 turns it ON (default true). It is NOT the carrier go-live gate — real SMS
+-- still requires SMS_A2P_APPROVED=true (A2P 10DLC, src/lib/comms/a2p.ts), affirmative per-contact
+-- SMS consent (comm_contact_consents, Stage 3), an APPROVED sms template, and every other gate step.
+-- To keep booking SMS staged despite the feature flag, set sms_enabled=false via UPDATE. Values are
+-- config defaults (§4.3): editable, is_assumption=true (render the gold "config default — verify" badge).
 create table if not exists booking_reminder_config (
   id              text primary key default 'global',
   offsets_minutes int[] not null default '{1440}',   -- 24h; e.g. '{1440,60}' adds a 1h reminder
   email_enabled   boolean not null default true,
-  sms_enabled     boolean not null default false,      -- P5 SMS feature flag — OFF until Stage 4
+  sms_enabled     boolean not null default true,       -- P5 booking-SMS feature flag (Stage 4 ON)
   is_assumption   boolean not null default true,
   updated_at      timestamptz not null default now()
 );

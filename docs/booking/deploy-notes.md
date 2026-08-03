@@ -76,6 +76,21 @@ not replace, `uq_appointments_host_slot`).
 3. **Rollback:** drop the two tables + `alter table appointments drop column schedule_version;`
    (`reminder_sent_at` is retained precisely so this rollback is safe).
 
+**Stage-4 SMS go-live (author-time + env, all owner-controlled):** booking SMS is wired but sends only
+when ALL of these hold, each independent:
+1. `booking_reminder_config.sms_enabled = true` — the booking-SMS FEATURE flag. Mig 093 now defaults
+   it **true** (Stage 4). To keep booking SMS staged anyway, `update booking_reminder_config set
+   sms_enabled=false where id='global';`.
+2. `SMS_A2P_APPROVED=true` in the environment — the A2P 10DLC carrier go-live gate (default false;
+   `src/lib/comms/a2p.ts`). Until set, every SMS leg holds (no claim) and the gate's `smsLive` step is
+   the backstop. This is the SAME flag the campaign SMS uses — it may already be set.
+3. Run `npm run templates:build:sms` (writes the 6 booking SMS templates as DRAFT `comm_templates`
+   from `src/lib/booking/sms-templates.ts`) and **approve** each — until approved, the SMS leg defers
+   (template-not-approved), exactly like the email path.
+4. Affirmative per-contact SMS consent (Stage 3, `comm_contact_consents`) must resolve for the
+   recipient — the gate enforces it; the email booking consent never waives it.
+Reconcile the SMS wording against the approved Twilio A2P campaign templates before approving.
+
 **Stage-2 template step (author-time, after the migration):** two NEW appointment email templates
 ship with Stage 2 — `appointment-rescheduled` and `appointment-noshow`. Run `npm run templates:build`
 (writes DRAFT `comm_templates`) and **approve** them before the `rescheduled` / `no_show_followup`

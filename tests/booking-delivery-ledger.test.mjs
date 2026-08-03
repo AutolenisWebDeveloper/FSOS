@@ -127,8 +127,10 @@ try {
     assert.equal(scalar('select count(*) from appointments where schedule_version = 1;'), '1')
     assert.equal(scalar('select count(*) from appointments where schedule_version is null;'), '0')
   })
-  t('booking_reminder_config seeds the global row with sms_enabled OFF (the P5 flag)', () => {
-    assert.equal(scalar("select sms_enabled from booking_reminder_config where id='global';"), 'f')
+  t('booking_reminder_config seeds the global row (Stage 4: sms_enabled feature flag ON)', () => {
+    // Stage 4 turns the booking-SMS FEATURE flag on by default; real sends still require
+    // SMS_A2P_APPROVED + affirmative consent + an approved SMS template (each independent).
+    assert.equal(scalar("select sms_enabled from booking_reminder_config where id='global';"), 't')
     assert.equal(scalar("select email_enabled from booking_reminder_config where id='global';"), 't')
     assert.equal(scalar("select is_assumption from booking_reminder_config where id='global';"), 't')
   })

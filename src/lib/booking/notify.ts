@@ -16,6 +16,7 @@ import { sendThroughGate } from '@/lib/comms/send'
 import { signManageToken, manageTokenKey, MANAGE_TOKEN_TTL_MS } from './manage-tokens'
 import { buildBookingContext, DEFAULT_REMINDER_LEAD_HOURS } from './notify-core'
 import { type LifecycleEvent, sourceKeyFor, dueReminderOffsets } from './notify-events'
+import { smsA2pApproved } from '@/lib/comms/a2p'
 
 const OFFICE_LOCATION = `${CONTACT.address.line1}, ${CONTACT.address.city}, ${CONTACT.address.region} ${CONTACT.address.postal}`
 
@@ -92,39 +93,44 @@ async function loadApprovedTemplate(db: Db, sourceKey: string) {
 
 export type NotifyOutcome = { sent: boolean; reason?: string; messageId?: string }
 
-/** Send one appointment email (confirmation or reminder) through the gate. */
-async function sendAppointmentEmail(
+/** Send one appointment message on a channel (email or SMS) through the gate. */
+async function sendAppointmentMessage(
   db: Db,
-  opts: { sourceKey: string; appt: ApptRow; actor: string; durableConsentGranted: boolean },
+  opts: { channel: 'email' | 'sms'; sourceKey: string; appt: ApptRow; actor: string; durableConsentGranted: boolean },
 ): Promise<NotifyOutcome> {
   const contact = unwrapOne(opts.appt.contacts)
   const type = unwrapOne(opts.appt.appointment_types)
-  if (!contact?.email) return { sent: false, reason: 'no_email' }
   if (!opts.appt.starts_at) return { sent: false, reason: 'no_start' }
+  const to = opts.channel === 'email' ? contact?.email : contact?.phone
+  if (!to) return { sent: false, reason: opts.channel === 'email' ? 'no_email' : 'no_phone' }
 
   // Deferred if the template isn't approved yet (mirrors the workshop template-not-approved
-  // deferral) — booking itself already succeeded; the email simply waits for approval.
+  // deferral) — the appointment already succeeded; the notice simply waits for approval.
   const tpl = await loadApprovedTemplate(db, opts.sourceKey)
   if (!tpl) return { sent: false, reason: 'template_not_approved' }
 
   const ctx = buildBookingContext({
-    fullName: contact.full_name,
+    fullName: contact?.full_name,
     startsAt: opts.appt.starts_at,
     bookerTimezone: opts.appt.booker_timezone,
     meetingMode: opts.appt.meeting_mode ?? type?.meeting_mode ?? 'video',
     joinUrl: opts.appt.join_url,
-    phone: contact.phone,
+    phone: contact?.phone,
     location: OFFICE_LOCATION,
   })
 
   const outcome = await sendThroughGate({
-    channel: 'email',
-    to: contact.email,
-    subject: tpl.subject ?? undefined,
+    channel: opts.channel,
+    to,
+    subject: opts.channel === 'email' ? tpl.subject ?? undefined : undefined,
     body: tpl.body,
-    bodyText: tpl.body_text ?? undefined,
+    bodyText: opts.channel === 'email' ? tpl.body_text ?? undefined : undefined,
     templateId: tpl.id,
-    durableConsentGranted: opts.durableConsentGranted, // email booking consent (non-member)
+    // EMAIL rides the durable booking-email consent (non-member transactional basis). SMS must
+    // NEVER waive: it requires the SEPARATE AFFIRMATIVE opt-in, which the gate resolves from
+    // comm_contact_consents by the recipient phone (Stage 3). Passing a waiver on SMS would
+    // bypass TCPA prior-express-written consent — so it is forced false for SMS.
+    durableConsentGranted: opts.channel === 'email' ? opts.durableConsentGranted : false,
     isSecurity: false,
     actor: opts.actor,
     entity: { type: 'appointment', id: opts.appt.id },
@@ -191,29 +197,37 @@ async function releaseDelivery(db: Db, id: string): Promise<void> {
 }
 
 /**
- * Deliver ONE email leg for a lifecycle event through the ledger: claim → send → record/release.
- * Fire-once is the UNIQUE-key claim; a deferred/blocked send releases the claim to retry. The
- * gate is unchanged — consent, quiet-hours, DNC, approved-template, recommendation, and the
- * securities firewall all re-check at send time exactly as for any other send.
+ * Deliver ONE leg (email or SMS) for a lifecycle event through the ledger: claim → send →
+ * record/release. Fire-once is the UNIQUE-key claim; a deferred/blocked send releases the claim to
+ * retry. The gate is unchanged — consent, quiet-hours, DNC, approved-template, recommendation, and
+ * the securities firewall all re-check at send time. The SMS leg additionally holds until A2P
+ * 10DLC is live (SMS_A2P_APPROVED) — checked BEFORE claiming so a later tick claims once it is,
+ * and the gate's own smsLive step is the backstop.
  */
-async function deliverEmailLeg(
+async function deliverLeg(
   db: Db,
   appt: ApptRow,
-  args: { event: LifecycleEvent; offsetMinutes: number; actor: string; durableConsentGranted: boolean },
+  args: { event: LifecycleEvent; offsetMinutes: number; channel: 'email' | 'sms'; actor: string; durableConsentGranted: boolean },
 ): Promise<NotifyOutcome> {
+  // A2P 10DLC hold: never claim an SMS leg while SMS is not yet live — leave it unclaimed so a
+  // later tick delivers it once A2P is approved (mirrors the campaign tick's sms_a2p_hold).
+  if (args.channel === 'sms' && !smsA2pApproved()) {
+    return { sent: false, reason: 'sms_a2p_hold' }
+  }
   const scheduleVersion = appt.schedule_version ?? 1
   const claim = await claimDelivery(db, {
     appointmentId: appt.id,
     scheduleVersion,
     event: args.event,
     offsetMinutes: args.offsetMinutes,
-    channel: 'email',
+    channel: args.channel,
   })
   if ('skip' in claim) {
     return { sent: false, reason: claim.skip === 'exists' ? 'already_delivered' : 'ledger_error' }
   }
-  const outcome = await sendAppointmentEmail(db, {
-    sourceKey: sourceKeyFor(args.event, 'email'),
+  const outcome = await sendAppointmentMessage(db, {
+    channel: args.channel,
+    sourceKey: sourceKeyFor(args.event, args.channel),
     appt,
     actor: args.actor,
     durableConsentGranted: args.durableConsentGranted,
@@ -222,8 +236,8 @@ async function deliverEmailLeg(
     await markDeliverySent(db, claim.id, outcome.messageId)
     return outcome
   }
-  // Not sent (template not approved yet, quiet hours, transient block) → release the claim so a
-  // later tick (reminders) or a re-invocation (immediate events) can retry.
+  // Not sent (template not approved yet, quiet hours, no SMS consent, transient block) → release
+  // the claim so a later tick (reminders) or a re-invocation (immediate events) can retry.
   await releaseDelivery(db, claim.id)
   return outcome
 }
@@ -246,16 +260,29 @@ export async function sendAppointmentNotice(
   const db = getDb()
   const { data } = await db.from('appointments').select(APPT_SELECT).eq('id', appointmentId).maybeSingle()
   if (!data) return { sent: false, reason: 'not_found' }
+  const appt = data as unknown as ApptRow
+  const actor = opts.actor ?? 'public'
   // Every immediate lifecycle notice is transactional (appointment-consent basis): the attendee
   // just booked / rescheduled / cancelled, or the advisor marked the outcome. Recap and no-show
   // stay transactional (thank-you / rebook only, no promo) so they ride the same durable email
   // consent — the moment either carries a product nudge it needs separate marketing consent.
-  return deliverEmailLeg(db, data as unknown as ApptRow, {
+  const emailOutcome = await deliverLeg(db, appt, {
     event,
     offsetMinutes: IMMEDIATE,
-    actor: opts.actor ?? 'public',
+    channel: 'email',
+    actor,
     durableConsentGranted: true,
   })
+  // SMS leg (Stage 4) — only when the booking SMS feature flag is on. The affirmative SMS consent
+  // (Stage 3, resolved by the gate from comm_contact_consents), A2P go-live, quiet hours, DNC, and
+  // approved-template checks EACH still independently gate the actual send. Best-effort alongside
+  // email; the EMAIL outcome stays the caller's headline result (book.ts keys its transactional
+  // fallback off it, and a reschedule/cancel/send caller only reads whether the notice went out).
+  const config = await loadReminderConfig(db)
+  if (config.smsEnabled) {
+    await deliverLeg(db, appt, { event, offsetMinutes: IMMEDIATE, channel: 'sms', actor, durableConsentGranted: false })
+  }
+  return emailOutcome
 }
 
 /**
@@ -380,15 +407,30 @@ export async function runBookingReminderPass(
       continue
     }
     for (const offset of due) {
-      const outcome = await deliverEmailLeg(db, appt, {
+      const emailOutcome = await deliverLeg(db, appt, {
         event: 'reminder',
         offsetMinutes: offset,
+        channel: 'email',
         actor: 'agent:booking-reminders',
-        durableConsentGranted: true, // consent verified above
+        durableConsentGranted: true, // email booking consent verified above
       })
-      if (outcome.sent) result.sent++
-      else if (outcome.reason === 'already_delivered') result.skipped++
+      if (emailOutcome.sent) result.sent++
+      else if (emailOutcome.reason === 'already_delivered') result.skipped++
       else result.deferred++ // template not approved / quiet hours / transient — claim released
+      // SMS reminder leg (Stage 4) — only when enabled; affirmative SMS consent + A2P + quiet
+      // hours are each independently gate-enforced (the email consent above does NOT waive it).
+      if (config.smsEnabled) {
+        const smsOutcome = await deliverLeg(db, appt, {
+          event: 'reminder',
+          offsetMinutes: offset,
+          channel: 'sms',
+          actor: 'agent:booking-reminders',
+          durableConsentGranted: false,
+        })
+        if (smsOutcome.sent) result.sent++
+        else if (smsOutcome.reason === 'already_delivered') result.skipped++
+        else result.deferred++ // a2p hold / no SMS consent / quiet hours / not approved
+      }
     }
   }
   return result

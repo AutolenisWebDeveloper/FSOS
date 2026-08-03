@@ -16,7 +16,7 @@ import { sendThroughGate, isTemplateApproved } from '@/lib/comms/send'
 import { campaignDispatchContext, campaignIdentityContext } from '@/lib/comms/campaign'
 import { smsA2pApproved } from '@/lib/comms/a2p'
 import { canDispatch } from './engine'
-import { evaluateWinbackEligibility } from './eligibility'
+import { evaluateWinbackEligibility, classifyRecheckOutcome } from './eligibility'
 import { computeTouchPlan, TOUCH_SCHEDULE, type TouchKind } from './schedule'
 import { loadCampaign, loadWinbackEligibilityInput, type WinbackCampaignConfig } from './data'
 import { enrollOpportunity } from './enroll'
@@ -101,7 +101,7 @@ export async function pipelineWinbackTick(): Promise<WinbackTickResult> {
 
       // Re-check eligibility BEFORE the touch (advisor-ownership recheck / shared suppression).
       // A vanished candidate (won/deleted/no-longer-stale → no view row) yields the campaign.
-      const { input, snapshot } = await loadWinbackEligibilityInput(cfg, e.opportunity_id)
+      const { input, snapshot } = await loadWinbackEligibilityInput(cfg, e.opportunity_id, e.id)
       if (!snapshot) {
         await handleIneligible(db, e.id, ['no_longer_eligible'], nowISO)
         exited++
@@ -112,6 +112,15 @@ export async function pipelineWinbackTick(): Promise<WinbackTickResult> {
         await handleIneligible(db, e.id, elig.reasons, nowISO)
         exited++
         continue
+      }
+
+      // Honor the staged SMS A2P hold WITHOUT consuming the touch (dripAdvance-parity, §12): if
+      // SMS isn't approved yet and this is an SMS message touch, DEFER it — no execution claim and
+      // no cursor advance — so it retries next run and auto-sends the moment A2P is approved,
+      // instead of silently burning the touch as the cursor marches past it.
+      if (touch.kind !== 'advisor_outreach' && touch.template_id && !smsA2pApproved()) {
+        const { data: tpl } = await db.from('comm_templates').select('channel').eq('id', touch.template_id).maybeSingle()
+        if ((tpl?.channel === 'email' ? 'email' : 'sms') === 'sms') continue
       }
 
       // Idempotency: claim this touch's execution row first. If it already exists, this touch
@@ -323,13 +332,21 @@ async function completeEnrollment(db: ReturnType<typeof getDb>, enrollmentId: st
 }
 
 async function handleIneligible(db: ReturnType<typeof getDb>, enrollmentId: string, reasons: string[], nowISO: string): Promise<void> {
-  // Ownership loss (an opportunity opened/reopened, appointment booked, conversation started) →
-  // EXIT; securities/opt-out → SUPPRESS. Either way the campaign yields (§10/§5a).
-  const suppress = reasons.includes('securities_excluded') || reasons.includes('opted_out')
-  const status = suppress ? 'suppressed' : 'exited'
+  // Terminal SUPPRESS / resumable PAUSE / terminal EXIT is decided by the pure classifier (ADR-018):
+  // a newly-open customer conversation with no terminal-yield reason pauses (resumable) instead of
+  // terminally exiting — a single reply must never strand the enrollment (it previously exited here).
+  const status = classifyRecheckOutcome(reasons)
+  const patch: Record<string, unknown> = { status, updated_at: nowISO }
+  if (status === 'paused_for_conversation') {
+    patch.paused_at = nowISO
+    patch.pause_reason = reasons.join(',')
+  } else {
+    patch.exit_reason = reasons.join(',')
+    patch.completed_at = nowISO
+  }
   await db
     .from('pipeline_winback_enrollments')
-    .update({ status, exit_reason: reasons.join(','), completed_at: nowISO, updated_at: nowISO })
+    .update(patch)
     .eq('id', enrollmentId)
     .eq('status', 'active')
   await writeAudit({ actor: SYSTEM, action: 'entity.updated', entity: 'pipeline_winback_enrollment', entityId: enrollmentId, diff: { status, reasons } })

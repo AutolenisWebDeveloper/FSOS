@@ -16,6 +16,7 @@ import { evaluateEligibility } from './eligibility'
 import { canDispatch } from './states'
 import { computeTouchPlan, TOUCH_SCHEDULE, type TouchKind } from './schedule'
 import { loadCampaign, loadEligibilityInput, type CampaignConfig } from './data'
+import { enrollContact } from './enroll'
 
 const SYSTEM = 'agent:marketing_automation'
 
@@ -47,7 +48,8 @@ export async function lifeCampaignTick(): Promise<TickResult> {
   const nowISO = new Date().toISOString()
 
   const { data: campaigns } = await db.from('life_campaigns').select('id, status').eq('status', 'active').limit(50)
-  let sent = 0,
+  let enrolled = 0,
+    sent = 0,
     advisorTasks = 0,
     exited = 0,
     completed = 0
@@ -56,6 +58,12 @@ export async function lifeCampaignTick(): Promise<TickResult> {
     if (!canDispatch(c.status)) continue // defense in depth; only Active dispatches
     const cfg = await loadCampaign(c.id)
     if (!cfg) continue
+
+    // §4a daily enrollment sweep — fill the day's quota from the verified-deadline conversion
+    // cohort (v_conversions_due). Without this the campaign never enrolls anyone automatically;
+    // it mirrors the Pipeline Win-Back tick's enrollSweep and Cross-Sell's daily enroll job.
+    // enrollContact re-checks the full eligibility gate (firewall / ownership / deadline / dup).
+    enrolled += await enrollSweep(db, cfg, nowISO)
 
     const { data: touchDefs } = await db
       .from('life_campaign_touches')
@@ -93,11 +101,20 @@ export async function lifeCampaignTick(): Promise<TickResult> {
       }
 
       // Re-check eligibility BEFORE the touch (ownership recheck).
-      const elig = evaluateEligibility(await loadEligibilityInput(cfg, e.policy_id, e.member_id, nowISO))
+      const elig = evaluateEligibility(await loadEligibilityInput(cfg, e.policy_id, e.member_id, nowISO, e.id))
       if (!elig.eligible) {
         await handleIneligible(db, e.id, elig.reasons, nowISO)
         exited++
         continue
+      }
+
+      // Honor the staged SMS A2P hold WITHOUT consuming the touch (dripAdvance-parity, §12): if
+      // SMS isn't approved yet and this is an SMS message touch, DEFER it — no execution claim and
+      // no cursor advance — so it retries next run and auto-sends the moment A2P is approved,
+      // instead of silently burning the touch as the cursor marches past it.
+      if (touch.kind !== 'advisor_outreach' && touch.template_id && !smsA2pApproved()) {
+        const { data: tpl } = await db.from('comm_templates').select('channel').eq('id', touch.template_id).maybeSingle()
+        if ((tpl?.channel === 'email' ? 'email' : 'sms') === 'sms') continue
       }
 
       // Idempotency: claim this touch's execution row first. If it already exists, this
@@ -125,9 +142,63 @@ export async function lifeCampaignTick(): Promise<TickResult> {
 
   return {
     ok: true,
-    handled: sent + advisorTasks,
-    note: `life-conversion-tick: ${sent} message touches sent (gated), ${advisorTasks} advisor tasks, ${exited} exited on ownership/suppression, ${completed} completed`,
+    handled: enrolled + sent + advisorTasks,
+    note: `life-conversion-tick: ${enrolled} enrolled, ${sent} message touches sent (gated), ${advisorTasks} advisor tasks, ${exited} exited on ownership/suppression, ${completed} completed`,
   }
+}
+
+/**
+ * §4a daily enrollment: enroll up to (daily_enrollment_limit − already-enrolled-today) fresh
+ * candidates from the verified-deadline conversion view. The view is the single eligibility
+ * source; enrollContact() re-checks each candidate through the pure gate (Active Opportunity
+ * Ownership + securities firewall + suppression + cooldown + deadline-fit) and the DB unique
+ * (campaign_id, member_id) is the duplicate guard, so a re-run never double-enrolls. Security-
+ * flagged policies are excluded here AND fail-closed inside enrollContact.
+ */
+async function enrollSweep(db: ReturnType<typeof getDb>, cfg: CampaignConfig, nowISO: string): Promise<number> {
+  const startOfDay = `${nowISO.slice(0, 10)}T00:00:00.000Z`
+  const { count: enrolledToday } = await db
+    .from('life_campaign_enrollments')
+    .select('id', { count: 'exact', head: true })
+    .eq('campaign_id', cfg.id)
+    .gte('created_at', startOfDay)
+  const remaining = cfg.daily_enrollment_limit - (enrolledToday ?? 0)
+  if (remaining <= 0) return 0
+
+  // Over-fetch (× 4) so already-enrolled / member-less / concurrently-claimed candidates don't
+  // starve the batch. Most-urgent first (soonest verified deadline). Exclude firewall rows up
+  // front (enrollContact fails them closed too). Never manufacture urgency — the view only
+  // surfaces policies that carry a real conversion_deadline.
+  const { data: candidates } = await db
+    .from('v_conversions_due')
+    .select('policy_id, household_id, days_remaining, is_security')
+    .eq('is_security', false)
+    .order('days_remaining', { ascending: true })
+    .limit(remaining * 4)
+
+  let enrolled = 0
+  for (const cand of candidates ?? []) {
+    if (enrolled >= remaining) break
+    if (!cand.policy_id || !cand.household_id) continue
+    // Resolve the household's primary (first-created) member as the enrollment subject; the send
+    // gate still enforces per-recipient consent/quiet-hours/DNC before anything is delivered.
+    const { data: member } = await db
+      .from('household_members')
+      .select('id')
+      .eq('household_id', cand.household_id as string)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    if (!member?.id) continue
+    const r = await enrollContact({
+      campaignId: cfg.id,
+      memberId: member.id as string,
+      policyId: cand.policy_id as string,
+      actor: SYSTEM,
+    })
+    if (r.enrolled) enrolled++
+  }
+  return enrolled
 }
 
 async function fireMessageTouch(

@@ -259,18 +259,17 @@ export async function resumePausedEnrollments(): Promise<JobResult> {
   const { data: pol } = await db.from('comm_conversation_policy').select('resume_quiet_days').eq('id', 'global').maybeSingle()
   const quietDays = pol?.resume_quiet_days ?? 5
 
-  const { data: paused } = await db
-    .from('comm_campaign_enrollments')
-    .select('id, member_id')
-    .eq('status', 'paused_for_conversation')
-    .limit(1000)
-
-  let handled = 0
-  for (const e of (paused ?? []) as Array<{ id: string; member_id: string | null }>) {
-    if (!e.member_id) continue
+  // Whether a member's paused enrollment(s) may resume: the conversation has closed/resolved,
+  // a manual resume was requested, OR the customer has gone quiet ≥ the configured window
+  // (evaluateResume, ADR-018). Cached per member so a member enrolled in several campaigns is
+  // evaluated once per run.
+  const decisionCache = new Map<string, { resume: boolean; reason: string }>()
+  async function decideForMember(memberId: string): Promise<{ resume: boolean; reason: string }> {
+    const cached = decisionCache.get(memberId)
+    if (cached) return cached
     const [{ data: conv }, { data: lastInbound }] = await Promise.all([
-      db.from('comm_conversations').select('status, last_message_at').eq('member_id', e.member_id).order('last_message_at', { ascending: false }).limit(1).maybeSingle(),
-      db.from('comm_messages').select('created_at').eq('member_id', e.member_id).eq('direction', 'inbound').order('created_at', { ascending: false }).limit(1).maybeSingle(),
+      db.from('comm_conversations').select('status, last_message_at').eq('member_id', memberId).order('last_message_at', { ascending: false }).limit(1).maybeSingle(),
+      db.from('comm_messages').select('created_at').eq('member_id', memberId).eq('direction', 'inbound').order('created_at', { ascending: false }).limit(1).maybeSingle(),
     ])
     const minutesSinceLastInbound = lastInbound?.created_at
       ? Math.floor((Date.now() - Date.parse(lastInbound.created_at)) / 60000)
@@ -280,6 +279,21 @@ export async function resumePausedEnrollments(): Promise<JobResult> {
       minutesSinceLastInbound,
       resumeQuietDays: quietDays,
     })
+    decisionCache.set(memberId, decision)
+    return decision
+  }
+
+  let handled = 0
+
+  // 1) Native drip enrollments (comm_campaign_enrollments) — resume to 'enrolled', fire promptly.
+  const { data: paused } = await db
+    .from('comm_campaign_enrollments')
+    .select('id, member_id')
+    .eq('status', 'paused_for_conversation')
+    .limit(1000)
+  for (const e of (paused ?? []) as Array<{ id: string; member_id: string | null }>) {
+    if (!e.member_id) continue
+    const decision = await decideForMember(e.member_id)
     if (decision.resume) {
       // Re-check the paused status in the UPDATE filter (idempotent against a concurrent run).
       await db
@@ -291,6 +305,47 @@ export async function resumePausedEnrollments(): Promise<JobResult> {
       handled++
     }
   }
+
+  // 2) The three multi-channel campaigns (Life Conversion, Pipeline Win-Back, Cross-Sell Life)
+  // pause their OWN enrollments to 'paused_for_conversation' on an inbound reply (comms/inbound.ts).
+  // Their resume path reuses the SAME evaluateResume decision (ADR-029 §"Pause-on-reply/resume
+  // reuses comm_conversation_mode/evaluateResume"). Without this the reply-pause was terminal — a
+  // customer who replied once was never returned to the cadence. Restore to each table's live,
+  // touch-receiving status and set next_touch_at=now so the next daily tick picks it up (the tick
+  // advances at most one touch per run, so no burst / no catch-up).
+  const CAMPAIGN_TABLES: Array<{ table: string; entity: string; liveStatus: string; usePreviousStatus?: boolean }> = [
+    { table: 'life_campaign_enrollments', entity: 'life_campaign_enrollment', liveStatus: 'active' },
+    { table: 'pipeline_winback_enrollments', entity: 'pipeline_winback_enrollment', liveStatus: 'active' },
+    { table: 'xsell_life_campaign_enrollments', entity: 'xsell_life_campaign_enrollment', liveStatus: 'running', usePreviousStatus: true },
+  ]
+  for (const spec of CAMPAIGN_TABLES) {
+    // Fail-soft per table: a campaign not yet migrated must never fail the whole sweep (§16.5).
+    let rows: Array<{ id: string; member_id: string | null; previous_status?: string | null }> = []
+    try {
+      const sel = spec.usePreviousStatus ? 'id, member_id, previous_status' : 'id, member_id'
+      const { data, error } = await db.from(spec.table).select(sel).eq('status', 'paused_for_conversation').limit(1000)
+      if (error) continue
+      rows = (data ?? []) as unknown as typeof rows
+    } catch {
+      continue
+    }
+    for (const e of rows) {
+      if (!e.member_id) continue
+      const decision = await decideForMember(e.member_id)
+      if (!decision.resume) continue
+      const restoreTo = spec.usePreviousStatus ? (e.previous_status || spec.liveStatus) : spec.liveStatus
+      const { data: updated } = await db
+        .from(spec.table)
+        .update({ status: restoreTo, resumed_at: nowISO, next_touch_at: nowISO, updated_at: nowISO })
+        .eq('id', e.id)
+        .eq('status', 'paused_for_conversation')
+        .select('id')
+      if (!updated || updated.length === 0) continue // lost a concurrent race → not ours to count
+      await writeAudit({ actor: SYSTEM, action: 'entity.updated', entity: spec.entity, entityId: e.id, diff: { resumed: true, reason: decision.reason, restored_status: restoreTo } })
+      handled++
+    }
+  }
+
   return { ok: true, handled, note: `resume-paused: ${handled} enrollment(s) resumed` }
 }
 

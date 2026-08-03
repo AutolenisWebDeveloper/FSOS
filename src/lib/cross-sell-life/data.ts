@@ -143,6 +143,11 @@ export async function loadEligibilityInput(
   householdId: string,
   memberId: string,
   nowISO: string,
+  // At the pre-touch recheck the enrollment being advanced is itself a live (e.g. 'running') row
+  // for this (campaign, member); counting it raises `duplicate_active` and terminally self-exits
+  // the enrollment on its first touch. Recheck callers pass its id to exclude self; enroll-time
+  // callers omit it.
+  excludeEnrollmentId?: string,
 ): Promise<EligibilityInput> {
   const db = getDb()
 
@@ -200,15 +205,16 @@ export async function loadEligibilityInput(
   const inLifeConversion = await hasActiveEnrollment(db, 'life_campaign_enrollments', householdId, memberId)
   const inWinbackEnrollment = await hasActiveEnrollment(db, 'pipeline_winback_enrollments', householdId, memberId)
 
-  // Duplicate: an active enrollment for this member in THIS campaign version.
-  const { data: prior } = await db
+  // Duplicate: an active enrollment for this member in THIS campaign version. At recheck we exclude
+  // the enrollment currently being advanced so it does not flag itself as a duplicate.
+  let priorQ = db
     .from('xsell_life_campaign_enrollments')
     .select('id')
     .eq('campaign_id', campaign.id)
     .eq('member_id', memberId)
     .in('status', ['queued', 'scheduled', 'enrolled', 'running', 'paused_for_conversation', 'paused_by_admin', 'conversation_active', 'waiting_for_advisor', 'advisor_owned'])
-    .limit(1)
-    .maybeSingle()
+  if (excludeEnrollmentId) priorQ = priorQ.neq('id', excludeEnrollmentId)
+  const { data: prior } = await priorQ.limit(1).maybeSingle()
 
   // Existing (future) appointment for the household — a scheduled review pauses cross-sell (§3/§6).
   const { data: appt } = await db

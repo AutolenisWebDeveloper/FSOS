@@ -19,7 +19,7 @@
 // the two contexts email rendering unavoidably requires.
 //
 // Never hardcode an email color/spacing elsewhere — resolve it through EMAIL here.
-import { BUSINESS, CONTACT, LICENSING, QUOTE_URL, HEADSHOT_PATH } from '@/lib/site'
+import { BUSINESS, CONTACT, LICENSING, QUOTE_URL, HEADSHOT_PATH, SIGNATURE_FOOTPRINT } from '@/lib/site'
 
 /**
  * Canonical marketing origin for absolutely-referenced email assets (the logo).
@@ -144,4 +144,6 @@ export const EMAIL_SIGNATURE = {
   bookingUrl: `${EMAIL_ORIGIN}/schedule`,
   /** Public "Get a Free Quote" link (official Farmers agent page). */
   quoteUrl: QUOTE_URL,
+  /** Standard footprint (tagline + offerings + required disclosures) — see site.ts. */
+  footprint: SIGNATURE_FOOTPRINT,
 } as const

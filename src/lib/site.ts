@@ -129,6 +129,25 @@ export const QUOTE_URL = 'https://agents.farmers.com/tx/plano/markist-athelus/'
 export const HEADSHOT_PATH = '/images/markist-headshot.jpg'
 
 /**
+ * The FSA's standard email-signature FOOTPRINT — the practice tagline, the offerings list, and
+ * the required disclosures used on the agent's production emails. Green-zone marketing identity
+ * (§4.2): a general capabilities list + a no-obligation review invitation, never an individualized
+ * product/securities recommendation. The securities line is the required FINRA/SIPC disclosure for
+ * the asterisked securities offerings (Farmers Financial Solutions, LLC) — a disclosure, not a
+ * solicitation, and consistent with DISCLOSURES.securities (§4.1 firewall unaffected: identity
+ * copy, not securities account/transaction data).
+ */
+export const SIGNATURE_FOOTPRINT = {
+  tagline:
+    'We help families protect what matters most with life insurance, eliminate debt faster, and build lasting financial independence every day. Discover how we can help your family with a no-cost, no-obligation review.',
+  offering:
+    'Auto • Home • Life Insurance • Business • Mutual Funds* • Investment & Retirement Planning* • Annuities* • IRAs* • 401(k)s* • 529 College Savings Plans*',
+  securities: '*Securities offered through Farmers Financial Solutions, LLC, Member FINRA & SIPC',
+  confidentiality:
+    'This message is intended for the recipient named above. If you received it in error, please delete it.',
+} as const
+
+/**
  * The advisor + agency identity merge tokens shared by every outbound message (§13/§17).
  * These are single-FSA constants, so the send path (sendThroughGate) injects them as
  * CALLER-OVERRIDABLE defaults — a campaign or booking send inherits correct advisor identity,

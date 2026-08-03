@@ -745,13 +745,25 @@ FSOS booking, ADR-027) and "Get a Free Quote →" (the FSA's official Farmers ag
 message's **own approved closer word** (`Warm regards,` / `Sincerely,` / …) is kept verbatim above
 it; the block replaces only the plain identity line.
 
+Below the contact rows the signature closes with the FSA's standard **footprint**: the practice
+**tagline**, an **Offering** list (Auto · Home · Life · Business · and the asterisked securities
+products), the required **FINRA/SIPC securities disclosure** for Farmers Financial Solutions, and a
+**confidentiality** line. Because the footprint plus the CAN-SPAM footer (the "educational /
+not a product recommendation or suitability determination" line + mailing address + unsubscribe)
+now carry every required disclosure, the runtime wrap **drops the per-campaign trailing
+educational disclaimer** from the body render rather than duplicating it — one standardized
+closing, not two.
+
 One identity, one design: the signature data is **`EMAIL_SIGNATURE`** in `src/lib/email/brand.ts`
 (sourced from `src/lib/site.ts` — `BUSINESS.credential/titleLong/financialFirm`,
-`CONTACT.cellDisplay`, `QUOTE_URL`, `HEADSHOT_PATH`), rendered by `signatureBlockHtml()` in the
-runtime campaign wrap (`email-shell.ts`). Absolute asset/link URLs on the stable marketing origin so
-the headshot and links resolve in a delivered message (ADR-025 immutability). Green-zone only — the
-action links are an invitation to book or request a quote, never a product/securities
-call-to-action (§4.2), and are covered by the recommendation-language guard.
+`CONTACT.cellDisplay`, `QUOTE_URL`, `HEADSHOT_PATH`, `SIGNATURE_FOOTPRINT`), rendered by
+`signatureBlockHtml()` in the runtime campaign wrap (`email-shell.ts`). Absolute asset/link URLs on
+the stable marketing origin so the headshot and links resolve in a delivered message (ADR-025
+immutability). Green-zone only — the tagline, offerings, and action links are identity copy and an
+invitation to book or request a quote, never a product/securities call-to-action (§4.2), and are
+covered by the recommendation-language guard. The securities line is a required disclosure, not a
+solicitation, and the §4.1 firewall is unaffected (identity copy, not securities account/transaction
+data).
 
 Tokens (styling `--shell`/`--muted-foreground` equivalents, inline for email-client safety) resolve
 through `src/lib/email/brand.ts`. Do **not** bake the SMS TRAIGA opt-out ("Reply STOP") into an email

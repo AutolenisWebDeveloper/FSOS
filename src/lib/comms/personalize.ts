@@ -27,6 +27,13 @@
 // the delivered email or the stored comm_messages.body the operator console later renders
 // (stored-XSS defense, §13.8). SMS + plaintext parts substitute verbatim.
 
+import {
+  canonicalVarKey,
+  REGISTRY_BLOCKING_KEYS,
+  REGISTRY_URL_KEYS,
+  REGISTRY_COSMETIC_DEFAULTS,
+} from './variables'
+
 export interface RecipientContext {
   first_name?: string | null
   last_name?: string | null
@@ -59,29 +66,27 @@ export interface RecipientContext {
 }
 
 /**
- * COSMETIC tokens only — the tokens that keep a safe neutral default and never block a send.
- * Everything NOT listed here that is also a BLOCKING_TOKEN fails closed when unresolved.
+ * COSMETIC tokens — keep a safe neutral default and never block a send. Merged from the central
+ * variable registry (variables.ts) with the two send-local cosmetic tokens (city, greeting) that
+ * are not part of the canonical set.
  */
 const COSMETIC_DEFAULTS: Record<string, string> = {
-  first_name: 'there',
-  last_name: '',
-  full_name: 'there',
+  ...REGISTRY_COSMETIC_DEFAULTS,
   city: 'your area',
   greeting: 'Hello',
 }
 
 /**
- * BLOCKING-tier tokens — advisor + agency identity, the opt-out/scheduling links, and the
- * booking specifics. If a template references one of these and the context does not resolve it
- * (missing/empty, or — for a URL token — not absolute), the send is hard-blocked + escalated.
+ * BLOCKING-tier tokens — factual/identity values that MUST resolve. If a template references one
+ * and the context does not resolve it (missing/empty, or — for a URL token — not absolute), the
+ * send is hard-blocked + escalated (never shipped with a raw token or blank). Merged from the
+ * central registry (variables.ts) with the send-injected/booking tokens that live only in the
+ * send path (the opt-out link + appointment specifics).
  */
 export const BLOCKING_TOKENS: ReadonlySet<string> = new Set([
+  ...REGISTRY_BLOCKING_KEYS,
   'fsa_name',
-  'advisor_phone',
-  'advisor_email',
-  'agency_name',
   'unsubscribe_url',
-  'scheduling_link',
   'appointment_time',
   'meeting_details',
   'reschedule_url',
@@ -89,7 +94,12 @@ export const BLOCKING_TOKENS: ReadonlySet<string> = new Set([
 ])
 
 /** Blocking tokens that are URLs — must resolve to an ABSOLUTE http(s) link (never relative). */
-const URL_TOKENS: ReadonlySet<string> = new Set(['unsubscribe_url', 'scheduling_link', 'reschedule_url', 'cancel_url'])
+const URL_TOKENS: ReadonlySet<string> = new Set([
+  ...REGISTRY_URL_KEYS,
+  'unsubscribe_url',
+  'reschedule_url',
+  'cancel_url',
+])
 
 const TOKEN_RE = /\{\{\s*([a-z_]+)\s*\}\}/gi
 
@@ -136,10 +146,11 @@ export interface PersonalizeOptions {
   escapeHtml?: boolean
 }
 
-/** Replace every {{token}} in `body` using the recipient context (+ cosmetic defaults). */
+/** Replace every {{token}} in `body` using the recipient context (+ cosmetic defaults). Tokens
+ *  resolve case/-separator-insensitively via the central registry ({{FirstName}} == {{first_name}}). */
 export function personalize(body: string, ctx: RecipientContext, opts: PersonalizeOptions = {}): string {
   return body.replace(TOKEN_RE, (_m, token: string) => {
-    const raw = rawValueFor(token.toLowerCase(), ctx)
+    const raw = rawValueFor(canonicalVarKey(token), ctx)
     return opts.escapeHtml ? escapeHtmlValue(raw) : raw
   })
 }
@@ -154,6 +165,8 @@ export function unresolvedBlockingTokens(body: string, ctx: RecipientContext): s
   const missing: string[] = []
   const seen = new Set<string>()
   for (const token of tokensIn(body)) {
+    // tokensIn already returns CANONICAL keys, so blocking classification + ctx lookup are keyed
+    // consistently regardless of how the author spelled the token in the template.
     if (!BLOCKING_TOKENS.has(token) || seen.has(token)) continue
     seen.add(token)
     const provided = ctx[token]
@@ -169,9 +182,9 @@ export function unresolvedBlockingTokens(body: string, ctx: RecipientContext): s
   return missing
 }
 
-/** List the merge tokens referenced by a template body (for the editor UI). */
+/** The CANONICAL merge-variable keys referenced by a template body (any casing is normalized). */
 export function tokensIn(body: string): string[] {
   const found = new Set<string>()
-  for (const m of body.matchAll(TOKEN_RE)) found.add(m[1].toLowerCase())
+  for (const m of body.matchAll(TOKEN_RE)) found.add(canonicalVarKey(m[1]))
   return [...found]
 }

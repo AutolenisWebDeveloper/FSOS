@@ -168,18 +168,31 @@ export const SIGNATURE_FOOTPRINT = {
  */
 export function advisorMergeContext(): {
   fsa_name: string
-  agency_name: string
+  advisor_name: string
+  advisor_title: string
   advisor_phone: string
   advisor_email: string
+  agency_name: string
+  agency_phone: string
+  agency_address: string
   scheduling_link: string
+  reply_to_email: string
+  sender_name: string
 } {
   return {
+    // fsa_name is the legacy key; advisor_name is the canonical registry key — both the FSA.
     fsa_name: BUSINESS.agent,
-    agency_name: BUSINESS.agency,
+    advisor_name: BUSINESS.agent,
+    advisor_title: BUSINESS.title,
     advisor_phone: CONTACT.phoneDisplay,
     advisor_email: CONTACT.email,
+    agency_name: BUSINESS.agency,
+    agency_phone: CONTACT.phoneDisplay,
+    agency_address: `${CONTACT.address.line1}, ${CONTACT.address.city}, ${CONTACT.address.region} ${CONTACT.address.postal}`,
     // Absolute booking link — the relative bookingUrl() ('/schedule') breaks in a delivered email.
     scheduling_link: `${siteUrl()}/schedule`,
+    reply_to_email: CONTACT.email,
+    sender_name: BUSINESS.agent,
   }
 }
 

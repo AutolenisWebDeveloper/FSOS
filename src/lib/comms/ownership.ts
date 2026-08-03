@@ -104,28 +104,44 @@ export interface OwnershipSnapshot {
   bookOfBusinessRef: string | null
 }
 
+export interface AgentOfRecord {
+  full_name: string | null
+  phone: string | null
+  email: string | null
+}
+
 /**
- * Resolve the client's AGENT OF RECORD name — the display name of the agency owner for the
- * given agency (households.referring_agency_id → agency_owners.full_name). Deterministic
- * (earliest owner) to mirror resolveOwnershipForSend. Fails SOFT: any lookup error or missing
- * owner returns null so the caller degrades to the approved generic "your Farmers agent"
- * (§4.3 — never name a guessed agent), never blocking the send on this alone.
+ * Resolve the client's AGENT OF RECORD — the agency owner for the given agency
+ * (households.referring_agency_id → agency_owners). Deterministic (earliest owner) to mirror
+ * resolveOwnershipForSend. Fails SOFT: any lookup error or missing owner returns null so the
+ * caller degrades to the approved generic "your Farmers agent" for names (§4.3 — never a guessed
+ * agent) and fails closed on contact details, never blocking the whole send on this alone.
  */
-export async function resolveAgentOfRecordName(agencyId: string | null | undefined): Promise<string | null> {
+export async function resolveAgentOfRecord(agencyId: string | null | undefined): Promise<AgentOfRecord | null> {
   if (!agencyId) return null
   try {
     const { data } = await getDb()
       .from('agency_owners')
-      .select('full_name')
+      .select('full_name, phone, email')
       .eq('agency_id', agencyId)
       .order('created_at', { ascending: true })
       .limit(1)
       .maybeSingle()
-    const name = String((data as { full_name?: string | null } | null)?.full_name ?? '').trim()
-    return name || null
+    const row = data as { full_name?: string | null; phone?: string | null; email?: string | null } | null
+    if (!row) return null
+    const full_name = String(row.full_name ?? '').trim() || null
+    const phone = String(row.phone ?? '').trim() || null
+    const email = String(row.email ?? '').trim() || null
+    if (!full_name && !phone && !email) return null
+    return { full_name, phone, email }
   } catch {
     return null
   }
+}
+
+/** The agent-of-record display name only (convenience over {@link resolveAgentOfRecord}). */
+export async function resolveAgentOfRecordName(agencyId: string | null | undefined): Promise<string | null> {
+  return (await resolveAgentOfRecord(agencyId))?.full_name ?? null
 }
 
 export interface OwnershipResolveInput {

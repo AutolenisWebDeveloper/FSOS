@@ -769,3 +769,36 @@ Tokens (styling `--shell`/`--muted-foreground` equivalents, inline for email-cli
 through `src/lib/email/brand.ts`. Do **not** bake the SMS TRAIGA opt-out ("Reply STOP") into an email
 template — that is appended by the dispatcher for SMS only. Deliverability specifics (SPF/DKIM/DMARC, reply-to, RFC 8058
 List-Unsubscribe headers) are documented in `docs/comms-native/launch-slice-2-email-deliverability.md`.
+
+### 31.3 Personalization variables (single source of truth) [STANDARD]
+
+Every merge variable used anywhere in communications — email, SMS, AI conversations, appointment
+messages, advisor scripts, campaign templates — resolves through **one** registry
+(`src/lib/comms/variables.ts`) and the **one** engine (`src/lib/comms/personalize.ts`). There is no
+second resolver and no per-campaign variable logic: an author inserts a variable in **any casing**
+(`{{FirstName}}` ≡ `{{first_name}}` ≡ `{{firstName}}`) and it resolves at send time.
+
+- **Authoritative sources.** Advisor/agency identity + scheduling/reply-to/sender → `site.ts`
+  (`advisorMergeContext`, the FSA); the client's **agent of record** (name/phone/email) →
+  `agency_owners` for the recipient's referring agency; **contact** name → the recipient
+  member/contact; **policy/conversion** facts → the `policies` row. `buildRecipientContext(sources)`
+  is the single place data is mapped; the send path calls it for every send.
+- **Validation (never a raw token, blank, or guessed value).** Each variable is **cosmetic**
+  (degrades to a safe neutral — a missing first name → "there"; a missing agent-of-record name →
+  the approved generic "your Farmers agent") or **blocking** (factual/identity: a referenced one
+  that cannot be resolved **hard-blocks** the send via `unresolvedBlockingTokens`, so a client never
+  receives `{{Variable}}`, an empty value, or a fabricated one — §4.3, §13). Factual data is never
+  given an invented fallback.
+- **Canonical set.** `FirstName · LastName · FullName · PolicyNumber · PolicyType · PolicyIssueDate ·
+  PolicyEffectiveDate · PolicyFaceAmount · ConversionExpirationDate · DaysUntilConversionExpires ·
+  AdvisorName · AdvisorTitle · AdvisorPhone · AdvisorEmail · AgentOfRecordFirstName ·
+  AgentOfRecordLastName · AgentOfRecordFullName · AgentOfRecordPhone · AgentOfRecordEmail ·
+  AgencyName · AgencyPhone · AgencyAddress · SchedulingLink · ReplyToEmail · SenderName`. Legacy
+  snake_case tokens (`{{fsa_name}}`, the send-injected `{{unsubscribe_url}}`, booking
+  `{{appointment_time}}`) keep resolving unchanged. Adding a future variable = one registry entry +
+  its source in `buildRecipientContext`; every current and future campaign shares it automatically.
+- **Data gaps (flagged, not faked).** `PolicyEffectiveDate` has no column in the `policies` schema
+  (only `issue_date`), and policy rows are not yet threaded per-recipient into the campaign send
+  context — so policy/conversion variables resolve when a campaign supplies a `policy` source and
+  otherwise **fail closed** (never a placeholder). Wiring per-campaign policy loading (and an
+  `effective_date` column) is the follow-on.

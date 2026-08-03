@@ -22,12 +22,13 @@ import { getOrCreateConversation, touchConversation, normalizeContact, type Chan
 import { loadHoursPolicy, isWithinOperatingHours } from './hours'
 import { recordMessageEvent } from './events'
 import { personalize, unresolvedBlockingTokens, type RecipientContext } from './personalize'
-import { advisorMergeContext, BUSINESS } from '@/lib/site'
+import { BUSINESS } from '@/lib/site'
 import { emailUnsubscribeUrl } from './unsubscribe'
 import { smsLiveFor } from './a2p'
 import { instrumentEmailHtml } from './tracking'
 import { wrapMarketingEmailBody } from '@/lib/notifications/email-shell'
-import { resolveDelegation, enqueueAssignmentReview, resolveAgentOfRecordName } from './ownership'
+import { resolveDelegation, enqueueAssignmentReview, resolveAgentOfRecord, type AgentOfRecord } from './ownership'
+import { buildRecipientContext } from './variables'
 import { resolveIdentityDisclosure, type IdentityContext } from './identity-resolver'
 import { prependIdentityDisclosure } from './identity'
 import { resolveSendPolicy } from './policy-resolver'
@@ -483,8 +484,24 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
   // injected here as CALLER-OVERRIDABLE defaults (§17): every campaign/booking send inherits
   // correct identity + a working booking link, while a caller that supplies its own value wins.
   // The per-recipient unsubscribe_url is FORCED for email (security-critical, never overridable).
+  // Resolve the recipient's AGENT OF RECORD once (their Farmers agency owner) from the represented
+  // agency on the spine — reused for both the body variables and the identity disclosure below.
+  const agencyForOwner = ctx.ownership?.representedAgencyId ?? ctx.delegation?.agencyId ?? convAgencyId ?? null
+  const agentOfRecord: AgentOfRecord | null = await resolveAgentOfRecord(agencyForOwner)
+
+  // Build the per-recipient merge context through the ONE centralized resolver (variables.ts):
+  // advisor + agency identity, scheduling/reply-to/sender, the resolved agent of record, and the
+  // recipient's name. A caller-supplied value (e.g. a campaign that pre-resolved policy variables)
+  // still wins; the per-recipient unsubscribe_url is FORCED for email (never overridable, §13.8).
   const recipientCtx: RecipientContext = {
-    ...advisorMergeContext(),
+    ...buildRecipientContext({
+      contact: {
+        full_name: ctx.recipientContext?.full_name ?? null,
+        first_name: ctx.recipientContext?.first_name ?? null,
+        last_name: ctx.recipientContext?.last_name ?? null,
+      },
+      agentOfRecord,
+    }),
     ...(ctx.recipientContext ?? {}),
     ...(ctx.channel === 'email' ? { unsubscribe_url: emailUnsubscribeUrl(to) } : {}),
   }
@@ -514,15 +531,12 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
   let identityBody = personalized
   let identityText = personalizedText
   if (ctx.identity) {
-    // Resolve the recipient's AGENT OF RECORD (their Farmers agency owner) from the represented
-    // agency on the spine, so the platform disclosure names the CLIENT'S OWN agent — never a
-    // guessed one. A caller-supplied name wins; otherwise we look it up from the agency; if it
-    // cannot be resolved, agency_owner stays empty and the engine degrades to the approved
-    // generic "your Farmers agent" (§4.3, ADR-016). The sender defaults to the single FSA.
-    const agencyForOwner =
-      ctx.ownership?.representedAgencyId ?? ctx.delegation?.agencyId ?? convAgencyId ?? null
+    // The platform disclosure names the CLIENT'S OWN agent of record (resolved above), never a
+    // guessed one. A caller-supplied name wins; if none is resolvable, agency_owner stays empty and
+    // the engine degrades to the approved generic "your Farmers agent" (§4.3, ADR-016). Sender
+    // defaults to the single FSA.
     const suppliedOwnerName = ctx.identity.vars?.agency_owner?.full_name?.trim() || ''
-    const agentOfRecordName = suppliedOwnerName || (await resolveAgentOfRecordName(agencyForOwner)) || null
+    const agentOfRecordName = suppliedOwnerName || agentOfRecord?.full_name || null
     const identityWithOwner: IdentityContext = {
       ...ctx.identity,
       vars: {

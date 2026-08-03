@@ -6,6 +6,9 @@ import { BlackoutsManager, type BlackoutRow } from '@/components/app/booking/Bla
 import { GoogleCalendarConnect, type CalendarConnection } from '@/components/app/booking/GoogleCalendarConnect'
 import { googleCalendarConfigured } from '@/lib/booking/google/oauth'
 import { NotificationSettings } from '@/components/app/booking/NotificationSettings'
+import { WeeklyAvailabilitySummary } from '@/components/app/booking/WeeklyAvailabilitySummary'
+import { ruleFromRow, type AvailabilityRuleRow as EngineRuleRow } from '@/lib/booking/availability'
+import { describeWeeklyAvailability, summaryTimezone } from '@/lib/booking/availability-summary'
 import { CommTimeline } from '@/components/comms/CommTimeline'
 import { BOOKING_CONFIG_ENTITIES, toTimelineEntry, type ConfigAuditRow } from '@/lib/booking/config-history'
 import { DEFAULT_REMINDER_LEAD_HOURS } from '@/lib/booking/notify-core'
@@ -137,6 +140,11 @@ export default async function BookingSettingsPage() {
   // Settings-change history → reusable timeline entries (no bodies/PII in config audits).
   const historyEntries = (historyRes.ok ? historyRes.data : []).map(toTimelineEntry)
 
+  // Weekly template summary — reads rules through the SAME engine mapper (ruleFromRow) the slot
+  // calculator uses, so this FSA-facing view can't drift from the slots clients actually get.
+  const weeklyDays = describeWeeklyAvailability(rules.map((r) => ruleFromRow(r as unknown as EngineRuleRow)))
+  const weeklyTz = summaryTimezone(weeklyDays)
+
   return (
     <SettingsShell
       title="Booking"
@@ -159,7 +167,10 @@ export default async function BookingSettingsPage() {
         title="Weekly hours"
         description="Recurring working-hours windows the availability engine draws slots from. Times are in the selected timezone and stay correct across daylight-saving shifts."
       >
-        <AvailabilityRulesManager initialRules={rules} />
+        <div className="space-y-4">
+          <WeeklyAvailabilitySummary days={weeklyDays} timezone={weeklyTz} />
+          <AvailabilityRulesManager initialRules={rules} />
+        </div>
       </SettingsSection>
 
       <SettingsSection

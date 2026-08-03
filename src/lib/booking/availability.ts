@@ -54,6 +54,34 @@ export interface AvailabilityRule {
   active?: boolean // defaults true
 }
 
+/** A raw `availability_rules` DB row (the columns the mapper reads). */
+export interface AvailabilityRuleRow {
+  weekday: number
+  start_time: string
+  end_time: string
+  timezone: string
+  effective_start?: string | null
+  effective_end?: string | null
+  active?: boolean | null
+}
+
+/**
+ * Canonical DB-row → engine `AvailabilityRule` mapping. The ONE place a stored rule is interpreted,
+ * so the slot engine (slots.ts) and the FSA-facing weekly summary (availability-summary.ts) read a
+ * rule identically — active semantics (`active !== false`), "HH:MM" wall time, effective range.
+ */
+export function ruleFromRow(r: AvailabilityRuleRow): AvailabilityRule {
+  return {
+    weekday: r.weekday,
+    startTime: String(r.start_time).slice(0, 5),
+    endTime: String(r.end_time).slice(0, 5),
+    timezone: r.timezone,
+    effectiveStart: r.effective_start ?? null,
+    effectiveEnd: r.effective_end ?? null,
+    active: r.active !== false,
+  }
+}
+
 /** A busy interval (existing appointment / blackout / external-calendar block), UTC ISO. */
 export interface BusyBlock {
   startsAt: string

@@ -169,3 +169,27 @@ view switcher Agenda ↔ Week ↔ Month on the calendar page.
 Recommended: subagent-driven, one slice per subagent + adversarial review, `frontend-design` /
 `impeccable` gated. **Start with P2.1** (safe read/UI, no engine touch) after this plan is reviewed.
 Resolve **D-P2-1** before P2.4's reschedule. Push/PR/merge/deploy withheld pending authorization.
+
+---
+
+## P5 handoff notes (recorded 2026-08-03, owner-directed)
+
+Two non-blocking items surfaced during P2.3/P2.4 that P5 must honor:
+
+1. **Audit-timeline title convention.** Friendly timeline titles (`CommTimeline` via
+   `lib/comms/timeline.ts` `mapAudit`) depend on a **semantic `event` string in the audit `diff`**
+   (`note_added`, `task_created`, `rescheduled`, …), mapped through `EVENT_TITLES`; a per-action
+   override (`ACTION_TITLES`, e.g. `stage.changed` → "Status changed") is next, and the title-cased
+   raw action is the generic fallback if neither is present. **When P5 adds new audited events that
+   should read nicely in the timeline, set `diff.event` and extend `EVENT_TITLES` — do not rely on
+   the raw action verb.** The raw `diff` is never dumped; only `diff.note` (gated by `reveal.bodies`)
+   and a non-sensitive `diff.title` summary are surfaced.
+
+2. **Reschedule is a notification trigger — reclassify under P5's lifecycle.** The FSA reschedule
+   endpoint (`/api/app/appointments/[id]/reschedule`) and the public flow both currently re-send via
+   `sendBookingConfirmation` (an approved confirmation template) through the shared mover
+   (`rescheduleAppointment`). **When P5's communication-lifecycle classification lands, a reschedule
+   must route as a `"rescheduled"` lifecycle event (NOT a fresh booking confirmation), and any SMS
+   leg must be gated on consent** (the §12 dispatcher gate). The reminder is already re-anchored
+   (the mover clears `reminder_sent_at`), so P5 only needs to reclassify the immediate notice, not
+   the reminder path.

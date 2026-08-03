@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, action: 'cancel' })
     }
 
-    const r = await rescheduleAppointment(resolved.appt, resolved.typeSlug, v.data.newStartsAt, new Date().toISOString())
+    const r = await rescheduleAppointment(resolved.appt, resolved.typeSlug, v.data.newStartsAt, new Date().toISOString(), 'public')
     if (!r.ok) {
       const status = r.kind === 'taken' || r.kind === 'unavailable' ? 409 : r.kind === 'not_reschedulable' ? 409 : 500
       return NextResponse.json({ error: r.message, reason: r.kind }, { status })

@@ -7,6 +7,7 @@
 // — no new backend, no second appointment source of truth.
 
 import * as React from 'react'
+import Link from 'next/link'
 import { CalendarDays, Download } from 'lucide-react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Input } from '@/components/ui/input'
@@ -148,7 +149,11 @@ export function AppointmentList({ rows }: { rows: AppointmentListRow[] }) {
                 return (
                   <TableRow key={a.id}>
                     <TableCell className="whitespace-nowrap tabular-nums">{fmtWhen(a.whenIso)}</TableCell>
-                    <TableCell className="font-medium text-foreground">{a.personName}</TableCell>
+                    <TableCell className="font-medium">
+                      <Link href={`/app/calendar/${a.id}`} className="text-primary hover:underline">
+                        {a.personName}
+                      </Link>
+                    </TableCell>
                     <TableCell className="text-muted-foreground">{a.typeName ?? '—'}</TableCell>
                     <TableCell className="text-muted-foreground">
                       {a.meetingMode ? meetingModeLabel(a.meetingMode) : '—'}

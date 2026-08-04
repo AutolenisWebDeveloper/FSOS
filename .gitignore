@@ -41,3 +41,10 @@ data/rule_fetch_log.json
 
 # Superpowers subagent-driven-development scratch (controller working state)
 .superpowers/
+
+# Deliverability skill helper-script output/cache (validate_dns.mjs / lint_email.mjs are
+# stdout-only by design; this guards against any future local cache or report files)
+.claude/skills/fsos-dns-auth/scripts/.cache/
+.claude/skills/fsos-dns-auth/scripts/*.out.json
+.claude/skills/fsos-email-template-qa/scripts/.cache/
+.claude/skills/fsos-email-template-qa/scripts/*.out.json

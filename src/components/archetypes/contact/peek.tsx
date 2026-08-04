@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import Link from 'next/link'
-import { ArrowRight, Users, FileText, Target } from 'lucide-react'
+import { ArrowRight, Users, FileText, Target, Sparkles } from 'lucide-react'
 import { DrawerShell } from '@/components/archetypes/overlays'
 import { ContactStatusRow } from './status-row'
 import { Button } from '@/components/ui/button'
@@ -28,6 +28,7 @@ interface PeekData {
   hasSecurities: boolean
   counts: { members: number; policies: number; openOpportunities: number }
   nextAction: string
+  advisorInsight: string | null
   recent: { id: string; kind: string | null; note: string | null; created_at: string }[]
 }
 
@@ -124,6 +125,15 @@ export function ContactPeek({
             <PeekStat icon={FileText} label="Policies" value={data.counts.policies} />
             <PeekStat icon={Target} label="Open opps" value={data.counts.openOpportunities} />
           </div>
+
+          {data.advisorInsight ? (
+            <div className="rounded-lg border border-primary/25 bg-primary-soft/20 p-3">
+              <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-primary">
+                <Sparkles className="h-3.5 w-3.5" aria-hidden /> AI Advisor
+              </p>
+              <p className="mt-1 text-sm">{data.advisorInsight}</p>
+            </div>
+          ) : null}
 
           <div className="rounded-lg border bg-muted/20 p-3">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Next action</p>

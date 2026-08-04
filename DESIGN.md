@@ -323,6 +323,8 @@ Reusable, Server-Component-safe page skeletons. **Compose pages from these — d
   - `ContactActionBar` — the single primary-action strip (New opportunity · New review · Schedule · Add member · Log activity), rendered in the `DetailShell` `actions` slot. Links only to real destinations (no dead-ends). Dispatcher-gated Call/SMS/Email land with the comms compose surface.
   - `ContactSectionNav` + `CONTACT_SECTIONS` — the six canonical Contact 360 sections (Overview · People · Financial Planning · CRM · Documents · Preferences); horizontally scrollable, active section passed in for static layouts.
   - `ContactTimeline` — the record spine: a chronological stream read from the append-only `activities` table, rendered in the `DetailShell` `rail` slot. Reusable with a member entity for the member-scoped variant.
+  - `ContactPeek` (+ `ContactPeekProvider` / `useContactPeek`) — the reusable "peek, don't duplicate" drawer (spec §4.4) invoked from the list and every work-item; reuses `DrawerShell` + `ContactStatusRow`, backed by the firewall-safe `/api/households/[id]/peek` endpoint.
+  - `ContactAdvisor` — the persistent, GREEN-ZONE AI Advisor panel (spec §8). Renders the deterministic insight engine (`src/lib/contacts/advisor.ts`): facts/deadlines/gaps + workflow-only recommended actions. Never a product/suitability recommendation; `is_security` signals excluded (firewall). The condensed top insight also appears in the Contact Peek.
 
 ---
 

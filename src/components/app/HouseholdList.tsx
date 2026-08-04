@@ -2,12 +2,13 @@
 
 import * as React from 'react'
 import Link from 'next/link'
-import { Users, Download } from 'lucide-react'
+import { Users, Download, PanelRightOpen } from 'lucide-react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/archetypes'
+import { ContactPeek } from '@/components/archetypes/contact/peek'
 
 export interface HouseholdRow {
   id: string
@@ -23,6 +24,7 @@ export interface HouseholdRow {
 export function HouseholdList({ rows }: { rows: HouseholdRow[] }) {
   const [q, setQ] = React.useState('')
   const [dncOnly, setDncOnly] = React.useState(false)
+  const [peekId, setPeekId] = React.useState<string | null>(null)
 
   const filtered = React.useMemo(() => {
     let r = rows
@@ -82,6 +84,7 @@ export function HouseholdList({ rows }: { rows: HouseholdRow[] }) {
                 <TableHead className="text-right">Members</TableHead>
                 <TableHead className="text-right">Policies</TableHead>
                 <TableHead className="text-right">Opportunities</TableHead>
+                <TableHead className="w-10 text-right"><span className="sr-only">Peek</span></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -96,12 +99,25 @@ export function HouseholdList({ rows }: { rows: HouseholdRow[] }) {
                   <TableCell className="text-right tabular-nums">{h.members}</TableCell>
                   <TableCell className="text-right tabular-nums">{h.policies}</TableCell>
                   <TableCell className="text-right tabular-nums">{h.opportunities}</TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => setPeekId(h.id)}
+                      aria-label={`Peek at ${h.primary_name}`}
+                      title="Quick look"
+                    >
+                      <PanelRightOpen className="h-4 w-4" />
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </div>
       )}
+      <ContactPeek householdId={peekId} onOpenChange={(v) => !v && setPeekId(null)} />
     </div>
   )
 }

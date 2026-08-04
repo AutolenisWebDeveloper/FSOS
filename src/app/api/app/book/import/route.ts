@@ -137,7 +137,7 @@ export async function POST(req: NextRequest) {
       const p = policyByNumber.get(pn)!
       const hid = householdId.get(p.book_owner_key)
       if (!hid) return null
-      return { household_id: hid, policy_number: p.policy_number, product_name: p.product_name, status: p.status, is_with_us: true, is_security: p.is_security, premium: null, face_amount: p.face_amount, accumulation_value: p.accumulation_value, effective_date: p.issue_date, conversion_deadline: p.conversion_date, source_system: 'fnwl', source_data: p.source_data }
+      return { household_id: hid, policy_number: p.policy_number, product_name: p.product_name, status: p.status, is_with_us: true, is_security: p.is_security, premium: null, face_amount: p.face_amount, accumulation_value: p.accumulation_value, effective_date: p.issue_date, conversion_deadline: p.conversion_date, series_code: p.series_code, source_system: 'fnwl', source_data: p.source_data }
     }).filter((r): r is NonNullable<typeof r> => r !== null)
     await insertChunked(db, 'household_policies', newPolicyRows)
 

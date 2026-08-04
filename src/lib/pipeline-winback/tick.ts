@@ -15,6 +15,9 @@ import { writeAudit } from '@/lib/audit/log'
 import { sendThroughGate, isTemplateApproved } from '@/lib/comms/send'
 import { campaignDispatchContext, campaignIdentityContext } from '@/lib/comms/campaign'
 import { smsA2pApproved } from '@/lib/comms/a2p'
+import { getOrCreateConversation } from '@/lib/comms/conversations'
+import { openerClassFor } from '@/lib/comms/console'
+import { armCampaignAiConversation } from '@/lib/comms/campaign-ai'
 import { canDispatch } from './engine'
 import { evaluateWinbackEligibility, classifyRecheckOutcome } from './eligibility'
 import { computeTouchPlan, TOUCH_SCHEDULE, type TouchKind } from './schedule'
@@ -22,6 +25,8 @@ import { loadCampaign, loadWinbackEligibilityInput, type WinbackCampaignConfig }
 import { enrollOpportunity } from './enroll'
 
 const SYSTEM = 'agent:marketing_automation'
+// The green-zone agent that responds on a Pipeline Win-Back AI-conversation thread once armed.
+const AI_AGENT_KEY = 'pipeline'
 
 interface TouchRow {
   touch_no: number
@@ -220,6 +225,20 @@ async function fireMessageTouch(
     return false
   }
 
+  // AI-conversation touch: resolve/create the (channel, contact) thread so the opener lands on a
+  // real conversation we can then arm for governed AI auto-reply (ADR-032 shared subsystem).
+  const isAi = touch.kind === 'ai_conversation'
+  const conv = isAi ? await getOrCreateConversation(channel, to) : null
+
+  // Arm this execution for retry/dead-letter recovery (§20): a genuine send failure that leaves the
+  // row 'scheduled' becomes visible to the retry sweep + health panel. A successful send flips it to
+  // 'sent' (the sweep only walks still-'scheduled' rows), so this never dead-letters a delivered touch.
+  await db
+    .from('pipeline_winback_executions')
+    .update({ idempotency_key: `${e.campaign_id}:${e.id}:${touchNo}:${channel}`, next_retry_at: new Date(Date.now() + 5 * 60000).toISOString() })
+    .eq('enrollment_id', e.id)
+    .eq('touch_no', touchNo)
+
   const outcome = await sendThroughGate({
     channel,
     to,
@@ -239,13 +258,23 @@ async function fireMessageTouch(
     identity: campaignIdentityContext(dispatchCtx.purpose),
     delegation: dispatchCtx.delegation,
     ownership: dispatchCtx.ownership ?? { representedAgencyId: e.agency_id },
-    aiGenerated: touch.kind === 'ai_conversation',
+    aiGenerated: isAi,
+    conversationId: isAi ? conv?.id ?? null : undefined,
+    aiAuthorAgentKey: isAi ? AI_AGENT_KEY : undefined,
+    aiMessageClass: isAi ? openerClassFor('approved_template') : undefined,
   })
+  // On a delivered AI opener, arm the thread so the client's replies are answered by the governed
+  // conversation subsystem (fails closed on securities/disabled-agent — replies then escalate).
+  let aiArmed = false
+  if (isAi && outcome.sent && conv) {
+    aiArmed = await armCampaignAiConversation(conv.id, AI_AGENT_KEY, conv.is_security, SYSTEM)
+  }
   await markExecution(db, e.id, touchNo, outcome.sent ? 'sent' : 'suppressed', {
     channel,
     kind: touch.kind,
     reason: outcome.reason,
     messageId: outcome.messageId,
+    ...(isAi ? { ai_armed: aiArmed } : {}),
   })
   return outcome.sent
 }

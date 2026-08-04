@@ -65,7 +65,7 @@ export default async function HouseholdsPage() {
   }
 
   return (
-    <ListShell title="Households" description="Client households in your book." breadcrumb={[{ label: 'FSA', href: '/app' }, { label: 'Households' }]} actions={actions}>
+    <ListShell title="Contacts" description="Client households and members in your book." breadcrumb={[{ label: 'FSA', href: '/app' }, { label: 'Contacts' }]} actions={actions}>
       {body}
     </ListShell>
   )

@@ -7,3 +7,5 @@ export * from './overlays'
 // Design-system primitives (docs/design-system.md) surfaced alongside the shells.
 export { MonoLabel, Numeric, Money } from '@/components/ui/typography'
 export { SecuritiesChip, SecuritiesBanner, securitiesRowClass } from '@/components/ui/securities'
+// Contact 360 shared components (redesign spec §12 — mandatory design-system reuse).
+export * from './contact'

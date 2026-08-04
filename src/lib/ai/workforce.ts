@@ -32,11 +32,14 @@ import { writeAudit } from '@/lib/audit/log'
 import {
   OUTREACH_AGENTS,
   OUTREACH_PROMPTS,
+  OUTREACH_MESSAGE_CLASS,
   buildDraftUserContent,
+  outreachPurpose,
   priorityOf,
   selectForQuota,
   type OutreachAgentKey,
   type OutreachCandidate,
+  type OutreachSource,
 } from '@/lib/ai/outreach'
 
 const CAP_PER_SOURCE = 400 // safety cap on rows scanned per detection source
@@ -434,6 +437,12 @@ export async function runOutreachAgent(agentKey: OutreachAgentKey): Promise<{ se
           isSecurity: false,
           aiGenerated: true,
           aiAuthorAgentKey: agentKey,
+          // §9 purpose (drives purpose-scoped consent + frequency + unsubscribe) and the
+          // §11 AI message class. Without these the §12 evaluator fails safe with
+          // `missing_purpose_classification` / draft_only and NO outreach is ever auto-sent.
+          // The send-time gate still re-checks the recipient's actual consent for this purpose.
+          purpose: outreachPurpose(item.source as OutreachSource),
+          aiMessageClass: OUTREACH_MESSAGE_CLASS,
           recipientContext: { full_name: rec.name },
         })
 

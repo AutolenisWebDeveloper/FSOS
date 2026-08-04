@@ -13,13 +13,23 @@ import { createRequire } from 'node:module'
 const out = mkdtempSync(join(tmpdir(), 'fsos-workforce-'))
 execSync(
   `npx tsc src/lib/ai/outreach.ts --outDir ${out} --module commonjs --target es2020 ` +
-    `--moduleResolution node --skipLibCheck --esModuleInterop`,
+    // --ignoreConfig: compile this ONE pure file in isolation (never load the project
+    // tsconfig — TS5112 on newer tsc otherwise). --ignoreDeprecations: silence the
+    // node10 moduleResolution deprecation notice. Both keep the original isolated-compile
+    // intent under both old and new TypeScript.
+    `--moduleResolution node --skipLibCheck --esModuleInterop --ignoreConfig --ignoreDeprecations 6.0`,
   { stdio: 'inherit' },
 )
 const require = createRequire(import.meta.url)
-const { priorityOf, isSelectable, selectForQuota, OUTREACH_PROMPTS, OUTREACH_AGENTS } = require(
-  join(out, 'outreach.js'),
-)
+const {
+  priorityOf,
+  isSelectable,
+  selectForQuota,
+  OUTREACH_PROMPTS,
+  OUTREACH_AGENTS,
+  OUTREACH_MESSAGE_CLASS,
+  outreachPurpose,
+} = require(join(out, 'outreach.js'))
 
 let passed = 0
 const t = (name, fn) => { fn(); passed++; console.log('  ✓', name) }
@@ -128,6 +138,30 @@ t('life_winback is a first-class outreach agent (win-back promoted off marketing
   assert.ok(OUTREACH_AGENTS.includes('life_winback'), 'life_winback must be a registered outreach agent')
   assert.ok(!OUTREACH_AGENTS.includes('marketing_automation'), 'marketing_automation is no longer an outreach agent (campaign-dispatch actor only)')
   assert.match(OUTREACH_PROMPTS.life_winback, /re-?engage|reconnect/i)
+})
+
+console.log('§9 purpose + §11 class classification (unblocks auto-send — no missing_purpose_classification)')
+
+t('every outreach source classifies to exactly one non-empty §9 purpose', () => {
+  // A missing/undefined purpose is the exact bug that hard-blocked all workforce SMS with
+  // `missing_purpose_classification`. Every source the dispatch path can carry must map.
+  for (const source of ['cross_sell', 'term_conversion', 'referral_followup', 'win_back']) {
+    const p = outreachPurpose(source)
+    assert.ok(p && typeof p === 'string', `source ${source} must classify to a purpose`)
+  }
+})
+
+t('growth outreach is MARKETING; a term-conversion window is POLICY_DEADLINE', () => {
+  assert.equal(outreachPurpose('cross_sell'), 'MARKETING')
+  assert.equal(outreachPurpose('referral_followup'), 'MARKETING')
+  assert.equal(outreachPurpose('win_back'), 'MARKETING')
+  assert.equal(outreachPurpose('term_conversion'), 'POLICY_DEADLINE')
+})
+
+t('workforce openers are classified approved_first_touch (an auto-send green-zone class)', () => {
+  // Must be one of the auto-send classes in ai-authority.ts — otherwise the §11 authority
+  // is draft_only and the autonomous agents can never actually send.
+  assert.equal(OUTREACH_MESSAGE_CLASS, 'approved_first_touch')
 })
 
 console.log(`\nAI Workforce: ${passed} assertions passed.`)

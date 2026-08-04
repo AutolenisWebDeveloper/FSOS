@@ -13,3 +13,4 @@ export {
 export { ContactStatusRow } from './status-row'
 export { ContactTimeline } from './timeline'
 export { ContactActionBar } from './action-bar'
+export { ContactPeek, ContactPeekProvider, useContactPeek } from './peek'

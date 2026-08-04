@@ -26,6 +26,7 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
   }
 }
 
+export const getJson = <T = unknown>(url: string) => request<T>('GET', url)
 export const postJson = <T = unknown>(url: string, body?: unknown) => request<T>('POST', url, body)
 export const putJson = <T = unknown>(url: string, body?: unknown) => request<T>('PUT', url, body)
 export const patchJson = <T = unknown>(url: string, body?: unknown) => request<T>('PATCH', url, body)

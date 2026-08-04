@@ -265,25 +265,6 @@ const FSA: Workspace[] = [
     ],
   },
   {
-    id: 'contacts',
-    label: 'Contacts',
-    portal: 'fsa',
-    section: 'Book',
-    icon: 'Contact',
-    home: '/app/contacts',
-    match: ['/app/contacts'],
-    description: 'People across the book — leads, members, and FFS contacts.',
-    nav: [
-      { href: '/app/contacts', label: 'All Contacts', icon: 'Contact', exact: true },
-      { href: '/app/contacts/segments', label: 'Segments', icon: 'Users' },
-      { href: '/app/contacts/review', label: 'Import Review', icon: 'ClipboardCheck' },
-      { href: '/app/contacts/ffs', label: 'FFS Contacts', icon: 'PhoneCall' },
-      { href: '/app/contacts/new', label: 'Add Contact', icon: 'UserPlus' },
-      { href: '/app/contacts/import', label: 'Import', icon: 'FileUp' },
-      { href: '/app/contacts/upload', label: 'Upload', icon: 'Upload' },
-    ],
-  },
-  {
     id: 'referrals',
     label: 'Referrals',
     portal: 'fsa',
@@ -300,17 +281,24 @@ const FSA: Workspace[] = [
   },
   {
     id: 'households',
-    label: 'Households',
+    label: 'Contacts',
     portal: 'fsa',
     section: 'Book',
-    icon: 'Users',
+    icon: 'Contact',
     home: '/app/households',
-    match: ['/app/households'],
-    description: 'Household 360 — members, coverage, reviews, and opportunities.',
+    // Canonical CRM Contacts surface (redesign §1). Owns both the household
+    // aggregate and the legacy /app/contacts sub-surfaces (segments, review,
+    // detail) so their sidebar resolves to this one unified workspace; the bare
+    // /app/contacts list redirects here.
+    match: ['/app/households', '/app/contacts'],
+    description: 'Contacts across the book — households, members, segments, and leads.',
     nav: [
-      { href: '/app/households', label: 'All Households', icon: 'Users', exact: true },
-      { href: '/app/households/new', label: 'Add Household', icon: 'UserPlus' },
+      { href: '/app/households', label: 'All Contacts', icon: 'Contact', exact: true },
+      { href: '/app/contacts/segments', label: 'Segments', icon: 'Users' },
       { href: '/app/uploads', label: 'Upload Center', icon: 'Upload' },
+      { href: '/app/contacts/review', label: 'Import Review', icon: 'ClipboardCheck' },
+      { href: '/app/directory', label: 'FFS Directory', icon: 'PhoneCall' },
+      { href: '/app/households/new', label: 'Add Household', icon: 'UserPlus' },
     ],
   },
   {

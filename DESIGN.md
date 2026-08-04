@@ -328,6 +328,7 @@ Reusable, Server-Component-safe page skeletons. **Compose pages from these — d
   - `ContactTimeline` — the record spine: a chronological stream read from the append-only `activities` table, rendered in the `DetailShell` `rail` slot. Reusable with a member entity for the member-scoped variant.
   - `ContactPeek` (+ `ContactPeekProvider` / `useContactPeek`) — the reusable "peek, don't duplicate" drawer (spec §4.4) invoked from the list and every work-item; reuses `DrawerShell` + `ContactStatusRow`, backed by the firewall-safe `/api/households/[id]/peek` endpoint.
   - `ContactAdvisor` — the persistent, GREEN-ZONE AI Advisor panel (spec §8). Renders the deterministic insight engine (`src/lib/contacts/advisor.ts`): facts/deadlines/gaps + workflow-only recommended actions. Never a product/suitability recommendation; `is_security` signals excluded (firewall). The condensed top insight also appears in the Contact Peek.
+  - `ContactRelationshipGraph` — the People-section Relationship Intelligence graph (spec §10). Renders the household grouped by canonical role via the pure classifier (`src/lib/contacts/relationships.ts`) — members, non-person entities (business/trust), and the referring agent (AOR) as node types — and surfaces cross-household relationships (`+n`).
 
 ---
 

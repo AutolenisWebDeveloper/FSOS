@@ -2,14 +2,14 @@
 
 import * as React from 'react'
 import Link from 'next/link'
-import { Search, Building2, Users, UserPlus, Loader2 } from 'lucide-react'
+import { Search, Building2, Users, UserPlus, FileText, Files, Loader2 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { MonoLabel } from '@/components/ui/typography'
 import { EmptyState } from '@/components/archetypes'
 
 type Hit = {
-  type: 'household' | 'member' | 'agency' | 'referral'
+  type: 'household' | 'member' | 'agency' | 'referral' | 'policy' | 'document'
   id: string
   title: string
   subtitle: string | null
@@ -21,6 +21,8 @@ const ICON: Record<Hit['type'], LucideIcon> = {
   member: Users,
   agency: Building2,
   referral: UserPlus,
+  policy: FileText,
+  document: Files,
 }
 
 const TYPE_LABEL: Record<Hit['type'], string> = {
@@ -28,6 +30,8 @@ const TYPE_LABEL: Record<Hit['type'], string> = {
   member: 'Member',
   agency: 'Agency',
   referral: 'Referral',
+  policy: 'Policy',
+  document: 'Document',
 }
 
 // Client global-search console. Debounced RLS-scoped fetch against
@@ -80,7 +84,7 @@ export function GlobalSearch({ initialQuery = '' }: { initialQuery?: string }) {
           autoFocus
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search households, members, agencies, referrals…"
+          placeholder="Search households, members, agencies, policies, documents…"
           aria-label="Global search"
           className="pl-9"
         />

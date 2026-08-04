@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
 import { requireApiRole } from '@/lib/auth/api'
+import { sanitize } from '@/lib/search/sanitize'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -27,20 +28,11 @@ export const runtime = 'nodejs'
 // removed records never surface in search.
 
 type SearchHit = {
-  type: 'household' | 'member' | 'agency' | 'referral'
+  type: 'household' | 'member' | 'agency' | 'referral' | 'policy' | 'document'
   id: string
   title: string
   subtitle: string | null
   href: string
-}
-
-function sanitize(q: string): { like: string; digits: string } | null {
-  const safe = q
-    .replace(/[,()*]/g, ' ')
-    .trim()
-    .replace(/[%_\\]/g, (m) => `\\${m}`)
-  if (!safe) return null
-  return { like: `%${safe}%`, digits: q.replace(/\D/g, '') }
 }
 
 export async function GET(req: NextRequest) {
@@ -60,7 +52,7 @@ export async function GET(req: NextRequest) {
   if (s.digits.length >= 3) memberFilter.push(`phone.ilike.%${s.digits}%`)
 
   try {
-    const [households, members, agencies, referrals] = await Promise.all([
+    const [households, members, agencies, referrals, policies, documents] = await Promise.all([
       db.from('households').select('id, primary_name, city, state').ilike('primary_name', s.like).is('deleted_at', null).limit(limit),
       db.from('household_members').select('id, household_id, full_name, relationship').or(memberFilter.join(',')).is('deleted_at', null).limit(limit),
       db
@@ -70,6 +62,18 @@ export async function GET(req: NextRequest) {
         .is('deleted_at', null)
         .limit(limit),
       db.from('referrals').select('id, referred_name, status').ilike('referred_name', s.like).is('deleted_at', null).limit(limit),
+      // Policy-number search. Firewall (guardrail 1): is_security rows are
+      // EXCLUDED — a securities record never surfaces through search, and only
+      // the non-substantive policy number + product name are read.
+      db
+        .from('household_policies')
+        .select('id, policy_number, product_name')
+        .ilike('policy_number', s.like)
+        .eq('is_security', false)
+        .is('deleted_at', null)
+        .limit(limit),
+      // Document search by (non-substantive) classification label.
+      db.from('documents').select('id, classification, entity_type').ilike('classification', s.like).limit(limit),
     ])
 
     const results: SearchHit[] = []
@@ -109,8 +113,26 @@ export async function GET(req: NextRequest) {
         href: `/app/referrals/${r.id}`,
       })
     }
+    for (const p of policies.data ?? []) {
+      results.push({
+        type: 'policy',
+        id: p.id,
+        title: p.policy_number || 'Policy',
+        subtitle: p.product_name || 'Policy',
+        href: `/app/policies/${p.id}`,
+      })
+    }
+    for (const d of documents.data ?? []) {
+      results.push({
+        type: 'document',
+        id: d.id,
+        title: d.classification || 'Document',
+        subtitle: d.entity_type || null,
+        href: `/app/documents/${d.id}`,
+      })
+    }
 
-    return NextResponse.json({ results: results.slice(0, limit * 2) })
+    return NextResponse.json({ results: results.slice(0, limit * 3) })
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Search failed' }, { status: 500 })
   }

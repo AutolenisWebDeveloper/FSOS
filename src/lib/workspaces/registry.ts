@@ -294,6 +294,7 @@ const FSA: Workspace[] = [
     description: 'Contacts across the book — households, members, segments, and leads.',
     nav: [
       { href: '/app/households', label: 'All Contacts', icon: 'Contact', exact: true },
+      { href: '/app/contacts', label: 'Contact Center', icon: 'Contact' },
       { href: '/app/contacts/segments', label: 'Segments', icon: 'Users' },
       { href: '/app/uploads', label: 'Upload Center', icon: 'Upload' },
       { href: '/app/contacts/review', label: 'Import Review', icon: 'ClipboardCheck' },

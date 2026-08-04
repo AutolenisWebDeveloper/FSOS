@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
   if (s.digits.length >= 3) memberFilter.push(`phone.ilike.%${s.digits}%`)
 
   try {
-    const [households, members, agencies, referrals, policies, documents] = await Promise.all([
+    const [households, members, agencies, referrals, policies, carrierPolicies, documents] = await Promise.all([
       db.from('households').select('id, primary_name, city, state').ilike('primary_name', s.like).is('deleted_at', null).limit(limit),
       db.from('household_members').select('id, household_id, full_name, relationship').or(memberFilter.join(',')).is('deleted_at', null).limit(limit),
       db
@@ -62,13 +62,21 @@ export async function GET(req: NextRequest) {
         .is('deleted_at', null)
         .limit(limit),
       db.from('referrals').select('id, referred_name, status').ilike('referred_name', s.like).is('deleted_at', null).limit(limit),
-      // Policy-number search. Firewall (guardrail 1): is_security rows are
-      // EXCLUDED — a securities record never surfaces through search, and only
-      // the non-substantive policy number + product name are read.
+      // Policy search by policy number, series code, AOR code, or product/LOB (§11).
+      // Firewall (guardrail 1): is_security rows are EXCLUDED — a securities record
+      // never surfaces through search, and only non-substantive fields are read.
       db
         .from('household_policies')
-        .select('id, policy_number, product_name')
-        .ilike('policy_number', s.like)
+        .select('id, policy_number, product_name, series_code')
+        .or(`policy_number.ilike.${s.like},series_code.ilike.${s.like},aor_code.ilike.${s.like},product_name.ilike.${s.like}`)
+        .eq('is_security', false)
+        .is('deleted_at', null)
+        .limit(limit),
+      // Carrier search — inner-join carriers by name, resolving to the policy.
+      db
+        .from('household_policies')
+        .select('id, policy_number, product_name, carriers!inner(name)')
+        .ilike('carriers.name', s.like)
         .eq('is_security', false)
         .is('deleted_at', null)
         .limit(limit),
@@ -113,12 +121,21 @@ export async function GET(req: NextRequest) {
         href: `/app/referrals/${r.id}`,
       })
     }
-    for (const p of policies.data ?? []) {
+    // Merge field-matched + carrier-matched policies, deduped by id. Normalize the
+    // carrier-query rows (which embed `carriers` instead of `series_code`).
+    const seenPolicy = new Set<string>()
+    const policyHits: { id: string; policy_number: string | null; product_name: string | null; series_code: string | null }[] = [
+      ...(policies.data ?? []),
+      ...(carrierPolicies.data ?? []).map((p) => ({ id: p.id, policy_number: p.policy_number, product_name: p.product_name, series_code: null })),
+    ]
+    for (const p of policyHits) {
+      if (seenPolicy.has(p.id)) continue
+      seenPolicy.add(p.id)
       results.push({
         type: 'policy',
         id: p.id,
         title: p.policy_number || 'Policy',
-        subtitle: p.product_name || 'Policy',
+        subtitle: p.product_name || p.series_code || 'Policy',
         href: `/app/policies/${p.id}`,
       })
     }

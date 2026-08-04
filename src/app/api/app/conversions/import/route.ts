@@ -281,6 +281,8 @@ export async function POST(req: NextRequest) {
       }
       const existingData = (p.source_data && typeof p.source_data === 'object') ? p.source_data : {}
       patch.source_data = { ...existingData, conversion: conv }
+      // Promote AOR code to the first-class column so Global Search resolves it (§11).
+      if (r.aor_code) patch.aor_code = r.aor_code
       patch.is_with_us = true
       patch.is_security = false
       policyUpdates.push({ id: p.id, patch })

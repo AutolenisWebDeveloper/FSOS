@@ -85,8 +85,14 @@ export function PolicyForm({
         <Field id="premium" label="Premium" error={errors.premium}>
           <Input name="premium" type="number" min={0} step="0.01" />
         </Field>
+        <Field id="face_amount" label="Face amount" hint="Coverage — resolves {{PolicyFaceAmount}}" error={errors.face_amount}>
+          <Input name="face_amount" type="number" min={0} step="0.01" />
+        </Field>
         <Field id="effective_date" label="Effective date" error={errors.effective_date}>
           <Input name="effective_date" type="date" />
+        </Field>
+        <Field id="issue_date" label="Issue date" hint="Resolves {{PolicyIssueDate}}" error={errors.issue_date}>
+          <Input name="issue_date" type="date" />
         </Field>
         {isWithUs ? (
           <>

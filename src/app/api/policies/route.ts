@@ -5,6 +5,7 @@ import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { PolicyCreateSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
 import { assertNotSecuritiesSystemOfRecord, FirewallError } from '@/lib/compliance/firewall'
+import { policyTypeLabel } from '@/lib/policy-label'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -48,11 +49,14 @@ export async function POST(req: NextRequest) {
     const db = getDb()
     const actor = actorOf(auth.session)
 
-    // is_security is derived from the product (never stored securities substance).
+    // is_security AND the human-readable policy_type are both derived from the product (never
+    // stored securities substance). policy_type resolves {{PolicyType}} without a product join.
     let isSecurity = false
+    let policyType: string | null = null
     if (v.data.product_id) {
-      const { data: product } = await db.from('products').select('is_security').eq('id', v.data.product_id).maybeSingle()
+      const { data: product } = await db.from('products').select('is_security, family, subtype').eq('id', v.data.product_id).maybeSingle()
       isSecurity = product?.is_security === true
+      policyType = policyTypeLabel(product?.family ?? null, product?.subtype ?? null)
     }
 
     const { data, error } = await db
@@ -62,10 +66,13 @@ export async function POST(req: NextRequest) {
         carrier_id: v.data.carrier_id ?? null,
         product_id: v.data.product_id ?? null,
         policy_number: v.data.policy_number ?? null,
+        policy_type: policyType,
         status: v.data.status,
         is_with_us: v.data.is_with_us,
         premium: v.data.premium ?? null,
+        face_amount: v.data.face_amount ?? null,
         effective_date: v.data.effective_date ?? null,
+        issue_date: v.data.issue_date ?? null,
         renewal_date: v.data.renewal_date ?? null,
         x_date: v.data.x_date ?? null,
         conversion_deadline: v.data.conversion_deadline ?? null,

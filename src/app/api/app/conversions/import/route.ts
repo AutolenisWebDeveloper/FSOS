@@ -194,6 +194,8 @@ export async function POST(req: NextRequest) {
             household_id: hid,
             policy_number: p.policy_number,
             product_name: p.product_name,
+            // Denormalized {{PolicyType}} label — the imported product name is the human-readable type.
+            policy_type: p.product_name,
             status: 'active',
             is_with_us: true,
             is_security: p.is_security,

@@ -9,13 +9,18 @@ import { writeAudit } from '@/lib/audit/log'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
+const dateOrNull = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional()
 const PatchSchema = z
   .object({
     status: z.enum(POLICY_STATUS).optional(),
     policy_number: z.string().trim().max(80).optional(),
+    policy_type: z.string().trim().max(60).nullable().optional(),
     premium: z.coerce.number().min(0).optional(),
-    renewal_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
-    conversion_deadline: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+    face_amount: z.coerce.number().min(0).nullable().optional(),
+    effective_date: dateOrNull,
+    issue_date: dateOrNull,
+    renewal_date: dateOrNull,
+    conversion_deadline: dateOrNull,
     archived: z.boolean().optional(),
   })
   .refine((v) => Object.keys(v).length > 0, 'No changes')

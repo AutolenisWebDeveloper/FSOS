@@ -3,6 +3,7 @@ import { getDb } from '@/lib/supabase/client'
 import { configErrorResponse } from '@/lib/http'
 import { requireApiRole, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
+import { buildAdvisor, topInsight } from '@/lib/contacts/advisor'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -36,7 +37,7 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
     if (hh.error) return NextResponse.json({ error: 'Failed to load contact' }, { status: 500 })
     if (!hh.data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-    const [members, policies, openOpps, openReviews, securities, agency, recent] = await Promise.all([
+    const [members, policies, openOpps, openReviews, securities, agency, recent, memberRels, policyDetail, reviewDates] = await Promise.all([
       db.from('household_members').select('id', { count: 'exact', head: true }).eq('household_id', householdId).is('deleted_at', null),
       db.from('household_policies').select('id', { count: 'exact', head: true }).eq('household_id', householdId).is('deleted_at', null),
       db
@@ -57,6 +58,10 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
         .eq('entity_id', householdId)
         .order('created_at', { ascending: false })
         .limit(3),
+      // Advisor inputs (§8) for the condensed mini-summary (§4.4).
+      db.from('household_members').select('relationship').eq('household_id', householdId).is('deleted_at', null),
+      db.from('household_policies').select('is_with_us, is_security, status, conversion_deadline').eq('household_id', householdId).is('deleted_at', null),
+      db.from('reviews').select('created_at').eq('household_id', householdId).is('deleted_at', null),
     ])
 
     const memberCount = members.count ?? 0
@@ -64,6 +69,17 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
     const openOppCount = openOpps.count ?? 0
     const openReviewCount = openReviews.count ?? 0
     const hasSecurities = (securities.data?.length ?? 0) > 0
+
+    // Condensed AI Advisor summary — same green-zone engine as the record (§8).
+    const advisor = buildAdvisor({
+      householdId,
+      doNotContact: hh.data.do_not_contact,
+      members: memberRels.data ?? [],
+      policies: policyDetail.data ?? [],
+      reviews: reviewDates.data ?? [],
+      openOpportunities: openOppCount,
+    })
+    const advisorInsight = topInsight(advisor)?.text ?? null
 
     // Deterministic next-best-action hint (no AI in the peek path — cheap + safe).
     const nextAction =
@@ -89,6 +105,7 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
       hasSecurities,
       counts: { members: memberCount, policies: policyCount, openOpportunities: openOppCount },
       nextAction,
+      advisorInsight,
       recent: (recent.data ?? []).map((r) => ({ id: r.id, kind: r.kind, note: r.note, created_at: r.created_at })),
     })
   } catch (e) {

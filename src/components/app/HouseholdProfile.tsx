@@ -6,6 +6,7 @@ import {
   ContactStatusRow,
   ContactTimeline,
   ContactActionBar,
+  ContactAdvisor,
   CONTACT_SECTION_IDS,
   CONTACT_SECTIONS,
   type ContactSection,
@@ -87,6 +88,7 @@ export async function HouseholdProfile({ id, section }: { id: string; section: C
       actions={<ContactActionBar id={id} />}
       rail={<ContactTimeline entityId={id} />}
     >
+      <ContactAdvisor id={id} doNotContact={hh.do_not_contact} />
       <ContactSectionNav id={id} active={section} />
       <div className="mt-4">
         {section === 'overview' ? (

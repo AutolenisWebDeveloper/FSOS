@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import type { ReactNode } from 'react'
-import { DetailShell, ErrorState } from '@/components/archetypes'
+import { DetailShell, ErrorState, ContactTimeline } from '@/components/archetypes'
 import { Numeric } from '@/components/ui/typography'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { load } from '@/lib/data/query'
@@ -37,12 +37,21 @@ export default async function MemberDetailPage(props: { params: Promise<{ id: st
         { label: m.full_name },
       ]}
       rail={
-        <div className="space-y-3 text-sm">
-          <p className="font-medium">Related</p>
-          <ul className="space-y-1.5">
-            <li><Link href={`/app/households/${params.id}`} className="text-primary hover:underline">Household</Link></li>
-            <li><Link href={`/app/households/${params.id}/members`} className="text-primary hover:underline">All members</Link></li>
-          </ul>
+        <div className="space-y-6">
+          <div className="space-y-3 text-sm">
+            <p className="font-medium">Related</p>
+            <ul className="space-y-1.5">
+              <li><Link href={`/app/households/${params.id}`} className="text-primary hover:underline">Household</Link></li>
+              <li><Link href={`/app/households/${params.id}/members`} className="text-primary hover:underline">All members</Link></li>
+            </ul>
+          </div>
+          <ContactTimeline
+            householdId={params.id}
+            memberId={params.mid}
+            entityType="member"
+            entityId={params.mid}
+            heading="Member timeline"
+          />
         </div>
       }
     >

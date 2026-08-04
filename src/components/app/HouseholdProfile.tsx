@@ -87,7 +87,7 @@ export async function HouseholdProfile({ id, section }: { id: string; section: C
         <ContactStatusRow doNotContact={hh.do_not_contact} hasSecurities={hasSecurities} archived={!!hh.archived_at} />
       }
       actions={<ContactActionBar id={id} />}
-      rail={<ContactTimeline entityId={id} />}
+      rail={<ContactTimeline householdId={id} />}
     >
       <ContactAdvisor id={id} doNotContact={hh.do_not_contact} />
       <ContactSectionNav id={id} active={section} />

@@ -106,3 +106,29 @@ export function evaluateWinbackEligibility(input: WinbackEligibilityInput): Winb
 
   return { eligible: reasons.length === 0, reasons }
 }
+
+/** Outcome for an ALREADY-ENROLLED opportunity that fails the pre-touch recheck. */
+export type RecheckOutcome = 'suppressed' | 'paused_for_conversation' | 'exited'
+
+// Reasons that mean the campaign genuinely yields for good (advisor now owns it, or it was never a
+// real candidate) — terminal even when a conversation is also open.
+const TERMINAL_YIELD_REASONS = new Set<string>([
+  'securities_excluded', 'opted_out', 'active_advisor_opportunity', 'active_appointment',
+  'no_longer_eligible', 'not_candidate', 'not_stalled', 'duplicate_active',
+])
+
+/**
+ * Map a failed pre-touch recheck's reasons to the enrollment's next state (pure; ADR-018):
+ *  • securities/opt-out                                   → SUPPRESS (terminal compliance stop);
+ *  • a newly-open customer conversation, nothing terminal → PAUSE_FOR_CONVERSATION (resumable —
+ *    the resume-paused sweep returns it to 'active' once the conversation closes / goes quiet, so
+ *    a single reply never terminally strands the enrollment);
+ *  • anything else                                        → EXIT (yield to advisor / no-longer-eligible).
+ */
+export function classifyRecheckOutcome(reasons: readonly string[]): RecheckOutcome {
+  if (reasons.includes('securities_excluded') || reasons.includes('opted_out')) return 'suppressed'
+  if (reasons.includes('in_conversation') && !reasons.some((r) => TERMINAL_YIELD_REASONS.has(r))) {
+    return 'paused_for_conversation'
+  }
+  return 'exited'
+}

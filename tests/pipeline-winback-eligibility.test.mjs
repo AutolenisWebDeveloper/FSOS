@@ -17,7 +17,7 @@ execSync(
   { stdio: 'inherit' },
 )
 const require = createRequire(import.meta.url)
-const { evaluateWinbackEligibility, winbackCategory, WINBACK_CANDIDATE_STAGES } = require(join(out, 'eligibility.js'))
+const { evaluateWinbackEligibility, winbackCategory, WINBACK_CANDIDATE_STAGES, classifyRecheckOutcome } = require(join(out, 'eligibility.js'))
 
 let passed = 0
 const t = (name, fn) => { fn(); passed++; console.log('  ✓', name) }
@@ -104,6 +104,27 @@ t('maps each candidate stage to its category', () => {
   assert.equal(winbackCategory('prospect'), 'inactive')
   assert.equal(winbackCategory('fact_find'), 'inactive')
   assert.equal(winbackCategory('placed_issued'), null)
+})
+
+console.log('\nclassifyRecheckOutcome — a failed pre-touch recheck maps to the enrollment next-state (ADR-018)')
+
+t('securities/opt-out at recheck → SUPPRESS (terminal), even alongside a conversation', () => {
+  assert.equal(classifyRecheckOutcome(['securities_excluded']), 'suppressed')
+  assert.equal(classifyRecheckOutcome(['opted_out', 'in_conversation']), 'suppressed')
+})
+
+t('a newly-open customer conversation with no terminal reason → PAUSE (resumable, not stranded)', () => {
+  assert.equal(classifyRecheckOutcome(['in_conversation']), 'paused_for_conversation')
+})
+
+t('an advisor now owning it (appointment / advisor-opp) → EXIT even if a conversation is open', () => {
+  assert.equal(classifyRecheckOutcome(['in_conversation', 'active_appointment']), 'exited')
+  assert.equal(classifyRecheckOutcome(['in_conversation', 'active_advisor_opportunity']), 'exited')
+})
+
+t('no-longer-a-candidate (won/deleted/un-stalled) → EXIT', () => {
+  assert.equal(classifyRecheckOutcome(['no_longer_eligible']), 'exited')
+  assert.equal(classifyRecheckOutcome(['not_candidate']), 'exited')
 })
 
 console.log(`\n✓ pipeline-winback eligibility: ${passed} assertions passed`)

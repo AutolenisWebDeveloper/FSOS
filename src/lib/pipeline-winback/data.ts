@@ -89,19 +89,25 @@ async function hasOpenConversation(householdId: string | null): Promise<boolean>
 export async function loadWinbackEligibilityInput(
   campaign: WinbackCampaignConfig,
   opportunityId: string,
+  // At the pre-touch recheck the enrollment being advanced is itself a live row for this
+  // (campaign, opportunity); counting it raises `duplicate_active` and terminally self-exits the
+  // enrollment on its first touch. Recheck callers pass its id to exclude self; enroll-time
+  // callers omit it.
+  excludeEnrollmentId?: string,
 ): Promise<{ input: WinbackEligibilityInput; snapshot: WinbackSnapshot | null }> {
   const db = getDb()
   const snap = await loadWinbackSnapshot(opportunityId)
 
-  // A live enrollment for this opportunity+campaign (idempotent-enrollment guard).
-  const { data: prior } = await db
+  // A live enrollment for this opportunity+campaign (idempotent-enrollment guard). At recheck we
+  // exclude the enrollment currently being advanced so it does not flag itself as a duplicate.
+  let priorQ = db
     .from('pipeline_winback_enrollments')
     .select('id, status')
     .eq('campaign_id', campaign.id)
     .eq('opportunity_id', opportunityId)
     .in('status', ['active', 'paused_for_conversation', 'paused_by_admin'])
-    .limit(1)
-    .maybeSingle()
+  if (excludeEnrollmentId) priorQ = priorQ.neq('id', excludeEnrollmentId)
+  const { data: prior } = await priorQ.limit(1).maybeSingle()
 
   const inActiveConversation = await hasOpenConversation(snap?.household_id ?? null)
 

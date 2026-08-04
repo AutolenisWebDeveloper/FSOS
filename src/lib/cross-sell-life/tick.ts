@@ -93,11 +93,20 @@ export async function crossSellLifeTick(): Promise<TickResult> {
       }
 
       // Re-check eligibility BEFORE the touch (§3 — ownership/consent/appointment recheck).
-      const elig = evaluateEligibility(await loadEligibilityInput(cfg, e.household_id, e.member_id, nowISO))
+      const elig = evaluateEligibility(await loadEligibilityInput(cfg, e.household_id, e.member_id, nowISO, e.id))
       if (!elig.eligible) {
         await handleIneligible(db, e.id, elig.reasons, nowISO)
         exited++
         continue
+      }
+
+      // Honor the staged SMS A2P hold WITHOUT consuming the touch (dripAdvance-parity, §12): if
+      // SMS isn't approved yet and this is an SMS message touch, DEFER it — no execution claim and
+      // no cursor advance — so it retries next run and auto-sends the moment A2P is approved,
+      // instead of silently burning the touch as the cursor marches past it.
+      if (touch.kind !== 'advisor_outreach' && touch.template_id && !smsA2pApproved()) {
+        const { data: tpl } = await db.from('comm_templates').select('channel').eq('id', touch.template_id).maybeSingle()
+        if ((tpl?.channel === 'email' ? 'email' : 'sms') === 'sms') continue
       }
 
       // Idempotency: claim this touch's execution row with a deterministic key. If it already

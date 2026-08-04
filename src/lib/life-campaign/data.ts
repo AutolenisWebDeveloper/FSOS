@@ -64,6 +64,11 @@ export async function loadEligibilityInput(
   policyId: string,
   memberId: string,
   nowISO: string,
+  // At the pre-touch recheck the enrollment being advanced is itself an ACTIVE row for this
+  // (campaign, member); counting it would raise `duplicate_active` and terminally self-exit the
+  // enrollment on its very first touch. Callers rechecking an existing enrollment pass its id so
+  // the idempotent-enrollment guard excludes self. Enroll-time callers omit it (nothing to exclude).
+  excludeEnrollmentId?: string,
 ): Promise<EligibilityInput> {
   const db = getDb()
   const snap = await loadConversionSnapshot(policyId)
@@ -84,15 +89,16 @@ export async function loadEligibilityInput(
       .sort()
       .pop() ?? null
 
-  // An active enrollment for this member+campaign (idempotent-enrollment guard).
-  const { data: prior } = await db
+  // An active enrollment for this member+campaign (idempotent-enrollment guard). At recheck we
+  // exclude the enrollment currently being advanced so it does not flag itself as a duplicate.
+  let priorQ = db
     .from('life_campaign_enrollments')
     .select('id, status')
     .eq('campaign_id', campaign.id)
     .eq('member_id', memberId)
     .in('status', ['active', 'paused_for_conversation', 'paused_by_admin'])
-    .limit(1)
-    .maybeSingle()
+  if (excludeEnrollmentId) priorQ = priorQ.neq('id', excludeEnrollmentId)
+  const { data: prior } = await priorQ.limit(1).maybeSingle()
 
   // Marketing opt-out (household do_not_contact — the same suppression signal the segment
   // resolver uses; per-channel consent/DNC is additionally enforced by the send gate).

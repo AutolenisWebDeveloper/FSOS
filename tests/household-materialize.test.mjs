@@ -116,5 +116,24 @@ ok(store.householdByKey.size === 3, 'store holds 3 distinct households')
 const second = runBackfill(book, store)
 ok(second.hCreated === 0 && second.mCreated === 0, 're-run creates ZERO new households/members (idempotent)')
 
+console.log('materialize — winback_life cohort shape (address-less prospect → solo household)')
+// The Life Win-Back import stores name + state/zip but NO street address, so every
+// winback_life contact deterministically resolves to a SOLO household (hh:solo:<id>)
+// with a single PRIMARY member. Both the importer fix and migration 097 rely on this
+// exact shape — guard it so a future change to the grouping rule can't silently break
+// the win-back reachability backfill.
+const wb = { id: 'wb1', full_name: 'Dana Ruiz', last_name: 'Ruiz', address: null, city: null, state: 'TX', zip: '75070', contact_type: 'prospect', owner_scope: 'fsaU', agency_partnership_id: 'agP' }
+ok(householdOriginKey(wb) === 'hh:solo:wb1', 'winback contact (no street) → solo origin key')
+const pWb = planMaterialization(wb, {})
+ok(pWb.action === 'created' && pWb.createHousehold && pWb.createMember, 'winback contact → create household + member')
+ok(pWb.householdFields.primary_name === 'Dana Ruiz', 'solo household primary_name = contact full name')
+ok(pWb.householdFields.origin_key === 'hh:solo:wb1', 'household carries the solo origin_key')
+ok(pWb.householdFields.state === 'TX' && pWb.householdFields.zip === '75070', 'state/zip carried to household')
+ok(pWb.householdFields.owner_scope === 'fsaU' && pWb.householdFields.referring_agency_id === 'agP', 'owner_scope + agency carried (book attribution preserved)')
+ok(pWb.memberFields.relationship === 'primary' && pWb.memberFields.source_contact_id === 'wb1', 'member is primary + linked via source_contact_id (consent-backfill anchor)')
+// A winback contact with a missing state must still default to TX (matches the SQL COALESCE).
+const wbNoState = planMaterialization({ id: 'wb2', full_name: 'Sam Poe', contact_type: 'prospect' }, {})
+ok(wbNoState.householdFields.state === 'TX', 'missing state → defaults to TX')
+
 console.log(`\n${pass} passed, ${fail} failed.`)
 if (fail > 0) process.exit(1)

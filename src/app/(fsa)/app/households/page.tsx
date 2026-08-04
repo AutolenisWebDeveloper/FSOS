@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Plus, Users, UserRound, Target, PhoneOff } from 'lucide-react'
+import { Plus, Users, UserRound, Target, PhoneOff, Upload } from 'lucide-react'
 import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Button } from '@/components/ui/button'
 import { loadAll } from '@/lib/data/query'
@@ -34,9 +34,14 @@ export default async function HouseholdsPage() {
   ])
 
   const actions = (
-    <Button asChild>
-      <Link href="/app/households/new"><Plus className="h-4 w-4" /> Add household</Link>
-    </Button>
+    <>
+      <Button asChild variant="outline">
+        <Link href="/app/uploads"><Upload className="h-4 w-4" /> Import contacts</Link>
+      </Button>
+      <Button asChild>
+        <Link href="/app/households/new"><Plus className="h-4 w-4" /> Add household</Link>
+      </Button>
+    </>
   )
 
   let body: React.ReactNode

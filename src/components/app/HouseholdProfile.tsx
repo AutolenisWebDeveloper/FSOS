@@ -383,7 +383,7 @@ async function Documents({ id }: { id: string }) {
       [],
     ),
   ])
-  const upload = <Button asChild size="sm"><Link href="/app/documents">Open Upload Center</Link></Button>
+  const upload = <Button asChild size="sm"><Link href="/app/uploads">Open Upload Center</Link></Button>
 
   return (
     <div className="space-y-6">

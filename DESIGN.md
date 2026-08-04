@@ -329,6 +329,7 @@ Reusable, Server-Component-safe page skeletons. **Compose pages from these — d
   - `ContactPeek` (+ `ContactPeekProvider` / `useContactPeek`) — the reusable "peek, don't duplicate" drawer (spec §4.4) invoked from the list and every work-item; reuses `DrawerShell` + `ContactStatusRow`, backed by the firewall-safe `/api/households/[id]/peek` endpoint.
   - `ContactAdvisor` — the persistent, GREEN-ZONE AI Advisor panel (spec §8). Renders the deterministic insight engine (`src/lib/contacts/advisor.ts`): facts/deadlines/gaps + workflow-only recommended actions. Never a product/suitability recommendation; `is_security` signals excluded (firewall). The condensed top insight also appears in the Contact Peek.
   - `ContactRelationshipGraph` — the People-section Relationship Intelligence graph (spec §10). Renders the household grouped by canonical role via the pure classifier (`src/lib/contacts/relationships.ts`) — members, non-person entities (business/trust), and the referring agent (AOR) as node types — and surfaces cross-household relationships (`+n`).
+  - **Contacts saved-view rail** (`HouseholdList`, spec §4.1) — a left rail of saved views (All · My Book · Prospects · Active Clients · Conversion-Eligible · Cross-Sell · Win-Back · Needs Contact · Review Due) that filter one population, with per-view counts. Membership is the pure `src/lib/contacts/views.ts` engine; the rail collapses to a horizontal scroller under `lg`. This replaces bespoke per-workflow client tables.
 
 ---
 

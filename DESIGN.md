@@ -318,6 +318,11 @@ Reusable, Server-Component-safe page skeletons. **Compose pages from these — d
 - **A4 Board:** `BoardShell`, `BoardColumn`. **A5 Form:** `FormShell` (max-w-2xl, sticky footer). **A6 Wizard:** `WizardShell`.
 - **A10 Settings:** `SettingsShell`, `SettingsSection`. **A11 Report:** `ReportShell`. **A12 Integration:** `IntegrationShell`. **A13 Auth:** `AuthShell`.
 - **States (every page ships all):** `EmptyState`, `ForbiddenState`, `ListSkeleton`, `CardsSkeleton`, `ErrorState`, `StatusBadge`, `AssumptionBadge`.
+- **Contact 360 shared components** (`src/components/archetypes/contact`) — mandatory design-system reuse for every customer-displaying surface (Contacts & Contact 360 redesign spec §12). No page may hand-roll its own customer header, status row, action controls, section nav, or activity rail:
+  - `ContactStatusRow` — light, informational status strip (DNC/opt-out indicator, purple securities-firewall chip, archived) rendered in the `DetailShell` `status` slot. Carries **no** DOB or consent-capture controls (standing decision: frictionless data).
+  - `ContactActionBar` — the single primary-action strip (New opportunity · New review · Schedule · Add member · Log activity), rendered in the `DetailShell` `actions` slot. Links only to real destinations (no dead-ends). Dispatcher-gated Call/SMS/Email land with the comms compose surface.
+  - `ContactSectionNav` + `CONTACT_SECTIONS` — the six canonical Contact 360 sections (Overview · People · Financial Planning · CRM · Documents · Preferences); horizontally scrollable, active section passed in for static layouts.
+  - `ContactTimeline` — the record spine: a chronological stream read from the append-only `activities` table, rendered in the `DetailShell` `rail` slot. Reusable with a member entity for the member-scoped variant.
 
 ---
 

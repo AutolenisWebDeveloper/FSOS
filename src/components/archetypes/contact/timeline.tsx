@@ -1,120 +1,74 @@
-import {
-  Circle,
-  Phone,
-  MessageSquare,
-  Mail,
-  CalendarCheck,
-  ClipboardList,
-  Target,
-  GitBranch,
-  FileUp,
-  FileText,
-  StickyNote,
-  Bot,
-} from 'lucide-react'
 import { load } from '@/lib/data/query'
-import { timeAgo, humanize } from '@/lib/dashboards/format'
-import { EmptyState, ErrorState } from '@/components/archetypes'
+import { ErrorState } from '@/components/archetypes'
+import { ContactTimelinePanel, type ActivityRecord, type NoteRecord } from './notes'
 
 /*
  * Contact 360 Timeline (redesign spec §9) — the chronological spine of the record.
- * A single stream of everything logged against the household, read from the
- * append-only `activities` stream (the same table LogActivityButton writes to and
- * that services log appointments/imports/stage changes/comms to). Reusable: pass
- * a member entity to render the member-scoped variant on Member Detail (§4.3).
- * Server component — RLS scopes the read to the caller's book.
+ * A single stream that MERGES the append-only `activities` event stream with the
+ * editable `notes` table (redesign follow-up): notes surface inline as `note`
+ * entries, pinned notes float to the top, and a Notes-only filter hides system
+ * events. Server component (RLS-scoped read) that fetches both and delegates to the
+ * client ContactTimelinePanel for the tabs, composer, and per-note pin/edit/delete.
+ *
+ * Reusable member-scoped variant: pass householdId + memberId (and the member
+ * activity entity) to render just that person's notes and activity (§4.3).
  */
-
-interface ActivityRow {
-  id: string
-  kind: string | null
-  note: string | null
-  actor: string | null
-  created_at: string
-}
-
-const KIND_ICON: Record<string, typeof Circle> = {
-  note: StickyNote,
-  call: Phone,
-  sms: MessageSquare,
-  email: Mail,
-  appointment: CalendarCheck,
-  review: ClipboardList,
-  opportunity: Target,
-  stage: GitBranch,
-  stage_change: GitBranch,
-  import: FileUp,
-  document: FileText,
-  ai: Bot,
-  agent: Bot,
-}
-
-function iconFor(kind: string | null) {
-  return (kind && KIND_ICON[kind]) || Circle
-}
-
 export async function ContactTimeline({
+  householdId,
+  memberId,
   entityType = 'household',
   entityId,
   limit = 40,
   heading = 'Timeline',
 }: {
+  /** Household the notes belong to (notes are keyed by household + optional member). */
+  householdId: string
+  /** When set, scopes notes (and the heading) to a single member. */
+  memberId?: string
+  /** Activity-stream entity (defaults to the household). */
   entityType?: string
-  entityId: string
+  entityId?: string
   limit?: number
   heading?: string
 }) {
-  const res = await load<ActivityRow[]>(
-    (db) =>
-      db
-        .from('activities')
-        .select('id, kind, note, actor, created_at')
-        .eq('entity_type', entityType)
-        .eq('entity_id', entityId)
-        .order('created_at', { ascending: false })
-        .limit(limit),
-    [],
-  )
+  const activityId = entityId ?? householdId
+
+  const [activitiesRes, notesRes] = await Promise.all([
+    load<ActivityRecord[]>(
+      (db) =>
+        db
+          .from('activities')
+          .select('id, kind, note, actor, created_at')
+          .eq('entity_type', entityType)
+          .eq('entity_id', activityId)
+          .order('created_at', { ascending: false })
+          .limit(limit),
+      [],
+    ),
+    load<NoteRecord[]>(
+      (db) => {
+        let q = db
+          .from('notes')
+          .select('id, member_id, author_id, body, is_pinned, created_at, updated_at')
+          .eq('household_id', householdId)
+          .is('deleted_at', null)
+        if (memberId) q = q.eq('member_id', memberId)
+        return q.order('created_at', { ascending: false })
+      },
+      [],
+    ),
+  ])
+
+  // The activity stream failing is a hard error; notes degrade to empty.
+  if (!activitiesRes.ok) return <ErrorState description="Could not load the timeline." />
 
   return (
-    <section aria-label={heading} className="space-y-3">
-      <h2 className="text-sm font-semibold text-foreground">{heading}</h2>
-      {!res.ok ? (
-        <ErrorState description="Could not load the timeline." />
-      ) : res.data.length === 0 ? (
-        <EmptyState
-          title="Nothing logged yet"
-          description="Calls, emails, appointments, reviews, imports, and notes appear here as they happen."
-        />
-      ) : (
-        <ol className="relative space-y-4 border-l pl-4">
-          {res.data.map((entry) => {
-            const Icon = iconFor(entry.kind)
-            return (
-              <li key={entry.id} className="relative">
-                <span
-                  className="absolute -left-[1.4rem] flex h-6 w-6 items-center justify-center rounded-full border bg-background text-muted-foreground"
-                  aria-hidden
-                >
-                  <Icon className="h-3.5 w-3.5" strokeWidth={1.75} />
-                </span>
-                <div className="flex items-baseline justify-between gap-2">
-                  <p className="text-sm font-medium text-foreground">{humanize(entry.kind) || 'Activity'}</p>
-                  <time
-                    dateTime={entry.created_at}
-                    className="shrink-0 text-xs tabular-nums text-muted-foreground"
-                    title={new Date(entry.created_at).toLocaleString()}
-                  >
-                    {timeAgo(entry.created_at)}
-                  </time>
-                </div>
-                {entry.note ? <p className="mt-0.5 text-sm text-muted-foreground">{entry.note}</p> : null}
-                {entry.actor ? <p className="mt-0.5 text-xs text-muted-foreground">by {entry.actor}</p> : null}
-              </li>
-            )
-          })}
-        </ol>
-      )}
-    </section>
+    <ContactTimelinePanel
+      householdId={householdId}
+      memberId={memberId ?? null}
+      activities={activitiesRes.ok ? activitiesRes.data : []}
+      notes={notesRes.ok ? notesRes.data : []}
+      heading={heading}
+    />
   )
 }

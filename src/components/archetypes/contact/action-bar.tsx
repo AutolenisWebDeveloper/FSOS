@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { Target, CalendarPlus, ClipboardList, UserPlus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { LogActivityButton } from '@/components/app/LogActivityButton'
+import { AddNoteButton } from './notes'
 
 /*
  * Contact 360 Action Bar (redesign spec §4.2). The single, shared primary-action
@@ -37,6 +38,7 @@ export function ContactActionBar({ id }: { id: string }) {
           <UserPlus className="h-4 w-4" /> Add member
         </Link>
       </Button>
+      <AddNoteButton householdId={id} />
       <LogActivityButton entityType="household" entityId={id} />
     </div>
   )

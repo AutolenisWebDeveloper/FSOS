@@ -306,6 +306,9 @@ Tables are central to FSOS; they must behave like an enterprise data grid.
 - **Keyboard navigation:** arrow-key row/cell movement, Enter to open, selection via keyboard.
 - **States:** `ListSkeleton` loading, `EmptyState` (§17), isolated retryable error. "No data" is distinct from "no results for filter."
 
+### 9.1 Field-mapping confidence badges [AS-BUILT]
+The contact-import mapper (`ContactImportMapper`, ADR-036) surfaces per-column recognition confidence in a review table. **No new tokens** — confidence maps onto existing status tokens: `high`→`status-won` ("Recognized"), `medium`→`status-pending` ("Likely"), `low`→`status-assumption` ("Low confidence"), `none`→`destructive` ("Needs mapping"). A duplicate-target row tints `bg-status-assumption/5`; a "Template detected" banner uses the `primary` info-band pattern. Reuse this confidence→status mapping for any future recognition/confidence UI rather than introducing new colors.
+
 ---
 
 ## 10. Archetype shells [AS-BUILT] (`src/components/archetypes`)

@@ -15,6 +15,7 @@ import { execFileSync } from 'node:child_process'
 const RLS = new Set([
   'rls-firewall.test.mjs',
   'customer-dob-plain.test.mjs',
+  'import-mapping-migration.test.mjs',
   'ghl-optout-rollback.test.mjs',
   'booking-double-booking.test.mjs',
   'booking-reminder-idempotency.test.mjs',

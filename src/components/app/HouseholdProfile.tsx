@@ -7,6 +7,7 @@ import {
   ContactTimeline,
   ContactActionBar,
   ContactAdvisor,
+  ContactRelationshipGraph,
   CONTACT_SECTION_IDS,
   CONTACT_SECTIONS,
   type ContactSection,
@@ -94,7 +95,7 @@ export async function HouseholdProfile({ id, section }: { id: string; section: C
         {section === 'overview' ? (
           <Overview id={id} hh={hh} hasSecurities={hasSecurities} />
         ) : section === 'people' ? (
-          <People id={id} />
+          <People id={id} referringAgencyId={hh.referring_agency_id} />
         ) : section === 'financial-planning' ? (
           <FinancialPlanning id={id} />
         ) : section === 'crm' ? (
@@ -165,7 +166,7 @@ async function Overview({ id, hh, hasSecurities }: { id: string; hh: Household; 
 
 // ─── People ───────────────────────────────────────────────────────────────────
 
-async function People({ id }: { id: string }) {
+async function People({ id, referringAgencyId }: { id: string; referringAgencyId: string | null }) {
   const res = await load<{ id: string; full_name: string; relationship: string | null; email: string | null; phone: string | null }[]>(
     (db) => db.from('household_members').select('id, full_name, relationship, email, phone').eq('household_id', id).is('deleted_at', null).order('created_at'),
     [],
@@ -176,8 +177,12 @@ async function People({ id }: { id: string }) {
     return <EmptyState title="No members yet" description="Add the primary and any dependents, joint owners, or beneficiaries." action={add} />
   }
   return (
-    <div className="space-y-3">
-      <div className="flex justify-end">{add}</div>
+    <div className="space-y-4">
+      <ContactRelationshipGraph householdId={id} referringAgencyId={referringAgencyId} />
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold">Members</h3>
+        {add}
+      </div>
       <div className="rounded-lg border">
         <Table>
           <TableHeader>

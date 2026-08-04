@@ -13,11 +13,7 @@ import { createRequire } from 'node:module'
 const out = mkdtempSync(join(tmpdir(), 'fsos-workforce-'))
 execSync(
   `npx tsc src/lib/ai/outreach.ts --outDir ${out} --module commonjs --target es2020 ` +
-    // --ignoreConfig: compile this ONE pure file in isolation (never load the project
-    // tsconfig — TS5112 on newer tsc otherwise). --ignoreDeprecations: silence the
-    // node10 moduleResolution deprecation notice. Both keep the original isolated-compile
-    // intent under both old and new TypeScript.
-    `--moduleResolution node --skipLibCheck --esModuleInterop --ignoreConfig --ignoreDeprecations 6.0`,
+    `--moduleResolution node --skipLibCheck --esModuleInterop`,
   { stdio: 'inherit' },
 )
 const require = createRequire(import.meta.url)

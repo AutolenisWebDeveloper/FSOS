@@ -23,6 +23,12 @@ export function smsConfigured(): boolean {
 
 /** Optional per-send email delivery options (deliverability: reply routing + headers). */
 export interface EmailSendOptions {
+  /**
+   * Envelope From override (stream/reputation isolation — resolve via
+   * `comms/senders.resolveSender`). Falls back to RESEND_FROM_EMAIL when unset, so
+   * existing callers are unchanged.
+   */
+  from?: string
   /** Reply-To address (monitored inbox). Falls back to RESEND_REPLY_TO env when unset. */
   replyTo?: string
   /** Extra SMTP headers, e.g. RFC 8058 List-Unsubscribe / List-Unsubscribe-Post. */
@@ -37,7 +43,7 @@ export async function sendEmail(
   opts?: EmailSendOptions,
 ): Promise<SendResult> {
   const apiKey = process.env.RESEND_API_KEY
-  const from = process.env.RESEND_FROM_EMAIL
+  const from = opts?.from || process.env.RESEND_FROM_EMAIL
   if (!apiKey) return { ok: false, error: 'RESEND_API_KEY not set' }
   if (!from || /yourdomain\.com/i.test(from)) return { ok: false, error: 'RESEND_FROM_EMAIL not a verified sender' }
   if (!to) return { ok: false, error: 'No recipient email' }

@@ -39,6 +39,7 @@ import type { AiMessageClass } from './ai-authority'
 import { evaluateDataConfidence, type ClaimField } from './data-confidence'
 import { latestConsentGranted, smsTail } from './contact-consent'
 import { purposeToConsentPurpose } from './purpose'
+import { streamForPurpose } from './senders'
 
 export interface SendContext {
   channel: Channel
@@ -757,6 +758,9 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
     body: sendBody,
     // Plaintext part is NOT instrumented (open/click tracking is HTML-only).
     bodyText: ctx.channel === 'email' ? identityText : undefined,
+    // Reputation stream for the envelope From (email): marketing/workshop → mail.,
+    // everything else → notify. Absent purpose → marketing (this is the campaign path).
+    messageClass: streamForPurpose(ctx.purpose),
     actor: ctx.actor,
     entity: ctx.entity ?? (conversationId ? { type: 'conversation', id: conversationId } : undefined),
     gate: {

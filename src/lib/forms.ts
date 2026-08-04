@@ -8,6 +8,7 @@ import { TRAIGA_SMS_FOOTER } from '@/lib/compliance'
 import { generateFormToken } from '@/lib/tokens'
 import { escapeHtml } from '@/lib/http'
 import { sendEmail } from '@/lib/messaging'
+import { resolveSender } from '@/lib/comms/senders'
 import { renderEmailShell, paragraphHtml, buttonHtml, fineHtml } from '@/lib/notifications/email-shell'
 
 export const FORM_TITLES: Record<string, string> = {
@@ -137,6 +138,10 @@ export async function sendForm(input: SendFormInput): Promise<SendFormResult> {
       email,
       `Action Required — ${FORM_TITLES[form_id]}`,
       buildEmailHTML(client_name || 'Client', FORM_TITLES[form_id], link, form_id),
+      undefined,
+      // Transactional stream (notify.) for reputation isolation; falls back to
+      // RESEND_FROM_EMAIL until the subdomain is configured.
+      { from: resolveSender('transactional').from || undefined },
     )
     if (result.ok) {
       email_sent = true

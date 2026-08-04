@@ -64,21 +64,43 @@ export function verifyOneClick(contact: string, channel: UnsubChannel, token: st
 }
 
 /**
+ * Provenance for a suppression so the dnc_entries row and the consent-revoke audit
+ * reflect the ACTUAL cause. Defaults preserve the original unsubscribe semantics, so
+ * existing callers (opt-out page, one-click link) are unchanged. Deliverability
+ * suppression (hard bounce / spam complaint) passes accurate labels instead.
+ */
+export interface SuppressProvenance {
+  /** dnc_entries.reason value (e.g. 'unsubscribe' | 'hard_bounce' | 'spam_complaint'). */
+  dncReason?: string
+  /** recordConsentChange provenance source (e.g. 'unsubscribe' | 'resend_bounce'). */
+  source?: string
+  /** recordConsentChange human reason (e.g. 'unsubscribe opt-out' | 'spam complaint (Resend)'). */
+  reason?: string
+}
+
+/**
  * ENFORCED suppression: upsert dnc_entries for each requested channel so gate step 3
  * (onDNC) blocks all future sends to this contact. Idempotent (onConflict contact,channel).
  * Contacts are normalized the same way the gate normalizes the send destination, so a
  * stored DNC row matches. Best-effort audit. Never throws.
+ *
+ * `provenance` accurately labels WHY the contact was suppressed (defaults to the
+ * unsubscribe opt-out semantics so existing callers are unaffected).
  */
 export async function suppressContact(
   contact: string,
   channel: UnsubChannel = 'all',
+  provenance: SuppressProvenance = {},
 ): Promise<{ ok: boolean; channels: string[] }> {
+  const dncReason = provenance.dncReason ?? 'unsubscribe'
+  const source = provenance.source ?? 'unsubscribe'
+  const reason = provenance.reason ?? 'unsubscribe opt-out'
   const channels: ('email' | 'sms')[] = channel === 'all' ? ['email', 'sms'] : [channel === 'sms' ? 'sms' : 'email']
   const rows = channels.map((ch) => ({
     contact: normFor(ch, contact),
     channel: ch,
     scope: 'internal' as const,
-    reason: 'unsubscribe',
+    reason: dncReason,
   }))
   try {
     const db = getDb()
@@ -95,8 +117,8 @@ export async function suppressContact(
         channel: ch,
         newStatus: 'revoked',
         previousStatus: 'granted',
-        source: 'unsubscribe',
-        reason: 'unsubscribe opt-out',
+        source,
+        reason,
         memberId: anchor.memberId,
         householdId: anchor.householdId,
       })

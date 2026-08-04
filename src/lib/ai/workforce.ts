@@ -34,12 +34,12 @@ import {
   OUTREACH_PROMPTS,
   OUTREACH_MESSAGE_CLASS,
   buildDraftUserContent,
+  isOutreachSource,
   outreachPurpose,
   priorityOf,
   selectForQuota,
   type OutreachAgentKey,
   type OutreachCandidate,
-  type OutreachSource,
 } from '@/lib/ai/outreach'
 
 const CAP_PER_SOURCE = 400 // safety cap on rows scanned per detection source
@@ -389,6 +389,18 @@ export async function runOutreachAgent(agentKey: OutreachAgentKey): Promise<{ se
           continue
         }
 
+        // Defense in depth: an outreach_queue row whose `source` is not a known outreach
+        // source (a manual/legacy row, or a future source added without a purpose mapping)
+        // cannot be §9 purpose-classified — sending it would re-trigger the
+        // missing_purpose_classification block. Escalate instead of emitting a noisy blocked
+        // send. After this guard, item.source is narrowed to OutreachSource (no cast needed).
+        if (!isOutreachSource(item.source)) {
+          await db.from('outreach_queue').update({ status: 'escalated', block_reason: 'unknown_outreach_source', updated_at: new Date().toISOString() }).eq('id', item.id)
+          await ctx.escalate('unknown_outreach_source', { targetType: item.entity_type, targetId: item.entity_id })
+          stats.escalated++
+          continue
+        }
+
         // Resolve the recipient contact fresh (the gate re-checks consent/DNC anyway).
         const rec = await resolveRecipient(item.household_id, item.channel, null)
         if (!rec.contact || !rec.memberId) {
@@ -441,7 +453,7 @@ export async function runOutreachAgent(agentKey: OutreachAgentKey): Promise<{ se
           // §11 AI message class. Without these the §12 evaluator fails safe with
           // `missing_purpose_classification` / draft_only and NO outreach is ever auto-sent.
           // The send-time gate still re-checks the recipient's actual consent for this purpose.
-          purpose: outreachPurpose(item.source as OutreachSource),
+          purpose: outreachPurpose(item.source),
           aiMessageClass: OUTREACH_MESSAGE_CLASS,
           recipientContext: { full_name: rec.name },
         })

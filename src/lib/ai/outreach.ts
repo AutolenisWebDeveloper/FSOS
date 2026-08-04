@@ -194,6 +194,18 @@ const OUTREACH_PURPOSE: Record<OutreachSource, OutreachPurpose> = {
   term_conversion: 'POLICY_DEADLINE',
 }
 
+/**
+ * Runtime narrow: is this raw DB string one of the known outreach sources? `outreach_queue.source`
+ * is stored as a plain string, so a manual/legacy row — or a NEW source added to the union without
+ * a purpose mapping — could otherwise reach outreachPurpose() and yield `undefined`, silently
+ * re-triggering the §9 `missing_purpose_classification` block. Callers guard with this and escalate
+ * an unknown source instead of emitting a noisy blocked send. Keyed off OUTREACH_PURPOSE, whose
+ * `Record<OutreachSource, …>` type forces this set to stay in lockstep with the union at compile time.
+ */
+export function isOutreachSource(source: string): source is OutreachSource {
+  return Object.prototype.hasOwnProperty.call(OUTREACH_PURPOSE, source)
+}
+
 /** The §9 purpose for a workforce outreach source (see OUTREACH_PURPOSE). */
 export function outreachPurpose(source: OutreachSource): OutreachPurpose {
   return OUTREACH_PURPOSE[source]

@@ -25,6 +25,7 @@ const {
   OUTREACH_AGENTS,
   OUTREACH_MESSAGE_CLASS,
   outreachPurpose,
+  isOutreachSource,
 } = require(join(out, 'outreach.js'))
 
 let passed = 0
@@ -158,6 +159,18 @@ t('workforce openers are classified approved_first_touch (an auto-send green-zon
   // Must be one of the auto-send classes in ai-authority.ts — otherwise the §11 authority
   // is draft_only and the autonomous agents can never actually send.
   assert.equal(OUTREACH_MESSAGE_CLASS, 'approved_first_touch')
+})
+
+t('isOutreachSource narrows known sources and rejects unknown ones (no silent undefined purpose)', () => {
+  // The DB stores source as a plain string; the dispatch path guards with this and escalates
+  // an unknown value rather than sending an unclassified message that would re-block on §9.
+  for (const source of ['cross_sell', 'term_conversion', 'referral_followup', 'win_back']) {
+    assert.equal(isOutreachSource(source), true)
+    assert.ok(outreachPurpose(source)) // every known source still yields a purpose
+  }
+  for (const bad of ['marketing_automation', 'legacy_thing', '', 'hasOwnProperty', 'toString']) {
+    assert.equal(isOutreachSource(bad), false, `${bad} must not be treated as a known source`)
+  }
 })
 
 console.log(`\nAI Workforce: ${passed} assertions passed.`)

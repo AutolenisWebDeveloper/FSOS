@@ -13,6 +13,7 @@ import { evaluateGate, type GateInput, type GateResult } from './gate'
 import { TRAIGA_SMS_FOOTER } from '../compliance'
 import type { AuditEntry } from '../audit/log'
 import type { SendResult } from '../messaging'
+import type { EmailStream } from './senders'
 
 export interface DispatchRequest {
   channel: 'sms' | 'email'
@@ -30,6 +31,11 @@ export interface DispatchRequest {
   entity?: { type: string; id: string }
   /** Escalation reason detail (agent context, etc.). */
   escalationNote?: string
+  /**
+   * Email reputation stream for the envelope-From (transactional notify. vs marketing
+   * mail.). Absent → 'marketing' (the gated path is the campaign path). SMS ignores it.
+   */
+  messageClass?: EmailStream
 }
 
 export interface DispatchResult {
@@ -53,7 +59,14 @@ export interface DispatchDeps {
   recordComplianceEvent(req: DispatchRequest, gate: GateResult): Promise<void>
   createEscalation(req: DispatchRequest, gate: GateResult): Promise<void>
   writeAudit(entry: AuditEntry): Promise<void>
-  send(channel: 'sms' | 'email', to: string, body: string, subject?: string, bodyText?: string): Promise<SendResult>
+  send(
+    channel: 'sms' | 'email',
+    to: string,
+    body: string,
+    subject?: string,
+    bodyText?: string,
+    messageClass?: EmailStream,
+  ): Promise<SendResult>
 }
 
 // Real deps. Heavy modules are imported lazily (relative) so this file is
@@ -104,15 +117,22 @@ export const defaultDeps: DispatchDeps = {
     const { writeAudit } = await import('../audit/log')
     await writeAudit(entry)
   },
-  async send(channel, to, body, subject, bodyText) {
+  async send(channel, to, body, subject, bodyText, messageClass) {
     const { sendSms, sendEmail } = await import('../messaging')
     if (channel === 'sms') return sendSms(to, body)
     // Email deliverability: route replies to the monitored inbox and attach the RFC 8058
     // List-Unsubscribe one-click headers (Gmail/Yahoo bulk-sender requirement). The
     // per-recipient in-body unsubscribe link is already substituted via {{unsubscribe_url}}.
     const { emailListUnsubscribeHeaders, replyToAddress } = await import('./unsubscribe')
+    // Reputation isolation: resolve the envelope From for this stream (marketing mail. vs
+    // transactional notify.). Falls back to RESEND_FROM_EMAIL until the subdomains are
+    // configured, so this is behavior-preserving. A per-stream reply-to override wins;
+    // otherwise the existing monitored reply-to inbox is kept.
+    const { resolveSender } = await import('./senders')
+    const sender = resolveSender(messageClass ?? 'marketing')
     return sendEmail(to, subject ?? '', body, bodyText, {
-      replyTo: replyToAddress(),
+      from: sender.from || undefined,
+      replyTo: sender.replyTo || replyToAddress(),
       headers: emailListUnsubscribeHeaders(to),
     })
   },
@@ -149,7 +169,14 @@ export async function dispatch(req: DispatchRequest, deps: DispatchDeps = defaul
   // Passed the gate → send. SMS carries the required AI-disclosure/opt-out footer.
   const body = req.channel === 'sms' ? `${req.body}\n\n${TRAIGA_SMS_FOOTER}` : req.body
   // Email multipart: pass the stored plaintext part when present (SMS is single-part).
-  const result = await deps.send(req.channel, req.to, body, req.subject, req.channel === 'email' ? req.bodyText : undefined)
+  const result = await deps.send(
+    req.channel,
+    req.to,
+    body,
+    req.subject,
+    req.channel === 'email' ? req.bodyText : undefined,
+    req.messageClass,
+  )
 
   await deps.writeAudit({
     actor: req.actor,

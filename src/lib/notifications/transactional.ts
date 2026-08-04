@@ -20,6 +20,7 @@
 // stored/reflected-XSS defense (§13.8).
 
 import { sendEmail, emailConfigured, type SendResult } from '@/lib/messaging'
+import { resolveSender } from '@/lib/comms/senders'
 import { BUSINESS, CONTACT } from '@/lib/site'
 import { renderEmailShell, paragraphHtml, detailTableHtml, fineHtml } from './email-shell'
 
@@ -120,6 +121,7 @@ export async function notifyFsa(opts: {
   const to = fsaNotificationInbox()
   const content: EmailContent = { heading: opts.heading, lede: opts.lede, rows: opts.rows, note: opts.note }
   const result = await sendEmail(to, opts.subject, renderHtml(content), renderText(content), {
+    from: resolveSender('transactional').from || undefined,
     replyTo: opts.replyTo || undefined,
   })
   return logOutcome(`fsa-alert (${opts.subject})`, to, result)
@@ -146,6 +148,7 @@ export async function sendVisitorAck(opts: {
   }
   const content: EmailContent = { heading: opts.heading, lede: opts.lede, rows: opts.rows, note: opts.note }
   const result = await sendEmail(opts.to, opts.subject, renderHtml(content), renderText(content), {
+    from: resolveSender('transactional').from || undefined,
     replyTo: opts.replyTo || fsaNotificationInbox(),
   })
   return logOutcome(`visitor-ack (${opts.subject})`, opts.to, result)

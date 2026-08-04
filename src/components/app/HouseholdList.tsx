@@ -7,8 +7,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { cn } from '@/lib/utils'
 import { EmptyState } from '@/components/archetypes'
 import { ContactPeek } from '@/components/archetypes/contact/peek'
+import { CONTACT_VIEWS, type ContactViewKey } from '@/lib/contacts/views'
 
 export interface HouseholdRow {
   id: string
@@ -19,20 +21,24 @@ export interface HouseholdRow {
   opportunities: number
   do_not_contact: boolean
   archived_at: string | null
+  /** Saved views this household belongs to (§4.1); always includes 'all'. */
+  views: string[]
 }
 
-export function HouseholdList({ rows }: { rows: HouseholdRow[] }) {
+export function HouseholdList({ rows, viewCounts }: { rows: HouseholdRow[]; viewCounts?: Record<string, number> }) {
   const [q, setQ] = React.useState('')
   const [dncOnly, setDncOnly] = React.useState(false)
+  const [view, setView] = React.useState<ContactViewKey>('all')
   const [peekId, setPeekId] = React.useState<string | null>(null)
 
   const filtered = React.useMemo(() => {
     let r = rows
+    if (view !== 'all') r = r.filter((h) => h.views.includes(view))
     const n = q.trim().toLowerCase()
     if (n) r = r.filter((h) => h.primary_name.toLowerCase().includes(n) || (h.agency_name ?? '').toLowerCase().includes(n))
     if (dncOnly) r = r.filter((h) => h.do_not_contact)
     return r
-  }, [rows, q, dncOnly])
+  }, [rows, q, dncOnly, view])
 
   function exportCsv() {
     const header = ['Household', 'Referring agency', 'Members', 'Policies', 'Opportunities', 'DNC']
@@ -64,7 +70,31 @@ export function HouseholdList({ rows }: { rows: HouseholdRow[] }) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="grid gap-4 lg:grid-cols-[13rem_1fr]">
+      {/* Saved-view rail (§4.1) — the per-workflow lists as filters over one book. */}
+      <nav aria-label="Saved views" className="flex gap-1.5 overflow-x-auto lg:flex-col lg:overflow-visible">
+        {CONTACT_VIEWS.map((v) => {
+          const active = v.key === view
+          const n = viewCounts?.[v.key]
+          return (
+            <button
+              key={v.key}
+              type="button"
+              onClick={() => setView(v.key)}
+              aria-current={active ? 'true' : undefined}
+              className={cn(
+                'flex shrink-0 items-center justify-between gap-2 whitespace-nowrap rounded-md px-3 py-1.5 text-left text-sm transition-colors lg:w-full',
+                active ? 'bg-primary-soft font-medium text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+              )}
+            >
+              <span>{v.label}</span>
+              {typeof n === 'number' ? <span className="tabular-nums text-xs text-muted-foreground">{n}</span> : null}
+            </button>
+          )
+        })}
+      </nav>
+
+      <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <Input placeholder="Search household or agency…" value={q} onChange={(e) => setQ(e.target.value)} className="max-w-xs" aria-label="Search households" />
         <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
@@ -118,6 +148,7 @@ export function HouseholdList({ rows }: { rows: HouseholdRow[] }) {
         </div>
       )}
       <ContactPeek householdId={peekId} onOpenChange={(v) => !v && setPeekId(null)} />
+      </div>
     </div>
   )
 }

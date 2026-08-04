@@ -114,18 +114,19 @@ export async function recordMessageEvent(input: RecordEventInput): Promise<void>
   }
 }
 
-/** Resolve a comm_messages row (+ its conversation/campaign) by provider id. */
+/** Resolve a comm_messages row (+ its conversation/campaign/recipient) by provider id. */
 export async function findMessageByProviderId(providerId: string): Promise<{
   id: string
   conversation_id: string | null
   campaign_id: string | null
   channel: string
+  recipient: string | null
 } | null> {
   if (!providerId) return null
   try {
     const { data } = await getDb()
       .from('comm_messages')
-      .select('id, conversation_id, campaign_id, channel')
+      .select('id, conversation_id, campaign_id, channel, recipient')
       .eq('provider_id', providerId)
       .maybeSingle()
     return data ?? null

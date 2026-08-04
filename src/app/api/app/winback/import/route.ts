@@ -5,6 +5,7 @@ import { writeAudit } from '@/lib/audit/log'
 import { parseWinBackFile, summarizeWinBack, type WinBackRecord } from '@/lib/import/winBackList'
 import { buildContactIndex, resolveContact, mergeFields } from '@/lib/import/resolution'
 import { createBatch, writeRecords, loadContactCandidates, type RecordInput } from '@/lib/import/auditWriter'
+import { materializeContact, type MaterializableContact } from '@/lib/services/householdMaterialize'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -214,11 +215,26 @@ export async function POST(req: NextRequest) {
       auditRecords.push({ entityType: 'contact', raw: rawOf(x.r), decision: { ...x.res, incoming }, targetId: x.res.targetId, confidence: x.res.confidence, reviewStatus: 'needs_review', ownerScope })
     }
 
-    // 3. CREATE — insert new prospect contacts (green-zone identify).
+    // 3. CREATE — insert new prospect contacts (green-zone identify), then materialize
+    //    each into the household spine. Without this the rows sit orphaned
+    //    (household_id IS NULL): the Life Win-Back agent resolves its recipient +
+    //    consent through a household member, and the consent-group backfill keys on
+    //    household_members.source_contact_id — so an un-materialized win-back contact
+    //    is unreachable and can never enroll (ADR-029/ADR-034). Idempotent + best-effort
+    //    per contact (a failure is counted, never fails the import) — mirrors the general
+    //    contacts importer, reusing the single materialization path (§6, no second path).
     const insertRows = toCreate.map((x) => buildInsertRow(x.r, actor, ownerScope, ownerAgency?.id ?? null))
+    let materialized = 0
     for (let i = 0; i < insertRows.length; i += CHUNK) {
-      const { error } = await db.from('contacts').insert(insertRows.slice(i, i + CHUNK))
+      const { data: inserted, error } = await db
+        .from('contacts')
+        .insert(insertRows.slice(i, i + CHUNK))
+        .select('id, full_name, first_name, last_name, email, phone, address, city, state, zip, contact_type, agency_partnership_id, owner_scope')
       if (error) throw new Error(`contacts insert failed: ${error.message}`)
+      for (const c of (inserted ?? []) as MaterializableContact[]) {
+        const r = await materializeContact(db, c)
+        if (r.householdId && r.action !== 'error') materialized++
+      }
     }
     for (const x of toCreate) auditRecords.push({ entityType: 'contact', raw: rawOf(x.r), decision: { ...x.res }, confidence: 'none', reviewStatus: 'auto', ownerScope })
 
@@ -231,7 +247,7 @@ export async function POST(req: NextRequest) {
       action: 'import.committed',
       entity: 'winback_list',
       entityId: batchId,
-      diff: { filename: file.name, plan, owner_agency_id: ownerAgency?.id ?? null, dnc: summary.dnc, email_unsub: summary.email_unsub },
+      diff: { filename: file.name, plan, owner_agency_id: ownerAgency?.id ?? null, dnc: summary.dnc, email_unsub: summary.email_unsub, households_materialized: materialized },
     })
 
     return NextResponse.json({
@@ -241,6 +257,10 @@ export async function POST(req: NextRequest) {
       plan,
       committed: {
         contacts_created: insertRows.length,
+        // Households/members materialized for the new contacts so they are reachable by
+        // the Life Win-Back agent + consent tools. Consent itself is still granted
+        // separately (attested win_back consent-group backfill) before any send.
+        contacts_materialized: materialized,
         contacts_enriched: merged,
         queued_for_review: toReview.length,
       },

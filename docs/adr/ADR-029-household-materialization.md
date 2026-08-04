@@ -46,11 +46,15 @@ and dedupes members by `(household_id, full_name)` (`conversions/import`).
    no-op if a member already exists for the contact. Re-running the backfill, or
    importing the same file twice, creates **no** duplicate household or member.
 
-4. **Go-forward on every write path.** The bulk importer, the manual single-create
-   route, and the daily `data-quality` job all call the same
-   `materializeContact` / `backfillOrphanHouseholds` service — one materialization
-   code path, reused, never cloned. New eligible contacts are materialized into the
-   spine at creation time; the daily job drains any stragglers in bounded batches.
+4. **Go-forward on every write path.** The bulk importer, the **Life Win-Back importer**
+   (`/api/app/winback/import`), the manual single-create route, and the daily
+   `data-quality` job all call the same `materializeContact` / `backfillOrphanHouseholds`
+   service — one materialization code path, reused, never cloned. New eligible contacts
+   are materialized into the spine at creation time; the daily job drains any stragglers
+   in bounded batches. (The Win-Back importer originally skipped this step, leaving the
+   whole `winback_life` book orphaned and unreachable by the Life Win-Back agent (ADR-034)
+   and the consent-group backfill; it was wired in and the existing cohort repaired by
+   migration `097_winback_life_household_reachability.sql`.)
 
 5. **Safe fallback, no forced grouping.** When signals are weak (no address), the
    single-member household is the safe default — never a bad merge into an unrelated

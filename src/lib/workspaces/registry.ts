@@ -310,6 +310,7 @@ const FSA: Workspace[] = [
     nav: [
       { href: '/app/households', label: 'All Households', icon: 'Users', exact: true },
       { href: '/app/households/new', label: 'Add Household', icon: 'UserPlus' },
+      { href: '/app/uploads', label: 'Upload Center', icon: 'Upload' },
     ],
   },
   {

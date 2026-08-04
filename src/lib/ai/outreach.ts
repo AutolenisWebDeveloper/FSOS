@@ -170,6 +170,57 @@ export const OUTREACH_PROMPTS: Record<OutreachAgentKey, string> = {
   life_winback: `You are a proactive outreach assistant for Markist, a licensed Farmers Financial Services agent in McKinney, TX. You send a friendly re-engagement note to a former life-insurance household whose coverage lapsed, INVITING them to reconnect and review where their coverage stands today. Do not name a product or reference specifics of any prior policy, and do not imply they should re-buy anything — only warmly reconnect and invite a conversation. ${GREEN_ZONE_RULES}`,
 }
 
+// ─── §9 message-purpose classification (per outreach source) ───────────────────
+// EVERY automated send must carry exactly one purpose (comms/purpose.ts MessagePurpose):
+// it drives the purpose-scoped consent grant the gate requires, the frequency/collision
+// policy, and unsubscribe treatment. Without it the §12 evaluator fails
+// `missing_purpose_classification` and the send is held — which is exactly what silently
+// blocked ALL workforce outreach. This pure module stays import-free (so it unit-compiles
+// in isolation); the literal values below are checked against the real MessagePurpose type
+// at the workforce.ts call site, where they feed sendThroughGate's typed `purpose` field.
+//
+// • cross_sell / referral_followup / win_back — proactive growth outreach ⇒ MARKETING
+//   (the compliance-conservative classification: requires MARKETING consent + applies
+//   marketing unsubscribe/frequency treatment; consistent with the coverage-gap blueprint
+//   in comms/library.ts). The send-time gate still re-checks the recipient's actual consent.
+// • term_conversion — a time-sensitive window on an EXISTING policy ⇒ POLICY_DEADLINE
+//   (same purpose the term-conversion blueprint uses in comms/library.ts).
+export type OutreachPurpose = 'MARKETING' | 'POLICY_DEADLINE'
+
+const OUTREACH_PURPOSE: Record<OutreachSource, OutreachPurpose> = {
+  cross_sell: 'MARKETING',
+  referral_followup: 'MARKETING',
+  win_back: 'MARKETING',
+  term_conversion: 'POLICY_DEADLINE',
+}
+
+/**
+ * Runtime narrow: is this raw DB string one of the known outreach sources? `outreach_queue.source`
+ * is stored as a plain string, so a manual/legacy row — or a NEW source added to the union without
+ * a purpose mapping — could otherwise reach outreachPurpose() and yield `undefined`, silently
+ * re-triggering the §9 `missing_purpose_classification` block. Callers guard with this and escalate
+ * an unknown source instead of emitting a noisy blocked send. Keyed off OUTREACH_PURPOSE, whose
+ * `Record<OutreachSource, …>` type forces this set to stay in lockstep with the union at compile time.
+ */
+export function isOutreachSource(source: string): source is OutreachSource {
+  return Object.prototype.hasOwnProperty.call(OUTREACH_PURPOSE, source)
+}
+
+/** The §9 purpose for a workforce outreach source (see OUTREACH_PURPOSE). */
+export function outreachPurpose(source: OutreachSource): OutreachPurpose {
+  return OUTREACH_PURPOSE[source]
+}
+
+// ─── §11 AI message class for workforce outreach ───────────────────────────────
+// Every OUTREACH_PROMPT is a green-zone, first-touch INVITE authored under an approved AI
+// policy (the acting agent's kill switch satisfies gate step 4) — never advisory,
+// policy-specific, or a recommendation. That is the `approved_first_touch` class, which the
+// §11 authority matrix (comms/ai-authority.ts AiMessageClass) permits the autonomous AI to
+// auto-send once every §12 check passes. This mirrors the classification the campaign ticks
+// already apply to their AI conversation openers (openerClassFor('approved_template')).
+// Typed as a literal here; verified against AiMessageClass at the workforce.ts call site.
+export const OUTREACH_MESSAGE_CLASS = 'approved_first_touch'
+
 /** Build the per-candidate user turn for the drafting model (green-zone context only). */
 export function buildDraftUserContent(
   c: Pick<OutreachCandidate, 'source' | 'channel' | 'reason' | 'recipientName'>,

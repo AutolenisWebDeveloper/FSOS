@@ -449,6 +449,7 @@ The identity is consistent across homepage, public pages, login, forgot-password
 | ADR-033 | Communications Command Console (orchestration over the one send path; cross-campaign asset catalog view; individual/AI/test sends; no new send path, no override) |
 | ADR-034 | Life Win-Back agent (first-class win-back outreach; promotes the former `marketing_automation` stub; `winback_life` book; disabled by default until member/consent mapping verified) |
 | ADR-035 | Accessibility/responsive verification via a manual pre-ship checklist (no automated browser-test platform; single-FSA proportionality) |
+| ADR-036 | Contact-import field-recognition & mapping model (unified recognizer + template detection + composite split + mapping memory + custom fields; extends the ADR-028 substrate) |
 
 New architectural decisions get a new ADR using `docs/adr/ADR-000-template.md`. Status values: Proposed → Accepted → Superseded (link the superseding ADR).
 

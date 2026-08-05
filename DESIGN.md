@@ -353,6 +353,64 @@ Reusable, Server-Component-safe page skeletons. **Compose pages from these — d
   - **Contacts saved-view rail** (`HouseholdList`, spec §4.1) — a left rail of saved views (All · My Book · Prospects · Active Clients · Conversion-Eligible · Cross-Sell · Win-Back · Needs Contact · Review Due) that filter one population, with per-view counts. Membership is the pure `src/lib/contacts/views.ts` engine; the rail collapses to a horizontal scroller under `lg`. This replaces bespoke per-workflow client tables.
   - **Notes** (`NoteComposer` · `AddNoteButton` · `ContactTimelinePanel`) — Contact 360 notes are a first-class write feature that surface as `note` entries inside the shared Timeline, never a separate bespoke widget. `ContactTimeline` merges the append-only `activities` stream with the editable `notes` table; the panel adds All/Notes tabs, a pinned section (pinned notes float to top), an inline/rail composer, and an "Add note" ActionBar dialog (`AddNoteButton` → `ModalShell` → `NoteComposer`). Member Detail reuses the same panel member-scoped. A note is internal FSA free text — no dispatcher path, firewall/DOB unchanged.
 
+### 10.1 Campaign surface components [AS-BUILT] (`src/components/comms/campaign`)
+
+The three native campaign engines — Life Conversion, Cross-Sell Life, Pipeline Win-Back — share
+one presentation layer. Before it, each had grown its own copy of the same vocabulary
+(`STATUS_TONE` ×5, `KIND_LABEL` ×3, `KIND_TONE` ×2, an `APPROVAL_TONE` only one of them had), its
+own stat cell (**six** divergent copies, one using the raw palette color `border-amber-400/60`),
+and its own local `Section` shadowing the design-system one. **No campaign surface may redeclare
+any of this** — `tests/comms-campaign-presentation.test.mjs` fails the build if one does, and
+type-checks the consuming pages so the assertion cannot pass on a broken tree.
+
+- **Vocabulary** (`src/lib/comms/campaign-presentation.ts`, pure) — `campaignStatus`,
+  `enrollmentStatus`, `touchKind`, `approvalStatus`, `winbackCategory`, plus the `CAMPAIGN_ENGINES`
+  registry (title · route · API root · seed migration · touch count · day span). Campaign state maps
+  onto the semantic **status tokens** (`active`, `pending`, `blocked`, `escalated`), never the generic
+  badge fills — a live campaign must read the way every other live thing in FSOS reads.
+- **Badges** — `CampaignStatusBadge`, `EnrollmentStatusBadge`, `TouchKindBadge`, `ApprovalBadge`.
+  Each carries the vocabulary's one-sentence `description` as `title`, so no chip is unexplained.
+  `ApprovalBadge` takes `advisorTask` — an advisor-outreach touch legitimately has no template and
+  must read as not-applicable, not as the `blocked` "Missing" chip.
+- **Stat cells** — `CampaignStat` (with `attentionWhenNonZero`, so a clean campaign shows a calm
+  board) and `FunnelStat`. Both compose `MetricCard`; never hand-roll a bordered number box.
+- **Composites** — `CampaignControlsSection`, `CampaignAnalyticsPanel`, `CampaignScheduleTable`,
+  `CampaignAssetsTable`, `CampaignEnrollmentTable`, `CampaignCrossLinks`, `CampaignHeaderActions`.
+- **Canonical section order**, identical on all three engines, so moving between campaigns costs no
+  relearning: state line → controls → monitoring → analytics → eligibility → schedule → assets →
+  workflows → configuration → enrollments → version history (Cross-Sell only, the sole versioned engine).
+
+**Analytics contract** (`src/lib/comms/campaign-analytics.ts`) — one superset: a universal core
+(`status`, `enrollments`, `totals`, `touches`, `advisor`) plus optional blocks an engine fills only if
+it measures that thing (`funnel`, `rates`, `channels`, `byPhase`, `byCategory`, `version`,
+`eligibleNow`). **Optional blocks are absent, not zeroed**, so a shared panel tests for presence
+instead of rendering a row of zeroes on an engine with no such concept.
+
+### 10.2 The operational state line [STANDARD]
+
+**Pattern:** an operational surface leads with one sentence answering the question its user actually
+arrives with — not with a row of equal-weight KPI tiles. Equal weight is no hierarchy: it makes the
+reader assemble the answer themselves from facts scattered across the page.
+
+`CampaignStateLine` is the reference implementation (`src/lib/comms/campaign-state.ts` holds the
+logic as a pure, unit-tested function; the component is thin). Reuse this shape for any surface whose
+health depends on several facts that live in different sections.
+
+- **Headline** — one sentence, active voice, stating what the thing is doing *and* to whom.
+  "Active" alone is not an answer; *"This campaign is live, but no one is enrolled yet — it has
+  nothing to send"* is.
+- **Blockers** — things preventing the surface doing its job. Ordered most-severe first, each with a
+  link to where it is fixed. **A blocker outranks lifecycle status**: a live campaign that cannot
+  dispatch takes the attention treatment rather than reading as calmly running.
+- **Notes** — real, but nothing is stuck. Suppressed sends are the compliance gate working correctly
+  and are **never** a blocker; they stay visible because a blocked send must never be silently dropped.
+- **Color** — blockers use the `gold` attention treatment (`border-gold/45` + the `from-gold/[0.06]`
+  wash, matching `MetricCard`'s attention tone); lifecycle tone otherwise resolves through the status
+  tokens. No new tokens.
+- **Copy is asserted, not eyeballed** — plural agreement, sentence punctuation, absent-value handling,
+  and enum leakage are unit-tested (`tests/comms-campaign-state.test.mjs`). Zero counts render
+  nothing at all rather than "0 things are wrong."
+
 ---
 
 ## 11. Enterprise layout system [STANDARD]
@@ -700,8 +758,8 @@ the *same* fix at wider blast radius, not a new decision:
 
 | Debt | Scope remaining | Fix |
 |---|---|---|
-| Double-bordered table wrapper (§9) | ~77 sites app-wide (10 fixed in comms) | Delete the redundant `rounded-lg border` wrapper |
-| Server-side locale timestamps (§7) | ~40 non-comms surfaces | Swap to `TimeCell` |
+| Double-bordered table wrapper (§9) | ~74 sites app-wide (10 fixed in comms, 3 more in the campaign pass — 2 of those in shared components, so they cover all six campaign surfaces) | Delete the redundant `rounded-lg border` wrapper |
+| Server-side locale timestamps (§7) | ~38 non-comms surfaces (2 more fixed in the campaign pass: `life-conversion/[id]`, `cross-sell-life/[id]`) | Swap to `TimeCell` |
 | Hand-rolled tablists (§7) | `compliance/consent`, `forms`, `archetypes/contact/notes` | Adopt `Segmented` |
 | Row-tally counts in JS | `/comms/analytics` (10,000 rows for 4 integers) | Head-only `loadCount`; needs a data decision first |
 

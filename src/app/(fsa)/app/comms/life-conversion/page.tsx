@@ -1,12 +1,12 @@
 import Link from 'next/link'
 import { ListShell, StatTile, ErrorState, EmptyState } from '@/components/archetypes'
 import { Card } from '@/components/ui/card'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
 import { campaignAnalytics } from '@/lib/life-campaign/analytics'
 import { CampaignControls } from '@/components/app/CampaignEngineControls'
 import { CAMPAIGN_ENGINES, campaignBreadcrumb, campaignDetailHref } from '@/lib/comms/campaign-presentation'
-import { CampaignStatusBadge, EnrollmentStatusBadge, CampaignHeaderActions, CampaignStat } from '@/components/comms/campaign/CampaignKit'
+import { CampaignStatusBadge, CampaignHeaderActions, CampaignStat } from '@/components/comms/campaign/CampaignKit'
+import { CampaignEnrollmentTable } from '@/components/comms/campaign/CampaignEnrollmentTable'
 
 export const dynamic = 'force-dynamic'
 
@@ -98,30 +98,32 @@ export default async function LifeConversionPage() {
 
         <Card className="p-5">
           <h2 className="mb-3 text-sm font-semibold">Operational controls</h2>
-          <CampaignControls campaignId={campaign.id} status={campaign.status} endpoint="/api/life-campaign" />
+          <CampaignControls campaignId={campaign.id} status={campaign.status} endpoint={ENGINE.apiRoot} />
           {!campaign.simulated_at && campaign.status !== 'active' && (
-            <p className="mt-3 text-xs text-muted-foreground">A read-only simulation is recommended before activation (ADR-021).</p>
+            <p className="mt-3 text-xs text-muted-foreground">
+              This campaign has never been simulated. Run a read-only simulation before activating it (ADR-021).
+            </p>
           )}
         </Card>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatTile label="Active enrollments" value={analytics?.active ?? 0} tone="brand" />
-          <StatTile label="Completed (Day 180)" value={analytics?.completed ?? 0} />
-          <StatTile label="Exited / suppressed" value={analytics?.exited ?? 0} />
-          <StatTile label="Message touches sent" value={analytics?.touches.sent ?? 0} hint="Through the compliance gate" />
+          <StatTile label="Active enrollments" value={analytics?.totals.active ?? 0} tone="brand" />
+          <StatTile label={`Completed (Day ${ENGINE.days})`} value={analytics?.totals.completed ?? 0} />
+          <StatTile label="Exited / suppressed" value={analytics?.totals.exited ?? 0} />
+          <StatTile label="Touches sent" value={analytics?.touches.sent ?? 0} hint="Through the compliance gate" />
         </div>
 
         <div className="grid gap-4 lg:grid-cols-2">
           <Card className="p-5">
             <h2 className="mb-3 text-sm font-semibold">Phase distribution (active)</h2>
             <div className="grid grid-cols-3 gap-3">
-              <CampaignStat label="Early (Day 1–47)" value={analytics?.byPhase.early ?? 0} />
-              <CampaignStat label="Mid (Day 48–134)" value={analytics?.byPhase.mid ?? 0} />
-              <CampaignStat label="Accelerated (135–180)" value={analytics?.byPhase.accelerated ?? 0} />
+              <CampaignStat label="Early (Day 1–47)" value={analytics?.byPhase?.early ?? 0} />
+              <CampaignStat label="Mid (Day 48–134)" value={analytics?.byPhase?.mid ?? 0} />
+              <CampaignStat label="Accelerated (Day 135–180)" value={analytics?.byPhase?.accelerated ?? 0} />
             </div>
           </Card>
           <Card className="p-5">
-            <h2 className="mb-3 text-sm font-semibold">Advisor outreach health (§9a)</h2>
+            <h2 className="mb-3 text-sm font-semibold">Advisor outreach health</h2>
             <div className="grid grid-cols-3 gap-3">
               <CampaignStat label="Fulfilled" value={analytics?.advisor.fulfilled ?? 0} />
               <CampaignStat label="Overdue" value={analytics?.advisor.overdue ?? 0} attentionWhenNonZero />
@@ -130,35 +132,13 @@ export default async function LifeConversionPage() {
           </Card>
         </div>
 
-        <div>
-          <h2 className="mb-2 text-sm font-semibold">Enrollments ({enrollments.ok ? enrollments.data.length : 0})</h2>
-          {!enrollments.ok ? (
-            <ErrorState description="Could not load enrollments." />
-          ) : enrollments.data.length === 0 ? (
-            <EmptyState title="No enrollments yet" description="Eligible term-conversion contacts are enrolled by the daily job or manually; each must have a verified deadline and no active opportunity." />
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Touch</TableHead>
-                  <TableHead>Baseline</TableHead>
-                  <TableHead>Conversion deadline</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {enrollments.data.map((e) => (
-                  <TableRow key={e.id}>
-                    <TableCell><EnrollmentStatusBadge status={e.status} /></TableCell>
-                    <TableCell className="text-muted-foreground">{e.current_touch_no} / {ENGINE.touches}</TableCell>
-                    <TableCell className="text-muted-foreground">{e.baseline_date}</TableCell>
-                    <TableCell className="text-muted-foreground">{e.conversion_deadline ?? '—'}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </div>
+        <CampaignEnrollmentTable
+          engine={ENGINE}
+          rows={enrollments.ok ? enrollments.data : null}
+          error={!enrollments.ok}
+          emptyDescription="Eligible term-conversion contacts are enrolled by the daily job or manually. Each must have a verified conversion deadline and no active opportunity."
+          extraColumns={[{ header: 'Conversion deadline', cell: (row) => row.conversion_deadline ?? '—' }]}
+        />
       </div>
     </ListShell>
   )

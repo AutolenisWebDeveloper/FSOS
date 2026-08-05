@@ -109,8 +109,8 @@ function CampaignPanel({ campaign, analytics }: { campaign: CampaignRow; analyti
       {/* KPI counts */}
       <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatTile label="Enrolled (all-time)" value={funnel?.enrolled ?? 0} />
-        <StatTile label="Active enrollments" value={analytics?.totals.active ?? 0} tone="brand" />
-        <StatTile label="Completed (Day 180)" value={analytics?.totals.completed ?? 0} />
+        <StatTile label="Active enrollments" value={analytics?.totals?.active ?? 0} tone="brand" />
+        <StatTile label={`Completed (Day ${ENGINE.days})`} value={analytics?.totals?.completed ?? 0} />
         <StatTile label="Opt-outs" value={funnel?.optOuts ?? 0} hint="STOP / unsubscribe / suppression" tone="attention" />
       </div>
 
@@ -135,9 +135,9 @@ function CampaignPanel({ campaign, analytics }: { campaign: CampaignRow; analyti
         <div className="rounded-lg border p-4">
           <p className="mb-3 text-xs font-medium text-muted-foreground">Channel sends (through the compliance gate)</p>
           <div className="grid grid-cols-3 gap-3">
-            <CampaignStat label="Email" value={analytics?.channels.email ?? 0} />
-            <CampaignStat label="SMS" value={analytics?.channels.sms ?? 0} />
-            <CampaignStat label="AI" value={analytics?.channels.ai ?? 0} />
+            <CampaignStat label="Email" value={analytics?.channels?.email ?? 0} />
+            <CampaignStat label="SMS" value={analytics?.channels?.sms ?? 0} />
+            <CampaignStat label="AI" value={analytics?.channels?.ai ?? 0} />
           </div>
         </div>
         <div className="rounded-lg border p-4">

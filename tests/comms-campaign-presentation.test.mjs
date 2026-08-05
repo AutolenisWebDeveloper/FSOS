@@ -40,6 +40,7 @@ const CONSUMERS = [
   'src/app/(fsa)/app/comms/cross-sell-life/page.tsx',
   'src/app/(fsa)/app/comms/cross-sell-life/[id]/page.tsx',
   'src/app/(fsa)/app/comms/pipeline-winback/page.tsx',
+  'src/app/(fsa)/app/comms/pipeline-winback/[id]/page.tsx',
 ]
 
 // ─── 1. The pure vocabulary ───────────────────────────────────────────────────
@@ -298,9 +299,14 @@ t('REGRESSION: a deleted declaration with a live call site is caught', () => {
   const mutantPath = 'src/app/(fsa)/app/comms/cross-sell-life/[id]/__fork-regression.mutant.tsx'
   const src = readFileSync(victim, 'utf8')
 
-  // Strip the shared-kit import, leaving every <TouchKindBadge …> call site in place.
-  const mutant = src.replace(/import \{\s*\n(?:\s+Campaign[\s\S]*?)\n\} from '@\/components\/comms\/campaign\/CampaignKit'\n/, '')
+  // Strip the shared-kit import, leaving every <CampaignStatusBadge …> call site in place.
+  // Matched format-independently (single- or multi-line) so a reformatted import does not
+  // silently turn this into a no-op test.
+  const KIT_IMPORT = /^import\s*\{[\s\S]*?\}\s*from\s*'@\/components\/comms\/campaign\/CampaignKit'\n/m
+  assert.match(src, KIT_IMPORT, `${victim} no longer imports the kit — pick a different victim`)
+  const mutant = src.replace(KIT_IMPORT, '')
   assert.notEqual(mutant, src, 'the mutation did not apply — this test is no longer testing anything')
+  assert.match(mutant, /<Campaign(StatusBadge|CrossLinks)/, 'the mutant has no live call site left, so there is nothing for tsc to catch')
 
   // The grep-style assertion the old test used still passes on the mutant…
   for (const fork of FORKS) {

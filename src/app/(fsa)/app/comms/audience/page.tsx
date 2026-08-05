@@ -4,6 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { load } from '@/lib/data/query'
 import { AudienceBuilderForm } from '@/components/app/SequenceControls'
 import { Numeric } from '@/components/ui/typography'
+import { TimeCell } from '@/components/ui/time'
 
 export const dynamic = 'force-dynamic'
 
@@ -46,28 +47,26 @@ export default async function AudiencePage() {
             {audiences.data.length === 0 ? (
               <EmptyState title="No audiences yet" description="Define your first segment below." />
             ) : (
-              <div className="rounded-lg border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Base</TableHead>
-                      <TableHead>Est. size</TableHead>
-                      <TableHead>Created</TableHead>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Base</TableHead>
+                    <TableHead>Est. size</TableHead>
+                    <TableHead>Created</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {audiences.data.map((a) => (
+                    <TableRow key={a.id}>
+                      <TableCell className="font-medium">{a.name}</TableCell>
+                      <TableCell><Badge variant="outline">{a.definition?.base ?? 'households'}</Badge></TableCell>
+                      <TableCell><Numeric>{Number(a.estimated_size ?? 0).toLocaleString('en-US')}</Numeric></TableCell>
+                      <TableCell className="text-muted-foreground"><TimeCell value={a.created_at} precision="date" /></TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {audiences.data.map((a) => (
-                      <TableRow key={a.id}>
-                        <TableCell className="font-medium">{a.name}</TableCell>
-                        <TableCell><Badge variant="outline">{a.definition?.base ?? 'households'}</Badge></TableCell>
-                        <TableCell><Numeric>{Number(a.estimated_size ?? 0).toLocaleString('en-US')}</Numeric></TableCell>
-                        <TableCell className="text-muted-foreground"><Numeric>{new Date(a.created_at).toLocaleDateString('en-US')}</Numeric></TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                  ))}
+                </TableBody>
+              </Table>
             )}
 
             <div className="rounded-lg border p-4">

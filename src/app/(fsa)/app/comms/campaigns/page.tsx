@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
-import { Numeric } from '@/components/ui/typography'
+import { TimeCell } from '@/components/ui/time'
 import { smsA2pApproved } from '@/lib/comms/a2p'
 
 export const dynamic = 'force-dynamic'
@@ -26,28 +26,26 @@ export default async function CampaignsPage() {
       ) : campaigns.data.length === 0 ? (
         <EmptyState title="No campaigns yet" description="Build a campaign from an approved template." action={<Button asChild><Link href="/app/comms/campaigns/new">New campaign</Link></Button>} />
       ) : (
-        <div className="rounded-lg border">
-          <Table>
-            <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Channel</TableHead><TableHead>Status</TableHead><TableHead>Activated</TableHead></TableRow></TableHeader>
-            <TableBody>
-              {campaigns.data.map((c) => (
-                <TableRow key={c.id}>
-                  <TableCell><Link href={`/app/comms/campaigns/${c.id}`} className="font-medium text-primary hover:underline">{c.name}</Link></TableCell>
-                  <TableCell>
-                    <span className="inline-flex items-center gap-1.5">
-                      <Badge variant="outline">{c.channel ?? '—'}</Badge>
-                      {c.channel === 'sms' && smsStaged && (
-                        <Badge variant="pending" title="SMS holds (queued, not sent) until A2P 10DLC approval">Pending A2P</Badge>
-                      )}
-                    </span>
-                  </TableCell>
-                  <TableCell><Badge variant={c.status === 'active' ? 'active' : c.status === 'completed' ? 'won' : c.status === 'paused' ? 'pending' : 'draft'}>{c.status}</Badge></TableCell>
-                  <TableCell className="text-muted-foreground">{c.activated_at ? <Numeric>{new Date(c.activated_at).toLocaleDateString('en-US')}</Numeric> : '—'}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <Table>
+          <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Channel</TableHead><TableHead>Status</TableHead><TableHead>Activated</TableHead></TableRow></TableHeader>
+          <TableBody>
+            {campaigns.data.map((c) => (
+              <TableRow key={c.id}>
+                <TableCell><Link href={`/app/comms/campaigns/${c.id}`} className="font-medium text-primary hover:underline">{c.name}</Link></TableCell>
+                <TableCell>
+                  <span className="inline-flex items-center gap-1.5">
+                    <Badge variant="outline">{c.channel ?? '—'}</Badge>
+                    {c.channel === 'sms' && smsStaged && (
+                      <Badge variant="pending" title="SMS holds (queued, not sent) until A2P 10DLC approval">Pending A2P</Badge>
+                    )}
+                  </span>
+                </TableCell>
+                <TableCell><Badge variant={c.status === 'active' ? 'active' : c.status === 'completed' ? 'won' : c.status === 'paused' ? 'pending' : 'draft'}>{c.status}</Badge></TableCell>
+                <TableCell className="text-muted-foreground"><TimeCell value={c.activated_at} precision="date" /></TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       )}
     </ListShell>
   )

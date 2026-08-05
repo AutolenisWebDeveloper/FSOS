@@ -190,40 +190,38 @@ export default async function PipelineWinbackPage() {
 
       {/* ── Schedule (24-touch timeline) ────────────────────── */}
       <Section title={`Schedule — 24 touches over 120 days`} description="Each enrollment runs this timeline on its own clock. At most one proactive touch per day; the compliance gate enforces recipient-local quiet hours.">
-        <div className="rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-12">#</TableHead>
-                <TableHead className="w-16">Day</TableHead>
-                <TableHead>Channel</TableHead>
-                <TableHead>Asset</TableHead>
-                <TableHead>Template</TableHead>
-                <TableHead>Approval</TableHead>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-12">#</TableHead>
+              <TableHead className="w-16">Day</TableHead>
+              <TableHead>Channel</TableHead>
+              <TableHead>Asset</TableHead>
+              <TableHead>Template</TableHead>
+              <TableHead>Approval</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {touches.map((t) => (
+              <TableRow key={t.touch_no}>
+                <TableCell className="tabular-nums text-muted-foreground">{t.touch_no}</TableCell>
+                <TableCell className="tabular-nums">{t.day_offset}</TableCell>
+                <TableCell><Badge variant="outline">{KIND_LABEL[t.kind] ?? t.kind}</Badge></TableCell>
+                <TableCell className="text-muted-foreground">{t.asset_label ?? '—'}</TableCell>
+                <TableCell className="text-muted-foreground">{t.kind === 'advisor_outreach' ? <span className="italic">advisor task (no template)</span> : (t.template?.name ?? '—')}</TableCell>
+                <TableCell>
+                  {t.kind === 'advisor_outreach' ? (
+                    <span className="text-muted-foreground">—</span>
+                  ) : t.template ? (
+                    <Badge variant={APPROVAL_TONE[t.template.approval_status] ?? 'outline'}>{t.template.approval_status}</Badge>
+                  ) : (
+                    <Badge variant="outline">missing</Badge>
+                  )}
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {touches.map((t) => (
-                <TableRow key={t.touch_no}>
-                  <TableCell className="tabular-nums text-muted-foreground">{t.touch_no}</TableCell>
-                  <TableCell className="tabular-nums">{t.day_offset}</TableCell>
-                  <TableCell><Badge variant="outline">{KIND_LABEL[t.kind] ?? t.kind}</Badge></TableCell>
-                  <TableCell className="text-muted-foreground">{t.asset_label ?? '—'}</TableCell>
-                  <TableCell className="text-muted-foreground">{t.kind === 'advisor_outreach' ? <span className="italic">advisor task (no template)</span> : (t.template?.name ?? '—')}</TableCell>
-                  <TableCell>
-                    {t.kind === 'advisor_outreach' ? (
-                      <span className="text-muted-foreground">—</span>
-                    ) : t.template ? (
-                      <Badge variant={APPROVAL_TONE[t.template.approval_status] ?? 'outline'}>{t.template.approval_status}</Badge>
-                    ) : (
-                      <Badge variant="outline">missing</Badge>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+            ))}
+          </TableBody>
+        </Table>
       </Section>
 
       {/* ── Assets ──────────────────────────────────────────── */}
@@ -339,30 +337,28 @@ export default async function PipelineWinbackPage() {
             description="Stalled internal opportunities are enrolled by the daily job or manually; each must be non-securities, opted-in, past the staleness floor, and free of an active advisor opportunity, appointment, or conversation."
           />
         ) : (
-          <div className="rounded-lg border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Touch</TableHead>
-                  <TableHead>Baseline</TableHead>
-                  <TableHead>Win-back reason</TableHead>
-                  <TableHead>Stale at enroll</TableHead>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Status</TableHead>
+                <TableHead>Touch</TableHead>
+                <TableHead>Baseline</TableHead>
+                <TableHead>Win-back reason</TableHead>
+                <TableHead>Stale at enroll</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {enrollments.data.map((e) => (
+                <TableRow key={e.id}>
+                  <TableCell><Badge variant={e.status === 'active' ? 'default' : 'outline'}>{e.status.replace(/_/g, ' ')}</Badge></TableCell>
+                  <TableCell className="text-muted-foreground">{e.current_touch_no} / 24</TableCell>
+                  <TableCell className="text-muted-foreground">{e.baseline_date}</TableCell>
+                  <TableCell className="text-muted-foreground">{e.winback_category ? (CATEGORY_LABEL[e.winback_category] ?? e.winback_category) : '—'}</TableCell>
+                  <TableCell className="text-muted-foreground">{e.stale_days_at_enroll != null ? `${e.stale_days_at_enroll}d` : '—'}</TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {enrollments.data.map((e) => (
-                  <TableRow key={e.id}>
-                    <TableCell><Badge variant={e.status === 'active' ? 'default' : 'outline'}>{e.status.replace(/_/g, ' ')}</Badge></TableCell>
-                    <TableCell className="text-muted-foreground">{e.current_touch_no} / 24</TableCell>
-                    <TableCell className="text-muted-foreground">{e.baseline_date}</TableCell>
-                    <TableCell className="text-muted-foreground">{e.winback_category ? (CATEGORY_LABEL[e.winback_category] ?? e.winback_category) : '—'}</TableCell>
-                    <TableCell className="text-muted-foreground">{e.stale_days_at_enroll != null ? `${e.stale_days_at_enroll}d` : '—'}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+              ))}
+            </TableBody>
+          </Table>
         )}
       </Section>
     </DetailShell>

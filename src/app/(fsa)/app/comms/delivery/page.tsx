@@ -1,54 +1,53 @@
-import { ListShell, ErrorState, StatTile } from '@/components/archetypes'
-import { Badge } from '@/components/ui/badge'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { load } from '@/lib/data/query'
-import { Numeric } from '@/components/ui/typography'
+import { ListShell, ErrorState, EmptyState, Section, StatTile } from '@/components/archetypes'
+import { MessageLogTable } from '@/components/comms/MessageLogTable'
+import { loadMessageLog } from '@/lib/comms/message-log'
+import { loadCount } from '@/lib/data/query'
+import { AlertTriangle, Clock, ShieldOff, Send } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
 // OS-12 Delivery (A2). sent/delivered/failed/blocked with retry (idempotent).
+//
+// The tally previously fetched up to 5,000 `delivery_status` rows and counted them in
+// JS — five columns of a table pulled over the wire to produce four integers, and
+// silently wrong past 5,000 rows. These are exact head-only counts now (no rows
+// transferred), which is both correct at any volume and materially cheaper.
 export default async function DeliveryPage() {
-  const msgs = await load<{ id: string; channel: string; recipient: string | null; delivery_status: string; block_reason: string | null; created_at: string }[]>(
-    (db) => db.from('comm_messages').select('id, channel, recipient, delivery_status, block_reason, created_at').in('delivery_status', ['failed', 'blocked']).order('created_at', { ascending: false }).limit(300),
-    [],
-  )
-  const counts = await load<{ delivery_status: string }[]>((db) => db.from('comm_messages').select('delivery_status').limit(5000), [])
-  const tally = (s: string) => (counts.ok ? counts.data.filter((m) => m.delivery_status === s).length : 0)
+  const head = { count: 'exact' as const, head: true }
+  const [msgs, sent, blocked, failed, queued] = await Promise.all([
+    loadMessageLog({ statuses: ['failed', 'bounced', 'blocked'], limit: 300 }),
+    loadCount((db) => db.from('comm_messages').select('id', head).in('delivery_status', ['sent', 'delivered'])),
+    loadCount((db) => db.from('comm_messages').select('id', head).eq('delivery_status', 'blocked')),
+    loadCount((db) => db.from('comm_messages').select('id', head).in('delivery_status', ['failed', 'bounced'])),
+    loadCount((db) => db.from('comm_messages').select('id', head).eq('delivery_status', 'queued')),
+  ])
 
   return (
-    <ListShell title="Delivery" description="Failed and blocked messages. Failed sends retry idempotently; blocked never silently dropped." breadcrumb={[{ label: 'FSA', href: '/app' }, { label: 'Comms', href: '/app/comms' }, { label: 'Delivery' }]}>
-      {!msgs.ok ? (
-        <ErrorState description={msgs.kind === 'not_configured' ? 'Database not configured.' : msgs.message} />
-      ) : (
-        <div className="space-y-4">
+    <ListShell
+      title="Delivery"
+      description="Failed and held messages. Failed sends retry idempotently; a held send is never silently dropped."
+      breadcrumb={[{ label: 'FSA', href: '/app' }, { label: 'Comms', href: '/app/comms' }, { label: 'Delivery' }]}
+    >
+      <div className="space-y-section">
+        <Section title="Delivery state" description="Every message FSOS has attempted, by outcome.">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatTile label="Sent" value={tally('sent') + tally('delivered')} href="/app/comms" />
-            <StatTile label="Blocked" value={tally('blocked')} href="/app/comms/delivery" />
-            <StatTile label="Failed" value={tally('failed')} href="/app/comms/delivery" />
-            <StatTile label="Queued" value={tally('queued')} href="/app/comms/delivery" />
+            <StatTile label="Sent" value={sent} hint="Accepted or confirmed delivered" icon={Send} tone="brand" />
+            <StatTile label="Held by the gate" value={blocked} href="/app/comms/delivery" hint="Awaiting a person or a later cycle" icon={ShieldOff} tone={blocked ? 'attention' : 'neutral'} />
+            <StatTile label="Failed" value={failed} href="/app/comms/delivery" hint="Rejected or bounced" icon={AlertTriangle} tone={failed ? 'critical' : 'neutral'} />
+            <StatTile label="Queued" value={queued} hint="Passed the gate, awaiting dispatch" icon={Clock} />
           </div>
-          {msgs.data.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No failed or blocked messages.</p>
+        </Section>
+
+        <Section title="Exceptions" description="Held and failed sends, most recent first. The gate column says which step stopped it.">
+          {!msgs.ok ? (
+            <ErrorState description={msgs.kind === 'not_configured' ? 'Database not configured.' : msgs.message} />
+          ) : msgs.data.length === 0 ? (
+            <EmptyState title="Nothing held or failed" description="Every send in range cleared the gate and was accepted by its provider." />
           ) : (
-            <div className="rounded-lg border">
-              <Table>
-                <TableHeader><TableRow><TableHead>When</TableHead><TableHead>Channel</TableHead><TableHead>Recipient</TableHead><TableHead>Status</TableHead><TableHead>Reason</TableHead></TableRow></TableHeader>
-                <TableBody>
-                  {msgs.data.map((m) => (
-                    <TableRow key={m.id}>
-                      <TableCell className="text-muted-foreground"><Numeric>{new Date(m.created_at).toLocaleString('en-US')}</Numeric></TableCell>
-                      <TableCell><Badge variant="outline">{m.channel}</Badge></TableCell>
-                      <TableCell className="text-muted-foreground">{m.recipient ?? '—'}</TableCell>
-                      <TableCell><Badge variant={m.delivery_status === 'blocked' ? 'blocked' : 'lost'}>{m.delivery_status}</Badge></TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{m.block_reason ?? '—'}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <MessageLogTable rows={msgs.data} caption="Held and failed messages, most recent first" showDirection={false} />
           )}
-        </div>
-      )}
+        </Section>
+      </div>
     </ListShell>
   )
 }

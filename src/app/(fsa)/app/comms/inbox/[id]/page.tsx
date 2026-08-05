@@ -3,8 +3,8 @@ import { notFound } from 'next/navigation'
 import { DetailShell } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
 import { load } from '@/lib/data/query'
-import { Numeric } from '@/components/ui/typography'
 import { ConversationReply, AutoReplyToggle } from '@/components/app/ConversationReply'
+import { TimeCell } from '@/components/ui/time'
 
 export const dynamic = 'force-dynamic'
 
@@ -81,7 +81,7 @@ export default async function ThreadPage(props: { params: Promise<{ id: string }
                   {m.subject ? <div className="mb-1 font-medium">{m.subject}</div> : null}
                   <div className="whitespace-pre-wrap">{m.body ?? '—'}</div>
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    <Numeric>{new Date(m.created_at).toLocaleString('en-US')}</Numeric>
+                    <TimeCell value={m.created_at} />
                     <Badge variant={m.delivery_status === 'blocked' ? 'blocked' : m.delivery_status === 'delivered' || m.delivery_status === 'sent' ? 'won' : m.delivery_status === 'received' ? 'outline' : 'pending'}>{m.delivery_status}</Badge>
                     {m.ai_generated ? <Badge variant="outline">AI</Badge> : null}
                     {m.opened_at ? <span>opened</span> : null}

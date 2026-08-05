@@ -3,14 +3,14 @@ import { notFound } from 'next/navigation'
 import { DetailShell, Section, EmptyState, AssumptionBadge } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
 import { loadCampaignDetail } from '@/lib/cross-sell-life/detail'
 import { campaignAnalytics } from '@/lib/cross-sell-life/analytics'
 import { CampaignControls } from './controls'
 import { CampaignHealthPanel } from '@/components/app/CampaignHealthPanel'
 import { TimeCell } from '@/components/ui/time'
-import { CAMPAIGN_ENGINES, CAMPAIGN_ENGINE_LIST, campaignBreadcrumb, campaignStatus } from '@/lib/comms/campaign-presentation'
+import { CAMPAIGN_ENGINES, CAMPAIGN_ENGINE_LIST, campaignBreadcrumb, campaignDetailHref, campaignStatus } from '@/lib/comms/campaign-presentation'
 import { CampaignStatusBadge, CampaignCrossLinks } from '@/components/comms/campaign/CampaignKit'
 import { CampaignControlsSection } from '@/components/comms/campaign/CampaignControlsSection'
 import { CampaignAnalyticsPanel } from '@/components/comms/campaign/CampaignAnalyticsPanel'
@@ -257,38 +257,46 @@ export default async function CrossSellLifeDetailPage(props: { params: Promise<{
           {detail.versions.length === 0 ? (
             <EmptyState title="No versions" description="This campaign family has no recorded versions yet." />
           ) : (
-            <div className="overflow-x-auto rounded-lg border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead scope="col">Version</TableHead>
-                    <TableHead scope="col">Status</TableHead>
-                    <TableHead scope="col">Created</TableHead>
-                    <TableHead scope="col"></TableHead>
+            <Table>
+              <TableCaption srOnly>
+                {`Version history for ${s.family_key} — ${detail.versions.length} versions, with status and creation date.`}
+              </TableCaption>
+              <TableHeader>
+                <TableRow>
+                  <TableHead scope="col">Version</TableHead>
+                  <TableHead scope="col">Status</TableHead>
+                  <TableHead scope="col">Created</TableHead>
+                  <TableHead scope="col">
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {detail.versions.map((v) => (
+                  <TableRow key={v.id} className={v.id === s.id ? 'bg-muted/30' : undefined}>
+                    <TableCell className="numeric">v{v.version}</TableCell>
+                    <TableCell>
+                      <CampaignStatusBadge status={v.status} />
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      <TimeCell value={v.created_at} precision="date" />
+                    </TableCell>
+                    <TableCell>
+                      {v.id === s.id ? (
+                        <span className="text-xs text-muted-foreground">Viewing</span>
+                      ) : (
+                        <Link
+                          href={campaignDetailHref(ENGINE, v.id)}
+                          className="text-sm text-primary underline-offset-4 hover:underline"
+                        >
+                          Open v{v.version}
+                        </Link>
+                      )}
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {detail.versions.map((v) => (
-                    <TableRow key={v.id} className={v.id === s.id ? 'bg-muted/30' : undefined}>
-                      <TableCell className="tabular-nums">v{v.version}</TableCell>
-                      <TableCell>
-                        <CampaignStatusBadge status={v.status} />
-                      </TableCell>
-                      <TableCell className="text-muted-foreground"><TimeCell value={v.created_at} precision="date" /></TableCell>
-                      <TableCell>
-                        {v.id === s.id ? (
-                          <span className="text-xs text-muted-foreground">Viewing</span>
-                        ) : (
-                          <Link href={`/app/comms/cross-sell-life/${v.id}`} className="text-primary text-sm underline-offset-4 hover:underline">
-                            Open →
-                          </Link>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                ))}
+              </TableBody>
+            </Table>
           )}
         </Section>
 

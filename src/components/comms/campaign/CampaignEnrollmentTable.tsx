@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { Section, ErrorState, EmptyState } from '@/components/archetypes'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { TimeCell } from '@/components/ui/time'
 import { EnrollmentStatusBadge } from './CampaignKit'
 import type { CampaignEngine } from '@/lib/comms/campaign-presentation'
@@ -58,42 +58,43 @@ export function CampaignEnrollmentTable<Row extends CampaignEnrollmentRow>({
       ) : rows.length === 0 ? (
         <EmptyState title="No enrollments yet" description={emptyDescription} />
       ) : (
-        <div className="overflow-x-auto rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead scope="col">Status</TableHead>
-                <TableHead scope="col">Touch</TableHead>
-                <TableHead scope="col">Baseline</TableHead>
+        <Table>
+          <TableCaption srOnly>
+            {`${engine.title} enrollments — ${rows.length} most recently updated, with status, timeline position, and baseline date.`}
+          </TableCaption>
+          <TableHeader>
+            <TableRow>
+              <TableHead scope="col">Status</TableHead>
+              <TableHead scope="col">Touch</TableHead>
+              <TableHead scope="col">Baseline</TableHead>
+              {extraColumns.map((c) => (
+                <TableHead key={c.header} scope="col">
+                  {c.header}
+                </TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row) => (
+              <TableRow key={row.id}>
+                <TableCell>
+                  <EnrollmentStatusBadge status={row.status} />
+                </TableCell>
+                <TableCell className="numeric text-muted-foreground">
+                  {row.current_touch_no} / {engine.touches}
+                </TableCell>
+                <TableCell className="text-muted-foreground">
+                  <TimeCell value={row.baseline_date} precision="date" />
+                </TableCell>
                 {extraColumns.map((c) => (
-                  <TableHead key={c.header} scope="col">
-                    {c.header}
-                  </TableHead>
+                  <TableCell key={c.header} className="text-muted-foreground">
+                    {c.cell(row)}
+                  </TableCell>
                 ))}
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell>
-                    <EnrollmentStatusBadge status={row.status} />
-                  </TableCell>
-                  <TableCell className="numeric text-muted-foreground">
-                    {row.current_touch_no} / {engine.touches}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    <TimeCell value={row.baseline_date} precision="date" />
-                  </TableCell>
-                  {extraColumns.map((c) => (
-                    <TableCell key={c.header} className="text-muted-foreground">
-                      {c.cell(row)}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+            ))}
+          </TableBody>
+        </Table>
       )}
     </Section>
   )

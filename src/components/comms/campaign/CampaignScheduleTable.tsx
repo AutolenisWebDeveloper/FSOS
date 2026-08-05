@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { Section } from '@/components/archetypes'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { TouchKindBadge, ApprovalBadge } from './CampaignKit'
 import type { CampaignEngine } from '@/lib/comms/campaign-presentation'
 
@@ -44,51 +44,52 @@ export function CampaignScheduleTable({
 }) {
   return (
     <Section title={`Schedule — ${engine.touches} touches over ${engine.days} days`} description={description}>
-      <div className="overflow-x-auto rounded-lg border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead scope="col" className="w-12">
-                #
-              </TableHead>
-              <TableHead scope="col" className="w-20">
-                Day
-              </TableHead>
-              <TableHead scope="col">Channel</TableHead>
-              <TableHead scope="col">Asset</TableHead>
-              <TableHead scope="col">Template</TableHead>
-              {showPlaybook ? <TableHead scope="col">Playbook</TableHead> : null}
-              <TableHead scope="col">Approval</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {touches.map((t) => {
-              const advisorTask = t.kind === 'advisor_outreach'
-              const name = stripTemplatePrefix ? t.template?.name.replace(stripTemplatePrefix, '') : t.template?.name
-              return (
-                <TableRow
-                  key={t.touch_no}
-                  className={acceleratesFromDay != null && t.day_offset >= acceleratesFromDay ? 'bg-muted/30' : undefined}
-                >
-                  <TableCell className="numeric text-muted-foreground">{t.touch_no}</TableCell>
-                  <TableCell className="numeric">Day {t.day_offset}</TableCell>
-                  <TableCell>
-                    <TouchKindBadge kind={t.kind} />
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{t.asset_label ?? '—'}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {advisorTask ? <span className="italic">Advisor task — no template</span> : (name ?? '—')}
-                  </TableCell>
-                  {showPlaybook ? <TableCell className="text-muted-foreground">{t.playbook_key ?? '—'}</TableCell> : null}
-                  <TableCell>
-                    <ApprovalBadge status={t.template?.approval_status} advisorTask={advisorTask} />
-                  </TableCell>
-                </TableRow>
-              )
-            })}
-          </TableBody>
-        </Table>
-      </div>
+      <Table>
+        <TableCaption srOnly>
+          {`${engine.title} touch timeline — ${engine.touches} touches over ${engine.days} days, with channel, asset, template, and approval state for each.`}
+        </TableCaption>
+        <TableHeader>
+          <TableRow>
+            <TableHead scope="col" className="w-12">
+              #
+            </TableHead>
+            <TableHead scope="col" className="w-20">
+              Day
+            </TableHead>
+            <TableHead scope="col">Channel</TableHead>
+            <TableHead scope="col">Asset</TableHead>
+            <TableHead scope="col">Template</TableHead>
+            {showPlaybook ? <TableHead scope="col">Playbook</TableHead> : null}
+            <TableHead scope="col">Approval</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {touches.map((t) => {
+            const advisorTask = t.kind === 'advisor_outreach'
+            const name = stripTemplatePrefix ? t.template?.name.replace(stripTemplatePrefix, '') : t.template?.name
+            return (
+              <TableRow
+                key={t.touch_no}
+                className={acceleratesFromDay != null && t.day_offset >= acceleratesFromDay ? 'bg-muted/30' : undefined}
+              >
+                <TableCell className="numeric text-muted-foreground">{t.touch_no}</TableCell>
+                <TableCell className="numeric">Day {t.day_offset}</TableCell>
+                <TableCell>
+                  <TouchKindBadge kind={t.kind} />
+                </TableCell>
+                <TableCell className="text-muted-foreground">{t.asset_label ?? '—'}</TableCell>
+                <TableCell className="text-muted-foreground">
+                  {advisorTask ? <span className="italic">Advisor task — no template</span> : (name ?? '—')}
+                </TableCell>
+                {showPlaybook ? <TableCell className="text-muted-foreground">{t.playbook_key ?? '—'}</TableCell> : null}
+                <TableCell>
+                  <ApprovalBadge status={t.template?.approval_status} advisorTask={advisorTask} />
+                </TableCell>
+              </TableRow>
+            )
+          })}
+        </TableBody>
+      </Table>
     </Section>
   )
 }

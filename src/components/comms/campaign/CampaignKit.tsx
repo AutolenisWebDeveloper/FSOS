@@ -57,8 +57,12 @@ export function EnrollmentStatusBadge({ status }: { status: string | null | unde
 
 export function TouchKindBadge({ kind }: { kind: string | null | undefined }) {
   const k = touchKind(kind)
+  // Reads the variant off the vocabulary rather than hardcoding `outline`. Every touch
+  // kind resolves to `outline` today, so this is currently equivalent — but hardcoding it
+  // would mean a change to the shared vocabulary silently failed to reach this badge,
+  // which is precisely the drift the shared layer exists to prevent.
   return (
-    <Badge variant="outline" title={k.description}>
+    <Badge variant={k.variant} title={k.description}>
       {k.label}
     </Badge>
   )

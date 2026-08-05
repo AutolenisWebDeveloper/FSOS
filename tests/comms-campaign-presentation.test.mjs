@@ -46,10 +46,17 @@ const CONSUMERS = [
 // ─── 1. The pure vocabulary ───────────────────────────────────────────────────
 
 const out = mkdtempSync(join(tmpdir(), 'fsos-campaign-'))
+// `--rootDir src/lib` is load-bearing: without it tsc derives the output layout from the
+// COMMON SOURCE DIRECTORY of whatever files the compilation happens to pull in. Today
+// message-status.ts reaches src/lib/compliance through gate.ts, so the common root is
+// src/lib and the emit lands at <out>/comms/…. Drop that transitive import and the root
+// collapses to src/lib/comms, the emit moves to <out>/…, and the require below fails with
+// a confusing MODULE_NOT_FOUND that has nothing to do with what broke. Pinning rootDir
+// makes the layout a property of this test rather than of an unrelated import graph.
 execSync(
   `npx tsc src/lib/comms/campaign-presentation.ts src/lib/comms/message-status.ts ` +
-    `--outDir ${out} --module commonjs --target es2020 --moduleResolution node --skipLibCheck --esModuleInterop ` +
-    `--lib es2020,dom`,
+    `--rootDir src/lib --outDir ${out} --module commonjs --target es2020 --moduleResolution node ` +
+    `--skipLibCheck --esModuleInterop --lib es2020,dom`,
   { stdio: 'inherit' },
 )
 const require = createRequire(import.meta.url)

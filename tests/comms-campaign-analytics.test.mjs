@@ -19,13 +19,17 @@ import { join } from 'node:path'
 import { createRequire } from 'node:module'
 
 const out = mkdtempSync(join(tmpdir(), 'fsos-campaign-analytics-'))
+// `--rootDir src/lib` pins the emit layout. Without it the output path depends on the
+// common source directory of whatever the compilation transitively pulls in — so adding
+// a single cross-directory import to campaign-analytics.ts would silently move the emit
+// and break the require below for reasons unrelated to the change.
 execSync(
-  `npx tsc src/lib/comms/campaign-analytics.ts --outDir ${out} --module commonjs --target es2020 ` +
-    `--moduleResolution node --skipLibCheck --esModuleInterop --lib es2020`,
+  `npx tsc src/lib/comms/campaign-analytics.ts --rootDir src/lib --outDir ${out} --module commonjs ` +
+    `--target es2020 --moduleResolution node --skipLibCheck --esModuleInterop --lib es2020`,
   { stdio: 'inherit' },
 )
 const require = createRequire(import.meta.url)
-const A = require(join(out, 'campaign-analytics.js'))
+const A = require(join(out, 'comms/campaign-analytics.js'))
 
 let passed = 0
 const t = (name, fn) => {

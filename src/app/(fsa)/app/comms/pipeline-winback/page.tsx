@@ -10,6 +10,22 @@ import { PLAYBOOKS, ADVISOR_SCRIPTS, EVENT_DRIVEN_SMS } from '@/lib/pipeline-win
 import { WINBACK_CANDIDATE_STAGES } from '@/lib/pipeline-winback/eligibility'
 import { CampaignControls } from '@/components/app/CampaignEngineControls'
 import { CampaignHealthPanel } from '@/components/app/CampaignHealthPanel'
+import { TimeCell } from '@/components/ui/time'
+import {
+  CAMPAIGN_ENGINES,
+  CAMPAIGN_ENGINE_LIST,
+  campaignBreadcrumb,
+  winbackCategory,
+} from '@/lib/comms/campaign-presentation'
+import {
+  CampaignStatusBadge,
+  EnrollmentStatusBadge,
+  TouchKindBadge,
+  ApprovalBadge,
+  CampaignStat,
+  CampaignHeaderActions,
+  CampaignCrossLinks,
+} from '@/components/comms/campaign/CampaignKit'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,37 +33,11 @@ export const dynamic = 'force-dynamic'
 // campaign: operational controls (§5a), configuration & settings, the 24-touch schedule, the
 // seeded assets (with approval status), the AI/advisor workflows, live analytics, and the
 // enrollment roster. Read-only data; controls POST to the audited /api/pipeline-winback endpoints.
-// Distinct from the imported /app/winback origination flow (ADR-031).
+// Distinct from the imported /app/winback origination flow (ADR-031). Status vocabulary, engine
+// identity, and badges come from the shared campaign layer (@/lib/comms/campaign-presentation +
+// CampaignKit) — never redeclared here.
 
-const STATUS_TONE: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-  active: 'default',
-  paused: 'secondary',
-  disabled: 'secondary',
-  emergency_stopped: 'destructive',
-  archived: 'outline',
-  draft: 'outline',
-  approval_pending: 'secondary',
-}
-
-const CATEGORY_LABEL: Record<string, string> = {
-  lost: 'Lost opportunity',
-  stalled_quote: 'Stalled quote',
-  abandoned_application: 'Abandoned application',
-  inactive: 'Inactive lead',
-}
-
-const KIND_LABEL: Record<string, string> = {
-  email: 'Email',
-  sms: 'SMS',
-  ai_conversation: 'AI conversation',
-  advisor_outreach: 'Advisor outreach',
-}
-
-const APPROVAL_TONE: Record<string, 'default' | 'secondary' | 'outline'> = {
-  approved: 'default',
-  submitted: 'secondary',
-  draft: 'outline',
-}
+const ENGINE = CAMPAIGN_ENGINES.pipeline_winback
 
 interface EnrollmentRow {
   id: string
@@ -66,7 +56,7 @@ export default async function PipelineWinbackPage() {
 
   if (!campaigns.ok) {
     return (
-      <DetailShell title="Win-Back Campaign" breadcrumb={crumb()}>
+      <DetailShell title={ENGINE.title} breadcrumb={campaignBreadcrumb(ENGINE)}>
         <ErrorState description={campaigns.kind === 'not_configured' ? 'Database not configured.' : campaigns.message} />
       </DetailShell>
     )
@@ -74,8 +64,11 @@ export default async function PipelineWinbackPage() {
   const campaignId = campaigns.data[0]?.id
   if (!campaignId) {
     return (
-      <DetailShell title="Win-Back Campaign" breadcrumb={crumb()}>
-        <EmptyState title="No campaign found" description="Run migration 084 to seed the Win-Back Campaign and its 24-touch timeline." />
+      <DetailShell title={ENGINE.title} breadcrumb={campaignBreadcrumb(ENGINE)}>
+        <EmptyState
+          title="No campaign found"
+          description={`Run migration ${ENGINE.seedMigration} to seed the ${ENGINE.title} campaign and its ${ENGINE.touches}-touch timeline.`}
+        />
       </DetailShell>
     )
   }
@@ -97,7 +90,7 @@ export default async function PipelineWinbackPage() {
 
   if (!detail) {
     return (
-      <DetailShell title="Win-Back Campaign" breadcrumb={crumb()}>
+      <DetailShell title={ENGINE.title} breadcrumb={campaignBreadcrumb(ENGINE)}>
         <ErrorState description="Could not load the campaign." />
       </DetailShell>
     )
@@ -112,20 +105,9 @@ export default async function PipelineWinbackPage() {
   return (
     <DetailShell
       title={config.name}
-      description="120-day, 24-touch multi-channel re-engagement for stalled internal pipeline opportunities. Every send passes the compliance gate; eligibility is rechecked before every touch. Distinct from the imported win-back list."
-      breadcrumb={crumb()}
-      status={
-        <div className="flex items-center gap-2">
-          <Badge variant={STATUS_TONE[config.status] ?? 'outline'}>{config.status.replace(/_/g, ' ')}</Badge>
-          {config.is_assumption && <AssumptionBadge />}
-          <Link
-            href="/app/comms/console?mode=test&campaign=pipeline_winback"
-            className="rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-muted"
-          >
-            Test this campaign
-          </Link>
-        </div>
-      }
+      description={ENGINE.description}
+      breadcrumb={campaignBreadcrumb(ENGINE)}
+      status={<CampaignHeaderActions engine={ENGINE} status={config.status} isAssumption={config.is_assumption} />}
       rail={<Rail unapprovedCount={unapprovedCount} />}
     >
       {/* ── Summary ─────────────────────────────────────────── */}
@@ -173,8 +155,8 @@ export default async function PipelineWinbackPage() {
             <Field label="Advisor reassign after" value={`${config.advisor_reassign_after_hours} h`} assumption />
             <Field label="Conversation timeout" value={`${config.conversation_timeout_hours} h`} assumption />
             <Field label="Advisor hold behavior" value={config.advisor_hold_behavior} note="proceed = a missed advisor task never stalls the timeline" />
-            <Field label="Created" value={new Date(config.created_at).toLocaleDateString()} />
-            <Field label="Last simulation" value={config.simulated_at ? new Date(config.simulated_at).toLocaleDateString() : 'never'} />
+            <Field label="Created" node={<TimeCell value={config.created_at} precision="date" />} />
+            <Field label="Last simulation" node={config.simulated_at ? <TimeCell value={config.simulated_at} precision="date" /> : <span>Never</span>} />
           </dl>
         </Card>
       </Section>
@@ -206,17 +188,11 @@ export default async function PipelineWinbackPage() {
               <TableRow key={t.touch_no}>
                 <TableCell className="tabular-nums text-muted-foreground">{t.touch_no}</TableCell>
                 <TableCell className="tabular-nums">{t.day_offset}</TableCell>
-                <TableCell><Badge variant="outline">{KIND_LABEL[t.kind] ?? t.kind}</Badge></TableCell>
+                <TableCell><TouchKindBadge kind={t.kind} /></TableCell>
                 <TableCell className="text-muted-foreground">{t.asset_label ?? '—'}</TableCell>
                 <TableCell className="text-muted-foreground">{t.kind === 'advisor_outreach' ? <span className="italic">advisor task (no template)</span> : (t.template?.name ?? '—')}</TableCell>
                 <TableCell>
-                  {t.kind === 'advisor_outreach' ? (
-                    <span className="text-muted-foreground">—</span>
-                  ) : t.template ? (
-                    <Badge variant={APPROVAL_TONE[t.template.approval_status] ?? 'outline'}>{t.template.approval_status}</Badge>
-                  ) : (
-                    <Badge variant="outline">missing</Badge>
-                  )}
+                  <ApprovalBadge status={t.template?.approval_status} advisorTask={t.kind === 'advisor_outreach'} />
                 </TableCell>
               </TableRow>
             ))}
@@ -289,27 +265,27 @@ export default async function PipelineWinbackPage() {
         <div className="grid gap-4 lg:grid-cols-2">
           <Card className="p-5">
             <h3 className="mb-3 text-sm font-semibold">Phase distribution (active)</h3>
-            <div className="grid grid-cols-3 gap-3 text-center">
-              <MiniCell label="Early (Day 1–41)" value={analytics?.byPhase.early ?? 0} />
-              <MiniCell label="Mid (Day 42–89)" value={analytics?.byPhase.mid ?? 0} />
-              <MiniCell label="Accelerated (90–120)" value={analytics?.byPhase.accelerated ?? 0} />
+            <div className="grid grid-cols-3 gap-3">
+              <CampaignStat label="Early (Day 1–41)" value={analytics?.byPhase.early ?? 0} />
+              <CampaignStat label="Mid (Day 42–89)" value={analytics?.byPhase.mid ?? 0} />
+              <CampaignStat label="Accelerated (90–120)" value={analytics?.byPhase.accelerated ?? 0} />
             </div>
           </Card>
           <Card className="p-5">
             <h3 className="mb-3 text-sm font-semibold">Advisor outreach health (§9a)</h3>
-            <div className="grid grid-cols-3 gap-3 text-center">
-              <MiniCell label="Fulfilled" value={analytics?.advisor.fulfilled ?? 0} />
-              <MiniCell label="Overdue" value={analytics?.advisor.overdue ?? 0} tone="attention" />
-              <MiniCell label="Missed" value={analytics?.advisor.missed ?? 0} />
+            <div className="grid grid-cols-3 gap-3">
+              <CampaignStat label="Fulfilled" value={analytics?.advisor.fulfilled ?? 0} />
+              <CampaignStat label="Overdue" value={analytics?.advisor.overdue ?? 0} attentionWhenNonZero />
+              <CampaignStat label="Missed" value={analytics?.advisor.missed ?? 0} />
             </div>
           </Card>
           <Card className="p-5">
             <h3 className="mb-3 text-sm font-semibold">Touch outcomes</h3>
-            <div className="grid grid-cols-4 gap-3 text-center">
-              <MiniCell label="Sent" value={analytics?.touches.sent ?? 0} />
-              <MiniCell label="Suppressed" value={analytics?.touches.suppressed ?? 0} />
-              <MiniCell label="Skipped" value={analytics?.touches.skipped ?? 0} />
-              <MiniCell label="Scheduled" value={analytics?.touches.scheduled ?? 0} />
+            <div className="grid grid-cols-4 gap-3">
+              <CampaignStat label="Sent" value={analytics?.touches.sent ?? 0} />
+              <CampaignStat label="Suppressed" value={analytics?.touches.suppressed ?? 0} attentionWhenNonZero />
+              <CampaignStat label="Skipped" value={analytics?.touches.skipped ?? 0} />
+              <CampaignStat label="Scheduled" value={analytics?.touches.scheduled ?? 0} />
             </div>
           </Card>
           <Card className="p-5">
@@ -317,9 +293,9 @@ export default async function PipelineWinbackPage() {
             {categoryEntries.length === 0 ? (
               <p className="text-sm text-muted-foreground">No enrollments yet.</p>
             ) : (
-              <div className="grid grid-cols-2 gap-3 text-center">
+              <div className="grid grid-cols-2 gap-3">
                 {categoryEntries.map(([key, value]) => (
-                  <MiniCell key={key} label={CATEGORY_LABEL[key] ?? key} value={value} />
+                  <CampaignStat key={key} label={winbackCategory(key)} value={value} />
                 ))}
               </div>
             )}
@@ -350,10 +326,10 @@ export default async function PipelineWinbackPage() {
             <TableBody>
               {enrollments.data.map((e) => (
                 <TableRow key={e.id}>
-                  <TableCell><Badge variant={e.status === 'active' ? 'default' : 'outline'}>{e.status.replace(/_/g, ' ')}</Badge></TableCell>
-                  <TableCell className="text-muted-foreground">{e.current_touch_no} / 24</TableCell>
-                  <TableCell className="text-muted-foreground">{e.baseline_date}</TableCell>
-                  <TableCell className="text-muted-foreground">{e.winback_category ? (CATEGORY_LABEL[e.winback_category] ?? e.winback_category) : '—'}</TableCell>
+                  <TableCell><EnrollmentStatusBadge status={e.status} /></TableCell>
+                  <TableCell className="text-muted-foreground">{e.current_touch_no} / {ENGINE.touches}</TableCell>
+                  <TableCell className="text-muted-foreground"><TimeCell value={e.baseline_date} precision="date" /></TableCell>
+                  <TableCell className="text-muted-foreground">{winbackCategory(e.winback_category)}</TableCell>
                   <TableCell className="text-muted-foreground">{e.stale_days_at_enroll != null ? `${e.stale_days_at_enroll}d` : '—'}</TableCell>
                 </TableRow>
               ))}
@@ -365,14 +341,14 @@ export default async function PipelineWinbackPage() {
   )
 }
 
-function Field({ label, value, note, assumption }: { label: string; value: string; note?: string; assumption?: boolean }) {
+function Field({ label, value, node, note, assumption }: { label: string; value?: string; node?: React.ReactNode; note?: string; assumption?: boolean }) {
   return (
     <div>
       <dt className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-muted-foreground">
         {label}
         {assumption && <AssumptionBadge label="default" />}
       </dt>
-      <dd className="mt-1 text-sm font-medium">{value}</dd>
+      <dd className="mt-1 text-sm font-medium">{node ?? value}</dd>
       {note && <dd className="mt-0.5 text-xs text-muted-foreground">{note}</dd>}
     </div>
   )
@@ -388,7 +364,7 @@ function AssetGroup({ title, items }: { title: string; items: { id: string; name
           <details key={a.id} className="rounded-md border p-3">
             <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2">
               <span className="text-sm font-medium">{a.name}</span>
-              <Badge variant={APPROVAL_TONE[a.approval_status] ?? 'outline'}>{a.approval_status}</Badge>
+              <ApprovalBadge status={a.approval_status} />
             </summary>
             <pre className="mt-3 whitespace-pre-wrap break-words font-sans text-sm text-muted-foreground">{a.body}</pre>
           </details>
@@ -398,27 +374,19 @@ function AssetGroup({ title, items }: { title: string; items: { id: string; name
   )
 }
 
-function MiniCell({ label, value, tone }: { label: string; value: number; tone?: 'attention' }) {
-  return (
-    <div className={`rounded-lg border p-3 ${tone === 'attention' && value > 0 ? 'border-status-pending/60' : ''}`}>
-      <p className="text-2xl font-semibold tabular-nums">{value}</p>
-      <p className="mt-1 text-xs text-muted-foreground">{label}</p>
-    </div>
-  )
-}
 
 function Rail({ unapprovedCount }: { unapprovedCount: number }) {
   return (
     <div className="space-y-3 text-sm">
       <div>
-        <p className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">Related</p>
-        <ul className="space-y-1">
-          <li><Link className="text-primary hover:underline" href="/app/comms/templates">Templates library {unapprovedCount > 0 ? `(${unapprovedCount} to approve)` : ''}</Link></li>
-          <li><Link className="text-primary hover:underline" href="/app/comms/suppression">Suppression</Link></li>
-          <li><Link className="text-primary hover:underline" href="/app/comms">Communications overview</Link></li>
-          <li><Link className="text-primary hover:underline" href="/app/comms/life-conversion">Life Conversion Campaign</Link></li>
+        <p className="mb-1.5 text-xs uppercase tracking-wide text-muted-foreground">Related</p>
+        <ul className="space-y-1.5">
+          <li><Link className="text-primary underline-offset-4 hover:underline" href="/app/comms/templates">Templates library {unapprovedCount > 0 ? `(${unapprovedCount} to approve)` : ''}</Link></li>
+          <li><Link className="text-primary underline-offset-4 hover:underline" href="/app/comms/suppression">Suppression</Link></li>
+          <li><Link className="text-primary underline-offset-4 hover:underline" href="/app/comms">Communications overview</Link></li>
         </ul>
       </div>
+      <CampaignCrossLinks current={ENGINE.key} engines={CAMPAIGN_ENGINE_LIST} />
       <div className="rounded-md border p-3 text-xs text-muted-foreground">
         <p className="font-medium text-foreground">Not the imported list</p>
         <p className="mt-1">This campaign targets stalled internal pipeline opportunities. The imported former-client list lives at <Link className="text-primary hover:underline" href="/app/winback">/app/winback</Link>.</p>
@@ -431,10 +399,3 @@ function touchDay(touches: { touch_no: number; day_offset: number }[], touchNo: 
   return touches.find((t) => t.touch_no === touchNo)?.day_offset ?? '—'
 }
 
-function crumb() {
-  return [
-    { label: 'FSA', href: '/app' },
-    { label: 'Comms', href: '/app/comms' },
-    { label: 'Win-Back' },
-  ]
-}

@@ -1,7 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { DetailShell, StatTile, ErrorState, EmptyState, AssumptionBadge } from '@/components/archetypes'
-import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
@@ -9,24 +8,26 @@ import { loadCampaignDetail } from '@/lib/life-campaign/detail'
 import { campaignAnalytics } from '@/lib/life-campaign/analytics'
 import { CampaignControls } from '@/components/app/CampaignEngineControls'
 import { CampaignHealthPanel } from '@/components/app/CampaignHealthPanel'
+import { TimeCell } from '@/components/ui/time'
+import { CAMPAIGN_ENGINES, CAMPAIGN_ENGINE_LIST, campaignBreadcrumb, touchKind } from '@/lib/comms/campaign-presentation'
+import {
+  CampaignStatusBadge,
+  EnrollmentStatusBadge,
+  TouchKindBadge,
+  ApprovalBadge,
+  CampaignStat,
+  CampaignCrossLinks,
+} from '@/components/comms/campaign/CampaignKit'
 
 export const dynamic = 'force-dynamic'
 
 // Life Conversion Campaign — full detail (drill-down). One place for the complete
 // configuration, the 20-touch schedule, the message assets, the workflow rules, live
 // analytics, settings, and operational controls (§4b/§5/§14/§15).
+// Status vocabulary, engine identity, and badges come from the shared campaign layer
+// (@/lib/comms/campaign-presentation + CampaignKit) — never redeclared here.
 
-const STATUS_TONE: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-  active: 'default', paused: 'secondary', disabled: 'secondary',
-  emergency_stopped: 'destructive', archived: 'outline', draft: 'outline', approval_pending: 'secondary',
-}
-
-const KIND_LABEL: Record<string, string> = {
-  email: 'Email', sms: 'SMS', ai_conversation: 'AI conversation', advisor_outreach: 'Advisor outreach',
-}
-const KIND_TONE: Record<string, 'default' | 'secondary' | 'outline'> = {
-  email: 'default', sms: 'secondary', ai_conversation: 'outline', advisor_outreach: 'outline',
-}
+const ENGINE = CAMPAIGN_ENGINES.life_conversion
 
 interface EnrollmentRow {
   id: string; status: string; current_touch_no: number; baseline_date: string; conversion_deadline: string | null
@@ -49,19 +50,15 @@ export default async function LifeConversionDetailPage(props: { params: Promise<
   return (
     <DetailShell
       title={s.name}
-      description="180-day, 20-touch multi-channel term-conversion review campaign. Every send passes the compliance gate; eligibility is rechecked before every touch."
-      breadcrumb={[
-        { label: 'FSA', href: '/app' },
-        { label: 'Comms', href: '/app/comms' },
-        { label: 'Life Conversion', href: '/app/comms/life-conversion' },
-        { label: s.name },
-      ]}
+      description={ENGINE.description}
+      breadcrumb={campaignBreadcrumb(ENGINE, s.name)}
       status={
         <div className="flex items-center gap-2">
-          <Badge variant={STATUS_TONE[s.status] ?? 'outline'}>{s.status.replace(/_/g, ' ')}</Badge>
+          <CampaignStatusBadge status={s.status} />
           {s.is_assumption && <AssumptionBadge />}
         </div>
       }
+      rail={<CampaignCrossLinks current={ENGINE.key} engines={CAMPAIGN_ENGINE_LIST} />}
     >
       <div className="space-y-6">
         {/* Operational controls (§4b) */}
@@ -87,14 +84,14 @@ export default async function LifeConversionDetailPage(props: { params: Promise<
           </div>
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
             <MiniPanel title="Phase distribution (active)">
-              <Cell label="Early (Day 1–47)" value={analytics?.byPhase.early ?? 0} />
-              <Cell label="Mid (Day 48–134)" value={analytics?.byPhase.mid ?? 0} />
-              <Cell label="Accelerated (135–180)" value={analytics?.byPhase.accelerated ?? 0} />
+              <CampaignStat label="Early (Day 1–47)" value={analytics?.byPhase.early ?? 0} />
+              <CampaignStat label="Mid (Day 48–134)" value={analytics?.byPhase.mid ?? 0} />
+              <CampaignStat label="Accelerated (135–180)" value={analytics?.byPhase.accelerated ?? 0} />
             </MiniPanel>
             <MiniPanel title="Advisor outreach (§9a)">
-              <Cell label="Fulfilled" value={analytics?.advisor.fulfilled ?? 0} />
-              <Cell label="Overdue" value={analytics?.advisor.overdue ?? 0} attention />
-              <Cell label="Missed" value={analytics?.advisor.missed ?? 0} />
+              <CampaignStat label="Fulfilled" value={analytics?.advisor.fulfilled ?? 0} />
+              <CampaignStat label="Overdue" value={analytics?.advisor.overdue ?? 0} attentionWhenNonZero />
+              <CampaignStat label="Missed" value={analytics?.advisor.missed ?? 0} />
             </MiniPanel>
           </div>
         </Section>
@@ -117,13 +114,13 @@ export default async function LifeConversionDetailPage(props: { params: Promise<
                   <TableRow key={t.touch_no} className={t.day_offset >= 135 ? 'bg-muted/30' : undefined}>
                     <TableCell className="tabular-nums text-muted-foreground">{t.touch_no}</TableCell>
                     <TableCell className="tabular-nums">Day {t.day_offset}</TableCell>
-                    <TableCell><Badge variant={KIND_TONE[t.kind] ?? 'outline'}>{KIND_LABEL[t.kind] ?? t.kind}</Badge></TableCell>
+                    <TableCell><TouchKindBadge kind={t.kind} /></TableCell>
                     <TableCell className="text-muted-foreground">{t.asset_label ?? '—'}</TableCell>
                     <TableCell>
                       {t.template ? (
                         <span className="flex items-center gap-2">
                           <span className="text-muted-foreground">{t.template.name.replace('Life Conversion — ', '')}</span>
-                          <Badge variant={t.template.approval_status === 'approved' ? 'default' : 'outline'}>{t.template.approval_status}</Badge>
+                          <ApprovalBadge status={t.template.approval_status} />
                         </span>
                       ) : (
                         <span className="text-muted-foreground">Advisor task (no template)</span>
@@ -142,8 +139,8 @@ export default async function LifeConversionDetailPage(props: { params: Promise<
             {detail.touches.filter((t) => t.template).map((t) => (
               <details key={t.touch_no} className="rounded-lg border p-3">
                 <summary className="cursor-pointer text-sm font-medium">
-                  <span className="text-muted-foreground">#{t.touch_no} · {KIND_LABEL[t.kind]}</span> — {t.template!.name.replace('Life Conversion — ', '')}
-                  <Badge variant={t.template!.approval_status === 'approved' ? 'default' : 'outline'} className="ml-2">{t.template!.approval_status}</Badge>
+                  <span className="text-muted-foreground">#{t.touch_no} · {touchKind(t.kind).label}</span> — {t.template!.name.replace('Life Conversion — ', '')}
+                  <span className="ml-2 inline-flex align-middle"><ApprovalBadge status={t.template!.approval_status} /></span>
                 </summary>
                 <pre className="mt-3 whitespace-pre-wrap border-t pt-3 text-xs leading-relaxed text-muted-foreground">{t.template!.body}</pre>
               </details>
@@ -179,7 +176,7 @@ export default async function LifeConversionDetailPage(props: { params: Promise<
             <Setting label="Conversation timeout" value={`${s.conversation_timeout_hours} hours`} assumption />
             <Setting label="Early-enrollment buffer" value={`${s.early_enrollment_buffer_days} days`} assumption />
             <Setting label="Advisor hold behavior" value={s.advisor_hold_behavior} />
-            <Setting label="Created" value={new Date(s.created_at).toLocaleDateString()} />
+            <Setting label="Created" node={<TimeCell value={s.created_at} precision="date" />} />
           </dl>
         </Section>
 
@@ -198,8 +195,8 @@ export default async function LifeConversionDetailPage(props: { params: Promise<
                 <TableBody>
                   {enrollments.data.map((e) => (
                     <TableRow key={e.id}>
-                      <TableCell><Badge variant={e.status === 'active' ? 'default' : 'outline'}>{e.status.replace(/_/g, ' ')}</Badge></TableCell>
-                      <TableCell className="tabular-nums text-muted-foreground">{e.current_touch_no} / 20</TableCell>
+                      <TableCell><EnrollmentStatusBadge status={e.status} /></TableCell>
+                      <TableCell className="tabular-nums text-muted-foreground">{e.current_touch_no} / {ENGINE.touches}</TableCell>
                       <TableCell className="text-muted-foreground">{e.baseline_date}</TableCell>
                       <TableCell className="text-muted-foreground">{e.conversion_deadline ?? '—'}</TableCell>
                     </TableRow>
@@ -233,16 +230,7 @@ function MiniPanel({ title, children }: { title: string; children: React.ReactNo
   return (
     <div className="rounded-lg border p-4">
       <p className="mb-3 text-xs font-medium text-muted-foreground">{title}</p>
-      <div className="grid grid-cols-3 gap-3 text-center">{children}</div>
-    </div>
-  )
-}
-
-function Cell({ label, value, attention }: { label: string; value: number; attention?: boolean }) {
-  return (
-    <div className={`rounded-lg border p-3 ${attention && value > 0 ? 'border-status-pending/60' : ''}`}>
-      <p className="text-2xl font-semibold tabular-nums">{value}</p>
-      <p className="mt-1 text-xs text-muted-foreground">{label}</p>
+      <div className="grid grid-cols-3 gap-3">{children}</div>
     </div>
   )
 }
@@ -256,11 +244,11 @@ function Rule({ term, def, assumption }: { term: string; def: string; assumption
   )
 }
 
-function Setting({ label, value, assumption }: { label: string; value: string; assumption?: boolean }) {
+function Setting({ label, value, node, assumption }: { label: string; value?: string; node?: React.ReactNode; assumption?: boolean }) {
   return (
     <div className="rounded-lg border p-3">
       <dt className="flex items-center gap-2 text-xs text-muted-foreground">{label}{assumption && <AssumptionBadge />}</dt>
-      <dd className="mt-1 text-sm font-medium">{value}</dd>
+      <dd className="mt-1 text-sm font-medium">{node ?? value}</dd>
     </div>
   )
 }

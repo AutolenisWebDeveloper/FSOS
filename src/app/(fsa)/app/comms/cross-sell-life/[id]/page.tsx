@@ -9,6 +9,17 @@ import { loadCampaignDetail } from '@/lib/cross-sell-life/detail'
 import { campaignAnalytics } from '@/lib/cross-sell-life/analytics'
 import { CampaignControls } from './controls'
 import { CampaignHealthPanel } from '@/components/app/CampaignHealthPanel'
+import { TimeCell } from '@/components/ui/time'
+import { CAMPAIGN_ENGINES, CAMPAIGN_ENGINE_LIST, campaignBreadcrumb, campaignStatus } from '@/lib/comms/campaign-presentation'
+import {
+  CampaignStatusBadge,
+  EnrollmentStatusBadge,
+  TouchKindBadge,
+  ApprovalBadge,
+  CampaignStat,
+  FunnelStat,
+  CampaignCrossLinks,
+} from '@/components/comms/campaign/CampaignKit'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,30 +28,12 @@ export const dynamic = 'force-dynamic'
 // schedule, the message + AI-playbook + advisor-script assets, operational controls, live
 // analytics + health monitoring, and version history. Server component: reads come directly from
 // loadCampaignDetail + campaignAnalytics (no self-fetch for SSR). Parallel to the Life Conversion
-// detail page (same shells, tokens, and states).
+// detail page (same shells, tokens, and states). Status vocabulary, engine identity, and badges
+// come from the shared campaign layer (@/lib/comms/campaign-presentation + CampaignKit) — never
+// redeclared here. Timestamps render through TimeCell, so an advisor reads their own clock rather
+// than the server's UTC.
 
-const STATUS_TONE: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-  active: 'default',
-  paused: 'secondary',
-  disabled: 'secondary',
-  emergency_stopped: 'destructive',
-  archived: 'outline',
-  draft: 'outline',
-  approval_pending: 'secondary',
-}
-
-const KIND_LABEL: Record<string, string> = {
-  email: 'Email',
-  sms: 'SMS',
-  ai_conversation: 'AI conversation',
-  advisor_outreach: 'Advisor outreach',
-}
-const KIND_TONE: Record<string, 'default' | 'secondary' | 'outline'> = {
-  email: 'default',
-  sms: 'secondary',
-  ai_conversation: 'outline',
-  advisor_outreach: 'outline',
-}
+const ENGINE = CAMPAIGN_ENGINES.cross_sell_life
 
 interface EnrollmentRow {
   id: string
@@ -74,20 +67,16 @@ export default async function CrossSellLifeDetailPage(props: { params: Promise<{
   return (
     <DetailShell
       title={s.name}
-      description="180-day, 35-touch multi-channel life-insurance cross-sell to existing agency clients. Every send passes the compliance gate; eligibility is rechecked before every touch."
-      breadcrumb={[
-        { label: 'FSA', href: '/app' },
-        { label: 'Comms', href: '/app/comms' },
-        { label: 'Cross-Sell Life', href: '/app/comms/cross-sell-life' },
-        { label: s.name },
-      ]}
+      description={ENGINE.description}
+      breadcrumb={campaignBreadcrumb(ENGINE, s.name)}
       status={
         <div className="flex items-center gap-2">
-          <Badge variant={STATUS_TONE[s.status] ?? 'outline'}>{s.status.replace(/_/g, ' ')}</Badge>
-          <Badge variant="outline">v{s.version}</Badge>
+          <CampaignStatusBadge status={s.status} />
+          <Badge variant="outline" title="Campaign version">v{s.version}</Badge>
           {s.is_assumption && <AssumptionBadge />}
         </div>
       }
+      rail={<CampaignCrossLinks current={ENGINE.key} engines={CAMPAIGN_ENGINE_LIST} />}
     >
       <div className="space-y-6">
         {/* ── Campaign Overview ─────────────────────────────────────────────── */}
@@ -95,10 +84,10 @@ export default async function CrossSellLifeDetailPage(props: { params: Promise<{
           <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <Field label="Name" value={s.name} />
             <Field label="Version" value={`v${s.version}`} />
-            <Field label="Status" value={s.status.replace(/_/g, ' ')} />
+            <Field label="Status" value={campaignStatus(s.status).label} />
             <Field label="Family key" value={s.family_key} mono />
             <Field label="Created by" value={s.created_by ?? '—'} mono />
-            <Field label="Created" value={new Date(s.created_at).toLocaleString()} />
+            <Field label="Created" node={<TimeCell value={s.created_at} />} />
           </dl>
           {s.description && (
             <div className="mt-3 rounded-lg border p-3">
@@ -147,11 +136,11 @@ export default async function CrossSellLifeDetailPage(props: { params: Promise<{
           <div className="mt-4">
             <p className="mb-2 text-xs font-medium text-muted-foreground">Conversion funnel (enrolled → issued)</p>
             <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
-              <FunnelCell label="Enrolled" value={analytics?.funnel.enrolled ?? 0} />
-              <FunnelCell label="Appointment" value={analytics?.funnel.appointments ?? 0} rate={analytics?.rates.enrollToAppointment} rateLabel="of enrolled" />
-              <FunnelCell label="Quote" value={analytics?.funnel.quotes ?? 0} rate={analytics?.rates.appointmentToQuote} rateLabel="of appts" />
-              <FunnelCell label="Application" value={analytics?.funnel.applications ?? 0} rate={analytics?.rates.quoteToApplication} rateLabel="of quotes" />
-              <FunnelCell label="Issued" value={analytics?.funnel.issued ?? 0} rate={analytics?.rates.applicationToIssued} rateLabel="of apps" tone="brand" />
+              <FunnelStat label="Enrolled" value={analytics?.funnel.enrolled ?? 0} />
+              <FunnelStat label="Appointment" value={analytics?.funnel.appointments ?? 0} rate={analytics?.rates.enrollToAppointment} rateLabel="of enrolled" />
+              <FunnelStat label="Quote" value={analytics?.funnel.quotes ?? 0} rate={analytics?.rates.appointmentToQuote} rateLabel="of appts" />
+              <FunnelStat label="Application" value={analytics?.funnel.applications ?? 0} rate={analytics?.rates.quoteToApplication} rateLabel="of quotes" />
+              <FunnelStat label="Issued" value={analytics?.funnel.issued ?? 0} rate={analytics?.rates.applicationToIssued} rateLabel="of apps" tone="brand" />
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
               Overall enrolled → issued: <span className="font-medium tabular-nums">{analytics?.rates.overall ?? 0}%</span>.
@@ -160,14 +149,14 @@ export default async function CrossSellLifeDetailPage(props: { params: Promise<{
 
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
             <MiniPanel title="Channel sends (through the compliance gate)">
-              <Cell label="Email" value={analytics?.channels.email ?? 0} />
-              <Cell label="SMS" value={analytics?.channels.sms ?? 0} />
-              <Cell label="AI" value={analytics?.channels.ai ?? 0} />
+              <CampaignStat label="Email" value={analytics?.channels.email ?? 0} />
+              <CampaignStat label="SMS" value={analytics?.channels.sms ?? 0} />
+              <CampaignStat label="AI" value={analytics?.channels.ai ?? 0} />
             </MiniPanel>
             <MiniPanel title="Advisor outreach">
-              <Cell label="Fulfilled" value={analytics?.advisor.fulfilled ?? 0} />
-              <Cell label="Overdue" value={analytics?.advisor.overdue ?? 0} attention />
-              <Cell label="Missed" value={analytics?.advisor.missed ?? 0} />
+              <CampaignStat label="Fulfilled" value={analytics?.advisor.fulfilled ?? 0} />
+              <CampaignStat label="Overdue" value={analytics?.advisor.overdue ?? 0} attentionWhenNonZero />
+              <CampaignStat label="Missed" value={analytics?.advisor.missed ?? 0} />
             </MiniPanel>
           </div>
         </Section>
@@ -199,14 +188,14 @@ export default async function CrossSellLifeDetailPage(props: { params: Promise<{
                     <TableCell className="tabular-nums text-muted-foreground">{t.touch_no}</TableCell>
                     <TableCell className="tabular-nums">Day {t.day_offset}</TableCell>
                     <TableCell>
-                      <Badge variant={KIND_TONE[t.kind] ?? 'outline'}>{KIND_LABEL[t.kind] ?? t.kind}</Badge>
+                      <TouchKindBadge kind={t.kind} />
                     </TableCell>
                     <TableCell className="text-muted-foreground">{t.asset_label ?? '—'}</TableCell>
                     <TableCell>
                       {t.template ? (
                         <span className="flex items-center gap-2">
                           <span className="text-muted-foreground">{t.template.name}</span>
-                          <Badge variant={t.template.approval_status === 'approved' ? 'default' : 'outline'}>{t.template.approval_status}</Badge>
+                          <ApprovalBadge status={t.template.approval_status} />
                         </span>
                       ) : (
                         <span className="text-muted-foreground">Advisor task (no template)</span>
@@ -334,9 +323,9 @@ export default async function CrossSellLifeDetailPage(props: { params: Promise<{
                   {enrollments.data.map((e) => (
                     <TableRow key={e.id}>
                       <TableCell>
-                        <Badge variant={e.status === 'running' ? 'default' : 'outline'}>{e.status.replace(/_/g, ' ')}</Badge>
+                        <EnrollmentStatusBadge status={e.status} />
                       </TableCell>
-                      <TableCell className="tabular-nums text-muted-foreground">{e.current_touch_no} / 35</TableCell>
+                      <TableCell className="tabular-nums text-muted-foreground">{e.current_touch_no} / {ENGINE.touches}</TableCell>
                       <TableCell className="text-muted-foreground">{e.baseline_date}</TableCell>
                     </TableRow>
                   ))}
@@ -366,9 +355,9 @@ export default async function CrossSellLifeDetailPage(props: { params: Promise<{
                     <TableRow key={v.id} className={v.id === s.id ? 'bg-muted/30' : undefined}>
                       <TableCell className="tabular-nums">v{v.version}</TableCell>
                       <TableCell>
-                        <Badge variant={STATUS_TONE[v.status] ?? 'outline'}>{v.status.replace(/_/g, ' ')}</Badge>
+                        <CampaignStatusBadge status={v.status} />
                       </TableCell>
-                      <TableCell className="text-muted-foreground">{new Date(v.created_at).toLocaleDateString()}</TableCell>
+                      <TableCell className="text-muted-foreground"><TimeCell value={v.created_at} precision="date" /></TableCell>
                       <TableCell>
                         {v.id === s.id ? (
                           <span className="text-xs text-muted-foreground">Viewing</span>
@@ -415,46 +404,12 @@ function MiniPanel({ title, children }: { title: string; children: React.ReactNo
   )
 }
 
-function Cell({ label, value, attention }: { label: string; value: number; attention?: boolean }) {
-  return (
-    <div className={`rounded-lg border p-3 ${attention && value > 0 ? 'border-amber-400/60' : ''}`}>
-      <p className="text-2xl font-semibold tabular-nums">{value}</p>
-      <p className="mt-1 text-xs text-muted-foreground">{label}</p>
-    </div>
-  )
-}
 
-function FunnelCell({
-  label,
-  value,
-  rate,
-  rateLabel,
-  tone,
-}: {
-  label: string
-  value: number
-  rate?: number
-  rateLabel?: string
-  tone?: 'brand'
-}) {
-  return (
-    <div className={`rounded-lg border p-3 ${tone === 'brand' ? 'border-primary/40' : ''}`}>
-      <p className="text-2xl font-semibold tabular-nums">{value}</p>
-      <p className="mt-1 text-xs font-medium">{label}</p>
-      {typeof rate === 'number' && (
-        <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
-          {rate}% {rateLabel}
-        </p>
-      )}
-    </div>
-  )
-}
-
-function Field({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function Field({ label, value, node, mono }: { label: string; value?: string; node?: React.ReactNode; mono?: boolean }) {
   return (
     <div className="rounded-lg border p-3">
       <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className={`mt-1 text-sm font-medium ${mono ? 'break-all font-mono text-xs' : ''}`}>{value}</dd>
+      <dd className={`mt-1 text-sm font-medium ${mono ? 'break-all font-mono text-xs' : ''}`}>{node ?? value}</dd>
     </div>
   )
 }
@@ -475,7 +430,7 @@ function HistoryItem({ label, when }: { label: string; when: string | null }) {
   return (
     <li className="flex items-center justify-between gap-3 rounded-md border px-3 py-1.5">
       <span className="text-muted-foreground">{label}</span>
-      <span className="tabular-nums">{when ? new Date(when).toLocaleString() : 'Not yet'}</span>
+      <span className="tabular-nums">{when ? <TimeCell value={when} /> : 'Not yet'}</span>
     </li>
   )
 }

@@ -1,27 +1,22 @@
 import Link from 'next/link'
-import { ListShell, StatTile, ErrorState, EmptyState, AssumptionBadge } from '@/components/archetypes'
-import { Badge } from '@/components/ui/badge'
+import { ListShell, StatTile, ErrorState, EmptyState } from '@/components/archetypes'
 import { Card } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
 import { campaignAnalytics } from '@/lib/life-campaign/analytics'
 import { CampaignControls } from '@/components/app/CampaignEngineControls'
+import { CAMPAIGN_ENGINES, campaignBreadcrumb, campaignDetailHref } from '@/lib/comms/campaign-presentation'
+import { CampaignStatusBadge, EnrollmentStatusBadge, CampaignHeaderActions, CampaignStat } from '@/components/comms/campaign/CampaignKit'
 
 export const dynamic = 'force-dynamic'
 
 // Life Conversion Campaign — operations dashboard (§4b/§15). Campaign status + controls,
 // enrollment KPIs, phase distribution, touch outcomes, advisor-task health, and the current
 // enrollment roster. Read-only data; controls POST to the audited /api/life-campaign endpoints.
+// Status vocabulary, engine identity, and badges come from the shared campaign layer
+// (@/lib/comms/campaign-presentation + CampaignKit) — never redeclared here.
 
-const STATUS_TONE: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-  active: 'default',
-  paused: 'secondary',
-  disabled: 'secondary',
-  emergency_stopped: 'destructive',
-  archived: 'outline',
-  draft: 'outline',
-  approval_pending: 'secondary',
-}
+const ENGINE = CAMPAIGN_ENGINES.life_conversion
 
 interface CampaignRow {
   id: string
@@ -47,7 +42,7 @@ export default async function LifeConversionPage() {
 
   if (!campaigns.ok) {
     return (
-      <ListShell title="Life Conversion Campaign" breadcrumb={crumb()}>
+      <ListShell title={ENGINE.title} breadcrumb={campaignBreadcrumb(ENGINE)}>
         <ErrorState description={campaigns.kind === 'not_configured' ? 'Database not configured.' : campaigns.message} />
       </ListShell>
     )
@@ -56,8 +51,11 @@ export default async function LifeConversionPage() {
   const campaign = campaigns.data[0]
   if (!campaign) {
     return (
-      <ListShell title="Life Conversion Campaign" breadcrumb={crumb()}>
-        <EmptyState title="No campaign found" description="Run migration 082 to seed the Life Conversion Campaign and its 20-touch timeline." />
+      <ListShell title={ENGINE.title} breadcrumb={campaignBreadcrumb(ENGINE)}>
+        <EmptyState
+          title="No campaign found"
+          description={`Run migration ${ENGINE.seedMigration} to seed the ${ENGINE.title} campaign and its ${ENGINE.touches}-touch timeline.`}
+        />
       </ListShell>
     )
   }
@@ -72,39 +70,29 @@ export default async function LifeConversionPage() {
 
   return (
     <ListShell
-      title="Life Conversion Campaign"
-      description="180-day, 20-touch multi-channel term-conversion review campaign. Every send passes the compliance gate; eligibility is rechecked before every touch."
-      breadcrumb={crumb()}
+      title={ENGINE.title}
+      description={ENGINE.description}
+      breadcrumb={campaignBreadcrumb(ENGINE)}
       actions={
-        <div className="flex items-center gap-2">
-          <Badge variant={STATUS_TONE[campaign.status] ?? 'outline'}>{campaign.status.replace(/_/g, ' ')}</Badge>
-          {campaign.is_assumption && <AssumptionBadge />}
-          <Link
-            href="/app/comms/console?mode=test&campaign=life_conversion"
-            className="rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-muted"
-          >
-            Test this campaign
-          </Link>
-          <Link
-            href={`/app/comms/life-conversion/${campaign.id}`}
-            className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90"
-          >
-            View full details →
-          </Link>
-        </div>
+        <CampaignHeaderActions
+          engine={ENGINE}
+          status={campaign.status}
+          isAssumption={campaign.is_assumption}
+          manageHref={campaignDetailHref(ENGINE, campaign.id)}
+        />
       }
     >
       <div className="space-y-6">
         <Link
-          href={`/app/comms/life-conversion/${campaign.id}`}
-          className="block rounded-lg border p-4 transition-colors hover:border-primary hover:bg-muted/40"
+          href={campaignDetailHref(ENGINE, campaign.id)}
+          className="block rounded-lg border p-4 transition-colors hover:border-primary hover:bg-muted/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm font-semibold">{campaign.name}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">Configuration, schedule, assets, workflows, analytics, settings & controls →</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">Configuration, schedule, assets, workflows, analytics, settings, and controls</p>
             </div>
-            <Badge variant={STATUS_TONE[campaign.status] ?? 'outline'}>{campaign.status.replace(/_/g, ' ')}</Badge>
+            <CampaignStatusBadge status={campaign.status} />
           </div>
         </Link>
 
@@ -126,18 +114,18 @@ export default async function LifeConversionPage() {
         <div className="grid gap-4 lg:grid-cols-2">
           <Card className="p-5">
             <h2 className="mb-3 text-sm font-semibold">Phase distribution (active)</h2>
-            <div className="grid grid-cols-3 gap-3 text-center">
-              <PhaseCell label="Early (Day 1–47)" value={analytics?.byPhase.early ?? 0} />
-              <PhaseCell label="Mid (Day 48–134)" value={analytics?.byPhase.mid ?? 0} />
-              <PhaseCell label="Accelerated (135–180)" value={analytics?.byPhase.accelerated ?? 0} />
+            <div className="grid grid-cols-3 gap-3">
+              <CampaignStat label="Early (Day 1–47)" value={analytics?.byPhase.early ?? 0} />
+              <CampaignStat label="Mid (Day 48–134)" value={analytics?.byPhase.mid ?? 0} />
+              <CampaignStat label="Accelerated (135–180)" value={analytics?.byPhase.accelerated ?? 0} />
             </div>
           </Card>
           <Card className="p-5">
             <h2 className="mb-3 text-sm font-semibold">Advisor outreach health (§9a)</h2>
-            <div className="grid grid-cols-3 gap-3 text-center">
-              <PhaseCell label="Fulfilled" value={analytics?.advisor.fulfilled ?? 0} />
-              <PhaseCell label="Overdue" value={analytics?.advisor.overdue ?? 0} tone="attention" />
-              <PhaseCell label="Missed" value={analytics?.advisor.missed ?? 0} />
+            <div className="grid grid-cols-3 gap-3">
+              <CampaignStat label="Fulfilled" value={analytics?.advisor.fulfilled ?? 0} />
+              <CampaignStat label="Overdue" value={analytics?.advisor.overdue ?? 0} attentionWhenNonZero />
+              <CampaignStat label="Missed" value={analytics?.advisor.missed ?? 0} />
             </div>
           </Card>
         </div>
@@ -161,8 +149,8 @@ export default async function LifeConversionPage() {
               <TableBody>
                 {enrollments.data.map((e) => (
                   <TableRow key={e.id}>
-                    <TableCell><Badge variant={e.status === 'active' ? 'default' : 'outline'}>{e.status.replace(/_/g, ' ')}</Badge></TableCell>
-                    <TableCell className="text-muted-foreground">{e.current_touch_no} / 20</TableCell>
+                    <TableCell><EnrollmentStatusBadge status={e.status} /></TableCell>
+                    <TableCell className="text-muted-foreground">{e.current_touch_no} / {ENGINE.touches}</TableCell>
                     <TableCell className="text-muted-foreground">{e.baseline_date}</TableCell>
                     <TableCell className="text-muted-foreground">{e.conversion_deadline ?? '—'}</TableCell>
                   </TableRow>
@@ -174,21 +162,4 @@ export default async function LifeConversionPage() {
       </div>
     </ListShell>
   )
-}
-
-function PhaseCell({ label, value, tone }: { label: string; value: number; tone?: 'attention' }) {
-  return (
-    <div className={`rounded-lg border p-3 ${tone === 'attention' && value > 0 ? 'border-status-pending/60' : ''}`}>
-      <p className="text-2xl font-semibold tabular-nums">{value}</p>
-      <p className="mt-1 text-xs text-muted-foreground">{label}</p>
-    </div>
-  )
-}
-
-function crumb() {
-  return [
-    { label: 'FSA', href: '/app' },
-    { label: 'Comms', href: '/app/comms' },
-    { label: 'Life Conversion' },
-  ]
 }

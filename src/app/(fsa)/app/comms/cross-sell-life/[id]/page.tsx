@@ -1,14 +1,23 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { DetailShell, StatTile, ErrorState, EmptyState, AssumptionBadge } from '@/components/archetypes'
+import { DetailShell, Section, EmptyState, AssumptionBadge } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
 import { loadCampaignDetail } from '@/lib/cross-sell-life/detail'
 import { campaignAnalytics } from '@/lib/cross-sell-life/analytics'
 import { CampaignControls } from './controls'
 import { CampaignHealthPanel } from '@/components/app/CampaignHealthPanel'
+import { TimeCell } from '@/components/ui/time'
+import { CAMPAIGN_ENGINES, CAMPAIGN_ENGINE_LIST, campaignBreadcrumb, campaignDetailHref, campaignStatus } from '@/lib/comms/campaign-presentation'
+import { CampaignStatusBadge, CampaignCrossLinks } from '@/components/comms/campaign/CampaignKit'
+import { CampaignStateLine } from '@/components/comms/campaign/CampaignStateLine'
+import { CampaignControlsSection } from '@/components/comms/campaign/CampaignControlsSection'
+import { CampaignAnalyticsPanel } from '@/components/comms/campaign/CampaignAnalyticsPanel'
+import { CampaignScheduleTable } from '@/components/comms/campaign/CampaignScheduleTable'
+import { CampaignAssetsTable } from '@/components/comms/campaign/CampaignAssetsTable'
+import { CampaignEnrollmentTable } from '@/components/comms/campaign/CampaignEnrollmentTable'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,30 +26,12 @@ export const dynamic = 'force-dynamic'
 // schedule, the message + AI-playbook + advisor-script assets, operational controls, live
 // analytics + health monitoring, and version history. Server component: reads come directly from
 // loadCampaignDetail + campaignAnalytics (no self-fetch for SSR). Parallel to the Life Conversion
-// detail page (same shells, tokens, and states).
+// detail page (same shells, tokens, and states). Status vocabulary, engine identity, and badges
+// come from the shared campaign layer (@/lib/comms/campaign-presentation + CampaignKit) — never
+// redeclared here. Timestamps render through TimeCell, so an advisor reads their own clock rather
+// than the server's UTC.
 
-const STATUS_TONE: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-  active: 'default',
-  paused: 'secondary',
-  disabled: 'secondary',
-  emergency_stopped: 'destructive',
-  archived: 'outline',
-  draft: 'outline',
-  approval_pending: 'secondary',
-}
-
-const KIND_LABEL: Record<string, string> = {
-  email: 'Email',
-  sms: 'SMS',
-  ai_conversation: 'AI conversation',
-  advisor_outreach: 'Advisor outreach',
-}
-const KIND_TONE: Record<string, 'default' | 'secondary' | 'outline'> = {
-  email: 'default',
-  sms: 'secondary',
-  ai_conversation: 'outline',
-  advisor_outreach: 'outline',
-}
+const ENGINE = CAMPAIGN_ENGINES.cross_sell_life
 
 interface EnrollmentRow {
   id: string
@@ -70,170 +61,94 @@ export default async function CrossSellLifeDetailPage(props: { params: Promise<{
   const s = detail.settings
   const emailTouches = detail.touches.filter((t) => t.template && t.kind === 'email')
   const smsTouches = detail.touches.filter((t) => t.template && t.kind === 'sms')
+  const templated = detail.touches.filter((t) => t.template)
 
   return (
     <DetailShell
       title={s.name}
-      description="180-day, 35-touch multi-channel life-insurance cross-sell to existing agency clients. Every send passes the compliance gate; eligibility is rechecked before every touch."
-      breadcrumb={[
-        { label: 'FSA', href: '/app' },
-        { label: 'Comms', href: '/app/comms' },
-        { label: 'Cross-Sell Life', href: '/app/comms/cross-sell-life' },
-        { label: s.name },
-      ]}
+      description={ENGINE.description}
+      breadcrumb={campaignBreadcrumb(ENGINE, s.name)}
       status={
         <div className="flex items-center gap-2">
-          <Badge variant={STATUS_TONE[s.status] ?? 'outline'}>{s.status.replace(/_/g, ' ')}</Badge>
-          <Badge variant="outline">v{s.version}</Badge>
+          <CampaignStatusBadge status={s.status} />
+          <Badge variant="outline" title="Campaign version">v{s.version}</Badge>
           {s.is_assumption && <AssumptionBadge />}
         </div>
       }
+      rail={<CampaignCrossLinks current={ENGINE.key} engines={CAMPAIGN_ENGINE_LIST} />}
     >
       <div className="space-y-6">
-        {/* ── Campaign Overview ─────────────────────────────────────────────── */}
-        <Section title="Campaign overview" hint="Identity, objective, and lifecycle history for this campaign version.">
-          <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <Field label="Name" value={s.name} />
-            <Field label="Version" value={`v${s.version}`} />
-            <Field label="Status" value={s.status.replace(/_/g, ' ')} />
-            <Field label="Family key" value={s.family_key} mono />
-            <Field label="Created by" value={s.created_by ?? '—'} mono />
-            <Field label="Created" value={new Date(s.created_at).toLocaleString()} />
-          </dl>
-          {s.description && (
-            <div className="mt-3 rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">Description</p>
-              <p className="mt-1 text-sm">{s.description}</p>
-            </div>
-          )}
-          {s.objective && (
-            <div className="mt-3 rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">Objective</p>
-              <p className="mt-1 text-sm">{s.objective}</p>
-            </div>
-          )}
-          {/* Activation history */}
-          <div className="mt-4">
-            <p className="mb-2 text-xs font-medium text-muted-foreground">Activation history</p>
-            <ul className="space-y-1 text-sm">
-              <HistoryItem label="Simulated" when={s.simulated_at} />
-              <HistoryItem label="Activated" when={s.activated_at} />
-              <HistoryItem label="Emergency-stopped" when={s.emergency_stopped_at} />
-              <HistoryItem label="Archived" when={s.archived_at} />
-            </ul>
-          </div>
-        </Section>
+        {/* 0 — Is this campaign OK right now? */}
+        <CampaignStateLine
+          status={s.status}
+          simulatedAt={s.simulated_at}
+          unapprovedTemplates={templated.filter((t) => t.template!.approval_status !== 'approved').length}
+          totalTemplates={templated.length}
+          activeEnrollments={analytics?.totals.active ?? 0}
+          pausedEnrollments={analytics?.totals.paused ?? 0}
+          suppressedTouches={analytics?.touches.suppressed ?? 0}
+          deadLetterTouches={analytics?.touches.dead_letter ?? 0}
+          overdueAdvisorTasks={analytics?.advisor.overdue ?? 0}
+        />
 
-        {/* ── Operational Controls ──────────────────────────────────────────── */}
-        <Section
-          title="Operational controls"
-          hint="Enable, pause, resume, disable, emergency-stop, archive, and new-version. Restricted to ops/admin; every action is audit-logged. Emergency Stop and Archive confirm first."
-        >
+        {/* 1 — Operational controls */}
+        <CampaignControlsSection engine={ENGINE} status={s.status} simulatedAt={s.simulated_at}>
           <CampaignControls campaignId={s.id} status={s.status} />
-          {!s.simulated_at && s.status !== 'active' && (
-            <p className="mt-3 text-xs text-muted-foreground">A read-only simulation is recommended before activation (ADR-021).</p>
-          )}
-        </Section>
+        </CampaignControlsSection>
 
-        {/* ── Analytics & Monitoring ────────────────────────────────────────── */}
-        <Section title="Analytics" hint="Live enrollment, conversion, channel, and advisor-outreach metrics (§19).">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatTile label="Enrolled (all-time)" value={analytics?.funnel.enrolled ?? 0} />
-            <StatTile label="Active enrollments" value={analytics?.totals.active ?? 0} tone="brand" />
-            <StatTile label="Completed (Day 180)" value={analytics?.totals.completed ?? 0} />
-            <StatTile label="Opt-outs" value={analytics?.funnel.optOuts ?? 0} hint="STOP / unsubscribe / suppression" tone="attention" />
-          </div>
-
-          <div className="mt-4">
-            <p className="mb-2 text-xs font-medium text-muted-foreground">Conversion funnel (enrolled → issued)</p>
-            <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
-              <FunnelCell label="Enrolled" value={analytics?.funnel.enrolled ?? 0} />
-              <FunnelCell label="Appointment" value={analytics?.funnel.appointments ?? 0} rate={analytics?.rates.enrollToAppointment} rateLabel="of enrolled" />
-              <FunnelCell label="Quote" value={analytics?.funnel.quotes ?? 0} rate={analytics?.rates.appointmentToQuote} rateLabel="of appts" />
-              <FunnelCell label="Application" value={analytics?.funnel.applications ?? 0} rate={analytics?.rates.quoteToApplication} rateLabel="of quotes" />
-              <FunnelCell label="Issued" value={analytics?.funnel.issued ?? 0} rate={analytics?.rates.applicationToIssued} rateLabel="of apps" tone="brand" />
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Overall enrolled → issued: <span className="font-medium tabular-nums">{analytics?.rates.overall ?? 0}%</span>.
-            </p>
-          </div>
-
-          <div className="mt-4 grid gap-4 lg:grid-cols-2">
-            <MiniPanel title="Channel sends (through the compliance gate)">
-              <Cell label="Email" value={analytics?.channels.email ?? 0} />
-              <Cell label="SMS" value={analytics?.channels.sms ?? 0} />
-              <Cell label="AI" value={analytics?.channels.ai ?? 0} />
-            </MiniPanel>
-            <MiniPanel title="Advisor outreach">
-              <Cell label="Fulfilled" value={analytics?.advisor.fulfilled ?? 0} />
-              <Cell label="Overdue" value={analytics?.advisor.overdue ?? 0} attention />
-              <Cell label="Missed" value={analytics?.advisor.missed ?? 0} />
-            </MiniPanel>
-          </div>
-        </Section>
-
-        <Section title="Monitoring & health" hint="Live campaign-health checks. Loaded client-side; if monitoring is unavailable the campaign keeps running on its schedule.">
-          <CampaignHealthPanel endpoint="/api/cross-sell-life" />
-        </Section>
-
-        {/* ── Campaign Schedule ─────────────────────────────────────────────── */}
+        {/* 2 — Monitoring & health */}
         <Section
-          title="Schedule — 35 touches over 180 days"
-          hint="Day offsets are authoritative (§6). Cadence tapers to 4- and 2-day intervals for the final touches (days 166–180)."
+          title="Monitoring & health"
+          description="Live campaign-health checks. Loaded after the page; if monitoring is unavailable the campaign keeps running on its schedule."
         >
-          <div className="overflow-x-auto rounded-lg border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead scope="col" className="w-12">#</TableHead>
-                  <TableHead scope="col">Day</TableHead>
-                  <TableHead scope="col">Channel</TableHead>
-                  <TableHead scope="col">Asset</TableHead>
-                  <TableHead scope="col">Template / approval</TableHead>
-                  <TableHead scope="col">Playbook</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {detail.touches.map((t) => (
-                  <TableRow key={t.touch_no} className={t.day_offset >= 166 ? 'bg-muted/30' : undefined}>
-                    <TableCell className="tabular-nums text-muted-foreground">{t.touch_no}</TableCell>
-                    <TableCell className="tabular-nums">Day {t.day_offset}</TableCell>
-                    <TableCell>
-                      <Badge variant={KIND_TONE[t.kind] ?? 'outline'}>{KIND_LABEL[t.kind] ?? t.kind}</Badge>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{t.asset_label ?? '—'}</TableCell>
-                    <TableCell>
-                      {t.template ? (
-                        <span className="flex items-center gap-2">
-                          <span className="text-muted-foreground">{t.template.name}</span>
-                          <Badge variant={t.template.approval_status === 'approved' ? 'default' : 'outline'}>{t.template.approval_status}</Badge>
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground">Advisor task (no template)</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{t.playbook_key ?? '—'}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+          <Card className="p-5">
+            <CampaignHealthPanel endpoint={ENGINE.apiRoot} />
+          </Card>
         </Section>
 
-        {/* ── Campaign Assets ───────────────────────────────────────────────── */}
-        <Section
-          title="Message assets — email & SMS templates"
-          hint="The 12 email + 12 SMS templates. Seeded as DRAFT and each must pass the human approval gate before the campaign can dispatch it (ADR-023)."
-        >
-          <div className="grid gap-4 lg:grid-cols-2">
-            <AssetColumn heading={`Email templates (${emailTouches.length})`} touches={emailTouches} />
-            <AssetColumn heading={`SMS templates (${smsTouches.length})`} touches={smsTouches} />
-          </div>
-        </Section>
+        {/* 3 — Analytics */}
+        <CampaignAnalyticsPanel engine={ENGINE} analytics={analytics} />
 
+        {/* 5 — Schedule */}
+        <CampaignScheduleTable
+          engine={ENGINE}
+          touches={detail.touches}
+          description="Day offsets are authoritative (§6). Cadence tapers to 4- and 2-day intervals for the final touches (days 166–180)."
+          acceleratesFromDay={166}
+          showPlaybook
+        />
+
+        {/* 6 — Message assets */}
+        <CampaignAssetsTable
+          description="The seeded email and SMS templates. Each must clear the human approval gate before this campaign can dispatch it (ADR-023)."
+          groups={[
+            {
+              title: 'Email templates',
+              items: emailTouches.map((t) => ({
+                key: String(t.touch_no),
+                name: t.template!.name,
+                approval_status: t.template!.approval_status,
+                body: t.template!.body,
+                eyebrow: `#${t.touch_no}`,
+              })),
+            },
+            {
+              title: 'SMS templates',
+              items: smsTouches.map((t) => ({
+                key: String(t.touch_no),
+                name: t.template!.name,
+                approval_status: t.template!.approval_status,
+                body: t.template!.body,
+                eyebrow: `#${t.touch_no}`,
+              })),
+            },
+          ]}
+        />
+
+        {/* 7 — Workflows & rules */}
         <Section
           title={`AI conversation playbooks (${detail.playbooks.length})`}
-          hint="Internal scripts the AI conversation engine grounds on. The AI must identify as automated and may never recommend a product, coverage amount, carrier, premium, or replacement (§4.2). Substantive requests escalate to the advisor."
+          description="Internal scripts the AI conversation engine grounds on. The AI must identify as automated and may never recommend a product, coverage amount, carrier, premium, or replacement (§4.2). Substantive requests escalate to the advisor."
         >
           <div className="space-y-2">
             {detail.playbooks.map((p) => (
@@ -262,7 +177,7 @@ export default async function CrossSellLifeDetailPage(props: { params: Promise<{
 
         <Section
           title={`Advisor scripts (${detail.advisorScripts.length})`}
-          hint="Suggested openers for the human advisor-outreach touches. Advisor touches are human tasks — a real logged outreach attempt fulfils the touch (§10)."
+          description="Suggested openers for the human advisor-outreach touches. Advisor touches are human tasks — a real logged outreach attempt fulfils the touch (§10)."
         >
           <div className="space-y-2">
             {detail.advisorScripts.map((a) => (
@@ -286,10 +201,43 @@ export default async function CrossSellLifeDetailPage(props: { params: Promise<{
           </div>
         </Section>
 
-        {/* ── Configuration & Settings ──────────────────────────────────────── */}
+        {/* 8 — Campaign overview, configuration & settings */}
+        <Section title="Campaign overview" description="Identity, objective, and lifecycle history for this campaign version.">
+          <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <Field label="Name" value={s.name} />
+            <Field label="Version" value={`v${s.version}`} />
+            <Field label="Status" value={campaignStatus(s.status).label} />
+            <Field label="Family key" value={s.family_key} mono />
+            <Field label="Created by" value={s.created_by ?? '—'} mono />
+            <Field label="Created" node={<TimeCell value={s.created_at} />} />
+          </dl>
+          {s.description && (
+            <div className="mt-3 rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Description</p>
+              <p className="mt-1 text-sm">{s.description}</p>
+            </div>
+          )}
+          {s.objective && (
+            <div className="mt-3 rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Objective</p>
+              <p className="mt-1 text-sm">{s.objective}</p>
+            </div>
+          )}
+          {/* Activation history */}
+          <div className="mt-4">
+            <p className="mb-2 text-xs font-medium text-muted-foreground">Activation history</p>
+            <ul className="space-y-1 text-sm">
+              <HistoryItem label="Simulated" when={s.simulated_at} />
+              <HistoryItem label="Activated" when={s.activated_at} />
+              <HistoryItem label="Emergency-stopped" when={s.emergency_stopped_at} />
+              <HistoryItem label="Archived" when={s.archived_at} />
+            </ul>
+          </div>
+        </Section>
+
         <Section
           title="Configuration & settings"
-          hint="Editable operational defaults. Gold-badged values are config defaults to verify (§4.3), not Farmers-published figures."
+          description="Editable operational defaults. Gold-badged values are config defaults to verify (§4.3), not Farmers-published figures."
         >
           <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <Setting label="Message purpose" value={s.purpose ?? '—'} />
@@ -311,84 +259,65 @@ export default async function CrossSellLifeDetailPage(props: { params: Promise<{
           </dl>
         </Section>
 
-        {/* ── Enrollments ───────────────────────────────────────────────────── */}
-        <Section title={`Enrollments (${enrollments.ok ? enrollments.data.length : 0})`}>
-          {!enrollments.ok ? (
-            <ErrorState description="Could not load enrollments." />
-          ) : enrollments.data.length === 0 ? (
-            <EmptyState
-              title="No enrollments yet"
-              description="Existing agency clients are enrolled by the daily job or manually; each must be non-securities, opted-in, and free of an active life opportunity. Activate the campaign to begin enrolling."
-            />
-          ) : (
-            <div className="overflow-x-auto rounded-lg border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead scope="col">Status</TableHead>
-                    <TableHead scope="col">Touch</TableHead>
-                    <TableHead scope="col">Baseline</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {enrollments.data.map((e) => (
-                    <TableRow key={e.id}>
-                      <TableCell>
-                        <Badge variant={e.status === 'running' ? 'default' : 'outline'}>{e.status.replace(/_/g, ' ')}</Badge>
-                      </TableCell>
-                      <TableCell className="tabular-nums text-muted-foreground">{e.current_touch_no} / 35</TableCell>
-                      <TableCell className="text-muted-foreground">{e.baseline_date}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </Section>
+        {/* 9 — Enrollments */}
+        <CampaignEnrollmentTable
+          engine={ENGINE}
+          rows={enrollments.ok ? enrollments.data : null}
+          error={!enrollments.ok}
+          emptyDescription="Existing agency clients are enrolled by the daily job or manually. Each must be non-securities, opted in, and free of an active life opportunity. Activate the campaign to begin enrolling."
+        />
 
-        {/* ── Version History ───────────────────────────────────────────────── */}
-        <Section title={`Version history (${detail.versions.length})`} hint="Every version of this campaign family (§ Audit & Version History).">
+        {/* 10 — Version history (Cross-Sell Life is the only versioned engine) */}
+        <Section title={`Version history (${detail.versions.length})`} description="Every version of this campaign family. Only Cross-Sell Life is versioned.">
           {detail.versions.length === 0 ? (
             <EmptyState title="No versions" description="This campaign family has no recorded versions yet." />
           ) : (
-            <div className="overflow-x-auto rounded-lg border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead scope="col">Version</TableHead>
-                    <TableHead scope="col">Status</TableHead>
-                    <TableHead scope="col">Created</TableHead>
-                    <TableHead scope="col"></TableHead>
+            <Table>
+              <TableCaption srOnly>
+                {`Version history for ${s.family_key} — ${detail.versions.length} versions, with status and creation date.`}
+              </TableCaption>
+              <TableHeader>
+                <TableRow>
+                  <TableHead scope="col">Version</TableHead>
+                  <TableHead scope="col">Status</TableHead>
+                  <TableHead scope="col">Created</TableHead>
+                  <TableHead scope="col">
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {detail.versions.map((v) => (
+                  <TableRow key={v.id} className={v.id === s.id ? 'bg-muted/30' : undefined}>
+                    <TableCell className="numeric">v{v.version}</TableCell>
+                    <TableCell>
+                      <CampaignStatusBadge status={v.status} />
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      <TimeCell value={v.created_at} precision="date" />
+                    </TableCell>
+                    <TableCell>
+                      {v.id === s.id ? (
+                        <span className="text-xs text-muted-foreground">Viewing</span>
+                      ) : (
+                        <Link
+                          href={campaignDetailHref(ENGINE, v.id)}
+                          className="text-sm text-primary underline-offset-4 hover:underline"
+                        >
+                          Open v{v.version}
+                        </Link>
+                      )}
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {detail.versions.map((v) => (
-                    <TableRow key={v.id} className={v.id === s.id ? 'bg-muted/30' : undefined}>
-                      <TableCell className="tabular-nums">v{v.version}</TableCell>
-                      <TableCell>
-                        <Badge variant={STATUS_TONE[v.status] ?? 'outline'}>{v.status.replace(/_/g, ' ')}</Badge>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">{new Date(v.created_at).toLocaleDateString()}</TableCell>
-                      <TableCell>
-                        {v.id === s.id ? (
-                          <span className="text-xs text-muted-foreground">Viewing</span>
-                        ) : (
-                          <Link href={`/app/comms/cross-sell-life/${v.id}`} className="text-primary text-sm underline-offset-4 hover:underline">
-                            Open →
-                          </Link>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                ))}
+              </TableBody>
+            </Table>
           )}
         </Section>
 
         <p className="text-sm">
-          <Link href="/app/comms/cross-sell-life" className="text-primary underline-offset-4 hover:underline">
-            ← Back to campaigns
+          <Link href={ENGINE.href} className="text-primary underline-offset-4 hover:underline">
+            ← Back to {ENGINE.title}
           </Link>
         </p>
       </div>
@@ -396,65 +325,14 @@ export default async function CrossSellLifeDetailPage(props: { params: Promise<{
   )
 }
 
-function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <Card className="p-5">
-      <h2 className="text-sm font-semibold">{title}</h2>
-      {hint ? <p className="mt-1 mb-3 text-xs text-muted-foreground">{hint}</p> : <div className="mb-3" />}
-      {children}
-    </Card>
-  )
-}
 
-function MiniPanel({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-lg border p-4">
-      <p className="mb-3 text-xs font-medium text-muted-foreground">{title}</p>
-      <div className="grid grid-cols-3 gap-3 text-center">{children}</div>
-    </div>
-  )
-}
 
-function Cell({ label, value, attention }: { label: string; value: number; attention?: boolean }) {
-  return (
-    <div className={`rounded-lg border p-3 ${attention && value > 0 ? 'border-amber-400/60' : ''}`}>
-      <p className="text-2xl font-semibold tabular-nums">{value}</p>
-      <p className="mt-1 text-xs text-muted-foreground">{label}</p>
-    </div>
-  )
-}
 
-function FunnelCell({
-  label,
-  value,
-  rate,
-  rateLabel,
-  tone,
-}: {
-  label: string
-  value: number
-  rate?: number
-  rateLabel?: string
-  tone?: 'brand'
-}) {
-  return (
-    <div className={`rounded-lg border p-3 ${tone === 'brand' ? 'border-primary/40' : ''}`}>
-      <p className="text-2xl font-semibold tabular-nums">{value}</p>
-      <p className="mt-1 text-xs font-medium">{label}</p>
-      {typeof rate === 'number' && (
-        <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
-          {rate}% {rateLabel}
-        </p>
-      )}
-    </div>
-  )
-}
-
-function Field({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function Field({ label, value, node, mono }: { label: string; value?: string; node?: React.ReactNode; mono?: boolean }) {
   return (
     <div className="rounded-lg border p-3">
       <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className={`mt-1 text-sm font-medium ${mono ? 'break-all font-mono text-xs' : ''}`}>{value}</dd>
+      <dd className={`mt-1 text-sm font-medium ${mono ? 'break-all font-mono text-xs' : ''}`}>{node ?? value}</dd>
     </div>
   )
 }
@@ -475,35 +353,11 @@ function HistoryItem({ label, when }: { label: string; when: string | null }) {
   return (
     <li className="flex items-center justify-between gap-3 rounded-md border px-3 py-1.5">
       <span className="text-muted-foreground">{label}</span>
-      <span className="tabular-nums">{when ? new Date(when).toLocaleString() : 'Not yet'}</span>
+      <span className="tabular-nums">{when ? <TimeCell value={when} /> : 'Not yet'}</span>
     </li>
   )
 }
 
-function AssetColumn({ heading, touches }: { heading: string; touches: { touch_no: number; kind: string; template: { name: string; approval_status: string; body: string } | null }[] }) {
-  return (
-    <div className="rounded-lg border p-3">
-      <p className="mb-2 text-xs font-medium text-muted-foreground">{heading}</p>
-      {touches.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No templates seeded yet.</p>
-      ) : (
-        <div className="space-y-2">
-          {touches.map((t) => (
-            <details key={t.touch_no} className="rounded-md border p-2.5">
-              <summary className="cursor-pointer text-sm font-medium">
-                <span className="text-muted-foreground">#{t.touch_no}</span> — {t.template!.name}
-                <Badge variant={t.template!.approval_status === 'approved' ? 'default' : 'outline'} className="ml-2">
-                  {t.template!.approval_status}
-                </Badge>
-              </summary>
-              <pre className="mt-2 whitespace-pre-wrap border-t pt-2 text-xs leading-relaxed text-muted-foreground">{t.template!.body}</pre>
-            </details>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
 
 function PlaybookField({ label, value, pre, tone }: { label: string; value: string; pre?: boolean; tone?: 'danger' }) {
   return (

@@ -1,23 +1,29 @@
 // src/lib/life-campaign/analytics.ts
-// Read-only KPI/event aggregation for the Life Conversion Campaign dashboard (§15). Counts
-// enrollments by lifecycle state, executions by channel/outcome, and advisor-touch state, and
-// derives the phase distribution (early / mid / accelerated) from each enrollment's cursor.
+// Read-only KPI/event aggregation for the Life Conversion Campaign dashboard (§15). Reads
+// enrollments, executions, and advisor touches, then hands the rows to the shared pure
+// tallies in @/lib/comms/campaign-analytics so all three engines report one contract.
 // All reads through getDb(); no mutation.
 import { getDb } from '@/lib/supabase/client'
+import {
+  tallyEnrollments,
+  tallyExecutions,
+  tallyAdvisor,
+  type CampaignAnalytics,
+  type PhaseThresholds,
+} from '@/lib/comms/campaign-analytics'
 
-export interface CampaignAnalytics {
-  status: string
-  enrollments: Record<string, number>
-  active: number
-  completed: number
-  exited: number
-  byPhase: { early: number; mid: number; accelerated: number }
-  touches: { sent: number; suppressed: number; skipped: number; scheduled: number }
-  advisor: { total: number; fulfilled: number; overdue: number; missed: number }
-}
+export type { CampaignAnalytics }
 
-const ACCEL_FROM_TOUCH = 13 // touch #13 (Day 135) begins the accelerated phase (§5)
-const MID_FROM_TOUCH = 7 // touch #7 (Day 48) — first advisor outreach; mid-phase
+// §5: touch #7 (Day 48) is the first advisor outreach and opens the mid phase; touch #13
+// (Day 135) opens the accelerated phase.
+const PHASES: PhaseThresholds = { midFromTouch: 7, accelFromTouch: 13 }
+
+/** Still moving through the timeline. `byPhase` counts this same population. */
+const ACTIVE_STATES = ['active', 'paused_for_conversation', 'paused_by_admin'] as const
+const PAUSED_STATES = ['paused_for_conversation', 'paused_by_admin'] as const
+const COMPLETED_STATES = ['completed'] as const
+const EXITED_STATES = ['exited'] as const
+const SUPPRESSED_STATES = ['suppressed'] as const
 
 export async function campaignAnalytics(campaignId: string): Promise<CampaignAnalytics | null> {
   const db = getDb()
@@ -26,59 +32,34 @@ export async function campaignAnalytics(campaignId: string): Promise<CampaignAna
 
   const { data: enrollRows } = await db
     .from('life_campaign_enrollments')
-    .select('status, current_touch_no')
+    .select('id, status, current_touch_no')
     .eq('campaign_id', campaignId)
     .limit(10000)
 
-  const enrollments: Record<string, number> = {}
-  const byPhase = { early: 0, mid: 0, accelerated: 0 }
-  for (const r of enrollRows ?? []) {
-    enrollments[r.status] = (enrollments[r.status] ?? 0) + 1
-    if (r.status === 'active' || r.status === 'paused_for_conversation' || r.status === 'paused_by_admin') {
-      const n = r.current_touch_no ?? 0
-      if (n >= ACCEL_FROM_TOUCH) byPhase.accelerated++
-      else if (n >= MID_FROM_TOUCH) byPhase.mid++
-      else byPhase.early++
-    }
+  const rows = enrollRows ?? []
+  const { enrollments, totals, byPhase } = tallyEnrollments(rows, {
+    activeStates: ACTIVE_STATES,
+    pausedStates: PAUSED_STATES,
+    completedStates: COMPLETED_STATES,
+    exitedStates: EXITED_STATES,
+    suppressedStates: SUPPRESSED_STATES,
+    phases: PHASES,
+  })
+
+  // Execution outcomes join through this campaign's enrollments. The previous version
+  // issued a second query for the ids it already had in `enrollRows` — one round trip
+  // removed, same result.
+  const idList = rows.map((r) => r.id as string)
+  let touches = tallyExecutions([]).touches
+  let advisor = tallyAdvisor([])
+  if (idList.length) {
+    const [{ data: execs }, { data: adv }] = await Promise.all([
+      db.from('life_campaign_executions').select('status, kind').in('enrollment_id', idList).limit(50000),
+      db.from('life_advisor_touches').select('status').in('enrollment_id', idList).limit(50000),
+    ])
+    touches = tallyExecutions(execs ?? []).touches
+    advisor = tallyAdvisor(adv ?? [])
   }
 
-  // Execution outcomes (join through enrollments of this campaign).
-  const enrollmentIds = (enrollRows ?? []).length
-  const touches = { sent: 0, suppressed: 0, skipped: 0, scheduled: 0 }
-  const advisor = { total: 0, fulfilled: 0, overdue: 0, missed: 0 }
-  if (enrollmentIds > 0) {
-    const { data: ids } = await db.from('life_campaign_enrollments').select('id').eq('campaign_id', campaignId).limit(10000)
-    const idList = (ids ?? []).map((x) => x.id)
-    if (idList.length) {
-      const { data: execs } = await db
-        .from('life_campaign_executions')
-        .select('status')
-        .in('enrollment_id', idList)
-        .limit(50000)
-      for (const x of execs ?? []) {
-        if (x.status === 'sent') touches.sent++
-        else if (x.status === 'suppressed') touches.suppressed++
-        else if (x.status === 'skipped') touches.skipped++
-        else if (x.status === 'scheduled') touches.scheduled++
-      }
-      const { data: adv } = await db.from('life_advisor_touches').select('status').in('enrollment_id', idList).limit(50000)
-      for (const a of adv ?? []) {
-        advisor.total++
-        if (a.status === 'fulfilled') advisor.fulfilled++
-        else if (a.status === 'overdue' || a.status === 'escalate' || a.status === 'reassign') advisor.overdue++
-        else if (a.status === 'missed') advisor.missed++
-      }
-    }
-  }
-
-  return {
-    status: campaign.status,
-    enrollments,
-    active: enrollments['active'] ?? 0,
-    completed: enrollments['completed'] ?? 0,
-    exited: (enrollments['exited'] ?? 0) + (enrollments['suppressed'] ?? 0),
-    byPhase,
-    touches,
-    advisor,
-  }
+  return { status: campaign.status as string, enrollments, totals, byPhase, touches, advisor }
 }

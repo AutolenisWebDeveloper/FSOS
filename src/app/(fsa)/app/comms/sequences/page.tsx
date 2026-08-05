@@ -47,30 +47,28 @@ export default async function SequencesPage() {
             {sequences.data.length === 0 ? (
               <EmptyState title="No sequences yet" description="Create a draft sequence below. It stays draft until you activate it." />
             ) : (
-              <div className="rounded-lg border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Channel</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead>Steps</TableHead>
-                      <TableHead>Status</TableHead>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Channel</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Steps</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sequences.data.map((s) => (
+                    <TableRow key={s.id}>
+                      <TableCell className="font-medium">{s.name}</TableCell>
+                      <TableCell><Badge variant="outline">{s.channel}</Badge></TableCell>
+                      <TableCell className="capitalize text-muted-foreground">{(s.category ?? '').replace(/_/g, ' ') || '—'}</TableCell>
+                      <TableCell>{Array.isArray(s.steps) ? s.steps.length : 0}</TableCell>
+                      <TableCell><Badge variant={s.status === 'active' ? 'active' : s.status === 'archived' ? 'outline' : 'draft'}>{s.status}</Badge></TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {sequences.data.map((s) => (
-                      <TableRow key={s.id}>
-                        <TableCell className="font-medium">{s.name}</TableCell>
-                        <TableCell><Badge variant="outline">{s.channel}</Badge></TableCell>
-                        <TableCell className="capitalize text-muted-foreground">{(s.category ?? '').replace(/_/g, ' ') || '—'}</TableCell>
-                        <TableCell>{Array.isArray(s.steps) ? s.steps.length : 0}</TableCell>
-                        <TableCell><Badge variant={s.status === 'active' ? 'active' : s.status === 'archived' ? 'outline' : 'draft'}>{s.status}</Badge></TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                  ))}
+                </TableBody>
+              </Table>
             )}
 
             <div className="rounded-lg border p-4">

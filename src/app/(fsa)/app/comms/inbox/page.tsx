@@ -3,7 +3,7 @@ import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
-import { Numeric } from '@/components/ui/typography'
+import { TimeCell } from '@/components/ui/time'
 
 export const dynamic = 'force-dynamic'
 
@@ -46,50 +46,48 @@ export default async function InboxPage() {
       ) : convs.data.length === 0 ? (
         <EmptyState title="No conversations yet" description="Inbound SMS/email and replies appear here, threaded by contact." />
       ) : (
-        <div className="rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Contact</TableHead>
-                <TableHead>Channel</TableHead>
-                <TableHead>Linked</TableHead>
-                <TableHead>Last</TableHead>
-                <TableHead>Flags</TableHead>
-                <TableHead></TableHead>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Contact</TableHead>
+              <TableHead>Channel</TableHead>
+              <TableHead>Linked</TableHead>
+              <TableHead>Last</TableHead>
+              <TableHead>Flags</TableHead>
+              <TableHead></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {convs.data.map((c) => (
+              <TableRow key={c.id}>
+                <TableCell className="font-medium">
+                  {c.contact}
+                  {c.unread_count > 0 ? <Badge variant="pending" className="ml-2">{c.unread_count} new</Badge> : null}
+                </TableCell>
+                <TableCell><Badge variant="outline">{c.channel}</Badge></TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  {c.household_id ? (
+                    <Link className="underline" href={`/app/households/${c.household_id}`}>household</Link>
+                  ) : (
+                    <span>unlinked</span>
+                  )}
+                </TableCell>
+                <TableCell className="text-muted-foreground">
+                  <TimeCell value={c.last_message_at} />
+                  {c.last_direction ? <span className="ml-1 text-xs">({c.last_direction})</span> : null}
+                </TableCell>
+                <TableCell>
+                  <div className="flex flex-wrap gap-1">
+                    {c.is_security ? <Badge variant="blocked">securities</Badge> : null}
+                    {c.ai_autoreply ? <Badge variant="won">AI auto-reply</Badge> : null}
+                    {c.status !== 'open' ? <Badge variant="outline">{c.status}</Badge> : null}
+                  </div>
+                </TableCell>
+                <TableCell><Link className="text-sm underline" href={`/app/comms/inbox/${c.id}`}>Open</Link></TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {convs.data.map((c) => (
-                <TableRow key={c.id}>
-                  <TableCell className="font-medium">
-                    {c.contact}
-                    {c.unread_count > 0 ? <Badge variant="pending" className="ml-2">{c.unread_count} new</Badge> : null}
-                  </TableCell>
-                  <TableCell><Badge variant="outline">{c.channel}</Badge></TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {c.household_id ? (
-                      <Link className="underline" href={`/app/households/${c.household_id}`}>household</Link>
-                    ) : (
-                      <span>unlinked</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    <Numeric>{c.last_message_at ? new Date(c.last_message_at).toLocaleString('en-US') : '—'}</Numeric>
-                    {c.last_direction ? <span className="ml-1 text-xs">({c.last_direction})</span> : null}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap gap-1">
-                      {c.is_security ? <Badge variant="blocked">securities</Badge> : null}
-                      {c.ai_autoreply ? <Badge variant="won">AI auto-reply</Badge> : null}
-                      {c.status !== 'open' ? <Badge variant="outline">{c.status}</Badge> : null}
-                    </div>
-                  </TableCell>
-                  <TableCell><Link className="text-sm underline" href={`/app/comms/inbox/${c.id}`}>Open</Link></TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+            ))}
+          </TableBody>
+        </Table>
       )}
     </ListShell>
   )

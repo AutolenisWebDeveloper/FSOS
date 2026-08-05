@@ -1,18 +1,55 @@
 import Link from 'next/link'
-import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
-import { Badge } from '@/components/ui/badge'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { load } from '@/lib/data/query'
-import { getDb } from '@/lib/supabase/client'
-import { Numeric } from '@/components/ui/typography'
+import {
+  ListShell,
+  ErrorState,
+  EmptyState,
+  Section,
+  StatTile,
+} from '@/components/archetypes'
+import { Button } from '@/components/ui/button'
+import { MessageLogTable } from '@/components/comms/MessageLogTable'
+import { loadMessageLog } from '@/lib/comms/message-log'
+import { loadCount } from '@/lib/data/query'
+import {
+  AlertTriangle,
+  CheckCheck,
+  Clock,
+  Inbox,
+  MessageSquareReply,
+  Send,
+  ShieldOff,
+  Split,
+  UserCog,
+  Megaphone,
+  type LucideIcon,
+} from 'lucide-react'
+import type { Tone } from '@/components/dashboards/primitives'
 
 export const dynamic = 'force-dynamic'
 
 // Slice 9A — /app/comms is the AI Communications Center OVERVIEW: operational state at a
 // glance (not a redirect). Every tile links to the surface that resolves it. Sub-navigation
 // lives in the comms layout. No route changes.
+//
+// This page used to declare a LOCAL `StatTile` (a flat bordered div) while the canonical
+// `StatTile`/`MetricCard` — icon chip, hover lift, affordance arrow, tone system — already
+// existed in the archetypes barrel it was importing from. The hub of the comms workspace
+// was the one screen rendering visibly cheaper tiles than the rest of FSOS. It also
+// hand-rolled a `countOf` wrapper that duplicates `loadCount` from lib/data/query.
+//
+// The ten metrics were a flat 5-across wall with no ranking, so "delegation exceptions"
+// (act now) sat at the same weight as "sent today" (ambient). They are now banded by what
+// the advisor is supposed to DO with them.
 
-type Metric = { label: string; value: number | null; href: string; hint: string; tone?: 'default' | 'warn' | 'danger' }
+type Metric = {
+  label: string
+  value: number
+  href: string
+  hint: string
+  icon: LucideIcon
+  /** `attention`/`critical` only when the number is non-zero — a calm board when clean. */
+  tone?: Tone
+}
 
 function startOfTodayISO(): string {
   const d = new Date()
@@ -23,18 +60,7 @@ function daysAgoISO(n: number): string {
   return new Date(Date.now() - n * 86400000).toISOString()
 }
 
-/** Count rows for a filtered query, config-safe. Returns null when unavailable (→ "—"). */
-type CountQuery = PromiseLike<{ count: number | null; error: unknown }>
-async function countOf(build: (db: ReturnType<typeof getDb>) => CountQuery): Promise<number | null> {
-  try {
-    const { count, error } = await build(getDb())
-    return error ? null : count ?? 0
-  } catch {
-    return null
-  }
-}
-
-async function loadMetrics(): Promise<Metric[]> {
+async function loadMetrics() {
   const today = startOfTodayISO()
   const wk = daysAgoISO(7)
   const head = { count: 'exact' as const, head: true }
@@ -51,86 +77,102 @@ async function loadMetrics(): Promise<Metric[]> {
     hourFreqBlocks,
     sendVolume,
   ] = await Promise.all([
-    countOf((db) => db.from('comm_campaigns').select('id', head).eq('status', 'active').is('archived_at', null)),
-    countOf((db) => db.from('comm_templates').select('id', head).eq('approval_status', 'submitted').is('archived_at', null)),
-    countOf((db) => db.from('comm_conversations').select('id', head).eq('status', 'open')),
-    countOf((db) => db.from('comm_messages').select('id', head).eq('direction', 'inbound').gte('created_at', daysAgoISO(2))),
-    countOf((db) => db.from('comm_assignment_reviews').select('id', head).eq('status', 'open')),
-    countOf((db) => db.from('agency_communication_delegations').select('id', head).in('status', ['SUSPENDED', 'EXPIRED', 'REVOKED'])),
-    countOf((db) => db.from('dnc_entries').select('id', head).gte('created_at', wk)),
-    countOf((db) => db.from('comm_messages').select('id', head).in('delivery_status', ['failed', 'bounced']).gte('created_at', wk)),
-    countOf((db) => db.from('comm_messages').select('id', head).in('blocked_step', ['quiet_hours', 'frequency']).gte('created_at', wk)),
-    countOf((db) => db.from('comm_messages').select('id', head).eq('direction', 'outbound').in('delivery_status', ['sent', 'delivered']).gte('created_at', today)),
+    loadCount((db) => db.from('comm_campaigns').select('id', head).eq('status', 'active').is('archived_at', null)),
+    loadCount((db) => db.from('comm_templates').select('id', head).eq('approval_status', 'submitted').is('archived_at', null)),
+    loadCount((db) => db.from('comm_conversations').select('id', head).eq('status', 'open')),
+    loadCount((db) => db.from('comm_messages').select('id', head).eq('direction', 'inbound').gte('created_at', daysAgoISO(2))),
+    loadCount((db) => db.from('comm_assignment_reviews').select('id', head).eq('status', 'open')),
+    loadCount((db) => db.from('agency_communication_delegations').select('id', head).in('status', ['SUSPENDED', 'EXPIRED', 'REVOKED'])),
+    loadCount((db) => db.from('dnc_entries').select('id', head).gte('created_at', wk)),
+    loadCount((db) => db.from('comm_messages').select('id', head).in('delivery_status', ['failed', 'bounced']).gte('created_at', wk)),
+    loadCount((db) => db.from('comm_messages').select('id', head).in('blocked_step', ['quiet_hours', 'frequency']).gte('created_at', wk)),
+    loadCount((db) => db.from('comm_messages').select('id', head).eq('direction', 'outbound').in('delivery_status', ['sent', 'delivered']).gte('created_at', today)),
   ])
 
-  return [
-    { label: 'Active campaigns', value: activeCampaigns, href: '/app/comms/campaigns', hint: 'Currently dispatching' },
-    { label: 'Pending approvals', value: pendingApprovals, href: '/app/comms/templates', hint: 'Templates awaiting review', tone: pendingApprovals ? 'warn' : 'default' },
-    { label: 'Awaiting response', value: awaitingResponse, href: '/app/comms/inbox', hint: 'Open conversations', tone: awaitingResponse ? 'warn' : 'default' },
-    { label: 'Recent replies', value: unreadReplies, href: '/app/comms/inbox', hint: 'Inbound in last 48h' },
-    { label: 'Assignment review', value: assignmentDepth, href: '/app/comms/assignments', hint: 'Ownership queue depth', tone: assignmentDepth ? 'warn' : 'default' },
-    { label: 'Delegation exceptions', value: delegationExceptions, href: '/app/comms/assignments', hint: 'Suspended / expired / revoked', tone: delegationExceptions ? 'danger' : 'default' },
-    { label: 'Suppression (7d)', value: suppression, href: '/app/comms/suppression', hint: 'New opt-outs / DNC' },
-    { label: 'Delivery failures (7d)', value: deliveryFailures, href: '/app/comms/delivery', hint: 'Failed / bounced', tone: deliveryFailures ? 'danger' : 'default' },
-    { label: 'Quiet-hour / frequency blocks (7d)', value: hourFreqBlocks, href: '/app/comms/delivery', hint: 'Deferred by the gate' },
-    { label: 'Sent today', value: sendVolume, href: '/app/comms/delivery', hint: 'Outbound delivered/sent' },
+  const attention: Metric[] = [
+    { label: 'Delegation exceptions', value: delegationExceptions, href: '/app/comms/assignments', hint: 'Suspended, expired, or revoked', icon: ShieldOff, tone: delegationExceptions ? 'critical' : 'neutral' },
+    { label: 'Delivery failures', value: deliveryFailures, href: '/app/comms/delivery', hint: 'Failed or bounced, last 7 days', icon: AlertTriangle, tone: deliveryFailures ? 'critical' : 'neutral' },
+    { label: 'Pending approvals', value: pendingApprovals, href: '/app/comms/templates', hint: 'Templates awaiting review', icon: CheckCheck, tone: pendingApprovals ? 'attention' : 'neutral' },
+    { label: 'Assignment review', value: assignmentDepth, href: '/app/comms/assignments', hint: 'Ownership queue depth', icon: UserCog, tone: assignmentDepth ? 'attention' : 'neutral' },
   ]
+
+  const inFlight: Metric[] = [
+    { label: 'Sent today', value: sendVolume, href: '/app/comms/delivery', hint: 'Outbound sent or delivered', icon: Send, tone: 'brand' },
+    { label: 'Active campaigns', value: activeCampaigns, href: '/app/comms/campaigns', hint: 'Currently dispatching', icon: Megaphone, tone: 'brand' },
+    { label: 'Awaiting response', value: awaitingResponse, href: '/app/comms/inbox', hint: 'Open conversations', icon: Inbox, tone: awaitingResponse ? 'attention' : 'neutral' },
+    { label: 'Recent replies', value: unreadReplies, href: '/app/comms/inbox', hint: 'Inbound, last 48 hours', icon: MessageSquareReply },
+  ]
+
+  const gate: Metric[] = [
+    { label: 'Held by the gate', value: hourFreqBlocks, href: '/app/comms/delivery', hint: 'Quiet hours or frequency, last 7 days', icon: Clock },
+    { label: 'New suppressions', value: suppression, href: '/app/comms/suppression', hint: 'Opt-outs and DNC, last 7 days', icon: Split },
+  ]
+
+  return { attention, inFlight, gate }
 }
 
-function StatTile({ m }: { m: Metric }) {
-  const toneClass = m.tone === 'danger' ? 'text-destructive' : m.tone === 'warn' ? 'text-status-pending' : 'text-foreground'
+function TileRow({ metrics }: { metrics: Metric[] }) {
   return (
-    <Link href={m.href} className="rounded-lg border p-4 transition-colors hover:border-primary/40 hover:bg-muted/40">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{m.label}</p>
-      <p className={`mt-1 text-2xl font-semibold ${toneClass}`}><Numeric>{m.value === null ? '—' : m.value}</Numeric></p>
-      <p className="mt-1 text-xs text-muted-foreground">{m.hint}</p>
-    </Link>
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {metrics.map((m) => (
+        <StatTile key={m.label} label={m.label} value={m.value} href={m.href} hint={m.hint} icon={m.icon} tone={m.tone ?? 'neutral'} />
+      ))}
+    </div>
   )
 }
 
 export default async function CommsOverviewPage() {
-  const metrics = await loadMetrics()
-  const msgs = await load<{ id: string; channel: string; direction: string; recipient: string | null; delivery_status: string; blocked_step: string | null; consent_at_send: boolean | null; created_at: string }[]>(
-    (db) => db.from('comm_messages').select('id, channel, direction, recipient, delivery_status, blocked_step, consent_at_send, created_at').order('created_at', { ascending: false }).limit(50),
-    [],
-  )
+  const [{ attention, inFlight, gate }, msgs] = await Promise.all([loadMetrics(), loadMessageLog({ limit: 50 })])
 
   return (
     <ListShell
       title="AI Communications Center"
       description="Operational state across every outbound and inbound surface. Blocked and deferred sends are shown, never hidden."
       breadcrumb={[{ label: 'FSA', href: '/app' }, { label: 'AI Communications Center' }]}
+      actions={
+        <Button asChild>
+          <Link href="/app/comms/console">Open console</Link>
+        </Button>
+      }
     >
-      <div className="space-y-6">
-        <section aria-label="Operational metrics" className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
-          {metrics.map((m) => (<StatTile key={m.label} m={m} />))}
-        </section>
+      <div className="space-y-section">
+        <Section title="Needs attention" description="Queues where a send is waiting on a person.">
+          <TileRow metrics={attention} />
+        </Section>
 
-        <section aria-label="Recent activity" className="space-y-2">
-          <h2 className="text-sm font-medium text-muted-foreground">Recent messages</h2>
+        <Section title="In flight" description="What the system is doing right now.">
+          <TileRow metrics={inFlight} />
+        </Section>
+
+        <Section title="Gate activity" description="Sends the gate held or suppressed. Held is not dropped — each one retries or escalates.">
+          <TileRow metrics={gate} />
+        </Section>
+
+        <Section
+          title="Recent messages"
+          description="The last 50 sends across every channel, with the gate result for each."
+          action={
+            <Button variant="ghost" size="sm" asChild>
+              <Link href="/app/comms/delivery">View delivery queue</Link>
+            </Button>
+          }
+        >
           {!msgs.ok ? (
             <ErrorState description={msgs.kind === 'not_configured' ? 'Database not configured.' : msgs.message} />
           ) : msgs.data.length === 0 ? (
-            <EmptyState title="No messages yet" description="Automated and one-off messages appear here with their gate result." />
+            <EmptyState
+              title="No messages yet"
+              description="Automated and one-off sends appear here with the gate result that let them through or held them."
+              action={
+                <Button asChild>
+                  <Link href="/app/comms/console">Open console</Link>
+                </Button>
+              }
+            />
           ) : (
-            <div className="rounded-lg border">
-              <Table>
-                <TableHeader><TableRow><TableHead>When</TableHead><TableHead>Channel</TableHead><TableHead>Recipient</TableHead><TableHead>Status</TableHead><TableHead>Gate</TableHead></TableRow></TableHeader>
-                <TableBody>
-                  {msgs.data.map((m) => (
-                    <TableRow key={m.id}>
-                      <TableCell className="text-muted-foreground"><Numeric>{new Date(m.created_at).toLocaleString('en-US')}</Numeric></TableCell>
-                      <TableCell><Badge variant="outline">{m.channel}</Badge></TableCell>
-                      <TableCell className="text-muted-foreground">{m.recipient ?? '—'}</TableCell>
-                      <TableCell><Badge variant={m.delivery_status === 'blocked' ? 'blocked' : m.delivery_status === 'failed' ? 'lost' : m.delivery_status === 'delivered' || m.delivery_status === 'sent' ? 'won' : 'pending'}>{m.delivery_status}</Badge></TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{m.blocked_step ? `blocked: ${m.blocked_step}` : m.consent_at_send ? 'consent on file' : 'sent'}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <MessageLogTable rows={msgs.data} caption="The 50 most recent messages across all channels" />
           )}
-        </section>
+        </Section>
       </div>
     </ListShell>
   )

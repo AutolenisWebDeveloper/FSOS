@@ -149,28 +149,26 @@ export default async function LifeConversionPage() {
           ) : enrollments.data.length === 0 ? (
             <EmptyState title="No enrollments yet" description="Eligible term-conversion contacts are enrolled by the daily job or manually; each must have a verified deadline and no active opportunity." />
           ) : (
-            <div className="rounded-lg border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Touch</TableHead>
-                    <TableHead>Baseline</TableHead>
-                    <TableHead>Conversion deadline</TableHead>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Touch</TableHead>
+                  <TableHead>Baseline</TableHead>
+                  <TableHead>Conversion deadline</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {enrollments.data.map((e) => (
+                  <TableRow key={e.id}>
+                    <TableCell><Badge variant={e.status === 'active' ? 'default' : 'outline'}>{e.status.replace(/_/g, ' ')}</Badge></TableCell>
+                    <TableCell className="text-muted-foreground">{e.current_touch_no} / 20</TableCell>
+                    <TableCell className="text-muted-foreground">{e.baseline_date}</TableCell>
+                    <TableCell className="text-muted-foreground">{e.conversion_deadline ?? '—'}</TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {enrollments.data.map((e) => (
-                    <TableRow key={e.id}>
-                      <TableCell><Badge variant={e.status === 'active' ? 'default' : 'outline'}>{e.status.replace(/_/g, ' ')}</Badge></TableCell>
-                      <TableCell className="text-muted-foreground">{e.current_touch_no} / 20</TableCell>
-                      <TableCell className="text-muted-foreground">{e.baseline_date}</TableCell>
-                      <TableCell className="text-muted-foreground">{e.conversion_deadline ?? '—'}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                ))}
+              </TableBody>
+            </Table>
           )}
         </div>
       </div>

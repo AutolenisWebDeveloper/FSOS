@@ -22,16 +22,14 @@ export default async function SuppressionPage() {
           <div>
             <p className="mb-2 text-sm font-medium">Do-not-contact list ({dnc.data.length})</p>
             {dnc.data.length === 0 ? <EmptyState title="DNC list empty" description="Opt-outs and STOP replies add entries here." /> : (
-              <div className="rounded-lg border">
-                <Table>
-                  <TableHeader><TableRow><TableHead>Contact</TableHead><TableHead>Channel</TableHead><TableHead>Scope</TableHead><TableHead>Reason</TableHead></TableRow></TableHeader>
-                  <TableBody>
-                    {dnc.data.map((d) => (
-                      <TableRow key={d.id}><TableCell className="font-medium">{d.contact}</TableCell><TableCell><Badge variant="outline">{d.channel}</Badge></TableCell><TableCell className="text-muted-foreground">{d.scope}</TableCell><TableCell className="text-muted-foreground">{d.reason ?? '—'}</TableCell></TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+              <Table>
+                <TableHeader><TableRow><TableHead>Contact</TableHead><TableHead>Channel</TableHead><TableHead>Scope</TableHead><TableHead>Reason</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {dnc.data.map((d) => (
+                    <TableRow key={d.id}><TableCell className="font-medium">{d.contact}</TableCell><TableCell><Badge variant="outline">{d.channel}</Badge></TableCell><TableCell className="text-muted-foreground">{d.scope}</TableCell><TableCell className="text-muted-foreground">{d.reason ?? '—'}</TableCell></TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             )}
           </div>
           <div>

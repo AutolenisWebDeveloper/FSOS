@@ -270,6 +270,19 @@ gold (assumptions) and purple (securities/escalation) are NOT reused by any toke
 | **Skeleton / Sonner** | shimmer loader / toaster | `.shimmer` sheen; toasts bottom-right |
 | **Typography** | `MonoLabel`, `Numeric`, `Money` | signature markers |
 | **Securities** | firewall marker + banner | guardrail 1 UI |
+| **Segmented** | `Segmented` + `SegmentedItem`; `semantics: choice·tabs`, `size: sm·default` | roving tabindex, arrow keys, Home/End, focus ring, `aria-checked`/`aria-selected` |
+| **TimeCell** | `value` (ISO), `precision: date·datetime`, `fallback` | renders `<time dateTime>`; deterministic UTC first paint, upgrades to viewer TZ after mount; full precision + zone in `title` |
+
+**`Segmented` is the only segmented/tab control.** Do not hand-roll a `<button>` row for
+mutually-exclusive selection — bare buttons default to `type="submit"` (they submit the
+enclosing form) and a `role="tablist"` without `aria-controls`, a `tabpanel`, and roving
+tabindex fails WCAG 2.2 AA. Use `semantics="choice"` (radiogroup — filters, view switches)
+or `semantics="tabs"` (a real tabpanel relationship).
+
+**`TimeCell` is the only way to render a database timestamp.** `new Date(x).toLocaleString()`
+inside a Server Component resolves against the *server's* clock — UTC on Vercel — not the
+viewer's. On a quiet-hours or consent log the recipient's local time *is* the compliance
+question, so this is a correctness rule, not a formatting preference.
 
 ---
 
@@ -305,6 +318,14 @@ Tables are central to FSOS; they must behave like an enterprise data grid.
 - **Pagination / virtualization:** paginate or virtualize past ~100 rows; never render thousands of DOM rows.
 - **Keyboard navigation:** arrow-key row/cell movement, Enter to open, selection via keyboard.
 - **States:** `ListSkeleton` loading, `EmptyState` (§17), isolated retryable error. "No data" is distinct from "no results for filter."
+
+- **No double wrapper.** `Table` already renders its own `rounded-xl border bg-card shadow-elev-xs`
+  container. Never wrap it again in `rounded-lg border` — with `--radius: 0.625rem` the inner radius
+  exceeds the outer, producing two hairlines with mismatched corners.
+- **Caption + scope.** Every table carries `<TableCaption srOnly>` describing its contents and
+  `scope="col"` on each `TableHead`, so screen readers announce the grid rather than a bare stack of cells.
+- **Exception rows** are marked with an inset hairline (`shadow-[inset_3px_0_0_0_hsl(var(--destructive))]`),
+  never a filled row — a filled background turns a busy log into a field of color and destroys the scan.
 
 ### 9.1 Field-mapping confidence badges [AS-BUILT]
 The contact-import mapper (`ContactImportMapper`, ADR-036) surfaces per-column recognition confidence in a review table. **No new tokens** — confidence maps onto existing status tokens: `high`→`status-won` ("Recognized"), `medium`→`status-pending` ("Likely"), `low`→`status-assumption` ("Low confidence"), `none`→`destructive` ("Needs mapping"). A duplicate-target row tints `bg-status-assumption/5`; a "Template detected" banner uses the `primary` info-band pattern. Reuse this confidence→status mapping for any future recognition/confidence UI rather than introducing new colors.
@@ -673,6 +694,16 @@ propagates across all pages — are addressed at the shared-foundation layer (to
 archetypes) before any per-page work. Re-run `impeccable` after foundation changes and reconcile this
 backlog. Current known debt includes legacy `useState`-based navigation (no deep links / broken back
 button, §12) pending the routing migration in `CLAUDE.md §20`.
+
+Carried forward from the comms cosmetic pass (`docs/frontend-audit/comms-cosmetic-pass.md`) — each is
+the *same* fix at wider blast radius, not a new decision:
+
+| Debt | Scope remaining | Fix |
+|---|---|---|
+| Double-bordered table wrapper (§9) | ~77 sites app-wide (10 fixed in comms) | Delete the redundant `rounded-lg border` wrapper |
+| Server-side locale timestamps (§7) | ~40 non-comms surfaces | Swap to `TimeCell` |
+| Hand-rolled tablists (§7) | `compliance/consent`, `forms`, `archetypes/contact/notes` | Adopt `Segmented` |
+| Row-tally counts in JS | `/comms/analytics` (10,000 rows for 4 integers) | Head-only `loadCount`; needs a data decision first |
 
 ---
 

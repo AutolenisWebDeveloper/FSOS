@@ -3,7 +3,7 @@ import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Numeric } from '@/components/ui/typography'
+import { TimeCell } from '@/components/ui/time'
 import { load } from '@/lib/data/query'
 import { ResolveActions } from './resolve-actions'
 
@@ -75,64 +75,60 @@ export default async function AssignmentsPage() {
                 description="When ownership can't be confidently resolved for a send, it is held here with the conflicting source data. Nothing outbound is waiting right now."
               />
             ) : (
-              <div className="rounded-lg border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>When</TableHead>
-                      <TableHead>Channel</TableHead>
-                      <TableHead>Destination</TableHead>
-                      <TableHead>Why it's held</TableHead>
-                      <TableHead className="text-right">Resolve</TableHead>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>When</TableHead>
+                    <TableHead>Channel</TableHead>
+                    <TableHead>Destination</TableHead>
+                    <TableHead>Why it's held</TableHead>
+                    <TableHead className="text-right">Resolve</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {open.data.map((r) => (
+                    <TableRow key={r.id}>
+                      <TableCell className="text-muted-foreground">
+                        <TimeCell value={r.created_at} />
+                      </TableCell>
+                      <TableCell>{r.channel ? <Badge variant="outline">{r.channel}</Badge> : '—'}</TableCell>
+                      <TableCell className="font-medium">{r.destination ?? '—'}</TableCell>
+                      <TableCell className="max-w-md text-sm text-muted-foreground">{r.reason}</TableCell>
+                      <TableCell className="text-right"><ResolveActions id={r.id} /></TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {open.data.map((r) => (
-                      <TableRow key={r.id}>
-                        <TableCell className="text-muted-foreground">
-                          <Numeric>{new Date(r.created_at).toLocaleString('en-US')}</Numeric>
-                        </TableCell>
-                        <TableCell>{r.channel ? <Badge variant="outline">{r.channel}</Badge> : '—'}</TableCell>
-                        <TableCell className="font-medium">{r.destination ?? '—'}</TableCell>
-                        <TableCell className="max-w-md text-sm text-muted-foreground">{r.reason}</TableCell>
-                        <TableCell className="text-right"><ResolveActions id={r.id} /></TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                  ))}
+                </TableBody>
+              </Table>
             )}
           </section>
 
           {recent.ok && recent.data.length > 0 && (
             <section>
               <p className="mb-2 text-sm font-medium">Recently resolved ({recent.data.length})</p>
-              <div className="rounded-lg border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>When</TableHead>
-                      <TableHead>Destination</TableHead>
-                      <TableHead>Outcome</TableHead>
-                      <TableHead>By</TableHead>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>When</TableHead>
+                    <TableHead>Destination</TableHead>
+                    <TableHead>Outcome</TableHead>
+                    <TableHead>By</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {recent.data.map((r) => (
+                    <TableRow key={r.id}>
+                      <TableCell className="text-muted-foreground">
+                        <TimeCell value={r.resolved_at} />
+                      </TableCell>
+                      <TableCell className="font-medium">{r.destination ?? '—'}</TableCell>
+                      <TableCell>
+                        <Badge variant={r.status === 'resolved' ? 'won' : 'outline'}>{r.status}</Badge>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{r.resolved_by ?? '—'}</TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {recent.data.map((r) => (
-                      <TableRow key={r.id}>
-                        <TableCell className="text-muted-foreground">
-                          <Numeric>{r.resolved_at ? new Date(r.resolved_at).toLocaleString('en-US') : '—'}</Numeric>
-                        </TableCell>
-                        <TableCell className="font-medium">{r.destination ?? '—'}</TableCell>
-                        <TableCell>
-                          <Badge variant={r.status === 'resolved' ? 'won' : 'outline'}>{r.status}</Badge>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">{r.resolved_by ?? '—'}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                  ))}
+                </TableBody>
+              </Table>
             </section>
           )}
         </div>

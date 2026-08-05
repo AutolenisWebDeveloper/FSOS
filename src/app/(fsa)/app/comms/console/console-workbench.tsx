@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
+import { Segmented } from '@/components/ui/segmented'
 import { Skeleton } from '@/components/ui/skeleton'
 import { postJson, patchJson, deleteJson, firstFieldError } from '@/lib/client/api'
 import { cn } from '@/lib/utils'
@@ -321,22 +322,21 @@ export function ConsoleWorkbench() {
             <CardTitle className="text-sm">Channel</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex flex-wrap gap-2" role="tablist" aria-label="Channel">
-              {(['sms', 'email', 'ai'] as Tab[]).map((tb) => (
-                <button
-                  key={tb}
-                  role="tab"
-                  aria-selected={tab === tb}
-                  onClick={() => setTab(tb)}
-                  className={cn(
-                    'rounded-md border px-3 py-1.5 text-sm transition-colors',
-                    tab === tb ? 'border-primary bg-primary/10 font-medium text-primary' : 'text-muted-foreground hover:bg-muted',
-                  )}
-                >
-                  {tb === 'sms' ? 'SMS' : tb === 'email' ? 'Email' : 'AI Conversation'}
-                </button>
-              ))}
-            </div>
+            {/* Was a hand-rolled `role="tablist"` with no aria-controls, no tabpanel,
+                and no roving tabindex — a keyboard user tabbed through every option
+                and a screen reader announced tabs controlling nothing. Modelled as a
+                radiogroup rather than tabs: it selects a value that reconfigures the
+                composer, it does not switch between sibling panels. */}
+            <Segmented<Tab>
+              label="Channel"
+              value={tab}
+              onChange={setTab}
+              options={[
+                { value: 'sms', label: 'SMS' },
+                { value: 'email', label: 'Email' },
+                { value: 'ai', label: 'AI conversation' },
+              ]}
+            />
             {tab === 'ai' && (
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1">
@@ -517,20 +517,15 @@ function SourceSelector(props: {
         <CardTitle className="text-sm">Message source</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="flex gap-2">
-          <button
-            onClick={() => props.setSource('blank')}
-            className={cn('rounded-md border px-3 py-1.5 text-sm', props.source === 'blank' ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted')}
-          >
-            {props.isAi ? 'Blank opener' : 'Blank compose'}
-          </button>
-          <button
-            onClick={() => props.setSource('campaign')}
-            className={cn('rounded-md border px-3 py-1.5 text-sm', props.source === 'campaign' ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted')}
-          >
-            From a campaign
-          </button>
-        </div>
+        <Segmented<Source>
+          label="Message source"
+          value={props.source}
+          onChange={props.setSource}
+          options={[
+            { value: 'blank', label: props.isAi ? 'Blank opener' : 'Blank compose' },
+            { value: 'campaign', label: 'From a campaign' },
+          ]}
+        />
 
         {props.source === 'blank' ? (
           <div className="space-y-2">
@@ -589,9 +584,12 @@ function SourceSelector(props: {
                         return (
                           <button
                             key={`${a.source_table}:${a.asset_id}`}
+                            type="button"
+                            aria-pressed={selected}
                             onClick={() => props.setSelectedAsset(a)}
                             className={cn(
                               'flex w-full items-center justify-between gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors',
+                              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
                               selected ? 'border-primary bg-primary/10' : 'hover:bg-muted',
                             )}
                           >

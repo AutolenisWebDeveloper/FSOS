@@ -7,6 +7,7 @@ import { CampaignControls } from '@/components/app/CampaignEngineControls'
 import { CAMPAIGN_ENGINES, campaignBreadcrumb, campaignDetailHref, winbackCategory } from '@/lib/comms/campaign-presentation'
 import { CampaignStatusBadge, CampaignHeaderActions, CampaignStat } from '@/components/comms/campaign/CampaignKit'
 import { CampaignEnrollmentTable } from '@/components/comms/campaign/CampaignEnrollmentTable'
+import { CampaignStateLine } from '@/components/comms/campaign/CampaignStateLine'
 
 export const dynamic = 'force-dynamic'
 
@@ -109,14 +110,19 @@ export default async function PipelineWinbackPage() {
           </div>
         </Link>
 
+        <CampaignStateLine
+          status={campaign.status}
+          simulatedAt={campaign.simulated_at}
+          activeEnrollments={analytics?.totals.active ?? 0}
+          pausedEnrollments={analytics?.totals.paused ?? 0}
+          suppressedTouches={analytics?.touches.suppressed ?? 0}
+          deadLetterTouches={analytics?.touches.dead_letter ?? 0}
+          overdueAdvisorTasks={analytics?.advisor.overdue ?? 0}
+        />
+
         <Card className="p-5">
           <h2 className="mb-3 text-sm font-semibold">Operational controls</h2>
           <CampaignControls campaignId={campaign.id} status={campaign.status} endpoint={ENGINE.apiRoot} />
-          {!campaign.simulated_at && campaign.status !== 'active' && (
-            <p className="mt-3 text-xs text-muted-foreground">
-              This campaign has never been simulated. Run a read-only simulation before activating it (ADR-021).
-            </p>
-          )}
         </Card>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

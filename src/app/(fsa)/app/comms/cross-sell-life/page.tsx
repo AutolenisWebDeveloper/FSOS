@@ -5,6 +5,7 @@ import { load } from '@/lib/data/query'
 import { campaignAnalytics, type CampaignAnalytics } from '@/lib/cross-sell-life/analytics'
 import { CAMPAIGN_ENGINES, campaignBreadcrumb, campaignDetailHref } from '@/lib/comms/campaign-presentation'
 import { CampaignHeaderActions, CampaignStat, FunnelStat } from '@/components/comms/campaign/CampaignKit'
+import { CampaignStateLine } from '@/components/comms/campaign/CampaignStateLine'
 
 export const dynamic = 'force-dynamic'
 
@@ -102,9 +103,16 @@ function CampaignPanel({ campaign, analytics }: { campaign: CampaignRow; analyti
         />
       </div>
 
-      {!campaign.simulated_at && campaign.status !== 'active' && (
-        <p className="mt-3 text-xs text-muted-foreground">A read-only simulation is recommended before activation (ADR-021).</p>
-      )}
+      <CampaignStateLine
+        className="mt-4"
+        status={campaign.status}
+        simulatedAt={campaign.simulated_at}
+        activeEnrollments={analytics?.totals?.active ?? 0}
+        pausedEnrollments={analytics?.totals?.paused ?? 0}
+        suppressedTouches={analytics?.touches.suppressed ?? 0}
+        deadLetterTouches={analytics?.touches.dead_letter ?? 0}
+        overdueAdvisorTasks={analytics?.advisor.overdue ?? 0}
+      />
 
       {/* KPI counts */}
       <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

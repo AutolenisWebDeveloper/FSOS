@@ -12,6 +12,7 @@ import { CampaignHealthPanel } from '@/components/app/CampaignHealthPanel'
 import { TimeCell } from '@/components/ui/time'
 import { CAMPAIGN_ENGINES, CAMPAIGN_ENGINE_LIST, campaignBreadcrumb, campaignDetailHref, campaignStatus } from '@/lib/comms/campaign-presentation'
 import { CampaignStatusBadge, CampaignCrossLinks } from '@/components/comms/campaign/CampaignKit'
+import { CampaignStateLine } from '@/components/comms/campaign/CampaignStateLine'
 import { CampaignControlsSection } from '@/components/comms/campaign/CampaignControlsSection'
 import { CampaignAnalyticsPanel } from '@/components/comms/campaign/CampaignAnalyticsPanel'
 import { CampaignScheduleTable } from '@/components/comms/campaign/CampaignScheduleTable'
@@ -60,6 +61,7 @@ export default async function CrossSellLifeDetailPage(props: { params: Promise<{
   const s = detail.settings
   const emailTouches = detail.touches.filter((t) => t.template && t.kind === 'email')
   const smsTouches = detail.touches.filter((t) => t.template && t.kind === 'sms')
+  const templated = detail.touches.filter((t) => t.template)
 
   return (
     <DetailShell
@@ -76,6 +78,19 @@ export default async function CrossSellLifeDetailPage(props: { params: Promise<{
       rail={<CampaignCrossLinks current={ENGINE.key} engines={CAMPAIGN_ENGINE_LIST} />}
     >
       <div className="space-y-6">
+        {/* 0 — Is this campaign OK right now? */}
+        <CampaignStateLine
+          status={s.status}
+          simulatedAt={s.simulated_at}
+          unapprovedTemplates={templated.filter((t) => t.template!.approval_status !== 'approved').length}
+          totalTemplates={templated.length}
+          activeEnrollments={analytics?.totals.active ?? 0}
+          pausedEnrollments={analytics?.totals.paused ?? 0}
+          suppressedTouches={analytics?.touches.suppressed ?? 0}
+          deadLetterTouches={analytics?.touches.dead_letter ?? 0}
+          overdueAdvisorTasks={analytics?.advisor.overdue ?? 0}
+        />
+
         {/* 1 — Operational controls */}
         <CampaignControlsSection engine={ENGINE} status={s.status} simulatedAt={s.simulated_at}>
           <CampaignControls campaignId={s.id} status={s.status} />

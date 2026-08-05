@@ -13,6 +13,7 @@ import { CampaignControls } from '@/components/app/CampaignEngineControls'
 import { CampaignHealthPanel } from '@/components/app/CampaignHealthPanel'
 import { CAMPAIGN_ENGINES, CAMPAIGN_ENGINE_LIST, campaignBreadcrumb, winbackCategory } from '@/lib/comms/campaign-presentation'
 import { CampaignStatusBadge, CampaignCrossLinks } from '@/components/comms/campaign/CampaignKit'
+import { CampaignStateLine } from '@/components/comms/campaign/CampaignStateLine'
 import { CampaignControlsSection } from '@/components/comms/campaign/CampaignControlsSection'
 import { CampaignAnalyticsPanel } from '@/components/comms/campaign/CampaignAnalyticsPanel'
 import { CampaignScheduleTable } from '@/components/comms/campaign/CampaignScheduleTable'
@@ -72,6 +73,19 @@ export default async function PipelineWinbackDetailPage(props: { params: Promise
       rail={<Rail unapprovedCount={unapprovedCount} />}
     >
       <div className="space-y-6">
+        {/* 0 — Is this campaign OK right now? */}
+        <CampaignStateLine
+          status={config.status}
+          simulatedAt={config.simulated_at}
+          unapprovedTemplates={unapprovedCount}
+          totalTemplates={assets.length}
+          activeEnrollments={analytics?.totals.active ?? 0}
+          pausedEnrollments={analytics?.totals.paused ?? 0}
+          suppressedTouches={analytics?.touches.suppressed ?? 0}
+          deadLetterTouches={analytics?.touches.dead_letter ?? 0}
+          overdueAdvisorTasks={analytics?.advisor.overdue ?? 0}
+        />
+
         {/* 1 — Operational controls */}
         <CampaignControlsSection
           engine={ENGINE}

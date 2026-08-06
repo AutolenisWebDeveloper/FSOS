@@ -76,4 +76,41 @@ t('omitting personalizationResolved is backward-compatible (treated resolved)', 
   assert.equal(evaluateGate(clean).allowed, true)
 })
 
+// ── UNREGISTERED tokens fail CLOSED, not SILENT ────────────────────────────────────────
+// Regression: an unregistered token (a typo, or one a caller forgets to supply) is rendered as
+// an empty string by personalize() exactly like a blocking token — but it used to `continue` out
+// of unresolvedBlockingTokens() entirely, so the gate never saw it and the send shipped with a
+// blank where a fact belonged. Found in review as {{appointment_date}} in a win-back reminder:
+// "your meeting with X on  at Thursday, August 14...". Blocking failed safe; unknown failed silent.
+console.log('\nunregistered tokens')
+t('an unregistered token is REPORTED when nothing resolves it', () => {
+  assert.deepEqual(unresolvedBlockingTokens('Meeting on {{appointment_date}}', {}), ['appointment_date'])
+  assert.equal(BLOCKING_TOKENS.has('appointment_date'), false, 'guard: token must be unregistered for this test to mean anything')
+})
+t('an unregistered token still renders EMPTY (never a raw {{token}}) — the gate is what stops it', () => {
+  assert.equal(personalize('Meeting on {{appointment_date}}', {}), 'Meeting on ')
+})
+t('an unregistered token a caller DOES supply resolves and never blocks', () => {
+  // The RecipientContext index signature is documented extensibility — supplying a custom
+  // green-zone token must keep working, so only tokens resolving to nothing are reported.
+  assert.deepEqual(unresolvedBlockingTokens('Meeting on {{appointment_date}}', { appointment_date: 'Aug 14' }), [])
+  assert.equal(personalize('Meeting on {{appointment_date}}', { appointment_date: 'Aug 14' }), 'Meeting on Aug 14')
+})
+t('an unregistered token wired to the gate HARD-BLOCKS and escalates', () => {
+  const body = 'Meeting on {{appointment_date}}'
+  const unresolved = unresolvedBlockingTokens(body, {})
+  const r = evaluateGate({
+    ...clean,
+    personalizationResolved: unresolved.length === 0,
+    personalizationReason: `Unresolved required merge tokens: ${unresolved.join(', ')}`,
+  })
+  assert.equal(r.allowed, false)
+  assert.equal(r.blockedStep, 'personalization')
+  assert.equal(r.escalate, true)
+  assert.match(r.reason, /appointment_date/)
+})
+t('cosmetic tokens are still exempt after the change (no over-blocking)', () => {
+  assert.deepEqual(unresolvedBlockingTokens('Hi {{first_name}}, welcome to {{city}}', {}), [])
+})
+
 console.log(`\n✓ personalization fail-closed: ${passed} assertions passed`)

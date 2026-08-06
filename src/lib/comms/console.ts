@@ -12,6 +12,7 @@
 
 import type { MessagePurpose } from './purpose'
 import type { AiMessageClass } from './ai-authority'
+import { GSM7_BASIC, GSM7_EXT } from './gsm7'
 
 // ── Manual 1:1 send purposes (spec §12.1) ────────────────────────────────────
 // The purposes a licensed operator may attach to an individual send from the console.
@@ -144,9 +145,10 @@ export function isValidTestAddress(channel: 'sms' | 'email', raw: string): boole
 // GSM-7 characters not in the basic set force UCS-2 (Unicode) encoding, which shortens the
 // per-segment budget. This is an ESTIMATE for the operator preview; the provider computes
 // the authoritative count. Single-segment: 160 (GSM) / 70 (UCS-2). Multi: 153 / 67.
-const GSM7_BASIC =
-  '@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà'
-const GSM7_EXT = '^{}\\[~]|€'
+//
+// The character set lives in ./gsm7 so this preview and the guardrail tests that reject
+// non-GSM-7 characters in authored SMS copy answer "does this force UCS-2?" from ONE
+// definition rather than each carrying its own (CLAUDE.md §6).
 
 export interface SmsSegmentInfo {
   encoding: 'GSM-7' | 'UCS-2'

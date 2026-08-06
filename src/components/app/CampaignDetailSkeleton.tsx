@@ -11,6 +11,12 @@ export function CampaignDetailSkeleton() {
     <div role="status" aria-busy="true" aria-live="polite" className="space-y-6">
       <span className="sr-only">Loading campaign details…</span>
       <div aria-hidden className="space-y-6">
+        {/* Campaign timeline ribbon */}
+        <Card className="p-5 space-y-3">
+          <Skeleton className="h-4 w-40" />
+          <Skeleton className="h-11 w-full rounded-lg" />
+          <Skeleton className="h-20 w-full rounded-lg" />
+        </Card>
         {/* Summary stat tiles */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
           {Array.from({ length: 5 }).map((_, i) => (

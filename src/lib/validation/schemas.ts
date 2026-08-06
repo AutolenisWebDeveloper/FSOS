@@ -1148,33 +1148,77 @@ export type ContactPatch = z.infer<typeof ContactPatchSchema>
 
 export const KNOWLEDGE_KIND = ['document', 'faq', 'policy', 'procedure', 'template', 'business_info'] as const
 
+export const KNOWLEDGE_STATUS = ['draft', 'published', 'archived'] as const
+export const KNOWLEDGE_VISIBILITY = ['internal', 'client_safe'] as const
+
+/**
+ * Ceiling on a knowledge document's indexed text. Shared by the manual create/edit
+ * forms and the file-upload ingester (`lib/knowledge/uploads`) so an uploaded PDF's
+ * extracted text can still be edited afterwards without tripping a smaller cap.
+ * The uploaded ORIGINAL is stored whole regardless — only the indexed text is bounded.
+ */
+export const KNOWLEDGE_CONTENT_MAX = 200_000
+
+const knowledgeTags = z.array(z.string().trim().min(1).max(40)).max(30)
+
 export const KnowledgeCreateSchema = z.object({
   title: z.string().trim().min(1, 'Title is required').max(240),
   kind: z.enum(KNOWLEDGE_KIND).default('document'),
   category: z.string().trim().max(80).optional().or(z.literal('').transform(() => undefined)),
   summary: z.string().trim().max(2000).optional().or(z.literal('').transform(() => undefined)),
-  content: z.string().trim().max(50000).default(''),
-  tags: z.array(z.string().trim().min(1).max(40)).max(30).default([]),
-  status: z.enum(['draft', 'published', 'archived']).default('published'),
+  content: z.string().trim().max(KNOWLEDGE_CONTENT_MAX).default(''),
+  tags: knowledgeTags.default([]),
+  status: z.enum(KNOWLEDGE_STATUS).default('published'),
   is_assumption: z.boolean().default(false),
-  visibility: z.enum(['internal', 'client_safe']).default('internal'),
+  visibility: z.enum(KNOWLEDGE_VISIBILITY).default('internal'),
 })
 export type KnowledgeCreate = z.infer<typeof KnowledgeCreateSchema>
 
 export const KnowledgePatchSchema = z
   .object({
-    title: z.string().trim().min(1).max(240).optional(),
+    title: z.string().trim().min(1, 'Title is required').max(240).optional(),
     kind: z.enum(KNOWLEDGE_KIND).optional(),
     category: z.string().trim().max(80).nullable().optional(),
     summary: z.string().trim().max(2000).nullable().optional(),
-    content: z.string().trim().max(50000).optional(),
-    tags: z.array(z.string().trim().min(1).max(40)).max(30).optional(),
-    status: z.enum(['draft', 'published', 'archived']).optional(),
+    content: z.string().trim().max(KNOWLEDGE_CONTENT_MAX).optional(),
+    tags: knowledgeTags.optional(),
+    status: z.enum(KNOWLEDGE_STATUS).optional(),
     is_assumption: z.boolean().optional(),
-    visibility: z.enum(['internal', 'client_safe']).optional(),
+    visibility: z.enum(KNOWLEDGE_VISIBILITY).optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'No changes provided' })
 export type KnowledgePatch = z.infer<typeof KnowledgePatchSchema>
+
+/**
+ * Metadata accompanying a knowledge FILE upload (multipart). Every field is optional:
+ * the file itself is the payload, and a missing title is derived from the filename
+ * while `content` is produced by extraction rather than typed. Validated with the same
+ * bounds as the manual form so both paths write identically-shaped rows.
+ */
+export const KnowledgeUploadMetaSchema = z.object({
+  title: z.string().trim().max(240).optional(),
+  kind: z.enum(KNOWLEDGE_KIND).default('document'),
+  category: z.string().trim().max(80).optional(),
+  summary: z.string().trim().max(2000).optional(),
+  tags: knowledgeTags.default([]),
+  status: z.enum(KNOWLEDGE_STATUS).default('published'),
+  is_assumption: z.boolean().default(false),
+  visibility: z.enum(KNOWLEDGE_VISIBILITY).default('internal'),
+  /** Keep a second copy even though identical bytes are already in the library. */
+  force: z.boolean().default(false),
+})
+export type KnowledgeUploadMeta = z.infer<typeof KnowledgeUploadMetaSchema>
+
+/**
+ * How DELETE /api/knowledge/[id] removes a document.
+ *   archive   — default, reversible: the doc leaves the library and AI retrieval but
+ *               the row, its file, and its citation history are preserved.
+ *   permanent — irreversible: row + stored file are destroyed. Retrieval provenance
+ *               (knowledge_citations) cascades away with it; the audit_log entry,
+ *               which records the title/kind/filename, is what survives.
+ */
+export const KnowledgeDeleteModeSchema = z.enum(['archive', 'permanent']).default('archive')
+export type KnowledgeDeleteMode = z.infer<typeof KnowledgeDeleteModeSchema>
 
 // A human/manual reply from the FSA inbox into a conversation thread. Still routed
 // through the 7-step gate at send time (never a bypass).

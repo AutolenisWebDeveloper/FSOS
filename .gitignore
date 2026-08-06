@@ -48,3 +48,7 @@ data/rule_fetch_log.json
 .claude/skills/fsos-dns-auth/scripts/*.out.json
 .claude/skills/fsos-email-template-qa/scripts/.cache/
 .claude/skills/fsos-email-template-qa/scripts/*.out.json
+
+# esbuild scratch dir used by tests/knowledge-library-documents.test.mjs (bundles must
+# sit inside the repo so externalized provider SDKs resolve against node_modules).
+.kld-test-*/

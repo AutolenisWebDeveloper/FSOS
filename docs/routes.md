@@ -212,6 +212,9 @@ api/commissions/route.ts  api/commissions/[id]/route.ts  api/commissions/splits/
 api/comms/send/route.ts        # → lib/comms/dispatcher (compliance gate)
 api/comms/templates/route.ts  api/comms/templates/[id]/route.ts  api/comms/templates/bulk/route.ts  api/comms/campaigns/route.ts
 api/documents/route.ts  api/documents/[id]/route.ts  api/documents/upload/route.ts
+api/knowledge/route.ts         GET list/?q= FTS search / POST create (typed)
+api/knowledge/upload/route.ts  POST multipart — store the ORIGINAL privately, extract + index its text
+api/knowledge/[id]/route.ts    GET (+signed URL) / PATCH edit / DELETE ?mode=archive|permanent
 api/tasks/route.ts  api/calendar/route.ts  api/appointments/route.ts
 api/ai/run/route.ts            # enqueue an agent run (durable job)
 api/ai/escalations/route.ts

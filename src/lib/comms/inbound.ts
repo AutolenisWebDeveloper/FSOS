@@ -132,6 +132,62 @@ async function pauseActiveEnrollments(memberId: string, reason: string): Promise
   return paused
 }
 
+/**
+ * A STOP TERMINATES the member's live enrollments — it does not pause them (§12, TCPA).
+ *
+ * Pausing would be wrong in a way that matters: `resumePausedEnrollments` returns a
+ * `paused_for_conversation` row to `enrolled` once the customer has been quiet for
+ * `resume_quiet_days`, so an opt-out would silently re-enter the sending population. Every
+ * subsequent attempt would then be blocked at the gate on consent/DNC and escalated, turning
+ * one opt-out into a recurring stream of escalations for a contact who has already left.
+ *
+ * The terminal state per table follows each table's own vocabulary: `opted_out` for the
+ * native drips, and an `exited`/terminal status carrying `exit_reason='opted_out'` for the
+ * three campaign timelines. Returns how many enrollments were closed.
+ */
+async function optOutActiveEnrollments(memberId: string, reason: string): Promise<number> {
+  const db = getDb()
+  const nowISO = new Date().toISOString()
+  let closed = 0
+  // Native drips: `opted_out` is terminal, and the resume job only ever selects
+  // `paused_for_conversation`, so this can never be reinstated by automation.
+  try {
+    const { data } = await db
+      .from('comm_campaign_enrollments')
+      .update({ status: 'opted_out', suppressed_reason: reason, updated_at: nowISO })
+      .in('status', ['enrolled', 'paused_for_conversation'])
+      .eq('member_id', memberId)
+      .select('id')
+    closed += Array.isArray(data) ? data.length : 0
+  } catch {
+    /* best-effort — consent + DNC already block the sends */
+  }
+  // Campaign timelines. Life Conversion and Pipeline Win-Back use `exited`; Cross-Sell Life's
+  // §15 machine has no `exited` state and uses `suppressed` for an excluded contact.
+  for (const [table, terminal, live] of [
+    ['life_campaign_enrollments', 'exited', ['active', 'paused_for_conversation', 'paused_by_admin']],
+    ['pipeline_winback_enrollments', 'exited', ['active', 'paused_for_conversation', 'paused_by_admin']],
+    [
+      'xsell_life_campaign_enrollments',
+      'suppressed',
+      ['queued', 'scheduled', 'enrolled', 'running', 'paused_for_conversation', 'paused_by_admin', 'conversation_active'],
+    ],
+  ] as const) {
+    try {
+      const { data } = await db
+        .from(table)
+        .update({ status: terminal, exit_reason: 'opted_out', completed_at: nowISO, updated_at: nowISO })
+        .in('status', live as unknown as string[])
+        .eq('member_id', memberId)
+        .select('id')
+      closed += Array.isArray(data) ? data.length : 0
+    } catch {
+      /* best-effort — table/column absent tolerated */
+    }
+  }
+  return closed
+}
+
 /** Clear internal DNC + re-grant consent (START handling). */
 async function applyOptIn(conv: Conversation, contact: string): Promise<void> {
   const db = getDb()
@@ -245,6 +301,22 @@ export async function processInbound(input: InboundInput): Promise<InboundResult
   if (result.intent === 'stop') {
     await applyOptOut(conv, contact)
     result.optedOut = true
+    // Close the member's live enrollments as part of the opt-out, BEFORE returning. Consent +
+    // DNC already block every send at the gate, but leaving the rows live meant the drip
+    // runner kept selecting them and each attempt escalated — an opt-out generating ongoing
+    // work. Terminal, never paused: a paused row would be resumed by the quiet-window job.
+    if (conv.member_id) {
+      const closed = await optOutActiveEnrollments(conv.member_id, `inbound STOP (conversation ${conv.id})`)
+      if (closed > 0) {
+        await writeAudit({
+          actor: 'system',
+          action: 'entity.updated',
+          entity: 'comm_campaign_enrollment',
+          entityId: conv.member_id,
+          diff: { opted_out: closed, conversation: conv.id, reason: 'inbound STOP' },
+        })
+      }
+    }
     await recordMessageEvent({ messageId, conversationId: conv.id, event: 'unsubscribed', channel: input.channel })
     return result
   }

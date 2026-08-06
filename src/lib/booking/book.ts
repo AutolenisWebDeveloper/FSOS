@@ -210,19 +210,22 @@ export async function bookAppointment(input: BookInput, now: string): Promise<Bo
 
   // Booking a review exits any live campaign enrollment for this contact's household (spec §11 /
   // §4b — campaign outcome "Appointment Booked"): the client has engaged and the advisor now owns
-  // the relationship, so both the Cross-Sell Life and Life Conversion cadences must stop.
+  // the relationship, so ALL THREE cadences must stop. Win-Back was missing here, so a
+  // stalled-pipeline contact who booked a review kept receiving re-engagement touches.
   // Best-effort; a failure here never fails the booking (the appointment already exists).
   try {
     const { data: c } = await db.from('contacts').select('household_id').eq('id', contactId).maybeSingle()
     if (c?.household_id) {
       const householdId = c.household_id as string
-      const [xsell, life] = await Promise.all([
+      const [xsell, life, winback] = await Promise.all([
         import('@/lib/cross-sell-life/inbound'),
         import('@/lib/life-campaign/inbound'),
+        import('@/lib/pipeline-winback/inbound'),
       ])
       await Promise.allSettled([
         xsell.exitOnAppointment({ householdId, actor: 'booking' }),
         life.exitOnAppointment({ householdId, actor: 'booking' }),
+        winback.exitOnAppointment({ householdId, actor: 'booking' }),
       ])
     }
   } catch {

@@ -230,7 +230,7 @@ try {
   installFetchStub()
   freezeClock(IN_HOURS)
   const require = createRequire(import.meta.url)
-  const { processInbound, sendThroughGate } = require(bundlePath)
+  const { processInbound, sendThroughGate, exitWinback, exitLife, exitXsell } = require(bundlePath)
 
   // ── SCENARIO 1: threading, association, inbound row, and the auto-reply attempt ──
   section('1. Inbound message → thread, association, history, auto-reply attempt')
@@ -325,7 +325,7 @@ try {
         assert.equal(rh.autoReplied, false, `a ${label} reply was auto-sent`)
         assert.equal(rh.escalated, true)
         assert.equal(twilioCalls.length, 0, 'an SMS was placed on a held reply')
-        assert.equal(row, 'failed|ai_authority', `unexpected outcome: ${row}`)
+        assert.equal(row, 'blocked|ai_authority', `unexpected outcome: ${row}`)
       })
       check(`HOLD — "${label}" escalation explains WHY (not just a gate step)`, () => {
         assert.match(note, reasonRe, `escalation note was: ${note}`)
@@ -333,6 +333,17 @@ try {
       check(`HOLD — "${label}" preserves the drafted text for the FSA`, () => {
         assert.ok(Number(q(dbH, `select count(*) from agent_actions where kind='ai_draft' and drafted_content is not null`)) >= 1,
           'the drafted reply was not preserved')
+      })
+      check(`HOLD — "${label}" persists delivery_status=blocked, not a generic failure`, () => {
+        // events.ts records a `failed` LEDGER event alongside every hold, and its lifecycle
+        // patch used to overwrite delivery_status='blocked' with 'failed' — so a compliance
+        // hold rendered as "Failed" on every comms surface while blocked_step still said why
+        // it was blocked. The status vocabulary was right; the data under it was clobbered.
+        assert.match(row, /^blocked\|/, `the block was downgraded to a delivery failure: ${row}`)
+      })
+      check(`HOLD — "${label}" still records the failed event in the append-only ledger`, () => {
+        assert.ok(Number(q(dbH, `select count(*) from comm_message_events where event='failed'`)) >= 1,
+          'protecting the parent status must not suppress the ledger row')
       })
     }
   }
@@ -409,7 +420,7 @@ try {
       // Caught at the AI-authority layer rather than gate step 4: hasApprovedAiPolicy(agentKey)
       // feeds evaluateOutboundMessage as `templateApproved`, and that evaluation runs BEFORE
       // dispatch. Same switch, one layer earlier — the reason names the policy failure.
-      assert.equal(row, 'failed|ai_authority|template_or_policy_not_approved',
+      assert.equal(row, 'blocked|ai_authority|template_or_policy_not_approved',
         `unexpected block: ${row}`)
     })
     check('the conversation responder being ENABLED does not rescue a disabled owner', () => {
@@ -488,7 +499,7 @@ try {
     console.log(`    → with reply cap = 2/day, turn 3: ${capRow}`)
     check('the reply per-day ceiling still stops a send — it is a bound, not a bypass', () => {
       assert.equal(capped.autoReplied, false, 'the reply cap did not bind')
-      assert.match(capRow, /^failed\|frequency\|/, `unexpected outcome: ${capRow}`)
+      assert.match(capRow, /^blocked\|frequency\|/, `unexpected outcome: ${capRow}`)
       assert.equal(twilioCalls.length, 2, 'a third SMS was placed past the reply cap')
     })
     // The gate classes `frequency` as a non-escalating deferral (right for a drip, which
@@ -654,13 +665,19 @@ try {
     })
     const enrollAfterStop = q(db, `select status||'|'||coalesce(pause_reason,'-') from comm_campaign_enrollments where id='${IDS.enrollment}'`)
     console.log(`    → enrollment after STOP: ${enrollAfterStop}`)
-    // ⚠ KNOWN GAP — pinned. processInbound() returns inside the STOP branch BEFORE
-    // pauseActiveEnrollments() runs, so a STOP leaves the enrollment row status='enrolled'.
-    // Consent is revoked and DNC is written, so the drip runner's sends are blocked at the
-    // gate — but the enrollment keeps cycling and each attempt blocks + escalates.
-    check('⚠ GAP: a STOP does NOT pause the enrollment row (consent+DNC carry it instead)', () => {
-      assert.equal(enrollAfterStop, 'enrolled|-',
-        `STOP now pauses the enrollment (${enrollAfterStop}) — update this pinned gap check`)
+    check('a STOP CLOSES the enrollment — terminal, not paused', () => {
+      // `opted_out` is terminal. Pausing would be wrong: resumePausedEnrollments returns a
+      // `paused_for_conversation` row to `enrolled` after the quiet window, so an opt-out
+      // would silently re-enter the sending population and escalate on every blocked attempt.
+      assert.equal(enrollAfterStop.split('|')[0], 'opted_out',
+        `enrollment after STOP was "${enrollAfterStop}"`)
+    })
+    check('the STOP is NOT recorded as a conversation pause (nothing for the resume job)', () => {
+      assert.equal(q(db, `select count(*) from comm_campaign_enrollments where status='paused_for_conversation'`), '0',
+        'a STOP left a row the quiet-window resume job would pick up')
+    })
+    check('the enrollment closure is audited against the member', () => {
+      assert.ok(Number(q(db, `select count(*) from audit_log where entity='comm_campaign_enrollment' and diff::text like '%opted_out%'`)) >= 1)
     })
     const dbC = freshDb({ armed: true })
     await processInbound({ channel: 'sms', from: PHONE, body: 'Sounds good, what times work?', provider: 'twilio', providerId: 'SM_pause_ctl' })
@@ -680,16 +697,146 @@ try {
     })
   }
 
+  // ── SCENARIO 3b: a STOP closes the campaign timelines too, and stays closed ────
+  section('3b. STOP terminates the campaign timelines; START does not revive them')
+  {
+    const dbS = freshDb({ armed: true })
+    // Each timeline requires its own campaign row (campaign_id is NOT NULL); the seed
+    // migrations create them, so reuse whatever is there rather than inventing a second one.
+    const lifeC = q(dbS, `select id from life_campaigns limit 1`)
+    const wbC = q(dbS, `select id from pipeline_winback_campaigns limit 1`)
+    const xsC = q(dbS, `select id from xsell_life_campaigns limit 1`)
+    console.log(`    → campaigns present: life=${!!lifeC} winback=${!!wbC} xsell=${!!xsC}`)
+    // One live enrollment in each of the three campaign timelines for this member.
+    q(dbS, `insert into life_campaign_enrollments (campaign_id, household_id, member_id, status, baseline_date)
+            values ('${lifeC}','${IDS.household}','${IDS.member}','active', current_date)`)
+    q(dbS, `insert into pipeline_winback_enrollments (campaign_id, household_id, member_id, status, baseline_date)
+            values ('${wbC}','${IDS.household}','${IDS.member}','active', current_date)`)
+    // Cross-Sell Life pins the campaign VERSION on each enrollment (§15 immutability).
+    const xsV = q(dbS, `select coalesce(max(version),1) from xsell_life_campaigns where id='${xsC}'`)
+    q(dbS, `insert into xsell_life_campaign_enrollments (campaign_id, campaign_version, household_id, member_id, status, baseline_date)
+            values ('${xsC}', ${xsV || 1}, '${IDS.household}','${IDS.member}','running', current_date)`)
+    const readStates = () => q(dbS, `select
+        (select status from life_campaign_enrollments where member_id='${IDS.member}')||'|'||
+        (select status from pipeline_winback_enrollments where member_id='${IDS.member}')||'|'||
+        (select status from xsell_life_campaign_enrollments where member_id='${IDS.member}')`)
+    const before = readStates()
+    await processInbound({ channel: 'sms', from: PHONE, body: 'STOP', provider: 'twilio', providerId: 'SM_stop_all' })
+    const after = readStates()
+    console.log(`    → life|winback|xsell  before: ${before}  after STOP: ${after}`)
+
+    check('all three campaign timelines are live before the STOP (guard)', () => {
+      assert.equal(before, 'active|active|running')
+    })
+    check('a STOP closes all three campaign timelines', () => {
+      // Life/Win-Back use `exited`; Cross-Sell Life's §15 machine has no exited state and
+      // uses `suppressed` for an excluded contact.
+      assert.equal(after, 'exited|exited|suppressed', `unexpected states: ${after}`)
+    })
+    check('each closure records exit_reason = opted_out', () => {
+      for (const t of ['life_campaign_enrollments', 'pipeline_winback_enrollments', 'xsell_life_campaign_enrollments']) {
+        assert.equal(q(dbS, `select coalesce(exit_reason,'-') from ${t} where member_id='${IDS.member}'`), 'opted_out', t)
+      }
+    })
+    check('no campaign row is left in a state the resume job would pick up', () => {
+      for (const t of ['life_campaign_enrollments', 'pipeline_winback_enrollments', 'xsell_life_campaign_enrollments']) {
+        assert.equal(q(dbS, `select count(*) from ${t} where status='paused_for_conversation'`), '0', t)
+      }
+    })
+
+    // A later START restores consent for future 1:1 contact but must NOT revive the campaigns.
+    await processInbound({ channel: 'sms', from: PHONE, body: 'START', provider: 'twilio', providerId: 'SM_start_all' })
+    check('a later START does NOT revive any closed campaign timeline', () => {
+      assert.equal(readStates(), 'exited|exited|suppressed', `START revived a campaign: ${readStates()}`)
+    })
+    check('…while consent itself IS restored (the two are separate decisions)', () => {
+      assert.equal(q(dbS, `select status from consents where member_id='${IDS.member}' and channel='sms'`), 'granted')
+    })
+  }
+
+  // ── SCENARIO 3c: booking a review exits ALL THREE cadences ────────────────────
+  // book.ts exited Cross-Sell Life and Life Conversion and not Win-Back, because Win-Back had
+  // no inbound.ts seam. A stalled-pipeline contact who booked a review kept receiving
+  // re-engagement touches. This drives the three exit functions against real rows.
+  section('3c. Booking exit — Win-Back reaches parity with the other two cadences')
+  {
+    const dbX = freshDb()
+    const lifeC = q(dbX, `select id from life_campaigns limit 1`)
+    const wbC = q(dbX, `select id from pipeline_winback_campaigns limit 1`)
+    const xsC = q(dbX, `select id from xsell_life_campaigns limit 1`)
+    const xsV = q(dbX, `select coalesce(max(version),1) from xsell_life_campaigns where id='${xsC}'`)
+    const seed = () => {
+      q(dbX, `delete from life_campaign_enrollments; delete from pipeline_winback_enrollments; delete from xsell_life_campaign_enrollments`)
+      q(dbX, `insert into life_campaign_enrollments (campaign_id, household_id, member_id, status, baseline_date)
+              values ('${lifeC}','${IDS.household}','${IDS.member}','active', current_date)`)
+      q(dbX, `insert into pipeline_winback_enrollments (campaign_id, household_id, member_id, status, baseline_date)
+              values ('${wbC}','${IDS.household}','${IDS.member}','active', current_date)`)
+      q(dbX, `insert into xsell_life_campaign_enrollments (campaign_id, campaign_version, household_id, member_id, status, baseline_date)
+              values ('${xsC}', ${xsV || 1}, '${IDS.household}','${IDS.member}','running', current_date)`)
+    }
+    seed()
+    const counts = await Promise.all([
+      exitLife({ householdId: IDS.household, actor: 'booking' }),
+      exitXsell({ householdId: IDS.household, actor: 'booking' }),
+      exitWinback({ householdId: IDS.household, actor: 'booking' }),
+    ])
+    const wbRow = q(dbX, `select status||'|'||coalesce(exit_reason,'-')||'|'||(completed_at is not null) from pipeline_winback_enrollments where member_id='${IDS.member}'`)
+    console.log(`    → exits: life=${JSON.stringify(counts[0])} xsell=${JSON.stringify(counts[1])} winback=${JSON.stringify(counts[2])}`)
+    console.log(`    → win-back row after booking: ${wbRow}`)
+
+    check('the Win-Back enrollment is exited by a booking', () => {
+      assert.equal(wbRow, 'exited|appointment_booked|true', `unexpected row: ${wbRow}`)
+    })
+    check('all three cadences are closed, none left live', () => {
+      assert.equal(q(dbX, `select count(*) from life_campaign_enrollments where status='active'`), '0')
+      assert.equal(q(dbX, `select count(*) from pipeline_winback_enrollments where status='active'`), '0')
+      assert.equal(q(dbX, `select count(*) from xsell_life_campaign_enrollments where status='running'`), '0')
+    })
+    check('the Win-Back exit is audited against the enrollment record', () => {
+      assert.ok(Number(q(dbX, `select count(*) from audit_log where entity='pipeline_winback_enrollment' and diff::text like '%appointment_booked%'`)) >= 1)
+    })
+    check('a SECOND booking exits nothing — idempotent, no duplicate audit', () => {
+      const auditBefore = q(dbX, `select count(*) from audit_log where entity='pipeline_winback_enrollment'`)
+      return exitWinback({ householdId: IDS.household, actor: 'booking' }).then((again) => {
+        assert.equal(again.exited, 0, 'a second booking re-exited a terminal enrollment')
+        assert.equal(q(dbX, `select count(*) from audit_log where entity='pipeline_winback_enrollment'`), auditBefore)
+      })
+    })
+    check('a paused Win-Back enrollment is also exited (not only an active one)', () => {
+      seed()
+      q(dbX, `update pipeline_winback_enrollments set status='paused_for_conversation' where member_id='${IDS.member}'`)
+      return exitWinback({ householdId: IDS.household, actor: 'booking' }).then((r2) => {
+        assert.equal(r2.exited, 1, 'a paused cadence survived the booking')
+        assert.equal(q(dbX, `select status from pipeline_winback_enrollments where member_id='${IDS.member}'`), 'exited')
+      })
+    })
+    check('another household is untouched (the exit is scoped)', () => {
+      seed()
+      const other = '99999999-9999-9999-9999-999999999999'
+      q(dbX, `insert into households (id, primary_name) values ('${other}','Other Household')`)
+      q(dbX, `insert into pipeline_winback_enrollments (campaign_id, household_id, status, baseline_date)
+              values ('${wbC}','${other}','active', current_date)`)
+      return exitWinback({ householdId: IDS.household, actor: 'booking' }).then(() => {
+        assert.equal(q(dbX, `select status from pipeline_winback_enrollments where household_id='${other}'`), 'active')
+      })
+    })
+  }
+
   // ── SCENARIO 4: START ─────────────────────────────────────────────────────────
   section('4. START clears DNC but does NOT auto-resume promotional enrollments')
   {
     const db = freshDb({ armed: true })
-    // A real reply first (this is what pauses the enrollment), then STOP, then START.
+    // A real reply PAUSES the enrollment (conversation mode). This scenario is about whether a
+    // later START silently re-enrols — so the row must be genuinely paused, not opted out.
     // NB: "yes" is a carrier START keyword (keywords.ts), so the priming reply must not
     // begin with it or it classifies as an opt-in instead of a normal message.
     await processInbound({ channel: 'sms', from: PHONE, body: 'Sounds good, what times work?', provider: 'twilio', providerId: 'SM_reply_4' })
-    await processInbound({ channel: 'sms', from: PHONE, body: 'STOP', provider: 'twilio', providerId: 'SM_stop_4' })
-    const pausedAfterStop = q(db, `select status from comm_campaign_enrollments where id='${IDS.enrollment}'`)
+    const pausedAfterReply = q(db, `select status from comm_campaign_enrollments where id='${IDS.enrollment}'`)
+    // A DNC entry to clear: written by a STOP on a DIFFERENT contact-linked path would also do,
+    // but the honest setup is a real STOP — on a second thread, so this member's PAUSED drip
+    // row survives for the re-enrolment question below.
+    q(db, `insert into dnc_entries (contact, channel, scope, reason) values ('${PHONE}','sms','internal','test STOP')`)
+    q(db, `update consents set status='revoked' where member_id='${IDS.member}' and channel='sms'`)
     aiCalls.length = 0; twilioCalls.length = 0
     const r = await processInbound({ channel: 'sms', from: PHONE, body: 'START', provider: 'twilio', providerId: 'SM_start_4' })
 
@@ -701,7 +848,7 @@ try {
       assert.equal(q(db, `select status from consents where member_id='${IDS.member}' and channel='sms'`), 'granted')
     })
     check('the paused promotional enrollment is NOT auto-resumed', () => {
-      assert.equal(pausedAfterStop, 'paused_for_conversation', 'precondition: STOP paused the enrollment')
+      assert.equal(pausedAfterReply, 'paused_for_conversation', 'precondition: the reply paused the enrollment')
       assert.equal(q(db, `select status from comm_campaign_enrollments where id='${IDS.enrollment}'`), 'paused_for_conversation',
         'START silently re-enrolled the contact into promotional automation')
     })
@@ -892,8 +1039,8 @@ try {
       assert.equal(q(dbB, `select count(*) from agent_actions where kind='escalation'`), '0')
     })
     check('19:30 local — the held reply is recorded on the message row for the operator', () => {
-      assert.equal(q(dbB, `select coalesce(blocked_step,'-') from comm_messages where direction='outbound' order by created_at desc limit 1`),
-        'business_hours')
+      assert.equal(q(dbB, `select coalesce(delivery_status,'-')||'|'||coalesce(blocked_step,'-') from comm_messages where direction='outbound' order by created_at desc limit 1`),
+        'blocked|business_hours')
     })
 
     // (c) 20:30 recipient-local — outside the non-negotiable TCPA quiet-hours floor.
@@ -937,7 +1084,7 @@ try {
     check('19:30 via processInbound — the reply is held and nothing reaches the contact', () => {
       assert.equal(rE.autoReplied, false)
       assert.equal(twilioCalls.length, 0)
-      assert.equal(msgRow, 'failed|business_hours')
+      assert.equal(msgRow, 'blocked|business_hours')
     })
     check('19:30 via processInbound — the FSA queue DOES get an entry naming the gate step', () => {
       assert.match(escRow, /^gate_blocked:business_hours\|/, `escalation row was: ${escRow}`)

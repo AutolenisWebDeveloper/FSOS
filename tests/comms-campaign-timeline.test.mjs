@@ -133,6 +133,31 @@ t('an empty book yields zero share and zero intensity, never NaN', () => {
   }
 })
 
+t('REGRESSION: a phase configured past the end never yields an inverted band', () => {
+  // The last band used to take `toDay = days` unconditionally, so a phase whose fromDay sat
+  // beyond the campaign length produced toDay < fromDay. widthPct still clamped to 0, so it
+  // rendered invisibly — but any consumer reading the raw fromDay/toDay pair got incoherent
+  // geometry. Every band must satisfy 0 <= fromDay <= toDay <= days.
+  const l = T.layoutTimeline([], { days: 100, phases: [
+    { key: 'a', label: 'A', fromDay: 0, activeCount: 1 },
+    { key: 'b', label: 'B', fromDay: 250, activeCount: 2 },
+  ] })
+  for (const b of l.bands) {
+    assert.ok(b.fromDay <= b.toDay, `${b.key}: inverted band (${b.fromDay} → ${b.toDay})`)
+    assert.ok(b.fromDay >= 0 && b.toDay <= 100, `${b.key}: band escapes the run (${b.fromDay} → ${b.toDay})`)
+    assert.ok(b.widthPct >= 0 && b.leftPct >= 0)
+  }
+})
+
+t('a phase starting before day 0 is clamped into the run', () => {
+  const l = T.layoutTimeline([], { days: 100, phases: [
+    { key: 'a', label: 'A', fromDay: -30, activeCount: 1 },
+    { key: 'b', label: 'B', fromDay: 50, activeCount: 1 },
+  ] })
+  assert.equal(l.bands[0].fromDay, 0)
+  assert.deepEqual(l.bands.map((b) => [b.fromDay, b.toDay]), [[0, 50], [50, 100]])
+})
+
 t('a negative count is floored to zero, not counted against the book', () => {
   const l = T.layoutTimeline([], { days: 100, phases: [
     { key: 'a', label: 'A', fromDay: 0, activeCount: -5 },

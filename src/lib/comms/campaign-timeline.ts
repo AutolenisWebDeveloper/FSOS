@@ -116,8 +116,14 @@ export function layoutTimeline(
     totalActive = sorted.reduce((sum, p) => sum + safeCount(p.activeCount), 0)
     const maxCount = sorted.reduce((max, p) => Math.max(max, safeCount(p.activeCount)), 0)
     bands = sorted.map((p, i) => {
-      const from = Math.max(0, p.fromDay)
-      const to = i < sorted.length - 1 ? Math.max(from, sorted[i + 1].fromDay) : days
+      // Clamp both boundaries into the run. A phase configured outside 0..days (a mis-set
+      // threshold, or an engine whose phases were authored against a different length) must
+      // still yield coherent geometry: the last band used to take `days` unconditionally, so
+      // a phase starting past the end produced toDay < fromDay, and a band whose successor
+      // started past the end ran off the track. Both now hold 0 <= fromDay <= toDay <= days.
+      const from = Math.min(Math.max(0, p.fromDay), days)
+      const rawTo = i < sorted.length - 1 ? sorted[i + 1].fromDay : days
+      const to = Math.max(from, Math.min(rawTo, days))
       const leftPct = dayToPct(from, days)
       const widthPct = clampPct(dayToPct(to, days) - leftPct)
       const activeCount = safeCount(p.activeCount)

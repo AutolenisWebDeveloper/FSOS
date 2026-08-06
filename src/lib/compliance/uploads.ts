@@ -7,29 +7,29 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { extractDocument, PIPELINE_MODEL } from '@/lib/compliance/pipeline'
 import { PARSER_VERSION, guessKind, joinPageText } from '@/lib/compliance/extract'
+import {
+  buildObjectPath,
+  createSignedUrl,
+  DEFAULT_SIGNED_URL_TTL,
+  PRIVATE_DOCUMENTS_BUCKET,
+} from '@/lib/storage/private-documents'
 
 /** Reuse the existing private `documents` bucket (mig 001); never a public URL. */
-export const COMPLIANCE_BUCKET = 'documents'
+export const COMPLIANCE_BUCKET = PRIVATE_DOCUMENTS_BUCKET
 export const COMPLIANCE_PREFIX = 'compliance'
-export const SIGNED_URL_TTL = 60 * 60 * 12 // 12h
+export const SIGNED_URL_TTL = DEFAULT_SIGNED_URL_TTL
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = SupabaseClient<any, any, any>
 
 /** Fresh short-lived signed URL for a stored object, or null. */
 export async function signedUrlFor(db: Db, storagePath: string): Promise<string | null> {
-  try {
-    const { data } = await db.storage.from(COMPLIANCE_BUCKET).createSignedUrl(storagePath, SIGNED_URL_TTL)
-    return data?.signedUrl ?? null
-  } catch {
-    return null
-  }
+  return createSignedUrl(db, storagePath, SIGNED_URL_TTL)
 }
 
 /** Storage key for an upload: compliance/<caseId|unassigned>/<ts>-<safe-name>. */
 export function buildStoragePath(caseId: string | null, filename: string, ts: number): string {
-  const safe = filename.replace(/[^a-z0-9._-]/gi, '_').slice(0, 120)
-  return `${COMPLIANCE_PREFIX}/${caseId ?? 'unassigned'}/${ts}-${safe}`
+  return buildObjectPath(COMPLIANCE_PREFIX, caseId, filename, ts)
 }
 
 export interface ProcessableUpload {

@@ -156,19 +156,33 @@ export function personalize(body: string, ctx: RecipientContext, opts: Personali
 }
 
 /**
- * The BLOCKING-tier tokens a body references that the context cannot resolve — the fail-closed
- * signal the send path turns into gate step `personalization` (hard block + escalate). A token
- * is unresolved when it is missing/empty, or — for a URL token — not an absolute http(s) link.
- * Cosmetic tokens are never reported (they degrade to a safe default).
+ * The tokens a body references that the context cannot resolve — the fail-closed signal the send
+ * path turns into gate step `personalization` (hard block + escalate). A token is unresolved when
+ * it is missing/empty, or — for a URL token — not an absolute http(s) link.
+ *
+ * Classification is fail-closed by DEFAULT, which is the important property:
+ *   • COSMETIC tokens are never reported — they degrade to a safe neutral default by design.
+ *   • BLOCKING tokens are reported when they do not resolve.
+ *   • UNREGISTERED tokens are ALSO reported when they do not resolve. `personalize()` renders an
+ *     unknown token as an empty string exactly like a blocking one, so a typo'd or never-supplied
+ *     token silently ships a blank where a factual value belongs ("your meeting on  at ..."). This
+ *     previously `continue`d out of the loop and was invisible to the gate — a blocking token
+ *     failed SAFE while an unknown token failed SILENT. Both now fail safe.
+ *
+ * The RecipientContext index signature (a caller supplying its own green-zone token) still works:
+ * a supplied token resolves to a non-empty value and is therefore never reported. Only tokens that
+ * resolve to nothing are blocked.
  */
 export function unresolvedBlockingTokens(body: string, ctx: RecipientContext): string[] {
   const missing: string[] = []
   const seen = new Set<string>()
   for (const token of tokensIn(body)) {
-    // tokensIn already returns CANONICAL keys, so blocking classification + ctx lookup are keyed
+    // tokensIn already returns CANONICAL keys, so classification + ctx lookup are keyed
     // consistently regardless of how the author spelled the token in the template.
-    if (!BLOCKING_TOKENS.has(token) || seen.has(token)) continue
+    if (seen.has(token)) continue
     seen.add(token)
+    // Cosmetic tokens carry a safe default and must never block a send.
+    if (Object.prototype.hasOwnProperty.call(COSMETIC_DEFAULTS, token)) continue
     const provided = ctx[token]
     const val = typeof provided === 'string' ? provided.trim() : ''
     if (!val) {

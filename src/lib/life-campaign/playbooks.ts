@@ -156,7 +156,7 @@ export const PLAYBOOKS: Playbook[] = [
     prohibited:
       'Never state who the current beneficiary is, never suggest who it should be, and never take a beneficiary change instruction in this channel. Any actual change request escalates to {{fsa_name}} immediately.',
     followUp:
-      "No need to reply, {{first_name}} — this one is genuinely just worth knowing. If you check and something looks off, {{fsa_name}} can help you sort it.",
+      "No need to reply, {{first_name}}. This one is genuinely just worth knowing. If you check and something looks off, {{fsa_name}} can help you sort it.",
     handoff:
       "A beneficiary change has to go through a licensed person and the carrier's own process, so I'm passing this to {{fsa_name}} to handle properly with you.",
     closing:

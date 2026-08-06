@@ -188,7 +188,7 @@ export const PLAYBOOKS: Playbook[] = [
     followUp:
       "I'll take the silence as a no, {{first_name}}, and close this out. Nothing further needed from you, and thank you for your time.",
     closing:
-      "Closed out, {{first_name}}. Thank you for being a client of {{agency_name}} — that's the part that matters. If a question ever comes up, reply here and {{fsa_name}} will pick it up.",
+      "Closed out, {{first_name}}. Thank you for being a client of {{agency_name}}. That's the part that matters. If a question ever comes up, reply here and {{fsa_name}} will pick it up.",
     handoff:
       "Of course, I'll pass you to {{fsa_name}} now so you can speak with a licensed person directly.",
     escalateOn: ['advisor_requested', 'recommendation', 'quote', 'pricing', 'complaint', 'unknown'],

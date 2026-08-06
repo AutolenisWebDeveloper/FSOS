@@ -248,7 +248,7 @@ export const EVENT_DRIVEN_SMS: EventTrigger[] = [
   {
     key: 'appointment_reminder',
     title: 'Appointment Reminder',
-    body: 'Hi {{first_name}}, a quick reminder about your meeting with {{fsa_name}} on {{appointment_date}} at {{appointment_time}}. Nothing to prepare. If you need a different time, just reply here.',
+    body: 'Hi {{first_name}}, a quick reminder about your meeting with {{fsa_name}} on {{appointment_time}}. Nothing to prepare. If you need a different time, just reply here.',
   },
   {
     key: 'missed_appointment',
@@ -258,7 +258,7 @@ export const EVENT_DRIVEN_SMS: EventTrigger[] = [
   {
     key: 'ai_follow_up',
     title: 'AI Follow-Up',
-    body: "Thanks for getting back to me, {{first_name}}. I'm {{fsa_name}}'s automated assistant, so I can answer general questions and set up a time with {{fsa_name}} — anything specific to your situation, I'll pass straight to them.",
+    body: "Thanks for getting back to me, {{first_name}}. I'm {{fsa_name}}'s automated assistant, so I can answer general questions and set up a time with {{fsa_name}}. Anything specific to your situation, I'll pass straight to them.",
   },
   {
     key: 'information_ready',

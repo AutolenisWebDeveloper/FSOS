@@ -31,9 +31,19 @@ import { createRequire } from 'node:module'
 
 // ── Compile the pure guardrail (TS) so we test the REAL detector, not a copy ──
 // Same commonjs + createRequire approach as tests/guardrail.test.mjs (guardrail.ts → compliance.ts).
+// The three playbooks.ts files are pure data with NO imports, so they compile standalone and are
+// require()'d as real parsed objects — no regex-scraping of source. --rootDir pins the emit layout
+// so both the guardrail and the playbooks resolve at predictable paths.
 const out = mkdtempSync(join(tmpdir(), 'fsos-msg-'))
+const PLAYBOOK_SRC = [
+  ['Win-Back', 'pipeline-winback'],
+  ['Cross-Sell Life', 'cross-sell-life'],
+  ['Life Conversion', 'life-campaign'],
+]
 execSync(
-  `npx tsc src/lib/compliance/guardrail.ts --outDir ${out} ` +
+  `npx tsc src/lib/compliance/guardrail.ts ` +
+    PLAYBOOK_SRC.map(([, d]) => `src/lib/${d}/playbooks.ts`).join(' ') +
+    ` --outDir ${out} --rootDir src/lib ` +
     `--module commonjs --target es2020 --moduleResolution node --skipLibCheck --esModuleInterop`,
   { stdio: 'inherit' },
 )
@@ -254,6 +264,72 @@ for (const c of selected) {
   t('email bodies never restate the SMS opt-out keyword', () => {
     for (const r of emails) {
       assert.doesNotMatch(r.body, /reply stop/i, `${r.id} carries SMS opt-out language in an email`)
+    }
+  })
+}
+
+// ── AI PLAYBOOK BODIES (the .ts surface the migration tests do NOT reach) ───────────────
+// Each playbook's `opening` is duplicated into the v2 migration and therefore already covered
+// above. `followUp` / `handoff` / `closing` and the event-driven SMS triggers live ONLY here and
+// are dispatched VERBATIM by the AI responder, so they were entirely untested — the gap that let
+// an unregistered {{appointment_date}} and a UCS-2 em dash through review. Same invariants as the
+// migration bodies, applied to the real compiled objects.
+console.log('\n▶ AI playbook dispatched bodies')
+
+// appointment_time joins the six campaign tokens here: it is BLOCKING-tier, so if the booking
+// context fails to supply it the send HARD-BLOCKS at gate step 4b. An UNREGISTERED token is the
+// actual hazard — personalize.ts renders it as an empty string and does NOT block, silently
+// shipping broken copy ("your meeting with Markist on  at ...").
+const PLAYBOOK_TOKENS = new Set([...ALLOWED_TOKENS, 'appointment_time'])
+
+for (const [key, dir] of PLAYBOOK_SRC) {
+  const mod = require(join(out, dir, 'playbooks.js'))
+  // Only CLIENT-FACING, dispatched fields. ADVISOR_SCRIPTS are internal call scripts a licensed
+  // human reads aloud — never sent over SMS — so segment/GSM-7 limits do not apply to them.
+  const bodies = []
+  for (const p of mod.PLAYBOOKS ?? []) {
+    for (const f of ['opening', 'followUp', 'handoff', 'closing']) {
+      if (p[f]) bodies.push({ id: `${key}/${p.key}.${f}`, body: p[f] })
+    }
+  }
+  for (const e of mod.EVENT_DRIVEN_SMS ?? []) {
+    bodies.push({ id: `${key}/event:${e.key}`, body: e.body })
+  }
+
+  t(`${key}: playbook bodies are recommendation-free`, () => {
+    assert.ok(bodies.length > 0, `${key} exposed no dispatched playbook bodies`)
+    for (const b of bodies) {
+      assert.equal(containsRecommendationLanguage(b.body), false, `${b.id} contains recommendation language`)
+    }
+  })
+
+  t(`${key}: playbook bodies reference only resolvable merge tokens`, () => {
+    for (const b of bodies) {
+      for (const m of b.body.matchAll(/\{\{\s*([a-z_]+)\s*\}\}/gi)) {
+        assert.ok(
+          PLAYBOOK_TOKENS.has(m[1].toLowerCase()),
+          `${b.id} uses unregistered token {{${m[1]}}} — renders EMPTY without blocking`,
+        )
+      }
+    }
+  })
+
+  t(`${key}: playbook bodies stay GSM-7 safe (no UCS-2 downgrade)`, () => {
+    for (const b of bodies) {
+      const bad = [...b.body].filter((ch) => !/[\x20-\x7E\n]/.test(ch))
+      assert.equal(bad.length, 0, `${b.id} has non-GSM-7 character(s): ${JSON.stringify(bad.join(''))}`)
+    }
+  })
+
+  t(`${key}: playbook bodies do NOT restate the opt-out (dispatcher appends TRAIGA footer)`, () => {
+    for (const b of bodies) {
+      assert.doesNotMatch(b.body, /reply stop/i, `${b.id} duplicates the appended opt-out footer`)
+    }
+  })
+
+  t(`${key}: every playbook opener identifies itself as an automated assistant`, () => {
+    for (const p of mod.PLAYBOOKS ?? []) {
+      assert.match(p.opening, /automated assistant/i, `${key}/${p.key}.opening does not self-identify as AI`)
     }
   })
 }

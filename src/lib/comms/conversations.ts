@@ -117,10 +117,11 @@ export interface Conversation {
   status: string
   /**
    * The ai_agents.key bound to this thread by the campaign tick or the console initiator
-   * (migration 087). Read here so the per-conversation AI turn ceiling can be overridden per
-   * campaign agent (turn-limit.ts). NOTE: this is NOT yet used to select the authoring agent
-   * for a reply — tryAutoReply still authors as `conversation`, so a campaign agent's kill
-   * switch does not govern replies on its own threads. Tracked separately.
+   * (migration 087); null on an inbound-initiated thread. It is the single source for BOTH
+   * the per-conversation turn ceiling (turn-limit.ts) and the agent that authors a reply
+   * (inbound.ts → tryAutoReply), so the per-agent kill switch governs the threads it names:
+   * disabling `pipeline` stops replies on pipeline-armed threads. Absent → the conversation
+   * responder.
    */
   agent_key: string | null
 }

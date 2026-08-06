@@ -376,6 +376,65 @@ try {
     })
   }
 
+  // ── SCENARIO 1b3: the per-agent kill switch on the threads it names ───────────
+  section('1b3. A campaign-armed thread is governed by ITS agent, not the responder')
+  {
+    // A pipeline-armed thread: the campaign ticks set agent_key when they arm a thread after
+    // a delivered AI opener (campaign-ai.ts). Gate step 4 must consult THAT agent.
+    const dbA = freshDb({ armed: true })
+    q(dbA, `update comm_conversations set agent_key='pipeline' where contact='${PHONE}'`)
+    twilioCalls.length = 0
+    const ok = await processInbound({ channel: 'sms', from: PHONE, body: 'What is term life insurance?', provider: 'twilio', providerId: 'SM_agent_ok' })
+    check('a pipeline-armed thread still replies while the pipeline agent is enabled', () => {
+      assert.equal(ok.autoReplied, true, 'the reply was blocked with the agent enabled')
+      assert.equal(twilioCalls.length, 1)
+    })
+    check('the send is attributed to the OWNING agent, not the conversation responder', () => {
+      assert.equal(q(dbA, `select actor from comm_messages where direction='outbound' order by created_at desc limit 1`),
+        'agent:pipeline')
+    })
+
+    // Disable the pipeline agent. Its own threads must stop.
+    const dbB = freshDb({ armed: true })
+    q(dbB, `update comm_conversations set agent_key='pipeline' where contact='${PHONE}'`)
+    q(dbB, `update ai_agents set enabled=false where key='pipeline'`)
+    twilioCalls.length = 0
+    const killed = await processInbound({ channel: 'sms', from: PHONE, body: 'What is term life insurance?', provider: 'twilio', providerId: 'SM_agent_kill' })
+    const row = q(dbB, `select coalesce(delivery_status,'-')||'|'||coalesce(blocked_step,'-')||'|'||coalesce(block_reason,'-') from comm_messages where direction='outbound' order by created_at desc limit 1`)
+    console.log(`    → pipeline agent disabled: sent=${killed.autoReplied} row=${row}`)
+    check('disabling the PIPELINE agent stops replies on pipeline threads', () => {
+      assert.equal(killed.autoReplied, false,
+        'the kill switch named a thread it could not stop — the reply still went out')
+      assert.equal(twilioCalls.length, 0)
+      // Caught at the AI-authority layer rather than gate step 4: hasApprovedAiPolicy(agentKey)
+      // feeds evaluateOutboundMessage as `templateApproved`, and that evaluation runs BEFORE
+      // dispatch. Same switch, one layer earlier — the reason names the policy failure.
+      assert.equal(row, 'failed|ai_authority|template_or_policy_not_approved',
+        `unexpected block: ${row}`)
+    })
+    check('the conversation responder being ENABLED does not rescue a disabled owner', () => {
+      assert.equal(q(dbB, `select enabled from ai_agents where key='conversation'`), 't',
+        'precondition: the responder is still enabled')
+    })
+    check('the escalation is attributed to the owning agent too', () => {
+      assert.equal(q(dbB, `select actor from agent_actions where kind='escalation' order by created_at desc limit 1`),
+        'agent:pipeline')
+    })
+
+    // The converse: an inbound-initiated thread has no agent_key and must still work off the
+    // conversation responder's switch.
+    const dbC3 = freshDb({ armed: true })
+    q(dbC3, `update ai_agents set enabled=false where key='pipeline'`)
+    twilioCalls.length = 0
+    const unbound = await processInbound({ channel: 'sms', from: PHONE, body: 'What is term life insurance?', provider: 'twilio', providerId: 'SM_agent_unbound' })
+    check('an UNBOUND thread is unaffected by another agent being disabled', () => {
+      assert.equal(q(dbC3, `select coalesce(agent_key,'-') from comm_conversations where contact='${PHONE}'`), '-')
+      assert.equal(unbound.autoReplied, true, 'a disabled pipeline agent blocked an unbound thread')
+      assert.equal(q(dbC3, `select actor from comm_messages where direction='outbound' order by created_at desc limit 1`),
+        'agent:conversation')
+    })
+  }
+
   // ── SCENARIO 1c: reply-scoped frequency caps (ADR-017 amendment, migration 102) ──
   // Supplying the purpose §12 requires also enrolled replies in the §9 caps, whose seeded
   // 60-minute minimum interval stalled a back-and-forth after ONE turn. Migration 102 adds a

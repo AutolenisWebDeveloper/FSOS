@@ -339,6 +339,17 @@ async function tryAutoReply(conv: Conversation, input: InboundInput, inboundMess
   }
 
   const to = conv.contact
+  // The agent that AUTHORS this reply. A thread armed by a campaign tick or the console
+  // initiator carries that campaign's agent (`pipeline`, `cross_sell`, `term_conversion`, …);
+  // an inbound-initiated thread carries none and falls back to the conversation responder.
+  //
+  // This is what makes the per-agent kill switch real on the threads it names. Gate step 4 is
+  // satisfied by hasApprovedAiPolicy(agentKey), so authoring as `conversation` regardless of
+  // the binding meant disabling the `pipeline` agent did not stop replies on pipeline threads
+  // — the switch named a thread it could not stop. Both the actor and the authority check now
+  // resolve from the same field the turn ceiling already reads.
+  const authorAgentKey = conv.agent_key || 'conversation'
+
   // Classify the reply for the §11 authority matrix and the §9 purpose policy. Every
   // aiGenerated send is evaluated by evaluateOutboundMessage() before dispatch, and it needs
   // BOTH a message class and a purpose: omitting either held every reply as an FSA draft
@@ -359,12 +370,14 @@ async function tryAutoReply(conv: Conversation, input: InboundInput, inboundMess
     to,
     subject: input.subject ? `Re: ${input.subject}` : undefined,
     body: drafted.draft,
-    actor: `agent:conversation`,
+    actor: `agent:${authorAgentKey}`,
     memberId: conv.member_id,
     householdId: conv.household_id,
     entity: { type: 'conversation', id: conv.id },
     isSecurity: conv.is_security,
     aiGenerated: true,
+    // The per-agent kill switch that must pass gate step 4 for this reply (see above).
+    aiAuthorAgentKey: authorAgentKey,
     // `undefined` is deliberate for an unclassified reply: evaluateAiAuthority() fails safe
     // to draft_only on an absent class, which is exactly the outcome we want.
     aiMessageClass: classification.messageClass ?? undefined,
@@ -404,10 +417,14 @@ async function escalateToFsa(
   reason: string,
   detail?: string,
 ): Promise<void> {
+  // Attribute the escalation to the agent that OWNS the thread, matching the actor on the
+  // send itself — an escalation on a pipeline thread must not read as the conversation
+  // responder's, or the audit trail disagrees with the authority check that produced it.
+  const actor = `agent:${conv.agent_key || 'conversation'}`
   try {
     await getDb().from('agent_actions').insert({
       kind: 'escalation',
-      actor: 'agent:conversation',
+      actor,
       outcome: 'escalated',
       target_type: 'conversation',
       target_id: conv.id,
@@ -416,7 +433,7 @@ async function escalateToFsa(
         ? `Inbound ${conv.channel} needs human attention (${reason}): ${detail}.`
         : `Inbound ${conv.channel} needs human attention (${reason}).`,
     })
-    await writeAudit({ actor: 'agent:conversation', action: 'ai.escalated', entity: 'conversation', entityId: conv.id, diff: { reason, detail: detail ?? null, messageId } })
+    await writeAudit({ actor, action: 'ai.escalated', entity: 'conversation', entityId: conv.id, diff: { reason, detail: detail ?? null, messageId } })
   } catch {
     /* best-effort */
   }

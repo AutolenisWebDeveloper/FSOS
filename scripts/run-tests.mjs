@@ -14,6 +14,7 @@ import { execFileSync } from 'node:child_process'
 // `unit` set (run without sudo) never accidentally includes one.
 const RLS = new Set([
   'rls-firewall.test.mjs',
+  'comms-inbound-e2e.test.mjs',
   'customer-dob-plain.test.mjs',
   'import-mapping-migration.test.mjs',
   'ghl-optout-rollback.test.mjs',

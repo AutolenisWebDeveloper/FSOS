@@ -11,7 +11,7 @@
 // present one playbook model rather than two divergent ones (CLAUDE.md §6).
 //
 // COMPLIANCE: the AI ALWAYS identifies itself as an automated assistant (every `opening`
-// does, and dispatcher.ts appends the TRAIGA AI-disclosure footer to every SMS). It may
+// does, and dispatcher.ts appends the STOP opt-out footer to every SMS). It may
 // educate, qualify, invite, schedule, remind, follow up, and route. It may NEVER recommend
 // a product, carrier, coverage amount, premium, or replacement, quote a rate, make a
 // suitability/best-interest determination, or assert a specific claim about the recipient's
@@ -243,7 +243,7 @@ export interface EventTrigger {
 
 // Event-driven SMS triggers — fired on events, NOT on the Day-based schedule, and do not count
 // toward the 24 proactive touches. Shown for completeness in the campaign detail. No opt-out text:
-// dispatcher.ts appends the TRAIGA AI-disclosure/opt-out footer to every SMS.
+// dispatcher.ts appends the STOP opt-out footer to every SMS.
 export const EVENT_DRIVEN_SMS: EventTrigger[] = [
   {
     key: 'appointment_reminder',

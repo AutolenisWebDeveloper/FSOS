@@ -15,8 +15,8 @@
 //      an unresolved BLOCKING-tier token (gate step 4b / personalize.unresolvedBlockingTokens).
 //   4. Every template ID updated is one the seed migration actually created — so a touch row can
 //      never point at a template this migration failed to rewrite.
-//   5. SMS bodies carry NO opt-out/AI-disclosure text: dispatcher.ts appends TRAIGA_SMS_FOOTER to
-//      every SMS, and duplicating it wastes segment budget and reads as machine-generated.
+//   5. SMS bodies carry NO opt-out text: dispatcher.ts appends SMS_OPT_OUT_FOOTER to every SMS,
+//      and duplicating it wastes segment budget and reads as machine-generated.
 //   6. Email bodies honour the wrapMarketingEmailBody contract: a Subject: line, a Preview: line,
 //      exactly ONE closer block, and a single CTA line ending in {{scheduling_link}}.
 //
@@ -215,17 +215,19 @@ for (const c of selected) {
     assert.equal(ais.length, c.expect.ai, 'ai opener count')
   })
 
-  t('SMS + AI bodies do NOT restate the opt-out (dispatcher appends TRAIGA footer)', () => {
+  t('SMS + AI bodies do NOT restate the opt-out (dispatcher appends the STOP footer)', () => {
     for (const r of [...smses, ...ais]) {
       assert.doesNotMatch(r.body, /reply stop/i, `${r.id} duplicates the appended opt-out footer`)
     }
   })
 
   t('SMS + AI bodies stay within a sane segment budget alongside the footer', () => {
-    // TRAIGA_SMS_FOOTER (+ "\n\n") costs 71 chars on the wire. Keep the authored body ≤ 235 so a
+    // SMS_OPT_OUT_FOOTER (+ "\n\n") costs 24 chars on the wire. The 235-char authored-body
+    // ceiling is KEPT as-is even though the footer shrank by 47 chars: the headroom now
+    // absorbs merge-token expansion (a long {{agency_name}} + {{fsa_name}}) instead, so a
     // typical send stays within 2 concatenated GSM-7 segments (306) after token expansion.
     for (const r of [...smses, ...ais]) {
-      assert.ok(r.body.length <= 235, `${r.id} is ${r.body.length} chars (>235) before the 71-char footer`)
+      assert.ok(r.body.length <= 235, `${r.id} is ${r.body.length} chars (>235) before the 24-char footer`)
     }
   })
 
@@ -325,7 +327,7 @@ for (const [key, dir] of PLAYBOOK_SRC) {
     }
   })
 
-  t(`${key}: playbook bodies do NOT restate the opt-out (dispatcher appends TRAIGA footer)`, () => {
+  t(`${key}: playbook bodies do NOT restate the opt-out (dispatcher appends the STOP footer)`, () => {
     for (const b of bodies) {
       assert.doesNotMatch(b.body, /reply stop/i, `${b.id} duplicates the appended opt-out footer`)
     }

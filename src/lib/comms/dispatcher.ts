@@ -10,7 +10,7 @@
 // `deps` seam (default = the real Supabase/messaging writes) so the block-and-
 // escalate behavior is deterministically testable without a live DB.
 import { evaluateGate, type GateInput, type GateResult } from './gate'
-import { TRAIGA_SMS_FOOTER } from '../compliance'
+import { SMS_OPT_OUT_FOOTER } from '../compliance'
 import type { AuditEntry } from '../audit/log'
 import type { SendResult } from '../messaging'
 import type { EmailStream } from './senders'
@@ -45,10 +45,9 @@ export interface DispatchResult {
   providerId?: string
   error?: string
   /**
-   * The EXACT body transmitted (SMS carries the appended TRAIGA AI-disclosure/opt-out
-   * footer). Returned so the caller can persist what was actually sent — the stored/
-   * audited body must include the compliance disclosure that went out (§13.9). Present
-   * only when sent.
+   * The EXACT body transmitted (SMS carries the appended opt-out footer). Returned so
+   * the caller can persist what was actually sent — the stored/audited body must include
+   * the compliance footer that went out (§13.9). Present only when sent.
    */
   sentBody?: string
 }
@@ -166,8 +165,8 @@ export async function dispatch(req: DispatchRequest, deps: DispatchDeps = defaul
     return { sent: false, gate, escalated: gate.escalate }
   }
 
-  // Passed the gate → send. SMS carries the required AI-disclosure/opt-out footer.
-  const body = req.channel === 'sms' ? `${req.body}\n\n${TRAIGA_SMS_FOOTER}` : req.body
+  // Passed the gate → send. SMS carries the carrier-required opt-out footer.
+  const body = req.channel === 'sms' ? `${req.body}\n\n${SMS_OPT_OUT_FOOTER}` : req.body
   // Email multipart: pass the stored plaintext part when present (SMS is single-part).
   const result = await deps.send(
     req.channel,

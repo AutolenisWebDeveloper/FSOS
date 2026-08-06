@@ -10,7 +10,7 @@
 //     as durableConsentGranted (the additive per-channel consent path in SendContext —
 //     the gate still enforces DNC, quiet-hours, recommendation and securities on top);
 //   • the approved-template ref (campaigns.template_id) that satisfies gate step 4.
-// It adds NO opt-out/AI-disclosure footer — the dispatcher appends TRAIGA_SMS_FOOTER
+// It adds NO opt-out footer — the dispatcher appends SMS_OPT_OUT_FOOTER
 // to every SMS at send time.
 
 export interface CampaignForSend {

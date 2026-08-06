@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { personalize, type RecipientContext } from '@/lib/comms/personalize'
 import { resolveAssetPayload } from '@/lib/comms/assets'
 import { smsSegmentInfo } from '@/lib/comms/console'
-import { TRAIGA_SMS_FOOTER } from '@/lib/compliance'
+import { SMS_OPT_OUT_FOOTER } from '@/lib/compliance'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -73,14 +73,14 @@ export async function POST(req: NextRequest) {
     const renderedSubject = subject ? personalize(subject, ctx) : null
 
     if (d.channel === 'sms') {
-      // The dispatcher appends the TRAIGA/STOP footer to every SMS at send time — show it.
-      const finalBody = `${renderedBody}\n\n${TRAIGA_SMS_FOOTER}`
+      // The dispatcher appends the STOP opt-out footer to every SMS at send time — show it.
+      const finalBody = `${renderedBody}\n\n${SMS_OPT_OUT_FOOTER}`
       return NextResponse.json({
         channel: 'sms',
         source_kind: d.source_kind,
         body: finalBody,
         segment: smsSegmentInfo(finalBody),
-        note: 'The STOP/HELP + AI-disclosure footer shown here is appended automatically at send.',
+        note: 'The STOP/HELP opt-out footer shown here is appended automatically at send.',
       })
     }
 

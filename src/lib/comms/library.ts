@@ -6,7 +6,7 @@
 //   • green-zone only — education / invitation, NO individualized recommendation or
 //     call-to-action language (§2.2; enforced by the catalog test + re-checked at the
 //     template editor and per send by the gate);
-//   • footer-free — the dispatcher appends the TRAIGA AI-disclosure + opt-out at send
+//   • footer-free — the dispatcher appends the STOP opt-out footer at send
 //     time; blueprint bodies never hardcode it;
 //   • purpose-tagged (Slice 7, §9/§10) — the recommended message purpose the campaign
 //     built from this blueprint should carry;

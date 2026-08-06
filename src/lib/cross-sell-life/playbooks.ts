@@ -14,7 +14,7 @@
 // never pressures.
 //
 // COMPLIANCE: the AI ALWAYS identifies itself as an automated assistant (every `opening` does,
-// and dispatcher.ts appends the TRAIGA AI-disclosure footer to every SMS). It may educate,
+// and dispatcher.ts appends the STOP opt-out footer to every SMS). It may educate,
 // qualify, invite, schedule, remind, follow up, and route. It may NEVER recommend a product,
 // carrier, coverage amount, premium, or replacement, quote a rate, make a suitability/
 // best-interest determination, or assert what coverage the recipient already holds (ADR-020).

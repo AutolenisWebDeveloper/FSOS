@@ -135,7 +135,7 @@ export default async function LifeConversionDetailPage(props: { params: Promise<
         {/* 6b — AI conversation playbooks + advisor scripts */}
         <Section
           title={`AI conversation playbooks (${detail.playbooks.length})`}
-          description="What the AI may say on an ai_conversation touch, and where it must stop. Every opener identifies itself as an automated assistant; the SMS path also appends the TRAIGA AI disclosure."
+          description="What the AI may say on an ai_conversation touch, and where it must stop. Every opener identifies itself as an automated assistant; the SMS path also appends the STOP opt-out footer."
         >
           <Card className="p-5">
             <div className="space-y-3">

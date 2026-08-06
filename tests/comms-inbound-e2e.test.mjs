@@ -337,42 +337,72 @@ try {
     }
   }
 
-  // ── SCENARIO 1c: the frequency caps now reach a live conversation ─────────────
-  // Supplying a purpose (required by §12) also activates the §9 per-recipient frequency
-  // caps, which were designed for proactive drips. This scenario measures what that does to
-  // a normal back-and-forth rather than assuming. Reported, not worked around.
-  section('1c. Second reply inside the seeded min-interval window')
+  // ── SCENARIO 1c: reply-scoped frequency caps (ADR-017 amendment, migration 102) ──
+  // Supplying the purpose §12 requires also enrolled replies in the §9 caps, whose seeded
+  // 60-minute minimum interval stalled a back-and-forth after ONE turn. Migration 102 adds a
+  // second cap row scoped to replies. These checks prove the reply row is what governs, that
+  // it is still a real ceiling, and that the drip caps are untouched.
+  section('1c. Reply-scoped frequency caps')
   {
     const dbF = freshDb({ armed: true })
+    const capRows = q(dbF, `select string_agg(id||':int='||min_interval_minutes||',sms='||max_sms_per_day||',assumption='||is_assumption, ' | ' order by id) from comm_frequency_policy`)
+    console.log(`    → cap rows: ${capRows}`)
+    check('migration 102 seeds a SECOND cap row scoped to replies', () => {
+      assert.equal(q(dbF, `select count(*) from comm_frequency_policy where id='reply'`), '1')
+    })
+    check('the reply row drops the interval but KEEPS a real per-day ceiling', () => {
+      const r = q(dbF, `select min_interval_minutes||'|'||max_sms_per_day||'|'||enabled from comm_frequency_policy where id='reply'`)
+      assert.equal(r.split('|')[0], '0', 'the reply interval must be 0')
+      assert.ok(Number(r.split('|')[1]) > 0, 'the reply row must keep a per-day ceiling')
+      assert.equal(r.split('|')[2], 'true', 'the reply caps must be enabled')
+    })
+    check('the reply row is a labelled config default (§4.3 gold "verify" badge)', () => {
+      assert.equal(q(dbF, `select is_assumption from comm_frequency_policy where id='reply'`), 't')
+    })
+    check('the OUTREACH row is untouched — drips keep their 60-minute spacing', () => {
+      assert.equal(q(dbF, `select min_interval_minutes||'|'||max_sms_per_day from comm_frequency_policy where id='global'`), '60|2')
+    })
+
+    // Three consecutive turns, all inside the outreach interval that used to stop turn 2.
     twilioCalls.length = 0
     const t1 = await processInbound({ channel: 'sms', from: PHONE, body: 'What is term life insurance?', provider: 'twilio', providerId: 'SM_freq_1' })
     const t2 = await processInbound({ channel: 'sms', from: PHONE, body: 'Great, and what does the review cover?', provider: 'twilio', providerId: 'SM_freq_2' })
-    const row2 = q(dbF, `select coalesce(delivery_status,'-')||'|'||coalesce(blocked_step,'-')||'|'||coalesce(block_reason,'-') from comm_messages where direction='outbound' order by created_at desc limit 1`)
-    const caps = q(dbF, `select 'min_interval='||min_interval_minutes||' max_sms_day='||max_sms_per_day||' enabled='||enabled from comm_frequency_policy where id='global'`)
-    console.log(`    → seeded caps: ${caps}`)
-    console.log(`    → turn 1 sent=${t1.autoReplied} | turn 2 sent=${t2.autoReplied} row=${row2}`)
-    check('turn 1 sends', () => { assert.equal(t1.autoReplied, true) })
-    // ⚠ PINNED — the second reply within the hour is deferred by the frequency cap, which is
-    // a NON-escalating deferral: the contact gets silence and nothing reaches the FSA queue.
-    // This is a consequence of supplying the purpose §12 requires, and is reported for a
-    // decision rather than silently exempted here.
-    check('⚠ GAP: turn 2 within the min-interval is held at gate step frequency', () => {
-      assert.equal(t2.autoReplied, false,
-        'the second reply now sends — the frequency interaction was resolved; update this pinned check')
-      assert.match(row2, /^failed\|frequency\|/, `unexpected outcome: ${row2}`)
-      assert.equal(twilioCalls.length, 1, 'only turn 1 should have reached the provider')
+    const t3 = await processInbound({ channel: 'sms', from: PHONE, body: 'Sounds useful, how long does it take?', provider: 'twilio', providerId: 'SM_freq_3' })
+    console.log(`    → turns sent: ${[t1, t2, t3].map((t) => t.autoReplied).join(', ')} (${twilioCalls.length} provider calls)`)
+    check('a multi-turn conversation is no longer stalled by the outreach interval', () => {
+      assert.deepEqual([t1.autoReplied, t2.autoReplied, t3.autoReplied], [true, true, true],
+        'a turn was deferred inside the reply window')
+      assert.equal(twilioCalls.length, 3)
     })
-    // The gate classes `frequency` as a NON-escalating deferral, so the dispatcher writes no
-    // compliance_event — but tryAutoReply() escalates on ANY non-send, so the conversation
-    // path DOES surface it to the FSA queue. Both halves are asserted so the distinction is
-    // recorded rather than assumed.
-    check('the gate treats frequency as a non-escalating deferral (no compliance_event)', () => {
-      assert.equal(q(dbF, `select count(*) from compliance_events`), '0',
-        'a deferral was recorded as a compliance event')
+    check('every turn still records SERVICING and passes the full gate', () => {
+      assert.equal(q(dbF, `select count(*) from comm_messages where direction='outbound' and delivery_status='sent' and purpose='SERVICING'`), '3')
+      assert.equal(q(dbF, `select count(*) from comm_messages where direction='outbound' and blocked_step is not null`), '0')
     })
-    check('but tryAutoReply DOES surface the deferred reply to the FSA queue', () => {
-      const row = q(dbF, `select reason||'|'||coalesce(note,'-') from agent_actions where kind='escalation' order by created_at desc limit 1`)
+
+    // The per-day ceiling is a REAL bound: drop it to 2 and the third turn must be held.
+    const dbC = freshDb({ armed: true })
+    q(dbC, `update comm_frequency_policy set max_sms_per_day = 2 where id='reply'`)
+    twilioCalls.length = 0
+    await processInbound({ channel: 'sms', from: PHONE, body: 'What is term life insurance?', provider: 'twilio', providerId: 'SM_cap_1' })
+    await processInbound({ channel: 'sms', from: PHONE, body: 'And what does it cover?', provider: 'twilio', providerId: 'SM_cap_2' })
+    const capped = await processInbound({ channel: 'sms', from: PHONE, body: 'How long does the review take?', provider: 'twilio', providerId: 'SM_cap_3' })
+    const capRow = q(dbC, `select coalesce(delivery_status,'-')||'|'||coalesce(blocked_step,'-')||'|'||coalesce(block_reason,'-') from comm_messages where direction='outbound' order by created_at desc limit 1`)
+    console.log(`    → with reply cap = 2/day, turn 3: ${capRow}`)
+    check('the reply per-day ceiling still stops a send — it is a bound, not a bypass', () => {
+      assert.equal(capped.autoReplied, false, 'the reply cap did not bind')
+      assert.match(capRow, /^failed\|frequency\|/, `unexpected outcome: ${capRow}`)
+      assert.equal(twilioCalls.length, 2, 'a third SMS was placed past the reply cap')
+    })
+    // The gate classes `frequency` as a non-escalating deferral (right for a drip, which
+    // retries next cycle) but tryAutoReply escalates on ANY non-send, so a capped REPLY still
+    // reaches the FSA. Both halves are asserted so the distinction stays recorded.
+    check('a capped reply writes no compliance_event (it is a deferral, not a violation)', () => {
+      assert.equal(q(dbC, `select count(*) from compliance_events`), '0')
+    })
+    check('but a capped reply DOES reach the FSA queue — never silently dropped', () => {
+      const row = q(dbC, `select reason||'|'||coalesce(note,'-') from agent_actions where kind='escalation' order by created_at desc limit 1`)
       assert.match(row, /^gate_blocked:frequency\|/, `escalation row was: ${row}`)
+      assert.equal(capped.escalated, true)
     })
   }
 

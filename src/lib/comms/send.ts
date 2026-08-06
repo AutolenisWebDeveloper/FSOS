@@ -182,6 +182,20 @@ export interface SendContext {
   /** The highest-priority OTHER campaign purpose active for this recipient (collision, §10). */
   activeCampaignPurpose?: MessagePurpose | null
   /**
+   * This send is a REPLY to an inbound message on a live conversation thread, not proactive
+   * outreach. It selects the `reply` row of comm_frequency_policy instead of `global`
+   * (migration 102, ADR-017 amendment): the §9 caps were written to space out drip touches,
+   * and their minimum-interval spacing stalls a normal back-and-forth after one AI turn.
+   *
+   * It SELECTS a cap row — it never removes one. Both rows are real, operator-editable
+   * ceilings, and a missing `reply` row falls back to the tighter `global` caps. Every other
+   * gate step (consent, quiet hours, DNC, approved template/AI policy, recommendation,
+   * securities firewall, data confidence, A2P) applies exactly as for any other send, and a
+   * capped reply is escalated to the FSA by the conversation path, never silently dropped.
+   * Absent/false → the outreach caps, so no campaign caller is affected.
+   */
+  isConversationReply?: boolean
+  /**
    * Data-confidence context (Slice 6, §13). Set when the message makes SPECIFIC claims
    * (a conversion deadline, product ownership, lapse/age status, …): pass the fields those
    * claims depend on. An unverified/conflicting field excludes the send (gate step
@@ -618,6 +632,8 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
       purpose: ctx.purpose,
       conversationId,
       activeCampaignPurpose: ctx.activeCampaignPurpose ?? null,
+      // Reply-scoped caps for a live conversation turn; outreach caps for everything else.
+      frequencyPolicyId: ctx.isConversationReply === true ? 'reply' : 'global',
     })
     if (policy.consentForPurpose !== null) {
       // A purpose-scoped grant/revoke replaces the channel-wide read. The console/self-test

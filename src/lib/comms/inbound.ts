@@ -338,6 +338,10 @@ async function tryAutoReply(conv: Conversation, input: InboundInput, inboundMess
     // to draft_only on an absent class, which is exactly the outcome we want.
     aiMessageClass: classification.messageClass ?? undefined,
     purpose: classification.purpose,
+    // Bound by the reply-scoped cap row, not the drip caps (migration 102): the outreach
+    // minimum-interval would otherwise stall the conversation after a single AI turn. The
+    // per-day ceiling still applies, and a capped reply still escalates below.
+    isConversationReply: true,
     conversationId: conv.id,
   })
 

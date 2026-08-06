@@ -41,7 +41,7 @@ const PLAYBOOK_SRC = [
   ['Life Conversion', 'life-campaign'],
 ]
 execSync(
-  `npx tsc src/lib/compliance/guardrail.ts ` +
+  `npx tsc src/lib/compliance/guardrail.ts src/lib/comms/gsm7.ts ` +
     PLAYBOOK_SRC.map(([, d]) => `src/lib/${d}/playbooks.ts`).join(' ') +
     ` --outDir ${out} --rootDir src/lib ` +
     `--module commonjs --target es2020 --moduleResolution node --skipLibCheck --esModuleInterop`,
@@ -49,6 +49,8 @@ execSync(
 )
 const require = createRequire(import.meta.url)
 const { containsRecommendationLanguage } = require(join(out, 'compliance/guardrail.js'))
+// The SHARED GSM-7 definition (also used by console.smsSegmentInfo) — never a local copy.
+const { nonGsm7Chars } = require(join(out, 'comms/gsm7.js'))
 
 let failures = 0
 function t(name, fn) {
@@ -230,8 +232,10 @@ for (const c of selected) {
   t('SMS + AI bodies stay GSM-7 safe (no UCS-2 downgrade)', () => {
     // A single em dash, curly quote, or ellipsis forces UCS-2, which cuts a segment from 153 to
     // 67 characters and can silently double or triple the cost/segment count of every send.
+    // Uses the SHARED GSM-7 set (lib/comms/gsm7), the same definition the operator segment
+    // preview uses — an ASCII-only approximation would wrongly reject valid GSM-7 (£, é, €).
     for (const r of [...smses, ...ais]) {
-      const bad = [...r.body].filter((ch) => !/[\x20-\x7E\n]/.test(ch))
+      const bad = nonGsm7Chars(r.body)
       assert.equal(bad.length, 0, `${r.id} has non-GSM-7 character(s): ${JSON.stringify(bad.join(''))}`)
     }
   })
@@ -316,7 +320,7 @@ for (const [key, dir] of PLAYBOOK_SRC) {
 
   t(`${key}: playbook bodies stay GSM-7 safe (no UCS-2 downgrade)`, () => {
     for (const b of bodies) {
-      const bad = [...b.body].filter((ch) => !/[\x20-\x7E\n]/.test(ch))
+      const bad = nonGsm7Chars(b.body)
       assert.equal(bad.length, 0, `${b.id} has non-GSM-7 character(s): ${JSON.stringify(bad.join(''))}`)
     }
   })

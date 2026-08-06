@@ -163,6 +163,9 @@ export default async function CrossSellLifeDetailPage(props: { params: Promise<{
                 <div className="mt-3 space-y-3 border-t pt-3 text-sm">
                   <PlaybookField label="Objective" value={p.objective} />
                   <PlaybookField label="Opening" value={p.opening} pre />
+                  <PlaybookField label="No-reply follow-up" value={p.followUp} pre />
+                  <PlaybookField label="Advisor handoff" value={p.handoff} pre />
+                  <PlaybookField label="Closing" value={p.closing} pre />
                   <PlaybookField label="Allowed (green zone)" value={p.allowed} />
                   <PlaybookField label="Prohibited (red line)" value={p.prohibited} tone="danger" />
                   <div>

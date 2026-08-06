@@ -76,6 +76,7 @@ Approach FSOS as a principal engineer accountable for a regulated production sys
 5. **Build discipline:** after any change, run `npm run build` and fix **every** error before stopping. `npm run type-check` and `npm run lint` must also pass. Never weaken a type, guardrail test, or lint rule to force a green build.
 6. **Styling:** Tailwind + shadcn/ui for all new UI. Never hardcode a color, spacing, or font — resolve through a token (`DESIGN.md`).
 7. **Validation:** every form and every API input is validated with **Zod**; derive TS types via `z.infer`. No unvalidated writes reach the database.
+   - **The canonical JSON body-parse path is `readJson(req)` from `@/lib/http`** — it size-caps the body (`MAX_JSON_BYTES` → 413) and returns `{ data } | { error }`, which the handler then feeds to a Zod schema. Schemas live in `@/lib/validation/schemas` or a domain module (`@/lib/social/schema`, `@/lib/booking/config-schemas`), so **a route often validates without importing `zod` directly.** Grepping for `from 'zod'` to measure validation coverage produces a badly wrong answer; check for a `.safeParse(`/`.parse(` on the `readJson` result instead. Multipart uploads (`req.formData()`) sit outside this path by design and validate file type and size rather than a JSON schema.
 8. **Thin route handlers:** business logic lives in `src/lib/services/*` (or `src/server/*`), not in route files or components. Routes parse → authorize → call a service → shape a typed response.
 
 ---
@@ -130,9 +131,11 @@ FSOS has one architecture. Protect it. Fragmentation is the primary long-term ri
 
 ---
 
-## 7. Skill orchestration standard (all 26 installed skills)
+## 7. Skill orchestration standard (all 32 installed skills)
 
 Skills in `.claude/skills/` encode how this codebase must be built. **They are mandatory, not optional.** Never begin coding from the task description alone — inspect the implementation first via the Superpowers analysis skills.
+
+> **Scope of the count:** §7 counts `.claude/skills/` **only**. `.cursor/skills/` holds mirrors for a different tool and is not governed by this contract — do not include it in the total or in the §7.2 matrix.
 
 ### 7.1 Canonical execution order (the default loop for any non-trivial task)
 
@@ -161,6 +164,7 @@ domain skill*        subagent-driven-    executing-plans      requesting-code-re
 | `subagent-driven-development` | Run a plan through subagents within a session. |
 | `dispatching-parallel-agents` | Fan out genuinely independent workstreams. |
 | `test-driven-development` | Before implementing logic — write the failing test first. |
+| `fsos-testing` | **Pair with `test-driven-development` whenever the failing test is an FSOS file.** How this repo's tests are written and discovered: no test framework (not Jest, Vitest, or `node:test`), bare executable scripts under `tests/` auto-discovered by `scripts/run-tests.mjs`, `node:assert/strict`, the runtime-`tsc` compile-to-temp pattern, and the `unit` vs root-Postgres `rls` split. |
 | `systematic-debugging` | Any bug/regression — structured investigation, no guess-patching. |
 | `verification-before-completion` | Before claiming any task done — prove it against §21. |
 | `requesting-code-review` / `receiving-code-review` | Before/after merge — request review; handle feedback rigorously. |
@@ -189,6 +193,11 @@ domain skill*        subagent-driven-    executing-plans      requesting-code-re
 | `finra-rule-ingestion` | Ingesting authority-tagged rule docs into the corpus. |
 | `rightbridge-pdf-analysis` | Parsing/analyzing RightBRIDGE suitability PDFs. |
 | `twilio-a2p-compliance` | Outbound SMS, A2P 10DLC, TCPA, quiet-hours, consent (§12). |
+| `fsos-financial-planning` | The FNA: deterministic calculation engine, FNA data model, plan-type registry, calculation orchestrator; the ten formulas (cash flow, net worth, emergency fund, life-insurance need, disability, retirement, education, survivor income, debt paydown, FV/PV), planning assumptions, plan versions/scenarios/goals, `/app/fna`, `/api/fna/plans`. Enforces `decimal.js` money rules and the value-labeling/traceability contract. **Not** for the AI narrative red-line screen (`lib/fna/screen.ts` + the compliance guardrail) beyond noting it still gates narrative output. |
+| `fsos-deliverability` | Master deliverability playbook and **router for email *and* SMS** — inbox placement, sender reputation, bounce/complaint rates, the three-stream sending architecture, warmup, suppression. Routes onward to `fsos-dns-auth` (records) and `fsos-email-template-qa` (template content). **Not** for campaign copy (`marketing-plan`) or SMS consent-gate internals (`twilio-a2p-compliance`). |
+| `fsos-dns-auth` | Email-authentication DNS for the sending domains — SPF, DKIM, DMARC, ARC, BIMI, MX; DKIM selectors, the SPF 10-lookup limit, DMARC alignment and the `p=none→quarantine→reject` ramp. Ships `validate_dns.mjs`; reads public DNS only and takes no secrets. |
+| `fsos-email-template-qa` | Pre-ship template QA — responsive HTML, the required plain-text multipart part, dark mode, Gmail/Outlook/Apple Mail rendering, accessibility (alt text, semantics, contrast), and Promotions-tab spam signals. Ships `lint_email.mjs`. |
+| `marketing-plan` | Compliance-safe marketing/outreach **plans** — objectives, segmentation, channel mix, cadence, content themes, measurement — mapped to the three campaigns (Life Conversion, Cross-Sell Life, Win-Back). **Emits a planning artifact only:** never sends, never writes to campaign tables, never alters approved campaign content. |
 
 **Meta (skill authoring)**
 | Skill | Invoke when |
@@ -430,8 +439,10 @@ The identity is consistent across homepage, public pages, login, forgot-password
 | ADR-012 | Compliance Intelligence (NIGO-resolution) exception (§5) |
 | ADR-013 | Canonical `comm_*` communications data model (reconcile the 006 duplication) |
 | ADR-014 | GoHighLevel decommission (ordered, data-preservation-first) |
-| ADR-015 | Delegated agency-communication authority + actual-sender/represented-party model |
-| ADR-016 | First-contact identity disclosure engine |
+| ADR-015 `delegated-agency-communication` | Delegated agency-communication authority + actual-sender/represented-party model |
+| ADR-015 `fna-calculation-engine` | FNA deterministic calculation engine (⚠ shares number 015 — cite by slug) |
+| ADR-016 `identity-disclosure-engine` | First-contact identity disclosure engine |
+| ADR-016 `fna-data-model` | FNA data model (structured, versioned, immutable, auditable) (⚠ shares number 016 — cite by slug) |
 | ADR-017 | Policy-engine extensions: purpose classification, frequency caps, priority collision |
 | ADR-018 | Conversation mode: a customer reply pauses promotional automation |
 | ADR-019 | AI authority matrix + communication evaluations (code-enforced, not prompt-enforced) |
@@ -443,16 +454,20 @@ The identity is consistent across homepage, public pages, login, forgot-password
 | ADR-025 | Email rendering: hybrid React → stored, immutable, deterministic HTML + plaintext |
 | ADR-026 | Social content module |
 | ADR-027 | Native FSOS booking (Calendly replacement) — availability model, DB-enforced double-booking, comms-based notifications, Calendly decommission |
-| ADR-028 | Governed agent tool-calling (gateway tool-use loop; read-only v1 ceiling; no third-party orchestration platform) |
-| ADR-029 | Life Conversion Campaign (multi-channel single-timeline extension; Active Opportunity Ownership eligibility) |
+| ADR-028 `agent-tool-calling` | Governed agent tool-calling (gateway tool-use loop; read-only v1 ceiling; no third-party orchestration platform) |
+| ADR-028 `contact-consolidation-dedup` | Contact consolidation & dedup staging substrate (⚠ shares number 028 — cite by slug) |
+| ADR-029 `life-conversion-campaign` | Life Conversion Campaign (multi-channel single-timeline extension; Active Opportunity Ownership eligibility) |
+| ADR-029 `household-materialization` | Household materialization from consolidated contacts (⚠ shares number 029 — cite by slug) |
 | ADR-031 | Pipeline Win-Back Campaign (stalled internal-opportunity re-engagement; separate from imported `win_back`; shared campaign-engine primitives) |
 | ADR-032 | Cross-Sell Life Campaign (existing non-life client, no active life; multi-channel 35-touch/180-day timeline; `xsell_life_*` namespace, distinct from the Cross-Sell agent) |
 | ADR-033 | Communications Command Console (orchestration over the one send path; cross-campaign asset catalog view; individual/AI/test sends; no new send path, no override) |
 | ADR-034 | Life Win-Back agent (first-class win-back outreach; promotes the former `marketing_automation` stub; `winback_life` book; disabled by default until member/consent mapping verified) |
 | ADR-035 | Accessibility/responsive verification via a manual pre-ship checklist (no automated browser-test platform; single-FSA proportionality) |
-| ADR-036 | Contact-import field-recognition & mapping model (unified recognizer + template detection + composite split + mapping memory + custom fields; extends the ADR-028 substrate) |
+| ADR-036 | Contact-import field-recognition & mapping model (unified recognizer + template detection + composite split + mapping memory + custom fields; extends the ADR-028 `contact-consolidation-dedup` substrate) |
 
-New architectural decisions get a new ADR using `docs/adr/ADR-000-template.md`. Status values: Proposed → Accepted → Superseded (link the superseding ADR).
+**Numbering collisions — cite by slug, do not renumber.** Four numbers each carry two accepted ADRs: **015**, **016**, **028**, and **029**. All eight are indexed above and all eight have live inbound references from code, migrations, tests, other ADRs, and skills, so renumbering would break existing citations. The convention is therefore: **refer to a colliding ADR by its filename slug** (`ADR-028-agent-tool-calling.md`, not "ADR-028"), never by the bare number. `docs/adr/README.md` documents the same collisions.
+
+New architectural decisions get a new ADR using `docs/adr/ADR-000-template.md`. Status values: Proposed → Accepted → Superseded (link the superseding ADR). Before allocating a number, check `docs/adr/` for an existing file — the next free number is not necessarily `max + 1`.
 
 ---
 

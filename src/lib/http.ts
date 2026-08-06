@@ -1,6 +1,14 @@
 // src/lib/http.ts
 // Shared helpers for API route handlers: safe numeric parsing, request-body
 // size guards, HTML escaping, and internal-endpoint authorization.
+//
+// readJson() below is the CANONICAL JSON body-parse path for mutating routes
+// (CLAUDE.md §3.1.7): it size-caps the body and hands back { data } | { error },
+// which the handler feeds to a Zod schema imported from @/lib/validation/schemas
+// or a domain module. Because the schema import is indirect, a route can be fully
+// validated without ever importing `zod` — do NOT measure validation coverage by
+// grepping for "from 'zod'"; look for a .safeParse()/.parse() on the readJson
+// result. Multipart uploads (req.formData()) are outside this path by design.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { ConfigError } from '@/lib/supabase/client'

@@ -51,9 +51,15 @@ export default async function KnowledgeLibraryPage({
 
   const docs = await load<Doc[]>((db) => {
     const builder = db.from('knowledge_documents').select(COLUMNS)
-    return (showArchived ? builder.eq('status', 'archived') : builder.neq('status', 'archived'))
-      .order('updated_at', { ascending: false })
-      .limit(300)
+    // Active: most recently edited first. Archived: most recently archived first —
+    // "when did this leave the library" is the question that view answers, and it is
+    // stable under a later edit. `archived_at` is stamped on every archive transition
+    // and backfilled by migration 102, so it is non-null for every archived row.
+    return (
+      showArchived
+        ? builder.eq('status', 'archived').order('archived_at', { ascending: false, nullsFirst: false })
+        : builder.neq('status', 'archived').order('updated_at', { ascending: false })
+    ).limit(300)
   }, [])
 
   // head:true — the tab only needs "how many", not the rows.

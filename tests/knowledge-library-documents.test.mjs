@@ -173,6 +173,19 @@ t('C3', 'over-long text is clipped AND carries a visible notice + the truncated 
   assert.match(TRUNCATION_NOTICE, /original file is attached/i)
 })
 
+t('C3b', 'the clipped RESULT — notice included — still fits the ceiling', () => {
+  // Regression guard: appending the notice on top of a full-length slice pushed the
+  // stored text past the ceiling, so a truncated upload failed the edit form's own
+  // max and became uneditable. The notice must come out of the budget, not on top.
+  for (const over of [1, 5_000, 400_000]) {
+    const { content } = buildIndexedContent([{ text: 'a'.repeat(MAX_KNOWLEDGE_CONTENT_CHARS + over) }])
+    assert.ok(
+      content.length <= MAX_KNOWLEDGE_CONTENT_CHARS,
+      `+${over}: result is ${content.length}, over the ${MAX_KNOWLEDGE_CONTENT_CHARS} ceiling`,
+    )
+  }
+})
+
 t('C4', 'empty pages produce empty content rather than a fabricated body', () => {
   assert.equal(buildIndexedContent([]).content, '')
   assert.equal(buildIndexedContent([{ text: '   ' }]).content, '')
@@ -238,6 +251,13 @@ t('E2', 'extracted text at the ceiling can be saved back through PATCH', () => {
   // Regression guard: a smaller PATCH cap would make every large upload uneditable.
   const atCeiling = 'a'.repeat(KNOWLEDGE_CONTENT_MAX)
   assert.equal(KnowledgePatchSchema.safeParse({ content: atCeiling }).success, true)
+})
+
+t('E3', 'a TRUNCATED upload is still editable — its stored text passes PATCH validation', () => {
+  // The end-to-end version of C3b: what the ingester actually writes for an oversized
+  // file must round-trip through the edit form without tripping the max-length rule.
+  const { content } = buildIndexedContent([{ text: 'a'.repeat(KNOWLEDGE_CONTENT_MAX * 2) }])
+  assert.equal(KnowledgePatchSchema.safeParse({ content }).success, true)
 })
 
 // ── F. GUARDRAIL — the private storage path never reaches the browser ─────────

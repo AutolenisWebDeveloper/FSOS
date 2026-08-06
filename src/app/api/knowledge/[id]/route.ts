@@ -73,8 +73,16 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     // re-saving an already-archived document must not reset when it was archived.
     let archivedAt: { archived_at?: string | null } = {}
     if (v.data.status !== undefined) {
-      const { data: prior } = await db.from('knowledge_documents').select('status').eq('id', id).maybeSingle()
-      const wasArchived = prior?.status === 'archived'
+      const { data: prior, error: priorErr } = await db
+        .from('knowledge_documents')
+        .select('status')
+        .eq('id', id)
+        .maybeSingle()
+      // A failed read would silently mis-derive the transition (e.g. a restore that
+      // leaves archived_at set). Fail the request instead of writing a wrong stamp.
+      if (priorErr) return dbErrorResponse('knowledge/[id]', priorErr)
+      if (!prior) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      const wasArchived = prior.status === 'archived'
       const willBeArchived = v.data.status === 'archived'
       if (willBeArchived && !wasArchived) archivedAt = { archived_at: new Date().toISOString() }
       else if (!willBeArchived && wasArchived) archivedAt = { archived_at: null }

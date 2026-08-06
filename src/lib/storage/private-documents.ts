@@ -34,8 +34,9 @@ export function safeObjectName(filename: string): string {
 
 /**
  * Build a collision-resistant object path: `<prefix>/<scope>/<ts>-<safe-name>`.
- * `scope` groups objects (a case id, a folder, …); pass null for the shared bucket
- * root of that prefix.
+ * `scope` groups objects (a case id, a date folder, …). Passing null yields the
+ * literal `unassigned` segment rather than omitting it, so every object keeps the
+ * same three-segment shape and nothing is ever written to the prefix root.
  */
 export function buildObjectPath(
   prefix: string,

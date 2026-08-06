@@ -65,8 +65,9 @@ create index if not exists idx_knowledge_sha256
   on knowledge_documents(sha256)
   where sha256 is not null;
 
--- The library list is "not archived, newest first" (and the archived view is the
--- same shape filtered the other way) — this covers both without a sort.
+-- The active library list is "not archived, most recently edited first", and the
+-- archived tab's count filters on status alone. (The archived list itself orders by
+-- archived_at; at single-FSA scale that sort is trivial and needs no index of its own.)
 create index if not exists idx_knowledge_status_updated
   on knowledge_documents(status, updated_at desc);
 

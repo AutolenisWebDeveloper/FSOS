@@ -1,5 +1,7 @@
 import * as React from 'react'
+import Link from 'next/link'
 import { Section, EmptyState } from '@/components/archetypes'
+import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { ApprovalBadge } from './CampaignKit'
 
@@ -41,7 +43,12 @@ export function CampaignAssetsTable({ groups, description }: { groups: AssetGrou
       {all.length === 0 ? (
         <EmptyState
           title="No assets seeded"
-          description="This campaign has no message templates yet. Run its seed migration, or add templates in the Templates library."
+          description="This campaign has no message templates yet, so it has nothing to send. Run its seed migration, or add templates in the library."
+          action={
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/app/comms/templates">Open the Templates library</Link>
+            </Button>
+          }
         />
       ) : (
         <div className="space-y-4">

@@ -138,7 +138,7 @@ export default async function LifeConversionDetailPage(props: { params: Promise<
           </Card>
         </Section>
 
-        {/* 8 — Configuration & settings */}
+        {/* 9 — Configuration & settings */}
         <Section title="Configuration & settings" description="Editable operational defaults. Gold-badged values are config defaults to verify (§4.3), not Farmers-published figures.">
           <Card className="p-5">
           <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -158,7 +158,7 @@ export default async function LifeConversionDetailPage(props: { params: Promise<
           </Card>
         </Section>
 
-        {/* 9 — Enrollments */}
+        {/* 10 — Enrollments */}
         <CampaignEnrollmentTable
           engine={ENGINE}
           rows={enrollments.ok ? enrollments.data : null}

@@ -153,7 +153,7 @@ export default async function CrossSellLifeDetailPage(props: { params: Promise<{
           <div className="space-y-2">
             {detail.playbooks.map((p) => (
               <details key={p.key} className="rounded-lg border p-3">
-                <summary className="cursor-pointer text-sm font-medium">
+                <summary className="cursor-pointer rounded text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
                   <span className="text-muted-foreground">Touch #{p.touch_no}</span> — {p.title}
                 </summary>
                 <div className="mt-3 space-y-3 border-t pt-3 text-sm">
@@ -182,7 +182,7 @@ export default async function CrossSellLifeDetailPage(props: { params: Promise<{
           <div className="space-y-2">
             {detail.advisorScripts.map((a) => (
               <details key={a.key} className="rounded-lg border p-3">
-                <summary className="cursor-pointer text-sm font-medium">
+                <summary className="cursor-pointer rounded text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
                   <span className="text-muted-foreground">Touch #{a.touch_no}</span> — {a.title}
                 </summary>
                 <div className="mt-3 space-y-3 border-t pt-3 text-sm">
@@ -201,7 +201,7 @@ export default async function CrossSellLifeDetailPage(props: { params: Promise<{
           </div>
         </Section>
 
-        {/* 8 — Campaign overview, configuration & settings */}
+        {/* 8 — Campaign overview */}
         <Section title="Campaign overview" description="Identity, objective, and lifecycle history for this campaign version.">
           <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <Field label="Name" value={s.name} />
@@ -235,6 +235,7 @@ export default async function CrossSellLifeDetailPage(props: { params: Promise<{
           </div>
         </Section>
 
+        {/* 9 — Configuration & settings */}
         <Section
           title="Configuration & settings"
           description="Editable operational defaults. Gold-badged values are config defaults to verify (§4.3), not Farmers-published figures."
@@ -259,7 +260,7 @@ export default async function CrossSellLifeDetailPage(props: { params: Promise<{
           </dl>
         </Section>
 
-        {/* 9 — Enrollments */}
+        {/* 10 — Enrollments */}
         <CampaignEnrollmentTable
           engine={ENGINE}
           rows={enrollments.ok ? enrollments.data : null}
@@ -267,7 +268,7 @@ export default async function CrossSellLifeDetailPage(props: { params: Promise<{
           emptyDescription="Existing agency clients are enrolled by the daily job or manually. Each must be non-securities, opted in, and free of an active life opportunity. Activate the campaign to begin enrolling."
         />
 
-        {/* 10 — Version history (Cross-Sell Life is the only versioned engine) */}
+        {/* 11 — Version history (Cross-Sell Life is the only versioned engine) */}
         <Section title={`Version history (${detail.versions.length})`} description="Every version of this campaign family. Only Cross-Sell Life is versioned.">
           {detail.versions.length === 0 ? (
             <EmptyState title="No versions" description="This campaign family has no recorded versions yet." />

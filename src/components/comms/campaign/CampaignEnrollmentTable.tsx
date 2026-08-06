@@ -1,9 +1,11 @@
 import * as React from 'react'
+import Link from 'next/link'
 import { Section, ErrorState, EmptyState } from '@/components/archetypes'
+import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { TimeCell } from '@/components/ui/time'
 import { EnrollmentStatusBadge } from './CampaignKit'
-import type { CampaignEngine } from '@/lib/comms/campaign-presentation'
+import { campaignTestHref, type CampaignEngine } from '@/lib/comms/campaign-presentation'
 
 /*
  * The enrollment roster, once.
@@ -56,7 +58,15 @@ export function CampaignEnrollmentTable<Row extends CampaignEnrollmentRow>({
       {error || !rows ? (
         <ErrorState description="Could not load the enrollment roster. The campaign itself is unaffected and keeps running on its schedule." />
       ) : rows.length === 0 ? (
-        <EmptyState title="No enrollments yet" description={emptyDescription} />
+        <EmptyState
+          title="No enrollments yet"
+          description={emptyDescription}
+          action={
+            <Button variant="outline" size="sm" asChild>
+              <Link href={campaignTestHref(engine)}>Send a test through the console</Link>
+            </Button>
+          }
+        />
       ) : (
         <Table>
           <TableCaption srOnly>

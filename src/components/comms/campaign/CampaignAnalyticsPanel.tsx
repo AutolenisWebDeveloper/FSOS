@@ -1,8 +1,10 @@
 import * as React from 'react'
+import Link from 'next/link'
 import { Section, StatTile, EmptyState } from '@/components/archetypes'
+import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { CampaignStat, FunnelStat } from './CampaignKit'
-import { winbackCategory, type CampaignEngine } from '@/lib/comms/campaign-presentation'
+import { campaignTestHref, winbackCategory, type CampaignEngine } from '@/lib/comms/campaign-presentation'
 import type { CampaignAnalytics } from '@/lib/comms/campaign-analytics'
 
 /*
@@ -34,6 +36,11 @@ export function CampaignAnalyticsPanel({
         <EmptyState
           title="No analytics yet"
           description="Metrics appear once this campaign has enrollments. Nothing has been measured for it so far."
+          action={
+            <Button variant="outline" size="sm" asChild>
+              <Link href={campaignTestHref(engine)}>Send a test through the console</Link>
+            </Button>
+          }
         />
       </Section>
     )

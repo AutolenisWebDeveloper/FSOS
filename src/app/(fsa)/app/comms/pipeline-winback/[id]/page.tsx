@@ -244,7 +244,7 @@ export default async function PipelineWinbackDetailPage(props: { params: Promise
           </div>
         </Section>
 
-        {/* 8 — Configuration & settings */}
+        {/* 9 — Configuration & settings */}
         <Section
           title="Configuration & settings"
           description="Editable operational defaults. Gold-badged values are config defaults to verify (§4.3), not Farmers-published figures."
@@ -274,7 +274,7 @@ export default async function PipelineWinbackDetailPage(props: { params: Promise
           </Card>
         </Section>
 
-        {/* 9 — Enrollments */}
+        {/* 10 — Enrollments */}
         <CampaignEnrollmentTable
           engine={ENGINE}
           rows={enrollments.ok ? enrollments.data : null}

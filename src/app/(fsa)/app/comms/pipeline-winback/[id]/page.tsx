@@ -201,7 +201,19 @@ export default async function PipelineWinbackDetailPage(props: { params: Promise
                         Day {touchDay(touches, p.touch_no)} · touch {p.touch_no}
                       </Badge>
                     </div>
-                    <p className="mt-1 text-sm text-muted-foreground">{p.opening}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{p.objective}</p>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      <span className="font-medium text-foreground">Opening:</span> {p.opening}
+                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      <span className="font-medium text-foreground">No-reply follow-up:</span> {p.followUp}
+                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      <span className="font-medium text-foreground">Advisor handoff:</span> {p.handoff}
+                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      <span className="font-medium text-foreground">Closing:</span> {p.closing}
+                    </p>
                     <p className="mt-2 text-xs text-muted-foreground">
                       <span className="font-medium text-foreground">Escalates on:</span> {p.escalateOn.join(', ')} — routed to a
                       licensed advisor. The AI never answers substantively (§4.2).

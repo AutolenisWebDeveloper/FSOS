@@ -1,13 +1,23 @@
 // src/lib/cross-sell-life/playbooks.ts
-// The seven Cross-Sell Life AI conversation playbooks (spec §9) as PURE, versioned data. Each
-// playbook is an internal script the AI conversation engine grounds on; every substantive /
-// individualized request routes to advisor escalation (conversation.ts / §4.2 red-line). Content
-// is verbatim intent from §9 — engineering does not rewrite it. The AI-conversation touch (§6)
-// sends the playbook opening as an APPROVED comm_template (category cross_sell_life_ai); the
-// tree/escalation metadata below drives classification and handoff and is surfaced in the
-// Conversation Center (§ Management Interface). AI must clearly identify as an automated assistant
-// (opening lines do) and must NEVER recommend a product, carrier, coverage amount, premium,
-// replacement, funding method, or underwriting outcome (§4.2).
+// The seven Cross-Sell Life AI conversation playbooks as PURE, versioned data. Each playbook is
+// an internal script the AI conversation engine grounds on; every substantive/individualized
+// request routes to advisor escalation (conversation.ts / §4.2 red-line). The AI-conversation
+// touch (§6) sends the playbook `opening` as a comm_template (category cross_sell_life_ai,
+// migration 100); the branch/escalation metadata drives classification and handoff and is
+// surfaced in the Conversation Center and the campaign detail view.
+//
+// The field shape is shared with src/lib/pipeline-winback/playbooks.ts so both campaigns present
+// one playbook model rather than two divergent ones (CLAUDE.md §6).
+//
+// AUDIENCE: existing agency clients who did NOT ask to be contacted about life insurance. The
+// agency relationship outranks any conversion. Every playbook gives an easy, dignified exit and
+// never pressures.
+//
+// COMPLIANCE: the AI ALWAYS identifies itself as an automated assistant (every `opening` does,
+// and dispatcher.ts appends the TRAIGA AI-disclosure footer to every SMS). It may educate,
+// qualify, invite, schedule, remind, follow up, and route. It may NEVER recommend a product,
+// carrier, coverage amount, premium, or replacement, quote a rate, make a suitability/
+// best-interest determination, or assert what coverage the recipient already holds (ADR-020).
 
 export interface Playbook {
   key: string
@@ -15,14 +25,20 @@ export interface Playbook {
   touch_no: number
   title: string
   objective: string
-  /** The opening line (seeded as an approved comm_template, category cross_sell_life_ai). */
+  /** The opening line (seeded as a comm_template, category cross_sell_life_ai). */
   opening: string
   /** Intent branches the AI may explore with GENERAL educational information only. */
   branches: string[]
   /** What the AI is allowed to say/do (green zone). */
   allowed: string
-  /** Prohibited behavior (red line, §4.2/§14). */
+  /** Prohibited behavior (red line, §4.2). */
   prohibited: string
+  /** The single nudge the AI sends when a client does not reply to the opening. */
+  followUp: string
+  /** The verbatim message the AI sends when handing the conversation to the licensed FSA. */
+  handoff: string
+  /** The verbatim message the AI sends when closing the conversation out. */
+  closing: string
   /** Intents that end the AI's turn and hand to the advisor (mirrors XSELL_ESCALATION_INTENTS). */
   escalateOn: string[]
   /** Conditions under which the playbook closes the conversation (feeds the §15 state machine). */
@@ -34,98 +50,149 @@ export const PLAYBOOKS: Playbook[] = [
     key: 'existing_client_welcome',
     touch_no: 3,
     title: 'AI Playbook 1 — Existing Client Welcome',
-    objective: 'Offer an existing client a complimentary life protection review; route to question, schedule, info, or exit.',
+    objective:
+      'Introduce the FSA as someone who works alongside the client existing Farmers agent, and find out which of question / booking / information is wanted.',
     opening:
-      'Hi {{first_name}}, I am the automated assistant for {{fsa_name}} at {{agency_name}}. Because you are an existing client, we wanted to offer you a complimentary life insurance protection review. Are you mainly interested in asking a question, scheduling a review, or receiving general information?',
+      "Hi {{first_name}}, I'm the automated assistant for {{fsa_name}} at {{agency_name}}. As an existing client you're offered a complimentary life insurance review. Would a question, a booking, or general info help most?",
     branches: ['question', 'schedule', 'general_information', 'not_interested', 'follow_up_later', 'existing_coverage', 'unknown'],
     allowed:
-      'I can provide general educational information and help schedule time with {{fsa_name}}. I cannot recommend a specific policy, coverage amount, carrier, or premium.',
-    prohibited: 'Never recommend a product, coverage amount, carrier, premium, or replacement. Never make a suitability determination.',
-    escalateOn: ['recommendation', 'pricing', 'quote', 'health', 'underwriting', 'replacement', 'tax', 'legal', 'urgency', 'dissatisfaction', 'unknown'],
-    exitConditions: ['appointment booked', 'not interested', 'future follow-up requested', 'general information sent'],
+      'Explain that {{fsa_name}} handles life insurance and financial services alongside the client Farmers agent. Give general educational information and offer to book time. Make clear there is no obligation and no effect on their other policies.',
+    prohibited:
+      'Never recommend a product, coverage amount, carrier, or premium. Never make a suitability determination. Never imply their existing agency relationship depends on engaging with this.',
+    followUp:
+      "No reply needed if this isn't relevant, {{first_name}}. If it's easier, just send one word: INFO, BOOK, or NO. Any of them is a good answer.",
+    handoff:
+      "That's one for a licensed person rather than an assistant. I'm passing you to {{fsa_name}} now, and they'll come back to you directly.",
+    closing:
+      "Understood, {{first_name}}, I'll close this out. It won't affect anything else with {{agency_name}}. Thanks for your time.",
+    escalateOn: ['recommendation', 'pricing', 'quote', 'coverage_amount', 'health', 'underwriting', 'replacement', 'tax', 'legal', 'urgency', 'dissatisfaction', 'complaint', 'unknown'],
+    exitConditions: ['appointment booked', 'advisor requested', 'not interested', 'future follow-up requested', 'general information sent'],
   },
   {
     key: 'life_change_discovery',
     touch_no: 9,
     title: 'AI Playbook 2 — Life-Change Discovery',
-    objective: 'Surface qualifying life changes; offer a personal conversation. Never quantify coverage.',
+    objective: 'Surface a qualifying life change that makes a review genuinely relevant. Never quantify coverage.',
     opening:
-      'Since you became a client, have there been any major changes such as marriage, children, a home purchase, a job change, business ownership, retirement planning, or new financial responsibilities?',
-    branches: ['marriage', 'children', 'home_purchase', 'job_change', 'business_ownership', 'retirement', 'no_change', 'prefers_not_to_answer'],
+      "Hi {{first_name}}, {{fsa_name}}'s automated assistant here. Has anything changed for you lately, such as a home purchase, a new child, a job move, or starting a business? Those are usually what make this worth a look.",
+    branches: ['marriage', 'children', 'home_purchase', 'job_change', 'business_ownership', 'retirement', 'new_debt', 'no_change', 'prefers_not_to_answer'],
     allowed:
-      'Thank you for sharing that. Changes like {{life_event}} may affect the financial responsibilities a household wants to review. I can help schedule a complimentary conversation with {{fsa_name}} so your circumstances can be discussed personally.',
-    prohibited: 'Do not calculate coverage or recommend a product.',
-    escalateOn: ['recommendation', 'quote', 'pricing', 'coverage_amount', 'health', 'underwriting', 'replacement', 'tax', 'legal', 'unknown'],
-    exitConditions: ['relevant change surfaced → offer a review', 'not interested', 'future follow-up requested'],
+      'Thank the client for sharing. Note in general terms that a change like that often shifts what a household wants to protect, and offer to book time with {{fsa_name}} so it can be discussed personally.',
+    prohibited:
+      'Never calculate or suggest a coverage amount in response to a life event. Never tell a client an event means they need coverage. Do not collect medical details.',
+    followUp:
+      "If nothing has changed, {{first_name}}, that's genuinely a good answer and worth knowing. Want me to check back another time, or leave it here?",
+    handoff:
+      "Thanks for telling me. That's worth a proper conversation rather than a text thread, so I'm handing this to {{fsa_name}}, who's licensed to talk it through.",
+    closing:
+      "Thanks for letting me know, {{first_name}}. I'll leave it there. If something changes later, reply here and {{fsa_name}} will pick it up.",
+    escalateOn: ['recommendation', 'quote', 'pricing', 'coverage_amount', 'health', 'underwriting', 'replacement', 'tax', 'legal', 'complaint', 'unknown'],
+    exitConditions: ['relevant change surfaced → offer a review', 'advisor requested', 'not interested', 'future follow-up requested'],
   },
   {
     key: 'protection_discovery',
     touch_no: 13,
-    title: 'AI Playbook 3 — Protection Discovery',
-    objective: 'Identify the priority protection area; hand to a licensed advisor for evaluation.',
+    title: 'AI Playbook 3 — Priority Discovery',
+    objective: 'Identify the one thing the client would most want protected, then hand to a licensed advisor to evaluate it.',
     opening:
-      'When people review life insurance, they often consider income, housing, debt, dependents, education goals, existing coverage, and other long-term responsibilities. Which area is most important to you?',
+      "Hi {{first_name}}, this is {{fsa_name}}'s automated assistant. If you were to look at this at all, what would you most want protected: your income, the mortgage, your children, or something else entirely?",
     branches: ['income_replacement', 'mortgage', 'debt', 'children', 'education', 'final_expenses', 'business', 'existing_coverage', 'unsure'],
     allowed:
-      'That is an important area to consider. A licensed advisor can help you evaluate it in the context of your complete situation. Would you like to schedule a call, a virtual meeting, or request a future follow-up?',
-    prohibited: 'Do not estimate a coverage amount or recommend a product for any area named.',
-    escalateOn: ['recommendation', 'quote', 'pricing', 'coverage_amount', 'health', 'underwriting', 'replacement', 'tax', 'legal', 'unknown'],
-    exitConditions: ['schedule requested', 'future follow-up requested', 'not interested'],
+      'Reflect the priority back and confirm it is a common one. Explain that a licensed advisor can evaluate it against their full situation, and offer a call, a virtual meeting, or a future follow-up.',
+    prohibited:
+      'Never estimate a coverage amount for the named priority. Never rank priorities for the client or suggest one matters more than another.',
+    followUp:
+      "No need to have an answer ready, {{first_name}}. \"Not sure\" is where most people start, and it's a perfectly good place to begin a conversation.",
+    handoff:
+      "That deserves a real answer from a licensed person. I'm passing this to {{fsa_name}} so they can look at it properly with you.",
+    closing:
+      "Thanks for thinking it over, {{first_name}}. I'll close this out for now, and you can reply here any time you'd like to revisit it.",
+    escalateOn: ['recommendation', 'quote', 'pricing', 'coverage_amount', 'health', 'underwriting', 'replacement', 'tax', 'legal', 'complaint', 'unknown'],
+    exitConditions: ['schedule requested', 'advisor requested', 'future follow-up requested', 'not interested'],
   },
   {
     key: 'existing_coverage_review',
     touch_no: 18,
-    title: 'AI Playbook 4 — Existing Coverage Review',
-    objective: 'Understand what coverage exists; educate on employer-coverage questions. Never advise replacement.',
-    opening: 'Do you currently have life insurance through work, an individually owned policy, both, or are you unsure?',
+    title: 'AI Playbook 4 — Existing Coverage Check',
+    objective: 'Understand what coverage exists and educate on the employer-coverage questions. Never advise replacement.',
+    opening:
+      "Hi {{first_name}}, {{fsa_name}}'s automated assistant here. Do you currently have any life coverage through work, a policy of your own, both, or are you not sure? No wrong answer, it just tells us where to start.",
     branches: ['employer_coverage', 'individual_policy', 'both', 'no_coverage', 'unsure'],
     allowed:
-      'Employer-provided life insurance can be valuable, but it may be helpful to understand the amount, portability, continuation rules, and what happens after a job change or retirement. {{fsa_name}} can help you review the questions to consider.',
+      'Explain that employer coverage is a real benefit, and that the useful questions are the amount, whether it is portable, whether it continues after a job change or into retirement, and whether any part is individually owned. Offer to have {{fsa_name}} walk through what to look for.',
     prohibited:
-      'Replacement restriction: NEVER recommend canceling, replacing, reducing, exchanging, or modifying existing coverage. Any replacement-related discussion escalates to the advisor immediately.',
-    escalateOn: ['replacement', 'recommendation', 'quote', 'pricing', 'coverage_amount', 'health', 'underwriting', 'tax', 'legal', 'unknown'],
-    exitConditions: ['schedule requested', 'replacement topic → escalate', 'not interested'],
+      'REPLACEMENT RESTRICTION: never recommend cancelling, replacing, reducing, exchanging, or modifying existing coverage, and never suggest existing coverage is inadequate. Any replacement topic escalates immediately.',
+    followUp:
+      "Not sure is the most common answer, {{first_name}}, and it's an easy one to fix. Your benefits portal usually has it in about five minutes if you ever want to check.",
+    handoff:
+      "Anything about existing coverage needs a licensed person, so I'm handing this to {{fsa_name}} rather than answering it myself.",
+    closing:
+      "Good to know, {{first_name}}. I'll leave it there. If you ever want a second pair of eyes on what you already have, reply here.",
+    escalateOn: ['replacement', 'recommendation', 'quote', 'pricing', 'coverage_amount', 'health', 'underwriting', 'tax', 'legal', 'complaint', 'unknown'],
+    exitConditions: ['schedule requested', 'replacement topic → escalate', 'advisor requested', 'not interested'],
   },
   {
     key: 'objection_handling',
     touch_no: 23,
     title: 'AI Playbook 5 — Objection Handling',
-    objective: 'Address common objections with general education only; escalate anything substantive.',
-    opening: 'Hi {{first_name}}, a lot of people put a review off for very understandable reasons. Is there anything specific holding you back that I can help clarify?',
-    branches: ['cost', 'timing', 'already_covered', 'work_coverage', 'need_to_think', 'too_busy', 'health_concern', 'not_interested'],
+    objective: 'Name the real blocker, reduce it with general education only, and escalate anything substantive.',
+    opening:
+      "Hi {{first_name}}, this is {{fsa_name}}'s automated assistant. If you've been leaving this one alone, there's usually a specific reason. Is there something particular I can help clear up?",
+    branches: ['cost', 'timing', 'already_covered', 'work_coverage', 'need_to_think', 'too_busy', 'health_concern', 'trust', 'not_interested'],
     allowed:
-      'That is understandable. Life insurance pricing varies based on several factors, and I cannot estimate pricing or recommend an option. There is no obligation to decide during the first conversation. A licensed advisor can review your goals and whether there are options worth considering within your budget.',
+      'Validate the objection. Explain that cost varies with the type and amount of coverage, age, health, and underwriting, and that no figure can be given here. Note there is no obligation to decide in a first conversation.',
     prohibited:
-      'Do not estimate pricing. Do not ask for or accept medical details in this channel — a health concern escalates to the advisor. Do not recommend a product.',
-    escalateOn: ['health_concern', 'recommendation', 'quote', 'pricing', 'coverage_amount', 'underwriting', 'replacement', 'tax', 'legal', 'unknown'],
-    exitConditions: ['objection clarified → offer a review', 'health/substantive → escalate', 'not interested'],
+      'Never estimate pricing. Never request or accept medical details in this channel — a health concern escalates to the advisor. Never recommend a product or tell a client their current position is wrong.',
+    followUp:
+      "Fair enough if you'd rather not get into it, {{first_name}}. If it's easier, I can have {{fsa_name}} answer the one question by email so no meeting is involved.",
+    handoff:
+      "I want to be careful with that one, so I'm passing it to {{fsa_name}}, who is licensed to answer it properly.",
+    closing:
+      "That's completely fair, {{first_name}}. I'll close this out. If the reason ever changes, you know where we are.",
+    escalateOn: ['health_concern', 'recommendation', 'quote', 'pricing', 'coverage_amount', 'underwriting', 'replacement', 'tax', 'legal', 'complaint', 'unknown'],
+    exitConditions: ['objection clarified → offer a review', 'health/substantive → escalate', 'advisor requested', 'not interested'],
   },
   {
     key: 'scheduling_next_steps',
     touch_no: 29,
     title: 'AI Playbook 6 — Scheduling and Next Steps',
-    objective: 'Book a complimentary review; collect only non-sensitive scheduling details.',
-    opening: 'I can help you schedule a complimentary life insurance protection review. Would you prefer a phone call, virtual meeting, or in-person appointment if available?',
-    branches: ['phone', 'virtual', 'in_person', 'not_now', 'future_follow_up'],
+    objective: 'Book the complimentary review, collecting only non-sensitive scheduling details.',
+    opening:
+      "Hi {{first_name}}, {{fsa_name}}'s automated assistant here. I can set up a complimentary protection review whenever suits you. Would you prefer a phone call, a video meeting, or to meet in person?",
+    branches: ['phone', 'virtual', 'in_person', 'email_answer_first', 'not_now', 'future_follow_up'],
     allowed:
-      'Collect only: appointment type, preferred date, preferred time, timezone, confirmed email, confirmed telephone number, accessibility/communication accommodations, and a general non-sensitive note. On selection: confirm date/time/timezone/advisor and note confirmation channels + reschedule/cancel link.',
-    prohibited: 'Do NOT collect medical information. Do not recommend a product or coverage amount.',
-    escalateOn: ['recommendation', 'quote', 'pricing', 'coverage_amount', 'health', 'underwriting', 'replacement', 'tax', 'legal', 'unknown'],
-    exitConditions: ['appointment booked', 'future follow-up requested', 'not interested'],
+      'Collect only: appointment type, preferred date, preferred time, timezone, confirmed email, confirmed phone, accessibility or communication accommodations, and a general non-sensitive note. On booking, confirm date, time, timezone, and who they are meeting, and note the reschedule and cancel options.',
+    prohibited:
+      'Never collect medical, financial-account, or securities information. Never promise an outcome, a price, or an approval. Never recommend a product or coverage amount.',
+    followUp:
+      "No pressure at all, {{first_name}}. If a meeting is more than you want, reply with your question instead and I'll have {{fsa_name}} answer it directly.",
+    handoff:
+      "I'll hand you to {{fsa_name}} from here, since that part is theirs to answer rather than mine.",
+    closing:
+      "All set, {{first_name}}. A confirmation is on its way, and you can reschedule from that message any time. Thanks for making the time.",
+    escalateOn: ['recommendation', 'quote', 'pricing', 'coverage_amount', 'health', 'underwriting', 'replacement', 'tax', 'legal', 'complaint', 'unknown'],
+    exitConditions: ['appointment booked', 'advisor requested', 'future follow-up requested', 'not interested'],
   },
   {
     key: 'respectful_close',
     touch_no: 35,
     title: 'AI Playbook 7 — Respectful Close or Future Follow-Up',
-    objective: 'Close the campaign respectfully or schedule a future follow-up; preserve the relationship.',
+    objective: 'Close the campaign warmly or capture a future follow-up, protecting the agency relationship above all.',
     opening:
-      'Thank you for your time, {{first_name}}. Would you like us to schedule a review, check back at a later date, or close this life insurance follow-up for now?',
+      "Hi {{first_name}}, {{fsa_name}}'s automated assistant one last time. Would you like to book a review, have us check back later, or close this out for now? Any of the three is completely fine.",
     branches: ['schedule_appointment', 'follow_up_30', 'follow_up_60', 'follow_up_90', 'custom_follow_up', 'close_campaign', 'not_interested', 'global_opt_out', 'advisor_requested'],
     allowed:
-      'Understood. We will close this Cross-Sell Life follow-up. Thank you for being a client of {{agency_name}}. You may contact us in the future whenever you need assistance.',
-    prohibited: 'Do not pressure. Do not recommend a product. Honor a global opt-out request by routing it to suppression handling.',
-    escalateOn: ['advisor_requested', 'recommendation', 'quote', 'complaint', 'unknown'],
-    exitConditions: ['appointment booked', 'future follow-up scheduled', 'campaign closed', 'global opt-out requested'],
+      'Offer the three options plainly. Honor a global opt-out by routing it to suppression handling. Thank the client for their business with {{agency_name}} and make clear this does not affect their other policies.',
+    prohibited:
+      'Never pressure, guilt, or use a final-chance framing. Never recommend a product. Never ask the client to reconsider more than once.',
+    followUp:
+      "I'll take the silence as a no, {{first_name}}, and close this out. Nothing further needed from you, and thank you for your time.",
+    closing:
+      "Closed out, {{first_name}}. Thank you for being a client of {{agency_name}} — that's the part that matters. If a question ever comes up, reply here and {{fsa_name}} will pick it up.",
+    handoff:
+      "Of course, I'll pass you to {{fsa_name}} now so you can speak with a licensed person directly.",
+    escalateOn: ['advisor_requested', 'recommendation', 'quote', 'pricing', 'complaint', 'unknown'],
+    exitConditions: ['appointment booked', 'future follow-up scheduled', 'campaign closed', 'advisor requested', 'global opt-out requested'],
   },
 ]
 

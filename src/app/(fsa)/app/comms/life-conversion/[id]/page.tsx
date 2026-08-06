@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { DetailShell, Section, AssumptionBadge } from '@/components/archetypes'
 import { Card } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { load } from '@/lib/data/query'
 import { loadCampaignDetail } from '@/lib/life-campaign/detail'
 import { campaignAnalytics } from '@/lib/life-campaign/analytics'
@@ -131,6 +132,58 @@ export default async function LifeConversionDetailPage(props: { params: Promise<
           ]}
         />
 
+        {/* 6b — AI conversation playbooks + advisor scripts */}
+        <Section
+          title={`AI conversation playbooks (${detail.playbooks.length})`}
+          description="What the AI may say on an ai_conversation touch, and where it must stop. Every opener identifies itself as an automated assistant; the SMS path also appends the TRAIGA AI disclosure."
+        >
+          <Card className="p-5">
+            <div className="space-y-3">
+              {detail.playbooks.map((p) => (
+                <div key={p.key} className="rounded-md border p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-sm font-medium">{p.title}</span>
+                    <Badge variant="outline">touch {p.touch_no}</Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">{p.objective}</p>
+                  <PlaybookLine label="Opening" value={p.opening} />
+                  <PlaybookLine label="No-reply follow-up" value={p.followUp} />
+                  <PlaybookLine label="Advisor handoff" value={p.handoff} />
+                  <PlaybookLine label="Closing" value={p.closing} />
+                  <PlaybookLine label="Allowed (green zone)" value={p.allowed} />
+                  <PlaybookLine label="Prohibited (red line)" value={p.prohibited} danger />
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">Escalates on:</span> {p.escalateOn.join(', ')} — routed to the
+                    licensed FSA. The AI never answers a policy-specific question (§4.2).
+                  </p>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </Section>
+
+        <Section
+          title={`Advisor scripts (${detail.advisorScripts.length})`}
+          description="Suggested openers for the two human advisor-outreach touches. A logged outreach attempt fulfils the touch; nothing here is auto-dispatched."
+        >
+          <Card className="p-5">
+            <div className="space-y-3">
+              {detail.advisorScripts.map((a) => (
+                <div key={a.key} className="rounded-md border p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-sm font-medium">{a.title}</span>
+                    <Badge variant="outline">touch {a.touch_no}</Badge>
+                  </div>
+                  <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">{a.script}</p>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">Goals:</span> {a.goals.join(', ')}.
+                  </p>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </Section>
+
         {/* 7 — Workflows & rules */}
         <Section title="Workflows & rules" description="How the campaign behaves — grounded in this campaign's actual settings.">
           <Card className="p-5">
@@ -187,6 +240,15 @@ export default async function LifeConversionDetailPage(props: { params: Promise<
 }
 
 
+
+/** One labelled line of playbook copy. `danger` tints the red-line row. */
+function PlaybookLine({ label, value, danger }: { label: string; value: string; danger?: boolean }) {
+  return (
+    <p className={`mt-1 text-sm ${danger ? 'text-destructive' : 'text-muted-foreground'}`}>
+      <span className="font-medium text-foreground">{label}:</span> {value}
+    </p>
+  )
+}
 
 function Rule({ term, def, assumption }: { term: string; def: string; assumption?: boolean }) {
   return (

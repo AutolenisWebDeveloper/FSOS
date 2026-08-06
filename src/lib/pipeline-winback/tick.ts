@@ -17,6 +17,7 @@ import { campaignDispatchContext, campaignIdentityContext } from '@/lib/comms/ca
 import { smsA2pApproved } from '@/lib/comms/a2p'
 import { getOrCreateConversation } from '@/lib/comms/conversations'
 import { openerClassFor } from '@/lib/comms/console'
+import { parseSubjectFromBody } from '@/lib/comms/template-subject'
 import { armCampaignAiConversation } from '@/lib/comms/campaign-ai'
 import { canDispatch } from './engine'
 import { evaluateWinbackEligibility, classifyRecheckOutcome } from './eligibility'
@@ -207,7 +208,10 @@ async function fireMessageTouch(
     await markExecution(db, e.id, touchNo, 'skipped', { reason: 'template_not_approved' })
     return false
   }
-  const { data: tpl } = await db.from('comm_templates').select('body, subject, channel').eq('id', touch.template_id).maybeSingle()
+  // comm_templates has no `subject` column — the subject rides on the body's leading
+  // "Subject:" line (template-subject.ts). Selecting a non-existent column errors (42703),
+  // which blanked the body and mis-routed every email touch into the SMS branch.
+  const { data: tpl } = await db.from('comm_templates').select('body, channel').eq('id', touch.template_id).maybeSingle()
 
   // Recipient: the household member if present, else the originating contact (win-back leads
   // may have a contact but no materialized member yet).
@@ -242,7 +246,7 @@ async function fireMessageTouch(
   const outcome = await sendThroughGate({
     channel,
     to,
-    subject: (tpl as { subject?: string } | null)?.subject,
+    subject: parseSubjectFromBody(tpl?.body),
     body: tpl?.body ?? '',
     actor: SYSTEM,
     memberId: e.member_id,

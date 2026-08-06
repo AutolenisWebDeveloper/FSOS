@@ -14,6 +14,7 @@ import { campaignDispatchContext, campaignIdentityContext } from '@/lib/comms/ca
 import { smsA2pApproved } from '@/lib/comms/a2p'
 import { getOrCreateConversation } from '@/lib/comms/conversations'
 import { openerClassFor } from '@/lib/comms/console'
+import { parseSubjectFromBody } from '@/lib/comms/template-subject'
 import { armCampaignAiConversation } from '@/lib/comms/campaign-ai'
 import { evaluateEligibility } from './eligibility'
 import { canDispatch } from './states'
@@ -280,14 +281,6 @@ async function fireAdvisorTouch(
     .eq('enrollment_id', e.id)
     .eq('touch_no', touchNo)
   await writeAudit({ actor: SYSTEM, action: 'entity.created', entity: 'work_task', entityId: task?.id ?? null, diff: { xsell_life_campaign: e.campaign_id, touch_no: touchNo } })
-}
-
-// The email bodies embed the subject on the first "Subject:" line (repo convention — comm_templates
-// has no subject column; ADR-025 stores subject on the rendered message). Extract it for the gate.
-function parseSubjectFromBody(body: string): string | undefined {
-  const first = body.split('\n', 1)[0]?.trim() ?? ''
-  const m = first.match(/^Subject:\s*(.+)$/i)
-  return m ? m[1].trim() : undefined
 }
 
 async function markExecution(db: ReturnType<typeof getDb>, enrollmentId: string, touchNo: number, status: string, detail: Record<string, unknown>): Promise<void> {

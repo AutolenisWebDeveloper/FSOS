@@ -4,6 +4,7 @@
 // (name/channel/approval status/body), so the detail page can present configuration, schedule,
 // assets, workflows, settings, and controls in one place. All reads through getDb().
 import { getDb } from '@/lib/supabase/client'
+import { PLAYBOOKS, ADVISOR_SCRIPTS } from './playbooks'
 
 export interface CampaignSettings {
   id: string
@@ -38,6 +39,10 @@ export interface TouchDetail {
 export interface CampaignDetail {
   settings: CampaignSettings
   touches: TouchDetail[]
+  /** Static AI-conversation playbooks + advisor scripts, from the pure module so the
+   *  page always matches what the engine actually grounds on. */
+  playbooks: typeof PLAYBOOKS
+  advisorScripts: typeof ADVISOR_SCRIPTS
 }
 
 const SETTINGS_COLUMNS =
@@ -67,5 +72,10 @@ export async function loadCampaignDetail(campaignId: string): Promise<CampaignDe
     }
   })
 
-  return { settings: settings as unknown as CampaignSettings, touches }
+  return {
+    settings: settings as unknown as CampaignSettings,
+    touches,
+    playbooks: PLAYBOOKS,
+    advisorScripts: ADVISOR_SCRIPTS,
+  }
 }

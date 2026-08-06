@@ -142,6 +142,64 @@ check('product-CATEGORY education is NOT treated as policy-specific', () => {
   assert.equal(r.mayAutoSend, true, `over-blocked: ${r.reason}`)
 })
 
+// ─── HUMAN MOMENTS — the family that must NOT get a scheduling invitation ──────
+// Distinct from every other family: the risk is not that the automation would give advice,
+// it is that an automated non-answer to a death, a serious illness, a financial crisis, or an
+// angry message is itself a service failure — and for a complaint, potentially a state
+// handling-requirement failure. These route to silence + escalation, never to the scheduling
+// shape. Every case below was verified to AUTO-SEND before this family existed.
+const HUMAN_MOMENTS = [
+  ['bereavement — spouse', 'My husband passed away, does our policy pay out?'],
+  ['bereavement — died', 'My wife died last week. What do we do now?'],
+  ['bereavement — family', 'we had a death in the family'],
+  ['bereavement — parent', 'my mother passed, I need to know about her coverage'],
+  ['bereavement — funeral', 'the funeral is on Friday, what do I need to bring'],
+  ['bereavement — widow', 'I am recently widowed and going through the paperwork'],
+  ['serious illness', 'my father is in hospice now'],
+  ['hardship — job loss', 'I lost my job and cant make the payment this month'],
+  ['hardship — affordability', 'I cant afford this right now'],
+  ['hardship — arrears', 'we are behind on our payments'],
+  ['hardship — divorce', 'we are going through a divorce'],
+  ['complaint — no literal "complaint"', 'I am furious about how this was handled'],
+  ['complaint — unanswered', 'this is unacceptable, nobody has called me back'],
+  ['complaint — escalation ask', 'I want to speak to a supervisor'],
+]
+for (const [label, inbound] of HUMAN_MOMENTS) {
+  check(`HUMAN MOMENT — "${label}" never gets a scheduling invitation`, () => {
+    const r = autoSendable(inbound, SAFE_DRAFT)
+    assert.equal(r.mayAutoSend, false,
+      `an automated scheduling reply went to a human moment: ${r.reason}`)
+  })
+  check(`HUMAN MOMENT — "${label}" is flagged urgent for the FSA queue`, () => {
+    assert.equal(classifyReply({ inboundBody: inbound, draft: SAFE_DRAFT }).urgent, true,
+      'not flagged urgent — it would queue behind routine content holds')
+  })
+}
+check('HUMAN MOMENT — urgency is independent of which class wins the label', () => {
+  // Both securities (blocked, checked first) and bereavement. The label is securities; the
+  // routing must still be urgent.
+  const r = classifyReply({ inboundBody: 'My husband passed away — what happens to his IRA?', draft: SAFE_DRAFT })
+  assert.equal(r.messageClass, 'securities_related', `label was ${r.messageClass}`)
+  assert.equal(r.urgent, true, 'a bereavement inside a securities exchange lost its urgency')
+})
+check('HUMAN MOMENT — a routine hold is NOT flagged urgent (the flag stays meaningful)', () => {
+  for (const inb of ['what would my premium be?', 'can you check my policy?', 'what do you recommend?']) {
+    assert.equal(classifyReply({ inboundBody: inb, draft: SAFE_DRAFT }).urgent, false, inb)
+  }
+})
+check('HUMAN MOMENT — an ordinary message is not swept up by the wider complaint list', () => {
+  for (const inb of ['sounds good, thanks!', 'what is term life insurance?', 'can we talk Tuesday?']) {
+    const r = autoSendable(inb, SAFE_DRAFT)
+    assert.equal(r.urgent, false, `over-matched: ${inb}`)
+    assert.equal(r.mayAutoSend, true, `over-held: ${inb} → ${r.reason}`)
+  }
+})
+check('a survivor asking about "our"/"his"/"her" policy is caught, not just "my"', () => {
+  for (const inb of ['does our policy pay out?', 'what was his coverage?', 'is her payout taxable?']) {
+    assert.equal(autoSendable(inb, SAFE_DRAFT).mayAutoSend, false, inb)
+  }
+})
+
 // ─── WHAT THE ALLOWLIST ACTUALLY BOUNDS ───────────────────────────────────────
 // The safety property is TWO-PART, and the two parts bound different things. Stating it
 // precisely matters, because the obvious stronger claim — "a missed risk keyword cannot

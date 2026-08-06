@@ -60,7 +60,25 @@ export interface ReplyClassification {
   purpose: MessagePurpose
   /** Human-readable basis for the decision — recorded on the hold/escalation. */
   reason: string
+  /**
+   * A human moment, not merely a regulated one: bereavement, serious illness, financial
+   * hardship, or an angry/complaint message. Computed INDEPENDENTLY of which class won, so an
+   * exchange that is both (say) securities and bereavement is still flagged. The caller uses
+   * it to escalate under a distinct, filterable reason — these must reach a person quickly,
+   * not sit in the queue behind routine holds.
+   */
+  urgent: boolean
 }
+
+/**
+ * Families that are a HUMAN moment rather than only a regulated one. Flagged independently of
+ * which class wins the label, so a message that is both securities and bereavement still
+ * escalates as urgent.
+ */
+const URGENT_CLASSES: ReadonlySet<AiMessageClass> = new Set<AiMessageClass>([
+  'bereavement_or_hardship',
+  'complaint_or_dispute',
+])
 
 /** Regulated topics → the draft-only (or blocked) class each one implies. Order matters. */
 const RISK_TOPICS: ReadonlyArray<{ cls: AiMessageClass; label: string; patterns: RegExp[] }> = [
@@ -77,6 +95,26 @@ const RISK_TOPICS: ReadonlyArray<{ cls: AiMessageClass; label: string; patterns:
     ],
   },
   {
+    cls: 'bereavement_or_hardship',
+    label: 'bereavement, serious illness or financial hardship',
+    // NOT an advice risk — a HUMAN one. Answering "my husband passed away, does our policy
+    // pay out?" with a scheduling invitation is a service failure, and the automation has no
+    // business being the first responder to it. Held so the contact gets a person.
+    patterns: [
+      /\bpassed\s+away\b/i,
+      /\b(he|she|they|mom|mother|dad|father|husband|wife|spouse|son|daughter|partner|brother|sister)\s+passed\b/i,
+      /\bdied\b/i, /\bdeceased\b/i, /\bfuneral\b/i, /\bwidow(ed|er)?\b/i,
+      /\bdeath\s+in\s+the\s+family\b/i, /\b(his|her|their)\s+death\b/i,
+      /\blost\s+(my|our)\s+(husband|wife|spouse|mother|father|mom|dad|son|daughter|partner|child)\b/i,
+      /\bhospice\b/i, /\bterminal(ly)?\s+ill\b/i, /\bseriously\s+ill\b/i,
+      // Financial hardship — the other case where an automated nudge lands badly.
+      /\blost\s+my\s+job\b/i, /\blaid\s+off\b/i, /\bcan'?t\s+afford\b/i,
+      /\bcan'?t\s+(make|pay)\s+(the|my|this|next)\b/i, /\bfinancial\s+hardship\b/i,
+      /\bbehind\s+on\s+(my|the|our)\s+payments?\b/i, /\bstruggling\s+to\s+pay\b/i,
+      /\bdivorc(e|ed|ing)\b/i,
+    ],
+  },
+  {
     cls: 'sensitive_data_request',
     label: 'sensitive personal data',
     patterns: [
@@ -88,9 +126,17 @@ const RISK_TOPICS: ReadonlyArray<{ cls: AiMessageClass; label: string; patterns:
   {
     cls: 'complaint_or_dispute',
     label: 'complaint or dispute',
+    // Deliberately wider than the literal word "complaint": an upset contact rarely uses it.
+    // Every pattern here only ever causes a HOLD, so over-matching costs a scheduling
+    // invitation, while under-matching answers an angry message with a booking link.
     patterns: [
       /\bcomplain(t|ing|ts)?\b/i, /\battorney\b/i, /\blawyer\b/i, /\bsue\b|\bsuing\b|\blawsuit\b/i,
       /\bfile\s+a\s+(complaint|grievance)\b/i, /\bdispute\b/i, /\brefund\b/i,
+      /\bfurious\b/i, /\bangry\b/i, /\boutrage(d|ous)?\b/i, /\bunacceptable\b/i,
+      /\bridiculous\b/i, /\bappalling\b/i, /\bdisgust(ed|ing)\b/i, /\bfed\s+up\b/i,
+      /\bnobody\s+(has\s+)?(called|got\s+back|responded)/i, /\bno\s+one\s+(has\s+)?(called|got\s+back|responded)/i,
+      /\b(speak|talk)\s+to\s+(a|your)\s+(manager|supervisor)\b/i, /\bescalate\s+this\b/i,
+      /\bthis\s+is\s+(unacceptable|ridiculous|absurd)\b/i,
     ],
   },
   {
@@ -134,9 +180,12 @@ const RISK_TOPICS: ReadonlyArray<{ cls: AiMessageClass; label: string; patterns:
     cls: 'policy_specific_explanation',
     label: 'the contact’s own policy',
     patterns: [
-      /\b(my|your|the)\s+polic(y|ies)\b/i, /\bpolicy\s+(number|#)\b/i, /\bdeath\s+benefit\b/i,
-      /\bcash\s+value\b/i, /\bface\s+amount\b/i, /\bbeneficiar(y|ies)\b/i,
-      /\b(my|your)\s+coverage\s+(amount|limit)\b/i, /\brider\b/i, /\blapse(d)?\b/i,
+      // The possessive list must cover a third party's contract too — a survivor asking about
+      // "our policy" or "his coverage" is the exact case this family exists for.
+      /\b(my|your|the|our|his|her|their)\s+polic(y|ies)\b/i, /\bpolicy\s+(number|#)\b/i,
+      /\bdeath\s+benefit\b/i, /\bcash\s+value\b/i, /\bface\s+amount\b/i, /\bbeneficiar(y|ies)\b/i,
+      /\b(my|your|our|his|her|their)\s+coverage\b/i, /\brider\b/i, /\blapse(d)?\b/i,
+      /\bpay\s*out\b/i, /\bpayout\b/i,
     ],
   },
   {
@@ -235,11 +284,16 @@ export function classifyReply(input: ReplyClassificationInput): ReplyClassificat
   // Risk is assessed over BOTH sides: what the contact raised and what we are about to say.
   const exchange = `${inbound}\n${draft}`
 
+  // Urgency is resolved over EVERY family, not just the one that wins the label, so a message
+  // that is both securities and bereavement is still routed as a human moment.
+  const urgent = RISK_TOPICS.some((t) => URGENT_CLASSES.has(t.cls) && matches(t, exchange))
+
   for (const topic of RISK_TOPICS) {
     if (matches(topic, exchange)) {
       return {
         messageClass: topic.cls,
         purpose,
+        urgent,
         reason: `exchange touches ${topic.label} — ${topic.cls} requires licensed FSA review`,
       }
     }
@@ -249,6 +303,7 @@ export function classifyReply(input: ReplyClassificationInput): ReplyClassificat
     return {
       messageClass: null,
       purpose,
+      urgent,
       reason: 'the responder declined to answer and substituted its hand-off text — routed to the FSA',
     }
   }
@@ -257,19 +312,21 @@ export function classifyReply(input: ReplyClassificationInput): ReplyClassificat
     return {
       messageClass: null,
       purpose,
+      urgent,
       reason: `draft is ${draft.length} characters (over ${MAX_AUTO_SEND_CHARS}) — too substantive to auto-send`,
     }
   }
 
   for (const shape of SAFE_SHAPES) {
     if (matches(shape, draft)) {
-      return { messageClass: shape.cls, purpose, reason: `green-zone reply: ${shape.label}` }
+      return { messageClass: shape.cls, purpose, urgent, reason: `green-zone reply: ${shape.label}` }
     }
   }
 
   return {
     messageClass: null,
     purpose,
+    urgent,
     reason: 'reply did not match a recognised green-zone shape — fail-safe to FSA review',
   }
 }

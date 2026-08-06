@@ -73,6 +73,28 @@ is documented for the compliance reader in `docs/compliance/ai-reply-classificat
 pinned in `tests/comms-reply-classification.test.mjs`, so a change in either direction is a
 decision rather than drift.
 
+### 1b. A thirteenth family: human moments, not regulated ones
+
+Review of the classifier raised a category the twelve regulated families did not cover, and
+measurement confirmed the gap: *"My husband passed away, does our policy pay out?"* was
+answered with a scheduling invitation, as were job loss, falling behind on payments, and angry
+messages that never use the word "complaint".
+
+The risk here is not that the automation would give ADVICE — it is that an automated non-answer
+to a death, a serious illness, or a financial crisis is a service failure, and for a complaint
+potentially a state handling-requirement failure. `bereavement_or_hardship` joins the matrix as
+a draft-only class, the complaint family was widened well past the literal word, and the
+possessive list on the policy family was corrected (`our`/`his`/`her`/`their`), since a survivor
+asks about "*our* policy", not "*my* policy".
+
+Both families additionally set an `urgent` flag, resolved across ALL families rather than only
+the one that wins the label, so a bereavement raised inside a securities question is still
+routed as urgent. `tryAutoReply` escalates these under `urgent_human_attention` instead of the
+generic gate reason, so they are findable ahead of routine content holds.
+
+This is deliberately independent of the open compliance fork (silence-by-default vs
+recognise-the-risk): whichever way that is decided, these must reach a person.
+
 ### 2. A per-conversation AI turn ceiling
 
 The matrix governs each message in isolation. The exposure it cannot see is the AGGREGATE: a

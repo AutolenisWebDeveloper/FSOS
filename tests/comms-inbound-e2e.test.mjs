@@ -337,6 +337,45 @@ try {
     }
   }
 
+  // ── SCENARIO 1b2: a human moment gets a person, not a scheduling invitation ────
+  section('1b2. Bereavement / hardship / complaint → silence + urgent escalation')
+  {
+    const cases = [
+      ['bereavement', 'My husband passed away, does our policy pay out?'],
+      ['hardship', 'I lost my job and cant make the payment this month'],
+      ['complaint', 'this is unacceptable, nobody has called me back'],
+    ]
+    let i = 0
+    for (const [label, inbound] of cases) {
+      const dbU = freshDb({ armed: true })
+      twilioCalls.length = 0
+      const ru = await processInbound({ channel: 'sms', from: PHONE, body: inbound, provider: 'twilio', providerId: `SM_human_${i++}` })
+      const esc = q(dbU, `select reason||'|'||coalesce(note,'-') from agent_actions where kind='escalation' order by created_at desc limit 1`)
+      console.log(`    → ${label}: sent=${ru.autoReplied} | ${esc}`)
+      check(`HUMAN MOMENT — "${label}" sends nothing to the contact`, () => {
+        assert.equal(ru.autoReplied, false, 'the automation replied to a human moment')
+        assert.equal(twilioCalls.length, 0, 'an SMS went out on a human moment')
+      })
+      check(`HUMAN MOMENT — "${label}" escalates under the URGENT reason, not the generic one`, () => {
+        assert.match(esc, /^urgent_human_attention\|/,
+          `expected urgent_human_attention so it is findable ahead of routine holds: ${esc}`)
+        assert.equal(ru.escalated, true)
+      })
+      check(`HUMAN MOMENT — "${label}" is auditable`, () => {
+        assert.ok(Number(q(dbU, `select count(*) from audit_log where action='ai.escalated' and diff::text like '%urgent_human_attention%'`)) >= 1)
+      })
+    }
+    // The urgent reason must stay distinguishable from a routine content hold, or it is
+    // filterable in name only.
+    const dbR2 = freshDb({ armed: true })
+    await processInbound({ channel: 'sms', from: PHONE, body: 'What would my premium be?', provider: 'twilio', providerId: 'SM_routine_hold' })
+    check('a ROUTINE hold keeps the generic gate reason (the urgent flag stays meaningful)', () => {
+      const esc = q(dbR2, `select reason from agent_actions where kind='escalation' order by created_at desc limit 1`)
+      assert.equal(esc, 'gate_blocked:ai_authority', `routine hold used: ${esc}`)
+      assert.equal(q(dbR2, `select count(*) from agent_actions where reason='urgent_human_attention'`), '0')
+    })
+  }
+
   // ── SCENARIO 1c: reply-scoped frequency caps (ADR-017 amendment, migration 102) ──
   // Supplying the purpose §12 requires also enrolled replies in the §9 caps, whose seeded
   // 60-minute minimum interval stalled a back-and-forth after ONE turn. Migration 102 adds a

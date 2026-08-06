@@ -379,8 +379,15 @@ async function tryAutoReply(conv: Conversation, input: InboundInput, inboundMess
   if (!outcome.sent) {
     // Carry the classification into the escalation so the FSA queue says WHY the reply was
     // held ("exchange touches pricing or premium") rather than an opaque gate step.
+    //
+    // A HUMAN moment — bereavement, serious illness, financial hardship, an angry message —
+    // escalates under its own reason rather than the generic gate one. The distinction is not
+    // cosmetic: these must be findable and answerable by a person quickly, not queued behind
+    // routine content holds. The contact gets silence from the automation, which is correct
+    // here — a scheduling invitation in reply to a death notification is worse than nothing.
     const step = outcome.gate.blockedStep ?? 'ai_authority'
-    await escalateToFsa(conv, inboundMessageId, `gate_blocked:${step}`, classification.reason)
+    const reason = classification.urgent ? 'urgent_human_attention' : `gate_blocked:${step}`
+    await escalateToFsa(conv, inboundMessageId, reason, classification.reason)
     return { sent: false, escalated: true }
   }
   return { sent: true, escalated: false }

@@ -1,5 +1,5 @@
 -- ─────────────────────────────────────────────────────────
--- 103 — Per-conversation AI turn limit (forced hand-off to the licensed FSA)
+-- 104 — Per-conversation AI turn limit (forced hand-off to the licensed FSA)
 --
 -- WHY. Nothing capped how many turns the automation could take in a life-insurance
 -- conversation before a licensed person was brought in. Hand-off happened only if the model
@@ -25,7 +25,7 @@
 -- campaign agent — the per-campaign override, as configuration rather than code. Reusing this
 -- table rather than creating a parallel one keeps one conversation-policy surface (§6).
 --
--- RELATIONSHIP TO THE REPLY FREQUENCY CAP (migration 102). Two bounds on the same behaviour,
+-- RELATIONSHIP TO THE REPLY FREQUENCY CAP (migration 103). Two bounds on the same behaviour,
 -- deliberately on different axes and unable to contradict each other:
 --     reply cap  → per CONTACT, per day/7 days   → volume         → gate step `frequency`
 --     turn limit → per CONVERSATION, since human → depth          → before drafting

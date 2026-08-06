@@ -388,7 +388,7 @@ async function tryAutoReply(conv: Conversation, input: InboundInput, inboundMess
   // §4.2 — the per-conversation AI turn ceiling, checked BEFORE the model is called so a
   // hand-off costs nothing. Counted since the last human reply, so an FSA turn resets the
   // budget. Fails CLOSED: an unreadable policy or an unverifiable count hands off rather than
-  // continuing. This bounds conversation DEPTH; the reply frequency cap (migration 102) bounds
+  // continuing. This bounds conversation DEPTH; the reply frequency cap (migration 103) bounds
   // VOLUME per contact — different axes, both escalating, neither able to end a thread quietly.
   const turnLimit = await checkTurnLimit(conv.id, conv.agent_key)
   if (!turnLimit.allowed) {
@@ -454,7 +454,7 @@ async function tryAutoReply(conv: Conversation, input: InboundInput, inboundMess
     // to draft_only on an absent class, which is exactly the outcome we want.
     aiMessageClass: classification.messageClass ?? undefined,
     purpose: classification.purpose,
-    // Bound by the reply-scoped cap row, not the drip caps (migration 102): the outreach
+    // Bound by the reply-scoped cap row, not the drip caps (migration 103): the outreach
     // minimum-interval would otherwise stall the conversation after a single AI turn. The
     // per-day ceiling still applies, and a capped reply still escalates below.
     isConversationReply: true,

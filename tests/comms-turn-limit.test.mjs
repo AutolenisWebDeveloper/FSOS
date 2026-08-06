@@ -136,7 +136,7 @@ check('the two bounds are on different axes and cannot contradict', () => {
   assert.deepEqual(a, b, 'the turn decision must be a pure function of turns + policy')
 })
 
-check('the shipped fallback ceiling matches migration 103', () => {
+check('the shipped fallback ceiling matches migration 104', () => {
   assert.equal(FALLBACK_MAX_AI_TURNS, 6)
 })
 

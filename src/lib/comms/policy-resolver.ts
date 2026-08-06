@@ -59,7 +59,7 @@ export async function hasConsentForPurpose(
 }
 
 /**
- * The cap row this send is bounded by (ADR-017 amendment, migration 102). 'global' bounds
+ * The cap row this send is bounded by (ADR-017 amendment, migration 103). 'global' bounds
  * proactive campaign/drip outreach; 'reply' bounds an inbound-triggered conversation reply,
  * whose minimum-interval spacing would otherwise stall a normal back-and-forth after one
  * turn. Selecting a row can never REMOVE the caps — both rows are real, audited ceilings.
@@ -172,7 +172,7 @@ export interface SendPolicyInput {
   purpose: MessagePurpose
   conversationId: string | null
   activeCampaignPurpose?: MessagePurpose | null
-  /** Which cap row bounds this send (migration 102). Defaults to the outreach caps. */
+  /** Which cap row bounds this send (migration 103). Defaults to the outreach caps. */
   frequencyPolicyId?: FrequencyPolicyId
 }
 

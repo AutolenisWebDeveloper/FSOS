@@ -1,5 +1,5 @@
 -- ─────────────────────────────────────────────────────────
--- 102 — Reply-scoped frequency caps (ADR-017 amendment)
+-- 103 — Reply-scoped frequency caps (ADR-017 amendment)
 --
 -- WHY. ADR-017's per-recipient frequency caps were written for PROACTIVE outreach: a drip
 -- must not text someone twice in an hour. They were never applied to an inbound-triggered
@@ -52,4 +52,4 @@ values (
 on conflict (id) do nothing;
 
 comment on table comm_frequency_policy is
-  'Editable per-recipient frequency caps (§9). Enforced at the send gate (step frequency) as a non-escalating deferral; counts derived from comm_messages. TWO rows: ''global'' bounds proactive campaign/drip outreach; ''reply'' bounds inbound-triggered conversation replies (ADR-017 amendment, migration 102) — the send path selects the row, so neither can be bypassed. Config defaults (is_assumption) — the FSA sets real caps.';
+  'Editable per-recipient frequency caps (§9). Enforced at the send gate (step frequency) as a non-escalating deferral; counts derived from comm_messages. TWO rows: ''global'' bounds proactive campaign/drip outreach; ''reply'' bounds inbound-triggered conversation replies (ADR-017 amendment, migration 103) — the send path selects the row, so neither can be bypassed. Config defaults (is_assumption) — the FSA sets real caps.';

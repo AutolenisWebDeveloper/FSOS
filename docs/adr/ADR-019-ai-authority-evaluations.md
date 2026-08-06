@@ -104,7 +104,7 @@ hand-off happened only if the model volunteered it or a turn tripped the recomme
 red line.
 
 `turn-limit.ts` (pure decision + thin adapters) adds a deterministic ceiling, configured on
-`comm_conversation_policy` (migration 103), which becomes multi-row: `global` is the default
+`comm_conversation_policy` (migration 104), which becomes multi-row: `global` is the default
 (6 turns, `is_assumption`), and a row keyed by an `ai_agents.key` overrides it for threads
 bound to that campaign agent — the per-campaign override as configuration, not code.
 
@@ -144,7 +144,7 @@ how often the ceiling is the thing that fires.
 
 ## Related Documents
 
-- Amendment: migrations `102_comm_reply_frequency_policy.sql`, `103_comm_conversation_turn_limit.sql`
+- Amendment: migrations `103_comm_reply_frequency_policy.sql`, `104_comm_conversation_turn_limit.sql`
 - Amendment: `src/lib/comms/reply-classification.ts`, `turn-limit.ts`, `inbound.ts`
 - Amendment: `docs/compliance/ai-reply-classification.md` (compliance-facing write-up)
 - Amendment tests: `tests/comms-reply-classification.test.mjs`, `tests/comms-turn-limit.test.mjs`, `tests/comms-inbound-e2e.test.mjs` §1–§1d

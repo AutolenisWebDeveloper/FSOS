@@ -82,7 +82,7 @@ not the mass-outreach case the interval cap exists to bound.
 
 ### Decision
 
-Add a **second cap row**, `comm_frequency_policy` id `'reply'` (migration 102), selected by
+Add a **second cap row**, `comm_frequency_policy` id `'reply'` (migration 103), selected by
 the send path via `SendContext.isConversationReply` → `resolveSendPolicy({ frequencyPolicyId })`.
 
 - `min_interval_minutes = 0` — the spacing rule is the part that does not apply to a reply.
@@ -135,6 +135,6 @@ Unchanged: purpose classification, purpose-scoped consent, collision, the pure c
 
 - CLAUDE.md §4, §6, §12; master build instruction §9, §10
 - ADR-003, ADR-004, ADR-013, ADR-015, ADR-016
-- Migrations `supabase/migrations/054_comm_purpose_frequency.sql`, `102_comm_reply_frequency_policy.sql` (amendment)
+- Migrations `supabase/migrations/054_comm_purpose_frequency.sql`, `103_comm_reply_frequency_policy.sql` (amendment)
 - `src/lib/comms/purpose.ts`, `frequency.ts`, `policy-resolver.ts`, `gate.ts`, `send.ts`, `inbound.ts`, `reply-classification.ts`
 - Tests: `tests/comms-policy.test.mjs`, `tests/rls-firewall.test.mjs` (extended), `tests/comms-inbound-e2e.test.mjs` §1c

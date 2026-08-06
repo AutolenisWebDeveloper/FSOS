@@ -25,7 +25,7 @@
 
 import { getDb } from '@/lib/supabase/client'
 
-/** The default applied when no policy row can be read at all (migration 103 ships 6). */
+/** The default applied when no policy row can be read at all (migration 104 ships 6). */
 export const FALLBACK_MAX_AI_TURNS = 6
 
 export interface TurnLimitPolicy {

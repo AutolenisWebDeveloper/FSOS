@@ -184,7 +184,7 @@ export interface SendContext {
   /**
    * This send is a REPLY to an inbound message on a live conversation thread, not proactive
    * outreach. It selects the `reply` row of comm_frequency_policy instead of `global`
-   * (migration 102, ADR-017 amendment): the §9 caps were written to space out drip touches,
+   * (migration 103, ADR-017 amendment): the §9 caps were written to space out drip touches,
    * and their minimum-interval spacing stalls a normal back-and-forth after one AI turn.
    *
    * It SELECTS a cap row — it never removes one. Both rows are real, operator-editable

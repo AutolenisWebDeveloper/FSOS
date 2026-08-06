@@ -446,7 +446,7 @@ try {
     })
   }
 
-  // ── SCENARIO 1c: reply-scoped frequency caps (ADR-017 amendment, migration 102) ──
+  // ── SCENARIO 1c: reply-scoped frequency caps (ADR-017 amendment, migration 103) ──
   // Supplying the purpose §12 requires also enrolled replies in the §9 caps, whose seeded
   // 60-minute minimum interval stalled a back-and-forth after ONE turn. Migration 102 adds a
   // second cap row scoped to replies. These checks prove the reply row is what governs, that
@@ -456,7 +456,7 @@ try {
     const dbF = freshDb({ armed: true })
     const capRows = q(dbF, `select string_agg(id||':int='||min_interval_minutes||',sms='||max_sms_per_day||',assumption='||is_assumption, ' | ' order by id) from comm_frequency_policy`)
     console.log(`    → cap rows: ${capRows}`)
-    check('migration 102 seeds a SECOND cap row scoped to replies', () => {
+    check('migration 103 seeds a SECOND cap row scoped to replies', () => {
       assert.equal(q(dbF, `select count(*) from comm_frequency_policy where id='reply'`), '1')
     })
     check('the reply row drops the interval but KEEPS a real per-day ceiling', () => {
@@ -515,11 +515,11 @@ try {
     })
   }
 
-  // ── SCENARIO 1d: the per-conversation AI turn ceiling (§4.2, migration 103) ────
+  // ── SCENARIO 1d: the per-conversation AI turn ceiling (§4.2, migration 104) ────
   section('1d. AI turn ceiling — forced hand-off to the licensed FSA')
   {
     const dbT = freshDb({ armed: true })
-    check('migration 103 gives comm_conversation_policy a turn ceiling', () => {
+    check('migration 104 gives comm_conversation_policy a turn ceiling', () => {
       assert.equal(q(dbT, `select max_ai_turns||'|'||enabled||'|'||is_assumption from comm_conversation_policy where id='global'`),
         '6|true|true')
     })
@@ -575,11 +575,18 @@ try {
     await processInbound({ channel: 'sms', from: PHONE, body: 'Second question?', provider: 'twilio', providerId: 'SM_rst_2' })
     // Markist replies from the inbox: a human-authored outbound on the thread.
     const convR = q(dbR, `select id from comm_conversations where contact='${PHONE}'`)
+    // sent_at MUST come from the frozen clock, not the database clock. The frequency resolver
+    // computes minutesSinceLastSend against the app's (frozen) now; a row stamped with the real
+    // wall clock makes that interval negative once real time passes the frozen instant, and
+    // `negative < min_interval` blocks the send — a time-of-day-dependent failure that has
+    // nothing to do with what this scenario is testing.
     q(dbR, `insert into comm_messages (channel, direction, recipient, body, delivery_status, conversation_id, member_id, household_id, actor, ai_generated, sent_at)
-            values ('sms','outbound','${PHONE}','Hi, Markist here — happy to help.','sent','${convR}','${IDS.member}','${IDS.household}','user:markist',false, now())`)
+            values ('sms','outbound','${PHONE}','Hi, Markist here — happy to help.','sent','${convR}','${IDS.member}','${IDS.household}','user:markist',false, '${IN_HOURS}')`)
     q(dbR, `update comm_conversations set ai_autoreply = true where id='${convR}'`)
     const afterHuman = await processInbound({ channel: 'sms', from: PHONE, body: 'Third question?', provider: 'twilio', providerId: 'SM_rst_3' })
     console.log(`    → after a human reply, next AI turn sent=${afterHuman.autoReplied}`)
+    console.log(`      escalation: ${q(dbR, `select coalesce(reason,'-')||' | '||coalesce(note,'-') from agent_actions where kind='escalation' order by created_at desc limit 1`)}`)
+    console.log(`      outbound rows: ${q(dbR, `select string_agg(coalesce(delivery_status,'-')||'/'||coalesce(blocked_step,'-')||'/ai='||ai_generated, ', ' order by created_at) from comm_messages where direction='outbound'`)}`)
     check('an FSA reply RESETS the AI turn budget', () => {
       assert.equal(afterHuman.autoReplied, true,
         'the budget did not reset after a human-authored outbound message')

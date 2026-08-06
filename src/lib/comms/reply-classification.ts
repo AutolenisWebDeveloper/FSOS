@@ -21,6 +21,14 @@
 // draft. A bland-looking reply to "what would my premium be?" must not auto-send: answering
 // it at all opens an advisory thread, and the next turn is where the red line gets crossed.
 //
+// KNOWN LIMITATION (documented, tested, pinned). The topic lists recognise PHRASINGS, and
+// some colloquial ones are missed ("what's the damage gonna be each month" vs "what would my
+// premium be"). The consequence is bounded by the allowlist, not by the lists: a missed
+// phrasing means the reply is a SCHEDULING INVITATION rather than a hold — never an answer,
+// because the four auto-send shapes are structurally contentless. See
+// docs/compliance/ai-reply-classification.md §6 (written for a compliance reader) and the
+// RESIDUAL checks in tests/comms-reply-classification.test.mjs.
+//
 // Pure + relative imports (no DB, no clock) so it is unit-testable offline, matching
 // gate.ts / ai-authority.ts / evaluations.ts.
 

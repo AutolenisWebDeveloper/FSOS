@@ -142,6 +142,100 @@ check('product-CATEGORY education is NOT treated as policy-specific', () => {
   assert.equal(r.mayAutoSend, true, `over-blocked: ${r.reason}`)
 })
 
+// ─── WHAT THE ALLOWLIST ACTUALLY BOUNDS ───────────────────────────────────────
+// The safety property is TWO-PART, and the two parts bound different things. Stating it
+// precisely matters, because the obvious stronger claim — "a missed risk keyword cannot
+// cause an unsafe send, because the draft would also have to match one of the four shapes"
+// — is FALSE as written, and these tests are what showed that. The four shapes are matched
+// against the DRAFT only, so a risk topic the lists miss on the CONTACT's side still reaches
+// the allowlist with a perfectly safe-looking scheduling draft.
+//
+//   1. CONTENT BOUND (allowlist, draft side). Whatever the topic, the AI can only auto-send
+//      one of four structurally NON-SUBSTANTIVE shapes: an availability question, a
+//      scheduling link, a receipt acknowledgment, or a thank-you. It cannot auto-send an
+//      answer. This is the primary control and it holds regardless of the word lists.
+//   2. TOPIC BOUND (risk lists, both sides). On a recognised regulated topic, even those
+//      non-substantive shapes are withheld and the licensed FSA is brought in.
+//
+// So a keyword the lists miss degrades the outcome from "the FSA handles it" to "the AI
+// replies with a scheduling invitation" — NOT to "the AI gives advice." Both halves are
+// asserted below, including the residual case, so the real boundary is on the record.
+
+// ── Part 1: the content bound. A SUBSTANTIVE draft never auto-sends, whatever it is about.
+const SUBSTANTIVE_DRAFTS = [
+  ['unlisted topic — viatical', 'Can we talk about a viatical settlement?', 'A viatical settlement is a niche arrangement where a third party purchases the contract.'],
+  ['unlisted topic — IUL crediting', 'How does the IUL crediting rate work?', 'The crediting method depends on the index selected each segment period.'],
+  ['unlisted topic — MEC', 'Would that make it a MEC?', 'MEC status depends on the seven-pay test for the contract.'],
+  ['unlisted topic — trust ownership', 'Should the trust own it?', 'Ownership structure changes how the proceeds are treated at death.'],
+  ['confident assertion, no risk term at all', 'is that a good idea?', 'Yes, that generally works well for families in your situation.'],
+  ['reassurance, no risk term at all', 'am I ok?', 'You are in a solid spot based on what you have described so far.'],
+]
+for (const [label, inbound, draft] of SUBSTANTIVE_DRAFTS) {
+  check(`CONTENT BOUND — ${label}: a substantive draft never auto-sends`, () => {
+    const r = autoSendable(inbound, draft)
+    assert.equal(r.mayAutoSend, false,
+      `a substantive answer auto-sent — the content bound is broken: ${r.reason}`)
+  })
+}
+check('CONTENT BOUND — every auto-sendable class is structurally non-substantive', () => {
+  // The whole safety argument rests on this set staying small and contentless.
+  const AUTO = ['availability_question', 'scheduling_link', 'receipt_acknowledgment', 'approved_thank_you']
+  for (const cls of AUTO) assert.equal(mayAutoSend(cls), true, `${cls} should be auto-sendable`)
+  // Nothing else the classifier can emit may auto-send.
+  for (const cls of ['pricing_premium', 'policy_specific_explanation', 'securities_related',
+    'financial_recommendation', 'needs_analysis_conclusion', 'product_comparison',
+    'replacement_discussion', 'underwriting_question', 'complaint_or_dispute',
+    'sensitive_data_request', 'case_or_application_affecting', 'term_conversion_interpretation']) {
+    assert.equal(mayAutoSend(cls), false, `${cls} must never auto-send`)
+  }
+})
+
+// ── Part 2: the topic bound, tested on PARAPHRASES that dodge the obvious keywords.
+// Each pairs the paraphrase with a SUBSTANTIVE draft — the case that actually matters, and
+// the one the content bound must catch even when the topic bound misses.
+const PARAPHRASES = [
+  ['cost, no price/premium/cost word', 'how much would it run me a month?', 'For someone your age it usually lands in the thirty to fifty a month range.'],
+  ['cost, colloquial', 'whats the damage gonna be each month', 'Typically somewhere around forty dollars monthly.'],
+  ['own coverage, no policy word', 'is the thing I signed up for in 2015 still active?', 'Yes, that one is still in force and paid up through this year.'],
+  ['coverage need, no "how much coverage"', 'do I have enough to cover the kids if something happened', 'You would want roughly ten times your income to be comfortable.'],
+  ['advice, no should/recommend', 'if you were me what would make sense here', 'Converting now would put you in a stronger position long term.'],
+  ['replacement, no replace/surrender', 'thinking about moving to a different carrier', 'Moving carriers now would likely save you money.'],
+  ['underwriting, no medical/exam word', 'will my blood pressure be a problem', 'That usually will not affect approval at your age.'],
+  ['comparison, no vs/compare', 'which of those two would work out better', 'The permanent one works out better over twenty years.'],
+  ['securities, no listed instrument', 'can you look at where my retirement savings are parked', 'Your retirement savings are allocated fairly aggressively right now.'],
+]
+for (const [label, inbound, substantiveDraft] of PARAPHRASES) {
+  check(`PARAPHRASE — "${label}" with a substantive draft is held`, () => {
+    const r = autoSendable(inbound, substantiveDraft)
+    assert.equal(r.mayAutoSend, false,
+      `a substantive answer to a paraphrased risk question auto-sent: ${r.reason}`)
+  })
+}
+
+// ── The residual, pinned honestly. This is the accepted boundary, not an oversight: a
+// paraphrase the topic lists miss, answered with a scheduling invitation, DOES auto-send.
+// The message that goes out contains no advice — it is a hand-off to the licensed FSA —
+// which is why this is acceptable rather than a defect. Pinned so that if the behaviour
+// ever changes (in either direction) it is a deliberate decision, not a silent drift.
+// "how much would…" IS matched by the pricing list; this colloquial form is not, which is
+// exactly why it is the right specimen for the residual.
+const MISSED_PARAPHRASE = 'whats the damage gonna be each month'
+check('RESIDUAL — a missed paraphrase + a scheduling-only draft DOES auto-send', () => {
+  const r = autoSendable(MISSED_PARAPHRASE, SAFE_DRAFT)
+  assert.equal(r.mayAutoSend, true,
+    'the residual closed — the topic lists now catch this paraphrase; update this pinned check')
+  assert.equal(r.messageClass, 'availability_question')
+  // What actually reaches the contact carries no figure, no product, no advice.
+  assert.equal(/\b(recommend|should|cost|premium|price|\$|per month)\b/i.test(SAFE_DRAFT), false,
+    'the residual is only acceptable while the auto-sent shapes stay contentless')
+})
+check('RESIDUAL — the SAME paraphrase with a substantive draft is still held (the bound)', () => {
+  assert.equal(autoSendable(MISSED_PARAPHRASE, 'About forty dollars a month for someone your age.').mayAutoSend, false)
+})
+check('RESIDUAL — the topic lists DO catch the non-colloquial form of the same question', () => {
+  assert.equal(autoSendable('how much would it run me a month?', SAFE_DRAFT).mayAutoSend, false)
+})
+
 // ─── the full §12 evaluation, end to end ───────────────────────────────────────
 check('a classified green-zone reply passes evaluateOutboundMessage with a purpose set', () => {
   const c = classifyReply({ inboundBody: 'What is term life insurance?', draft: SAFE_DRAFT })

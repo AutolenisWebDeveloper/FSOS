@@ -281,28 +281,98 @@ try {
     check('an outbound AI reply row is created and threaded', () => {
       assert.equal(q(db, `select count(*) from comm_messages where direction='outbound' and ai_generated=true`), '1')
     })
-    // ⚠ KNOWN GAP — pinned, not asserted around. With ALL FOUR documented switches armed
-    // (ai_autoreply=true, ai_policies.gateway_enabled=true, ai_agents[conversation].enabled=true,
-    // AI_GATEWAY_DISABLED unset) and inside both hour windows, the reply STILL does not send:
-    // tryAutoReply() calls sendThroughGate() with aiGenerated:true but no aiMessageClass and no
-    // purpose, so evaluateOutboundMessage() fails (missing_purpose_classification) and
-    // evaluateAiAuthority(undefined) fails safe to draft_only. The message is held as an FSA
-    // draft BEFORE the 7-step gate ever runs. This check will start failing the moment that is
-    // fixed — which is the point.
-    check('⚠ GAP: the auto-reply is held by the AI-authority layer, never dispatched', () => {
-      assert.equal(r.autoReplied, false, 'auto-reply now sends — update this pinned gap check')
-      // NB delivery_status reads 'failed', not 'blocked': send.ts writes 'blocked' and then
-      // recordMessageEvent('failed') overwrites it via lifecyclePatch (events.ts). blocked_step
-      // is what identifies the hold.
-      assert.equal(outbound, 'failed|ai_authority|missing_purpose_classification',
-        `unexpected outbound outcome: ${outbound}`)
-      assert.equal(twilioCalls.length, 0, 'an SMS was placed despite the authority hold')
+    check('AUTO-REPLY SENDS — a classified green-zone reply clears the gate and dispatches', () => {
+      assert.equal(r.autoReplied, true,
+        `autoReplied=false; outbound row was "${outbound}"; escalated=${r.escalated}`)
+      assert.equal(r.escalated, false)
+      assert.equal(outbound, 'sent|-|-', `unexpected outbound outcome: ${outbound}`)
+      assert.equal(twilioCalls.length, 1, 'no SMS was placed with the provider')
     })
-    check('⚠ GAP: the held reply is recorded as an FSA draft on agent_actions', () => {
-      const row = q(db, `select kind||'|'||outcome||'|'||coalesce(reason,'-') from agent_actions where kind='ai_draft' order by created_at desc limit 1`)
-      assert.equal(row, 'ai_draft|drafted|missing_purpose_classification')
-      assert.ok(Number(q(db, `select count(*) from agent_actions where kind='ai_draft' and drafted_content is not null`)) >= 1,
-        'the drafted reply text was not preserved for the FSA')
+    check('the dispatched reply carries the TRAIGA AI-disclosure footer', () => {
+      const body = q(db, `select body from comm_messages where direction='outbound' order by created_at desc limit 1`)
+      assert.match(body, /AI assistant/i, `TRAIGA AI disclosure absent from the stored sent body: ${body}`)
+      assert.match(body, /STOP to opt out/i, 'opt-out instruction absent from the stored sent body')
+    })
+    check('the send is recorded with its classified class + purpose (auditable)', () => {
+      assert.equal(q(db, `select purpose||'|'||ai_generated||'|'||coalesce(consent_at_send::text,'-') from comm_messages where direction='outbound' order by created_at desc limit 1`),
+        'SERVICING|true|true')
+    })
+    check('no FSA escalation is raised for a reply that sent', () => {
+      assert.equal(q(db, `select count(*) from agent_actions where kind='escalation'`), '0')
+    })
+  }
+
+  // ── SCENARIO 1b: the classifier's fail-closed half, end to end ────────────────
+  section('1b. A regulated topic is held for the FSA, not auto-sent')
+  {
+    // Same armed thread, same consent, same clock — the ONLY difference from scenario 1 is
+    // what the contact asked. This isolates the classifier as the deciding factor.
+    const cases = [
+      ['pricing', 'What would my premium be for $500k?', 'pricing_premium', /pricing or premium/],
+      ['securities', 'Can you take a look at my 401k rollover?', 'securities_related', /securities/],
+      ["the contact's own policy", 'Can you check the death benefit on my policy?', 'policy_specific_explanation', /own policy/],
+      ['advice request', 'What do you recommend I do?', 'financial_recommendation', /advice or a recommendation/],
+    ]
+    let i = 0
+    for (const [label, inbound, , reasonRe] of cases) {
+      const dbH = freshDb({ armed: true })
+      twilioCalls.length = 0
+      const rh = await processInbound({ channel: 'sms', from: PHONE, body: inbound, provider: 'twilio', providerId: `SM_hold_${i++}` })
+      const row = q(dbH, `select coalesce(delivery_status,'-')||'|'||coalesce(blocked_step,'-') from comm_messages where direction='outbound' order by created_at desc limit 1`)
+      const note = q(dbH, `select coalesce(note,'-') from agent_actions where kind='escalation' order by created_at desc limit 1`)
+      console.log(`    → ${label}: sent=${rh.autoReplied} row=${row}`)
+      check(`HOLD — "${label}" is never auto-sent`, () => {
+        assert.equal(rh.autoReplied, false, `a ${label} reply was auto-sent`)
+        assert.equal(rh.escalated, true)
+        assert.equal(twilioCalls.length, 0, 'an SMS was placed on a held reply')
+        assert.equal(row, 'failed|ai_authority', `unexpected outcome: ${row}`)
+      })
+      check(`HOLD — "${label}" escalation explains WHY (not just a gate step)`, () => {
+        assert.match(note, reasonRe, `escalation note was: ${note}`)
+      })
+      check(`HOLD — "${label}" preserves the drafted text for the FSA`, () => {
+        assert.ok(Number(q(dbH, `select count(*) from agent_actions where kind='ai_draft' and drafted_content is not null`)) >= 1,
+          'the drafted reply was not preserved')
+      })
+    }
+  }
+
+  // ── SCENARIO 1c: the frequency caps now reach a live conversation ─────────────
+  // Supplying a purpose (required by §12) also activates the §9 per-recipient frequency
+  // caps, which were designed for proactive drips. This scenario measures what that does to
+  // a normal back-and-forth rather than assuming. Reported, not worked around.
+  section('1c. Second reply inside the seeded min-interval window')
+  {
+    const dbF = freshDb({ armed: true })
+    twilioCalls.length = 0
+    const t1 = await processInbound({ channel: 'sms', from: PHONE, body: 'What is term life insurance?', provider: 'twilio', providerId: 'SM_freq_1' })
+    const t2 = await processInbound({ channel: 'sms', from: PHONE, body: 'Great, and what does the review cover?', provider: 'twilio', providerId: 'SM_freq_2' })
+    const row2 = q(dbF, `select coalesce(delivery_status,'-')||'|'||coalesce(blocked_step,'-')||'|'||coalesce(block_reason,'-') from comm_messages where direction='outbound' order by created_at desc limit 1`)
+    const caps = q(dbF, `select 'min_interval='||min_interval_minutes||' max_sms_day='||max_sms_per_day||' enabled='||enabled from comm_frequency_policy where id='global'`)
+    console.log(`    → seeded caps: ${caps}`)
+    console.log(`    → turn 1 sent=${t1.autoReplied} | turn 2 sent=${t2.autoReplied} row=${row2}`)
+    check('turn 1 sends', () => { assert.equal(t1.autoReplied, true) })
+    // ⚠ PINNED — the second reply within the hour is deferred by the frequency cap, which is
+    // a NON-escalating deferral: the contact gets silence and nothing reaches the FSA queue.
+    // This is a consequence of supplying the purpose §12 requires, and is reported for a
+    // decision rather than silently exempted here.
+    check('⚠ GAP: turn 2 within the min-interval is held at gate step frequency', () => {
+      assert.equal(t2.autoReplied, false,
+        'the second reply now sends — the frequency interaction was resolved; update this pinned check')
+      assert.match(row2, /^failed\|frequency\|/, `unexpected outcome: ${row2}`)
+      assert.equal(twilioCalls.length, 1, 'only turn 1 should have reached the provider')
+    })
+    // The gate classes `frequency` as a NON-escalating deferral, so the dispatcher writes no
+    // compliance_event — but tryAutoReply() escalates on ANY non-send, so the conversation
+    // path DOES surface it to the FSA queue. Both halves are asserted so the distinction is
+    // recorded rather than assumed.
+    check('the gate treats frequency as a non-escalating deferral (no compliance_event)', () => {
+      assert.equal(q(dbF, `select count(*) from compliance_events`), '0',
+        'a deferral was recorded as a compliance event')
+    })
+    check('but tryAutoReply DOES surface the deferred reply to the FSA queue', () => {
+      const row = q(dbF, `select reason||'|'||coalesce(note,'-') from agent_actions where kind='escalation' order by created_at desc limit 1`)
+      assert.match(row, /^gate_blocked:frequency\|/, `escalation row was: ${row}`)
     })
   }
 
@@ -584,7 +654,10 @@ try {
         `blocked at ${lateOutcome.gate.blockedStep} instead: ${lateOutcome.gate.reason}`)
       assert.equal(twilioCalls.length, 0, 'an SMS was placed outside hours of operation')
     })
-    check('19:30 local — a business_hours hold does NOT escalate (silent to the FSA queue)', () => {
+    // The GATE does not escalate a business_hours hold (it is an operational deferral, not a
+    // compliance failure). Case (e) below shows the conversation path escalates on top of it,
+    // so a held REPLY is not invisible — a held CAMPAIGN touch is.
+    check('19:30 local — the gate itself does NOT escalate a business_hours hold', () => {
       assert.equal(lateOutcome.gate.escalate, false,
         'business_hours is documented as a non-escalating deferral')
       assert.equal(q(dbB, `select count(*) from agent_actions where kind='escalation'`), '0')
@@ -620,6 +693,26 @@ try {
       assert.equal(sundayOutcome.sent, false)
       assert.equal(sundayOutcome.gate.blockedStep, 'business_hours')
       assert.equal(twilioCalls.length, 0)
+    })
+
+    // (e) The same 19:30 hold, driven through the REAL inbound path, to establish what the
+    //     FSA actually sees when a live reply is held outside hours of operation.
+    freezeClock('2026-08-07T01:30:00.000Z')
+    const dbE = freshDb({ armed: true })
+    twilioCalls.length = 0
+    const rE = await processInbound({ channel: 'sms', from: PHONE, body: 'What is term life insurance?', provider: 'twilio', providerId: 'SM_hours_inbound' })
+    const escRow = q(dbE, `select coalesce(reason,'-')||'|'||coalesce(note,'-') from agent_actions where kind='escalation' order by created_at desc limit 1`)
+    const msgRow = q(dbE, `select coalesce(delivery_status,'-')||'|'||coalesce(blocked_step,'-') from comm_messages where direction='outbound' order by created_at desc limit 1`)
+    console.log(`    → 19:30 via processInbound: sent=${rE.autoReplied} row=${msgRow}`)
+    console.log(`    → FSA queue entry: ${escRow}`)
+    check('19:30 via processInbound — the reply is held and nothing reaches the contact', () => {
+      assert.equal(rE.autoReplied, false)
+      assert.equal(twilioCalls.length, 0)
+      assert.equal(msgRow, 'failed|business_hours')
+    })
+    check('19:30 via processInbound — the FSA queue DOES get an entry naming the gate step', () => {
+      assert.match(escRow, /^gate_blocked:business_hours\|/, `escalation row was: ${escRow}`)
+      assert.equal(rE.escalated, true)
     })
 
     freezeClock(IN_HOURS)

@@ -23,6 +23,7 @@ import { recordMessageEvent } from './events'
 import { draftReply } from '@/lib/ai/responder'
 import { sendThroughGate } from './send'
 import { classifyKeyword, type Intent } from './keywords'
+import { classifyReply } from './reply-classification'
 import { shouldPauseOnReply } from './conversation-mode'
 import { recordConsentChange } from './consent-events'
 
@@ -307,6 +308,18 @@ async function tryAutoReply(conv: Conversation, input: InboundInput, inboundMess
   }
 
   const to = conv.contact
+  // Classify the reply for the §11 authority matrix and the §9 purpose policy. Every
+  // aiGenerated send is evaluated by evaluateOutboundMessage() before dispatch, and it needs
+  // BOTH a message class and a purpose: omitting either held every reply as an FSA draft
+  // regardless of content. classifyReply is fail-closed — it returns a class only for a
+  // narrowly recognised green-zone shape, and null (⇒ authority draft_only) for everything
+  // else, so an unclassified reply is still never auto-sent (§4.2/§11).
+  const classification = classifyReply({
+    inboundBody: input.body,
+    draft: drafted.draft,
+    modelHandedOff: drafted.escalateOnly,
+  })
+
   // Route the AI draft through the SAME gate as everything else. No approved
   // template id → gate step 4 requires an approved AI policy; the gateway kill
   // switch + approved-AI-policy check govern whether this can send.
@@ -321,18 +334,34 @@ async function tryAutoReply(conv: Conversation, input: InboundInput, inboundMess
     entity: { type: 'conversation', id: conv.id },
     isSecurity: conv.is_security,
     aiGenerated: true,
+    // `undefined` is deliberate for an unclassified reply: evaluateAiAuthority() fails safe
+    // to draft_only on an absent class, which is exactly the outcome we want.
+    aiMessageClass: classification.messageClass ?? undefined,
+    purpose: classification.purpose,
     conversationId: conv.id,
   })
 
   if (!outcome.sent) {
-    await escalateToFsa(conv, inboundMessageId, `gate_blocked:${outcome.gate.blockedStep ?? 'blocked'}`)
+    // Carry the classification into the escalation so the FSA queue says WHY the reply was
+    // held ("exchange touches pricing or premium") rather than an opaque gate step.
+    const step = outcome.gate.blockedStep ?? 'ai_authority'
+    await escalateToFsa(conv, inboundMessageId, `gate_blocked:${step}`, classification.reason)
     return { sent: false, escalated: true }
   }
   return { sent: true, escalated: false }
 }
 
-/** Create an FSA escalation (surfaces in the AI escalations queue) for a thread. */
-async function escalateToFsa(conv: Conversation, messageId: string | null, reason: string): Promise<void> {
+/**
+ * Create an FSA escalation (surfaces in the AI escalations queue) for a thread. `detail` is
+ * the human-readable basis when there is one (the reply classification), so the queue entry
+ * explains itself instead of showing only a gate step.
+ */
+async function escalateToFsa(
+  conv: Conversation,
+  messageId: string | null,
+  reason: string,
+  detail?: string,
+): Promise<void> {
   try {
     await getDb().from('agent_actions').insert({
       kind: 'escalation',
@@ -341,9 +370,11 @@ async function escalateToFsa(conv: Conversation, messageId: string | null, reaso
       target_type: 'conversation',
       target_id: conv.id,
       reason,
-      note: `Inbound ${conv.channel} needs human attention (${reason}).`,
+      note: detail
+        ? `Inbound ${conv.channel} needs human attention (${reason}): ${detail}.`
+        : `Inbound ${conv.channel} needs human attention (${reason}).`,
     })
-    await writeAudit({ actor: 'agent:conversation', action: 'ai.escalated', entity: 'conversation', entityId: conv.id, diff: { reason, messageId } })
+    await writeAudit({ actor: 'agent:conversation', action: 'ai.escalated', entity: 'conversation', entityId: conv.id, diff: { reason, detail: detail ?? null, messageId } })
   } catch {
     /* best-effort */
   }

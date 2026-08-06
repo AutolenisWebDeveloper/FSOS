@@ -88,11 +88,21 @@ export function makeShim({ host, port, db, user = 'postgres', asRole = null }) {
       this.payload = null
       this.conflict = null
       this.mode = null // 'maybeSingle' | 'single' | null
+      this.countMode = null // 'exact' when .select(_, {count}) was used
+      this.headOnly = false // .select(_, {head:true}) → rows suppressed, count only
     }
 
     // ── operations ──────────────────────────────────────────────────────────
     select(cols = '*', opts) {
-      if (opts && opts.count) throw new HarnessError('select({count}) not implemented')
+      // PostgREST's count/head form: `.select('id', { count: 'exact', head: true })` returns
+      // { data: null, count: N }. The frequency resolver (policy-resolver.ts) is built on it,
+      // and its caller fails OPEN on error — so a shim that threw here would silently disable
+      // every frequency cap and report "no cap applied" as if it were the product's behavior.
+      if (opts && opts.count) {
+        if (opts.count !== 'exact') throw new HarnessError(`select({count:'${opts.count}'}) not implemented`)
+        this.countMode = opts.count
+        this.headOnly = opts.head === true
+      }
       this.cols = cols
       if (this.op === null) this.op = 'select'
       else this.wants = true
@@ -180,7 +190,14 @@ export function makeShim({ host, port, db, user = 'postgres', asRole = null }) {
     // ── execution ───────────────────────────────────────────────────────────
     async run() {
       let data = []
+      let count = null
       if (this.op === 'select') {
+        if (this.countMode) {
+          // The count applies to the FILTERED set, before limit/offset — as PostgREST does.
+          const c = rows(`select count(*)::int as n from ${ident(this.table)}${this.whereSql}`)
+          count = c[0]?.n ?? 0
+          if (this.headOnly) return { data: null, count, error: null }
+        }
         data = rows(`select ${this.colSql} from ${ident(this.table)}${this.whereSql}${this.tailSql}`)
       } else if (this.op === 'insert') {
         const sql = this.insertSql()
@@ -211,12 +228,12 @@ export function makeShim({ host, port, db, user = 'postgres', asRole = null }) {
         throw new HarnessError(`no operation set for ${this.table}`)
       }
 
-      if (this.mode === 'maybeSingle') return { data: data[0] ?? null, error: null }
+      if (this.mode === 'maybeSingle') return { data: data[0] ?? null, count, error: null }
       if (this.mode === 'single') {
-        if (data.length !== 1) return { data: null, error: { message: 'expected exactly one row' } }
-        return { data: data[0], error: null }
+        if (data.length !== 1) return { data: null, count, error: { message: 'expected exactly one row' } }
+        return { data: data[0], count, error: null }
       }
-      return { data, error: null }
+      return { data, count, error: null }
     }
 
     then(resolve, reject) {

@@ -115,6 +115,14 @@ export interface Conversation {
   is_security: boolean
   ai_autoreply: boolean
   status: string
+  /**
+   * The ai_agents.key bound to this thread by the campaign tick or the console initiator
+   * (migration 087). Read here so the per-conversation AI turn ceiling can be overridden per
+   * campaign agent (turn-limit.ts). NOTE: this is NOT yet used to select the authoring agent
+   * for a reply — tryAutoReply still authors as `conversation`, so a campaign agent's kill
+   * switch does not govern replies on its own threads. Tracked separately.
+   */
+  agent_key: string | null
 }
 
 /**
@@ -128,7 +136,7 @@ export async function getOrCreateConversation(channel: Channel, rawContact: stri
 
   const { data: existing } = await db
     .from('comm_conversations')
-    .select('id, channel, contact, member_id, household_id, agency_id, is_security, ai_autoreply, status')
+    .select('id, channel, contact, member_id, household_id, agency_id, is_security, ai_autoreply, status, agent_key')
     .eq('channel', channel)
     .eq('contact', contact)
     .maybeSingle()
@@ -162,14 +170,14 @@ export async function getOrCreateConversation(channel: Channel, rawContact: stri
       is_security: isSecurity,
       status: 'open',
     })
-    .select('id, channel, contact, member_id, household_id, agency_id, is_security, ai_autoreply, status')
+    .select('id, channel, contact, member_id, household_id, agency_id, is_security, ai_autoreply, status, agent_key')
     .maybeSingle()
 
   // Lost a race on the unique index → re-read the winning row.
   if (!created) {
     const { data: raced } = await db
       .from('comm_conversations')
-      .select('id, channel, contact, member_id, household_id, agency_id, is_security, ai_autoreply, status')
+      .select('id, channel, contact, member_id, household_id, agency_id, is_security, ai_autoreply, status, agent_key')
       .eq('channel', channel)
       .eq('contact', contact)
       .maybeSingle()

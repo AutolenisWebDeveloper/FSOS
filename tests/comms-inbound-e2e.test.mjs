@@ -406,6 +406,107 @@ try {
     })
   }
 
+  // ── SCENARIO 1d: the per-conversation AI turn ceiling (§4.2, migration 103) ────
+  section('1d. AI turn ceiling — forced hand-off to the licensed FSA')
+  {
+    const dbT = freshDb({ armed: true })
+    check('migration 103 gives comm_conversation_policy a turn ceiling', () => {
+      assert.equal(q(dbT, `select max_ai_turns||'|'||enabled||'|'||is_assumption from comm_conversation_policy where id='global'`),
+        '6|true|true')
+    })
+    check('a ceiling of 0 is rejected by the constraint (use ai_autoreply=false instead)', () => {
+      let threw = false
+      try { q(dbT, `update comm_conversation_policy set max_ai_turns = 0 where id='global'`) } catch { threw = true }
+      assert.ok(threw, 'max_ai_turns >= 1 was not enforced')
+    })
+
+    // Tighten to 2 so the ceiling is reachable inside one test without 6 model round-trips.
+    q(dbT, `update comm_conversation_policy set max_ai_turns = 2 where id='global'`)
+    twilioCalls.length = 0
+    const turns = []
+    for (let i = 1; i <= 3; i++) {
+      turns.push(await processInbound({ channel: 'sms', from: PHONE, body: `Question number ${i} about the review?`, provider: 'twilio', providerId: `SM_turn_${i}` }))
+    }
+    const convId = q(dbT, `select id from comm_conversations where contact='${PHONE}'`)
+    const esc = q(dbT, `select reason||'|'||coalesce(note,'-') from agent_actions where kind='escalation' order by created_at desc limit 1`)
+    console.log(`    → turns sent: ${turns.map((t) => t.autoReplied).join(', ')} (${twilioCalls.length} provider calls)`)
+    console.log(`    → FSA queue entry: ${esc}`)
+
+    check('the AI takes exactly the permitted number of turns, then stops', () => {
+      assert.deepEqual(turns.map((t) => t.autoReplied), [true, true, false],
+        'the ceiling did not bind on the third turn')
+      assert.equal(twilioCalls.length, 2, 'a third SMS was placed past the ceiling')
+    })
+    check('reaching the ceiling HANDS OFF — it escalates with a reason, never goes quiet', () => {
+      assert.equal(turns[2].escalated, true)
+      assert.match(esc, /^turn_limit\|/, `escalation row was: ${esc}`)
+      assert.match(esc, /2\/2 since the last human reply/, `reason lacks the counts: ${esc}`)
+      assert.match(esc, /handing off to the licensed FSA/)
+    })
+    check('the thread is disarmed so it is visibly a human\'s now', () => {
+      assert.equal(q(dbT, `select ai_autoreply from comm_conversations where id='${convId}'`), 'f')
+    })
+    check('the hand-off is written to the audit_log', () => {
+      assert.ok(Number(q(dbT, `select count(*) from audit_log where action='ai.escalated' and diff::text like '%turn_limit%'`)) >= 1)
+    })
+    check('the ceiling is checked BEFORE the model — a hand-off costs no tokens', () => {
+      // Two sends, two agent_runs. A third would mean the model was called for the turn that
+      // was refused.
+      assert.equal(q(dbT, `select count(*) from agent_runs where agent_key='conversation'`), '2')
+    })
+    check('no outbound row is created for the refused turn', () => {
+      assert.equal(q(dbT, `select count(*) from comm_messages where direction='outbound'`), '2')
+    })
+
+    // A human reply RESETS the budget: the FSA took and returned control.
+    const dbR = freshDb({ armed: true })
+    q(dbR, `update comm_conversation_policy set max_ai_turns = 2 where id='global'`)
+    twilioCalls.length = 0
+    await processInbound({ channel: 'sms', from: PHONE, body: 'First question?', provider: 'twilio', providerId: 'SM_rst_1' })
+    await processInbound({ channel: 'sms', from: PHONE, body: 'Second question?', provider: 'twilio', providerId: 'SM_rst_2' })
+    // Markist replies from the inbox: a human-authored outbound on the thread.
+    const convR = q(dbR, `select id from comm_conversations where contact='${PHONE}'`)
+    q(dbR, `insert into comm_messages (channel, direction, recipient, body, delivery_status, conversation_id, member_id, household_id, actor, ai_generated, sent_at)
+            values ('sms','outbound','${PHONE}','Hi, Markist here — happy to help.','sent','${convR}','${IDS.member}','${IDS.household}','user:markist',false, now())`)
+    q(dbR, `update comm_conversations set ai_autoreply = true where id='${convR}'`)
+    const afterHuman = await processInbound({ channel: 'sms', from: PHONE, body: 'Third question?', provider: 'twilio', providerId: 'SM_rst_3' })
+    console.log(`    → after a human reply, next AI turn sent=${afterHuman.autoReplied}`)
+    check('an FSA reply RESETS the AI turn budget', () => {
+      assert.equal(afterHuman.autoReplied, true,
+        'the budget did not reset after a human-authored outbound message')
+    })
+
+    // Per-campaign override: a row keyed by the thread's bound agent wins over 'global'.
+    const dbO = freshDb({ armed: true })
+    q(dbO, `update comm_conversations set agent_key = 'pipeline' where contact='${PHONE}'`)
+    q(dbO, `insert into comm_conversation_policy (id, max_ai_turns, enabled, is_assumption, note)
+            values ('pipeline', 1, true, true, 'per-campaign override under test')`)
+    twilioCalls.length = 0
+    const o1 = await processInbound({ channel: 'sms', from: PHONE, body: 'First?', provider: 'twilio', providerId: 'SM_ovr_1' })
+    const o2 = await processInbound({ channel: 'sms', from: PHONE, body: 'Second?', provider: 'twilio', providerId: 'SM_ovr_2' })
+    const escO = q(dbO, `select coalesce(note,'-') from agent_actions where kind='escalation' order by created_at desc limit 1`)
+    console.log(`    → per-campaign override (pipeline=1): ${o1.autoReplied}, ${o2.autoReplied}`)
+    check('a per-campaign policy row overrides the global ceiling', () => {
+      assert.deepEqual([o1.autoReplied, o2.autoReplied], [true, false],
+        'the pipeline override (1 turn) did not bind while global allows 6')
+      assert.match(escO, /policy:pipeline/, `the escalation should name the deciding row: ${escO}`)
+    })
+
+    // Fail-closed: with NO policy row readable at all, the conversation hands off.
+    const dbF2 = freshDb({ armed: true })
+    q(dbF2, `delete from comm_conversation_policy`)
+    twilioCalls.length = 0
+    const noPolicy = await processInbound({ channel: 'sms', from: PHONE, body: 'Anything at all?', provider: 'twilio', providerId: 'SM_failclosed' })
+    const escF = q(dbF2, `select reason||'|'||coalesce(note,'-') from agent_actions where kind='escalation' order by created_at desc limit 1`)
+    console.log(`    → no policy row: sent=${noPolicy.autoReplied} | ${escF}`)
+    check('FAIL CLOSED — an unreadable turn policy hands off rather than running unbounded', () => {
+      assert.equal(noPolicy.autoReplied, false, 'the AI replied with no turn policy in place')
+      assert.equal(twilioCalls.length, 0)
+      assert.match(escF, /^turn_limit\|/, `escalation row was: ${escF}`)
+      assert.equal(q(dbF2, `select count(*) from agent_runs`), '0', 'the model was called despite the fail-closed hand-off')
+    })
+  }
+
   // ── SCENARIO 2: webhook redelivery must not produce a second reply ─────────────
   section('2. Twilio webhook redelivery (same provider_id) is idempotent')
   {

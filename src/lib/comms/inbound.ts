@@ -24,6 +24,7 @@ import { draftReply } from '@/lib/ai/responder'
 import { sendThroughGate } from './send'
 import { classifyKeyword, type Intent } from './keywords'
 import { classifyReply } from './reply-classification'
+import { checkTurnLimit, type TurnLimitDecision } from './turn-limit'
 import { shouldPauseOnReply } from './conversation-mode'
 import { recordConsentChange } from './consent-events'
 
@@ -291,8 +292,38 @@ export async function processInbound(input: InboundInput): Promise<InboundResult
   return result
 }
 
+/**
+ * The conversation has used its AI turn budget: hand it to the licensed FSA (§4.2). This is a
+ * HAND-OFF, not a stop — per-thread auto-reply is disarmed so the thread is visibly a human's
+ * now (the inbox badge clears), the FSA queue gets an item naming the reason, and the audit
+ * log records it. Re-arming is the FSA's explicit act via the inbox toggle.
+ */
+async function handOffAtTurnLimit(conv: Conversation, inboundMessageId: string | null, decision: TurnLimitDecision): Promise<void> {
+  try {
+    await getDb()
+      .from('comm_conversations')
+      .update({ ai_autoreply: false, updated_at: new Date().toISOString() })
+      .eq('id', conv.id)
+  } catch {
+    /* best-effort — the escalation below is what brings the FSA in */
+  }
+  await escalateToFsa(conv, inboundMessageId, 'turn_limit', decision.reason)
+}
+
 async function tryAutoReply(conv: Conversation, input: InboundInput, inboundMessageId: string | null): Promise<{ sent: boolean; escalated: boolean }> {
   const db = getDb()
+
+  // §4.2 — the per-conversation AI turn ceiling, checked BEFORE the model is called so a
+  // hand-off costs nothing. Counted since the last human reply, so an FSA turn resets the
+  // budget. Fails CLOSED: an unreadable policy or an unverifiable count hands off rather than
+  // continuing. This bounds conversation DEPTH; the reply frequency cap (migration 102) bounds
+  // VOLUME per contact — different axes, both escalating, neither able to end a thread quietly.
+  const turnLimit = await checkTurnLimit(conv.id, conv.agent_key)
+  if (!turnLimit.allowed) {
+    await handOffAtTurnLimit(conv, inboundMessageId, turnLimit)
+    return { sent: false, escalated: true }
+  }
+
   // Pull recent history for context.
   const { data: hist } = await db
     .from('comm_messages')

@@ -494,7 +494,7 @@ Consistent language is part of trust. Write for a licensed professional operatin
 - **Financial terminology:** consistent, correct terms (FNA, GDC, FNWL, FFS, household, opportunity, case); currency/percent/date formatting per §15.3.
 - **Regulatory terminology:** use approved, precise language. Render the mandatory disclosures verbatim:
   - FNA/educational footer: *"For educational and informational purposes only. Not a product recommendation or suitability determination. Requires licensed FSA review per FINRA Reg BI."*
-  - Automated messages carry the required **AI disclosure** (TRAIGA 2026) and honor consent/quiet-hours copy.
+  - AI-driven conversations **self-identify in the copy** ("I'm the automated assistant for …") rather than via an appended disclosure footer, and honor consent/quiet-hours copy. Every SMS additionally carries the dispatcher-appended carrier opt-out: *"Reply STOP to opt out."*
 - **Never** use marketing hype or advice/recommendation phrasing in AI-generated or automated client-facing copy (securities red-line, `CLAUDE.md §4.2`).
 
 ---
@@ -812,7 +812,7 @@ solicitation, and the §4.1 firewall is unaffected (identity copy, not securitie
 data).
 
 Tokens (styling `--shell`/`--muted-foreground` equivalents, inline for email-client safety) resolve
-through `src/lib/email/brand.ts`. Do **not** bake the SMS TRAIGA opt-out ("Reply STOP") into an email
+through `src/lib/email/brand.ts`. Do **not** bake the SMS opt-out ("Reply STOP") into an email
 template — that is appended by the dispatcher for SMS only. Deliverability specifics (SPF/DKIM/DMARC, reply-to, RFC 8058
 List-Unsubscribe headers) are documented in `docs/comms-native/launch-slice-2-email-deliverability.md`.
 

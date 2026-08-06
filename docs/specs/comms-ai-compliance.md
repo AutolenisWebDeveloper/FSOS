@@ -41,7 +41,7 @@ Every automated send passes the **13-step dispatcher gate** (`../data-guardrails
 
 ### Campaign Library
 - **Route/Archetype/Roles:** `/app/comms/library` · A2 (ListShell catalog) · fsa, licensed_staff
-- **Data (ADR-023, `library.ts`):** a curated, version-controlled set of pre-built, **compliance-ready** campaign blueprints (not invented Farmers data — §4.3). Every blueprint is green-zone (education/invitation, no recommendation/call-to-action), footer-free (the dispatcher appends the TRAIGA AI-disclosure + opt-out at send time), and purpose-tagged (Slice 7). A claim-bearing blueprint (a conversion deadline, appointment time, coverage/lapse status) declares `makesSpecificClaims` + the stored fields those claims depend on.
+- **Data (ADR-023, `library.ts`):** a curated, version-controlled set of pre-built, **compliance-ready** campaign blueprints (not invented Farmers data — §4.3). Every blueprint is green-zone (education/invitation, no recommendation/call-to-action), footer-free (the dispatcher appends the STOP opt-out at send time), and purpose-tagged (Slice 7). A claim-bearing blueprint (a conversion deadline, appointment time, coverage/lapse status) declares `makesSpecificClaims` + the stored fields those claims depend on.
 - **Compliance:** "Add to templates" seeds a **draft** `comm_templates` row that still passes human approval before any campaign can use it — the approval gate is never bypassed. A gold "starting point, not send-ready" notice frames the surface.
 - **Acceptance:** no blueprint is send-ready; instantiating one produces a draft template, not an active campaign; claim-bearing blueprints wire data-confidence at send.
 

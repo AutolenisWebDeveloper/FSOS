@@ -481,7 +481,7 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
   // Email deliverability (CAN-SPAM): inject the per-recipient unsubscribe URL so the
   // shared footer's {{unsubscribe_url}} token resolves to a working, recipient-specific
   // opt-out link (the enforced DNC-store suppression endpoint). SMS carries the opt-out
-  // via the TRAIGA footer instead, so this is email-only.
+  // via the appended STOP footer instead, so this is email-only.
   // Advisor + agency identity and the absolute scheduling link are single-FSA constants,
   // injected here as CALLER-OVERRIDABLE defaults (§17): every campaign/booking send inherits
   // correct identity + a working booking link, while a caller that supplies its own value wins.
@@ -871,7 +871,7 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
           provider_id: result.providerId ?? null,
           sent_at: result.sent ? new Date().toISOString() : null,
           // Persist the EXACT transmitted body so the audit record includes the SMS
-          // TRAIGA disclosure footer the dispatcher appended at send (§13.9 audit fidelity).
+          // opt-out footer the dispatcher appended at send (§13.9 audit fidelity).
           ...(result.sent && result.sentBody ? { body: result.sentBody } : {}),
           error: result.error ?? null,
           updated_at: new Date().toISOString(),

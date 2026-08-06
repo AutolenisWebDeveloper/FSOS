@@ -4,7 +4,7 @@
 // internal auth round-trip).
 
 import { getDb } from '@/lib/supabase/client'
-import { TRAIGA_SMS_FOOTER } from '@/lib/compliance'
+import { SMS_OPT_OUT_FOOTER } from '@/lib/compliance'
 import { generateFormToken } from '@/lib/tokens'
 import { escapeHtml } from '@/lib/http'
 import { sendEmail } from '@/lib/messaging'
@@ -168,7 +168,7 @@ export async function sendForm(input: SendFormInput): Promise<SendFormResult> {
         sms_error = 'Twilio env not set (TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_PHONE_NUMBER)'
       }
       if (accountSid && authToken && fromNumber) {
-        const smsBody = `Hi ${client_name || 'there'}, Markist sent you a secure form to complete before your appointment. Tap to open: ${link}\n\n${TRAIGA_SMS_FOOTER}`
+        const smsBody = `Hi ${client_name || 'there'}, Markist sent you a secure form to complete before your appointment. Tap to open: ${link}\n\n${SMS_OPT_OUT_FOOTER}`
         const res = await fetch(
           `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
           {

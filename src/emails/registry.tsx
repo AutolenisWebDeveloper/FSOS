@@ -6,7 +6,7 @@
 //
 // Every template is green-zone (education / invitation), recommendation-free (build-gated by
 // tests/email-determinism.test.mjs), and footer-free (the dispatcher appends the TRAIGA
-// AI-disclosure + opt-out at send). Specific claims (a conversion deadline, an appointment
+// STOP opt-out at send). Specific claims (a conversion deadline, an appointment
 // time) are grounded in stored data at send (§13/§18) — the copy never asserts an invented fact.
 import * as React from 'react'
 import { AnnualReviewInvite } from './annual-review-invite'

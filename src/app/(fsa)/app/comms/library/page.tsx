@@ -22,7 +22,7 @@ export default function CampaignLibraryPage() {
           <p className="font-medium">Library blueprints are starting points — not send-ready campaigns.</p>
           <p className="mt-1">
             Every blueprint is green-zone (education/invitation), recommendation-free, and footer-free (the dispatcher adds the
-            AI-disclosure + opt-out at send time). Adding one creates a <span className="font-medium">draft template</span> that
+            STOP opt-out at send time). Adding one creates a <span className="font-medium">draft template</span> that
             a licensed reviewer must approve before any campaign can use it. Claim-bearing blueprints (a conversion deadline, an
             appointment time, a coverage status) are grounded in your stored data at send time.
           </p>

@@ -69,7 +69,7 @@ for (const tpl of EMAIL_TEMPLATES) {
     assert.ok(html.includes('<html') || html.includes('<!DOCTYPE'), 'is HTML')
     assert.ok(html.includes('{{first_name}}') || html.includes('{{fsa_name}}'), 'carries merge tokens for send-time personalization')
     assert.ok(text.trim().length > 0, 'plaintext is non-empty')
-    // The SMS TRAIGA opt-out ("Reply STOP") is appended by the dispatcher for SMS only —
+    // The SMS opt-out ("Reply STOP") is appended by the dispatcher for SMS only —
     // it must NEVER be baked into an email template.
     assert.ok(!/reply stop/i.test(html), 'no baked-in SMS opt-out footer (dispatcher adds it for SMS)')
     // CAN-SPAM (three-life-campaigns launch, Slice 2): unlike SMS, nothing is appended to

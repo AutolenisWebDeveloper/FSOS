@@ -5,7 +5,7 @@
 //   • derives the row-level gate inputs correctly (buildCampaignSend, pure): the
 //     firewall flag from customers.is_security, per-channel consent from the legacy
 //     consent_* booleans, the approved-template ref, contact selection — and adds
-//     NO footer itself (the dispatcher adds the required TRAIGA/Reply-STOP footer).
+//     NO footer itself (the dispatcher adds the required Reply-STOP opt-out footer).
 //   • and that the four recipients then resolve through the REAL dispatcher/gate:
 //     (a) clean/consented/approved → SENDS once WITH the Reply STOP footer;
 //     (b) is_security, (c) DNC, (d) outside quiet hours → NOT sent, each writes a

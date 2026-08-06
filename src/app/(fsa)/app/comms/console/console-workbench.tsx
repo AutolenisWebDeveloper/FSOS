@@ -368,7 +368,7 @@ export function ConsoleWorkbench() {
                   </Select>
                 </div>
                 <p className="sm:col-span-2 text-xs text-muted-foreground">
-                  The opener is green-zone only (invite / educate / schedule). The AI never recommends a product or makes a suitability call; the STOP/HELP + AI disclosure are added automatically. A securities-flagged contact cannot be started.
+                  The opener is green-zone only (invite / educate / schedule). The AI never recommends a product or makes a suitability call; the opener self-identifies as an automated assistant and the STOP/HELP opt-out is added automatically. A securities-flagged contact cannot be started.
                 </p>
               </div>
             )}
@@ -553,7 +553,7 @@ function SourceSelector(props: {
               </div>
             )}
             <p className="text-xs text-muted-foreground">
-              A licensed operator authoring a 1:1 message is the content approval; recommendation language is still blocked. The email opt-out footer and the SMS STOP/HELP + AI disclosure are added automatically.
+              A licensed operator authoring a 1:1 message is the content approval; recommendation language is still blocked. The email opt-out footer and the SMS STOP/HELP opt-out are added automatically.
             </p>
           </div>
         ) : (

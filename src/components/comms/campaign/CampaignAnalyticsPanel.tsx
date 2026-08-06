@@ -21,12 +21,9 @@ import type { CampaignAnalytics } from '@/lib/comms/campaign-analytics'
 export function CampaignAnalyticsPanel({
   engine,
   analytics,
-  phaseLabels,
 }: {
   engine: CampaignEngine
   analytics: CampaignAnalytics | null
-  /** Day-range labels for the three phases — the boundaries differ per engine. */
-  phaseLabels?: { early: string; mid: string; accelerated: string }
 }) {
   if (!analytics) {
     return (
@@ -39,7 +36,7 @@ export function CampaignAnalyticsPanel({
     )
   }
 
-  const { totals, touches, advisor, funnel, rates, channels, byPhase, byCategory } = analytics
+  const { totals, touches, advisor, funnel, rates, channels, byCategory } = analytics
   const categoryEntries = Object.entries(byCategory ?? {})
 
   return (
@@ -79,17 +76,9 @@ export function CampaignAnalyticsPanel({
         ) : null}
 
         <div className="grid gap-4 lg:grid-cols-2">
-          {/* ── Phase distribution — Life Conversion + Win-Back ────────── */}
-          {byPhase && phaseLabels ? (
-            <Card className="p-5">
-              <h3 className="mb-3 text-sm font-semibold">Phase distribution (active)</h3>
-              <div className="grid grid-cols-3 gap-3">
-                <CampaignStat label={phaseLabels.early} value={byPhase.early} />
-                <CampaignStat label={phaseLabels.mid} value={byPhase.mid} />
-                <CampaignStat label={phaseLabels.accelerated} value={byPhase.accelerated} />
-              </div>
-            </Card>
-          ) : null}
+          {/* Phase distribution moved to the campaign timeline ribbon at the top of the page —
+              it shows the same byPhase data as a shape rather than three number-cards, so it is
+              deliberately not duplicated here. */}
 
           {/* ── Channel sends — Cross-Sell Life only ───────────────────── */}
           {channels ? (

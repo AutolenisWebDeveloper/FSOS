@@ -16,6 +16,7 @@ import { CampaignStatusBadge, CampaignCrossLinks } from '@/components/comms/camp
 import { CampaignStateLine } from '@/components/comms/campaign/CampaignStateLine'
 import { CampaignControlsSection } from '@/components/comms/campaign/CampaignControlsSection'
 import { CampaignAnalyticsPanel } from '@/components/comms/campaign/CampaignAnalyticsPanel'
+import { CampaignTimelineRibbon } from '@/components/comms/campaign/CampaignTimelineRibbon'
 import { CampaignScheduleTable } from '@/components/comms/campaign/CampaignScheduleTable'
 import { CampaignAssetsTable } from '@/components/comms/campaign/CampaignAssetsTable'
 import { CampaignEnrollmentTable } from '@/components/comms/campaign/CampaignEnrollmentTable'
@@ -86,6 +87,18 @@ export default async function PipelineWinbackDetailPage(props: { params: Promise
           overdueAdvisorTasks={analytics?.advisor.overdue ?? 0}
         />
 
+        {/* Campaign at a glance — the timeline shape and where the active book sits */}
+        <CampaignTimelineRibbon
+          engine={ENGINE}
+          touches={touches}
+          acceleratesFromDay={90}
+          phases={[
+            { key: 'early', label: 'Early', fromDay: 0, activeCount: analytics?.byPhase?.early ?? 0 },
+            { key: 'mid', label: 'Mid', fromDay: 42, activeCount: analytics?.byPhase?.mid ?? 0 },
+            { key: 'accelerated', label: 'Accelerated', fromDay: 90, activeCount: analytics?.byPhase?.accelerated ?? 0 },
+          ]}
+        />
+
         {/* 1 — Operational controls */}
         <CampaignControlsSection
           engine={ENGINE}
@@ -108,11 +121,7 @@ export default async function PipelineWinbackDetailPage(props: { params: Promise
         </Section>
 
         {/* 3 — Analytics */}
-        <CampaignAnalyticsPanel
-          engine={ENGINE}
-          analytics={analytics}
-          phaseLabels={{ early: 'Early (Day 1–41)', mid: 'Mid (Day 42–89)', accelerated: 'Accelerated (Day 90–120)' }}
-        />
+        <CampaignAnalyticsPanel engine={ENGINE} analytics={analytics} />
 
         {/* 4 — Eligibility & audience */}
         <Section

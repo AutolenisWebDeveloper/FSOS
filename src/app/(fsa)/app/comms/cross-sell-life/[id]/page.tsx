@@ -15,6 +15,7 @@ import { CampaignStatusBadge, CampaignCrossLinks } from '@/components/comms/camp
 import { CampaignStateLine } from '@/components/comms/campaign/CampaignStateLine'
 import { CampaignControlsSection } from '@/components/comms/campaign/CampaignControlsSection'
 import { CampaignAnalyticsPanel } from '@/components/comms/campaign/CampaignAnalyticsPanel'
+import { CampaignTimelineRibbon } from '@/components/comms/campaign/CampaignTimelineRibbon'
 import { CampaignScheduleTable } from '@/components/comms/campaign/CampaignScheduleTable'
 import { CampaignAssetsTable } from '@/components/comms/campaign/CampaignAssetsTable'
 import { CampaignEnrollmentTable } from '@/components/comms/campaign/CampaignEnrollmentTable'
@@ -90,6 +91,9 @@ export default async function CrossSellLifeDetailPage(props: { params: Promise<{
           deadLetterTouches={analytics?.touches.dead_letter ?? 0}
           overdueAdvisorTasks={analytics?.advisor.overdue ?? 0}
         />
+
+        {/* Campaign at a glance — the 35-touch cadence across the run (this engine has no phases) */}
+        <CampaignTimelineRibbon engine={ENGINE} touches={detail.touches} acceleratesFromDay={166} />
 
         {/* 1 — Operational controls */}
         <CampaignControlsSection engine={ENGINE} status={s.status} simulatedAt={s.simulated_at}>

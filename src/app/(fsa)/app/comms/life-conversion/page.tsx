@@ -8,6 +8,7 @@ import { CAMPAIGN_ENGINES, campaignBreadcrumb, campaignDetailHref } from '@/lib/
 import { CampaignStatusBadge, CampaignHeaderActions, CampaignStat } from '@/components/comms/campaign/CampaignKit'
 import { CampaignEnrollmentTable } from '@/components/comms/campaign/CampaignEnrollmentTable'
 import { CampaignStateLine } from '@/components/comms/campaign/CampaignStateLine'
+import { CampaignControlsSection } from '@/components/comms/campaign/CampaignControlsSection'
 
 export const dynamic = 'force-dynamic'
 
@@ -107,10 +108,9 @@ export default async function LifeConversionPage() {
           overdueAdvisorTasks={analytics?.advisor.overdue ?? 0}
         />
 
-        <Card className="p-5">
-          <h2 className="mb-3 text-sm font-semibold">Operational controls</h2>
+        <CampaignControlsSection engine={ENGINE} status={campaign.status} simulatedAt={campaign.simulated_at}>
           <CampaignControls campaignId={campaign.id} status={campaign.status} endpoint={ENGINE.apiRoot} />
-        </Card>
+        </CampaignControlsSection>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatTile label="Active enrollments" value={analytics?.totals.active ?? 0} tone="brand" />

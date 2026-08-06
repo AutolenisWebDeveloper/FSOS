@@ -58,9 +58,24 @@ export async function hasConsentForPurpose(
   }
 }
 
-async function loadFrequencyCaps(): Promise<{ enabled: boolean; caps: FrequencyCaps } | null> {
+/**
+ * The cap row this send is bounded by (ADR-017 amendment, migration 103). 'global' bounds
+ * proactive campaign/drip outreach; 'reply' bounds an inbound-triggered conversation reply,
+ * whose minimum-interval spacing would otherwise stall a normal back-and-forth after one
+ * turn. Selecting a row can never REMOVE the caps — both rows are real, audited ceilings.
+ */
+export type FrequencyPolicyId = 'global' | 'reply'
+
+async function loadFrequencyCaps(policyId: FrequencyPolicyId = 'global'): Promise<{ enabled: boolean; caps: FrequencyCaps } | null> {
   try {
-    const { data } = await getDb().from('comm_frequency_policy').select('*').eq('id', 'global').maybeSingle()
+    const db = getDb()
+    let { data } = await db.from('comm_frequency_policy').select('*').eq('id', policyId).maybeSingle()
+    // A missing scoped row falls back to 'global' — the TIGHTER of the two. An unapplied
+    // migration must never leave a send less bounded than it is today.
+    if (!data && policyId !== 'global') {
+      const fallback = await db.from('comm_frequency_policy').select('*').eq('id', 'global').maybeSingle()
+      data = fallback.data
+    }
     if (!data) return null
     return {
       enabled: data.enabled !== false,
@@ -79,8 +94,13 @@ async function loadFrequencyCaps(): Promise<{ enabled: boolean; caps: FrequencyC
 }
 
 /** Resolve the recipient's frequency decision from the message ledger + editable caps. */
-export async function resolveFrequency(memberId: string, channel: Channel, purpose: MessagePurpose): Promise<PolicyDecision> {
-  const policy = await loadFrequencyCaps()
+export async function resolveFrequency(
+  memberId: string,
+  channel: Channel,
+  purpose: MessagePurpose,
+  policyId: FrequencyPolicyId = 'global',
+): Promise<PolicyDecision> {
+  const policy = await loadFrequencyCaps(policyId)
   if (!policy || !policy.enabled) return { allowed: true }
   const now = Date.now()
   const dayAgo = new Date(now - 24 * 60 * 60 * 1000).toISOString()
@@ -152,6 +172,8 @@ export interface SendPolicyInput {
   purpose: MessagePurpose
   conversationId: string | null
   activeCampaignPurpose?: MessagePurpose | null
+  /** Which cap row bounds this send (migration 103). Defaults to the outreach caps. */
+  frequencyPolicyId?: FrequencyPolicyId
 }
 
 export interface SendPolicyResult {
@@ -166,7 +188,9 @@ export interface SendPolicyResult {
 export async function resolveSendPolicy(input: SendPolicyInput): Promise<SendPolicyResult> {
   const [consentForPurpose, frequency, collision] = await Promise.all([
     input.memberId ? hasConsentForPurpose(input.memberId, input.channel, input.purpose) : Promise.resolve(null),
-    input.memberId ? resolveFrequency(input.memberId, input.channel, input.purpose) : Promise.resolve({ allowed: true } as PolicyDecision),
+    input.memberId
+      ? resolveFrequency(input.memberId, input.channel, input.purpose, input.frequencyPolicyId ?? 'global')
+      : Promise.resolve({ allowed: true } as PolicyDecision),
     resolveCollision(input.conversationId, input.purpose, input.activeCampaignPurpose ?? null),
   ])
   return { consentForPurpose, frequency, collision, isMarketing: isMarketingPurpose(input.purpose) }

@@ -13,6 +13,11 @@ export type AiAuthority = 'auto_send' | 'draft_only' | 'blocked'
 // The message classes the autonomous AI can produce (§11). Green-zone, low-risk classes
 // may auto-send; anything advisory, policy-specific, pricing, securities, sensitive, or
 // case-affecting may only be drafted for the licensed FSA; securities is hard-blocked.
+//
+// `bereavement_or_hardship` is draft-only for a different reason than the rest: the risk is
+// not that the automation would give ADVICE, it is that an automated non-answer to a death,
+// a serious illness, or a financial crisis is itself a service failure — and for a complaint,
+// potentially a state handling-requirement failure. These reach a person, not a template.
 export type AiMessageClass =
   // ── auto-send (approved, low-risk) ──
   | 'approved_first_touch'
@@ -35,6 +40,7 @@ export type AiMessageClass =
   | 'replacement_discussion'
   | 'underwriting_question'
   | 'complaint_or_dispute'
+  | 'bereavement_or_hardship'
   | 'sensitive_data_request'
   | 'financial_recommendation'
   | 'case_or_application_affecting'

@@ -54,10 +54,87 @@ The send gate (`gate.ts`) enforced consent, quiet hours, business hours, DNC, te
 - Purpose policy is opt-in this slice; a caller that passes no `ctx.purpose` still uses channel-wide consent and no caps. Adopting purposes across the campaign library is later-slice work (the campaign-builder + library slices).
 - The remaining §9 breadth — the full preference-center UI, all 14 suppression *types*, signed unsubscribe/preference tokens, and destination-ownership validation — is **explicitly scoped to follow-up slices**; this ADR covers purpose classification, frequency caps, and collision (the §4 Slice-3 core).
 
+## Amendment — 2026-08-06: reply-scoped frequency caps
+
+**Status of the amendment:** Accepted. The decisions above stand; this narrows the *scope* of
+the frequency caps and is recorded here so the narrowing is not later read as drift.
+
+### What this ADR did not contemplate
+
+Every cap in this ADR was designed for **proactive outreach**: the case being bounded is a
+drip texting someone twice in an hour. An **inbound-triggered conversation reply** was never
+in scope — not because it was considered and excluded, but because at the time this ADR was
+written the reply path (`inbound.ts` → `tryAutoReply`) supplied no `ctx.purpose` at all and
+therefore never entered the policy engine. The caps and the reply path simply never met.
+
+They met when replies were classified so the §11 authority matrix could clear them
+(`reply-classification.ts`). `evaluateOutboundMessage` requires a purpose, so supplying one —
+correctly — also enrolled replies in §9 frequency counting for the first time. Measured
+against a real database (`tests/comms-inbound-e2e.test.mjs` §1c):
+
+```
+seeded caps: min_interval=60 max_sms_day=2 enabled=true
+turn 1 sent=true | turn 2 sent=false → failed|frequency|Minimum interval not met (0m < 60m).
+```
+
+A normal back-and-forth stalls after one AI turn. Answering someone who just texted you is
+not the mass-outreach case the interval cap exists to bound.
+
+### Decision
+
+Add a **second cap row**, `comm_frequency_policy` id `'reply'` (migration 103), selected by
+the send path via `SendContext.isConversationReply` → `resolveSendPolicy({ frequencyPolicyId })`.
+
+- `min_interval_minutes = 0` — the spacing rule is the part that does not apply to a reply.
+- The **per-day and per-7-day maxima remain**, as config defaults (`is_assumption = true`).
+  They are the real volumetric bound, and they are what makes this safe to land **before** the
+  per-conversation turn limit rather than after it.
+- A missing `'reply'` row falls back to `'global'` — the **tighter** of the two — so an
+  unapplied migration can never leave a send less bounded than it is today.
+
+### Why a row and not a code exemption
+
+Three options were considered:
+
+- **A blanket exemption in `send.ts`** — rejected. It removes the only volumetric bound on AI
+  messaging, and an exemption buried in a call site is invisible to whoever audits this later.
+- **Widening the global `min_interval_minutes`** — rejected. It weakens the caps for drips,
+  which is the case this ADR was actually written for.
+- **A second cap row** — accepted. The ceiling stays real, stays auditable next to the
+  outreach caps, and can be dialled back without a deploy. `isConversationReply` *selects* a
+  row; it can never remove one.
+
+This mirrors the design already used for hours of operation (`comm_hours_policy`): operator-
+editable configuration carrying `is_assumption`, not a hard-coded behavioural exception.
+
+### Relationship to the per-conversation turn limit
+
+The reply cap and the turn limit bound the same behaviour along **different axes**, and are
+deliberately non-overlapping:
+
+| | Reply cap (this amendment) | Turn limit |
+|---|---|---|
+| Scope | per contact, per day/7 days | per conversation, since the last human turn |
+| Bounds | total volume of AI replies to a person | how long the AI may talk before a licensed FSA takes over |
+| Where | send gate, step `frequency` | `tryAutoReply`, before the model is called |
+| On hit | send deferred | thread disarmed, handed to the FSA |
+
+Neither can contradict the other: they are evaluated at different points and both fail in the
+same direction (no send). **Both escalate.** The gate classes `frequency` as a non-escalating
+deferral — correct for a drip, which retries next cycle — but `tryAutoReply` escalates on any
+non-send, so a capped *reply* still reaches the FSA queue with its reason. A reply is never
+silently dropped by either bound.
+
+### Scope of the amendment
+
+Unchanged: purpose classification, purpose-scoped consent, collision, the pure cores, and the
+`'global'` caps that bound all campaign/drip outreach. No caller that omits
+`isConversationReply` is affected.
+
 ## Related Documents
 
 - CLAUDE.md §4, §6, §12; master build instruction §9, §10
 - ADR-003, ADR-004, ADR-013, ADR-015, ADR-016
-- Migration `supabase/migrations/054_comm_purpose_frequency.sql`
-- `src/lib/comms/purpose.ts`, `frequency.ts`, `policy-resolver.ts`, `gate.ts`, `send.ts`
-- Tests: `tests/comms-policy.test.mjs`, `tests/rls-firewall.test.mjs` (extended)
+- Migrations `supabase/migrations/054_comm_purpose_frequency.sql`, `103_comm_reply_frequency_policy.sql` (amendment)
+- `src/lib/comms/purpose.ts`, `frequency.ts`, `policy-resolver.ts`, `gate.ts`, `send.ts`, `inbound.ts`, `reply-classification.ts`
+- Tests: `tests/comms-policy.test.mjs`, `tests/rls-firewall.test.mjs` (extended), `tests/comms-inbound-e2e.test.mjs` §1c

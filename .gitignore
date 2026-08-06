@@ -52,3 +52,10 @@ data/rule_fetch_log.json
 # esbuild scratch dir used by tests/knowledge-library-documents.test.mjs (bundles must
 # sit inside the repo so externalized provider SDKs resolve against node_modules).
 .kld-test-*/
+
+# esbuild/tsc scratch dirs used by the comms proofs (bundles must sit inside the repo so
+# node_modules resolves for the modules they pull in).
+.reply-cls-*/
+.turn-limit-*/
+.msgstatus-*/
+.comms-out-*/

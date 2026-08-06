@@ -39,7 +39,12 @@ export async function buildInboundBundle() {
     `export { processInbound, classifyKeyword } from '@/lib/comms/inbound'\n` +
       `export { sendThroughGate } from '@/lib/comms/send'\n` +
       `export { getOrCreateConversation } from '@/lib/comms/conversations'\n` +
-      `export { draftReply } from '@/lib/ai/responder'\n`,
+      `export { draftReply } from '@/lib/ai/responder'\n` +
+      // The three campaign booking-exit seams, so the e2e suite can prove they behave
+      // identically against real rows rather than only that book.ts calls them.
+      `export { exitOnAppointment as exitWinback } from '@/lib/pipeline-winback/inbound'\n` +
+      `export { exitOnAppointment as exitLife } from '@/lib/life-campaign/inbound'\n` +
+      `export { exitOnAppointment as exitXsell } from '@/lib/cross-sell-life/inbound'\n`,
   )
 
   const out = join(dir, 'bundle.cjs')

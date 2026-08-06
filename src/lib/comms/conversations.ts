@@ -115,6 +115,15 @@ export interface Conversation {
   is_security: boolean
   ai_autoreply: boolean
   status: string
+  /**
+   * The ai_agents.key bound to this thread by the campaign tick or the console initiator
+   * (migration 087); null on an inbound-initiated thread. It is the single source for BOTH
+   * the per-conversation turn ceiling (turn-limit.ts) and the agent that authors a reply
+   * (inbound.ts → tryAutoReply), so the per-agent kill switch governs the threads it names:
+   * disabling `pipeline` stops replies on pipeline-armed threads. Absent → the conversation
+   * responder.
+   */
+  agent_key: string | null
 }
 
 /**
@@ -128,7 +137,7 @@ export async function getOrCreateConversation(channel: Channel, rawContact: stri
 
   const { data: existing } = await db
     .from('comm_conversations')
-    .select('id, channel, contact, member_id, household_id, agency_id, is_security, ai_autoreply, status')
+    .select('id, channel, contact, member_id, household_id, agency_id, is_security, ai_autoreply, status, agent_key')
     .eq('channel', channel)
     .eq('contact', contact)
     .maybeSingle()
@@ -162,14 +171,14 @@ export async function getOrCreateConversation(channel: Channel, rawContact: stri
       is_security: isSecurity,
       status: 'open',
     })
-    .select('id, channel, contact, member_id, household_id, agency_id, is_security, ai_autoreply, status')
+    .select('id, channel, contact, member_id, household_id, agency_id, is_security, ai_autoreply, status, agent_key')
     .maybeSingle()
 
   // Lost a race on the unique index → re-read the winning row.
   if (!created) {
     const { data: raced } = await db
       .from('comm_conversations')
-      .select('id, channel, contact, member_id, household_id, agency_id, is_security, ai_autoreply, status')
+      .select('id, channel, contact, member_id, household_id, agency_id, is_security, ai_autoreply, status, agent_key')
       .eq('channel', channel)
       .eq('contact', contact)
       .maybeSingle()

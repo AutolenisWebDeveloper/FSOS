@@ -44,8 +44,110 @@ The pre-Slice-5 send path had the red-line validator (`validateAIClientMessage`)
 - Enforcement is opt-in per `ctx.aiMessageClass`; AI paths that don't yet classify their messages keep the prior gate-only behavior (the classification-adoption follow-up covers the responder + workforce agents).
 - The evaluation's DB-resolved signals (ownership/identity/consent) are passed in by the send path; a caller that mis-supplies them could mis-evaluate — mitigated by those signals being computed centrally in `sendThroughGate`.
 
+## Amendment — 2026-08-06: reply classification and a per-conversation turn ceiling
+
+**Status:** Accepted. Additive to the decisions above; the authority matrix and the §12
+evaluations are unchanged.
+
+### 1. Replies are now classified (the matrix had no input for them)
+
+The matrix decides from an AI message CLASS and the evaluations require a PURPOSE. Openers
+supply both because their content is known in advance. An inbound-triggered REPLY supplied
+neither, so `evaluateAiAuthority` fell through to its unclassified fail-safe and every reply
+was held as an FSA draft — the fail-safe working exactly as designed, on an input nobody had
+provided.
+
+`reply-classification.ts` (pure) derives both from the actual exchange. Its safety argument is
+two-part, and the parts bound different things:
+
+- **Content bound (primary).** Only four structurally contentless shapes may auto-send: an
+  availability question, a scheduling link, a receipt acknowledgment, a thank-you. The
+  automation cannot auto-send an ANSWER. This holds independently of any word list.
+- **Topic bound (defence in depth).** Twelve regulated subject families, matched against the
+  contact's message as well as the draft, map to their draft-only class; securities maps to
+  `blocked`.
+
+A phrasing the topic lists miss therefore degrades the outcome from "the FSA handles it" to
+"the AI replies with a scheduling invitation" — never to "the AI gives advice." That residual
+is documented for the compliance reader in `docs/compliance/ai-reply-classification.md` §6 and
+pinned in `tests/comms-reply-classification.test.mjs`, so a change in either direction is a
+decision rather than drift.
+
+### 1b. A thirteenth family: human moments, not regulated ones
+
+Review of the classifier raised a category the twelve regulated families did not cover, and
+measurement confirmed the gap: *"My husband passed away, does our policy pay out?"* was
+answered with a scheduling invitation, as were job loss, falling behind on payments, and angry
+messages that never use the word "complaint".
+
+The risk here is not that the automation would give ADVICE — it is that an automated non-answer
+to a death, a serious illness, or a financial crisis is a service failure, and for a complaint
+potentially a state handling-requirement failure. `bereavement_or_hardship` joins the matrix as
+a draft-only class, the complaint family was widened well past the literal word, and the
+possessive list on the policy family was corrected (`our`/`his`/`her`/`their`), since a survivor
+asks about "*our* policy", not "*my* policy".
+
+Both families additionally set an `urgent` flag, resolved across ALL families rather than only
+the one that wins the label, so a bereavement raised inside a securities question is still
+routed as urgent. `tryAutoReply` escalates these under `urgent_human_attention` instead of the
+generic gate reason, so they are findable ahead of routine content holds.
+
+This is deliberately independent of the open compliance fork (silence-by-default vs
+recognise-the-risk): whichever way that is decided, these must reach a person.
+
+### 2. A per-conversation AI turn ceiling
+
+The matrix governs each message in isolation. The exposure it cannot see is the AGGREGATE: a
+long exchange with a life-insurance prospect where every individual turn passes every check
+and the sum is an advisory relationship no licensed person ever entered. Nothing capped that;
+hand-off happened only if the model volunteered it or a turn tripped the recommendation
+red line.
+
+`turn-limit.ts` (pure decision + thin adapters) adds a deterministic ceiling, configured on
+`comm_conversation_policy` (migration 104), which becomes multi-row: `global` is the default
+(6 turns, `is_assumption`), and a row keyed by an `ai_agents.key` overrides it for threads
+bound to that campaign agent — the per-campaign override as configuration, not code.
+
+Four properties make it a limit rather than a suggestion:
+
+- **Counted since the last HUMAN turn.** An FSA reply from the inbox resets the budget: a
+  licensed person took and returned control, which is the supervision the ceiling exists to
+  force. Counting from thread creation would punish long, healthy, supervised relationships.
+- **Only SENT messages count.** A run of gate blocks must not silently consume the budget and
+  hand off a conversation in which the automation never actually spoke.
+- **Fails closed.** An unreadable policy or an unverifiable count hands off. A limit that stops
+  applying when it cannot be verified is not a limit (same posture as the gateway kill switch).
+- **Hand-off, not a stop.** Reaching it disarms the thread's `ai_autoreply`, raises an FSA
+  escalation naming the counts and the deciding policy row, and audits it. Re-arming is the
+  FSA's explicit act. Checked BEFORE the model is called, so a hand-off costs no tokens.
+
+### Coherence with the reply frequency cap (ADR-017 amendment)
+
+Two bounds on the same behaviour, deliberately on different axes:
+
+| | Reply frequency cap | Turn ceiling |
+|---|---|---|
+| Axis | per contact, per day/7 days — **volume** | per conversation, since the last human turn — **depth** |
+| Where | send gate, step `frequency` | `tryAutoReply`, before the model call |
+| On hit | send deferred | thread disarmed, handed to the FSA |
+| Escalates | yes (via the conversation path) | yes (directly) |
+
+They consume no shared input and are evaluated at different points, so they cannot contradict
+each other; both fail in the same direction, and **both escalate**, so neither can end a
+conversation silently.
+
+### Deliberately not in this amendment
+
+Intent-based hand-off triggers and an elapsed-time sweep. The turn count is the deterministic
+ceiling that removes the unbounded case on its own; the other two are refinements that reduce
+how often the ceiling is the thing that fires.
+
 ## Related Documents
 
+- Amendment: migrations `103_comm_reply_frequency_policy.sql`, `104_comm_conversation_turn_limit.sql`
+- Amendment: `src/lib/comms/reply-classification.ts`, `turn-limit.ts`, `inbound.ts`
+- Amendment: `docs/compliance/ai-reply-classification.md` (compliance-facing write-up)
+- Amendment tests: `tests/comms-reply-classification.test.mjs`, `tests/comms-turn-limit.test.mjs`, `tests/comms-inbound-e2e.test.mjs` §1–§1d
 - CLAUDE.md §4.2, §11; master build instruction §11, §12
 - ADR-002, ADR-003, ADR-004, ADR-008, ADR-015–018
 - `src/lib/comms/ai-authority.ts`, `evaluations.ts`, `send.ts`

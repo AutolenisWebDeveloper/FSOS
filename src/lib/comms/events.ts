@@ -6,7 +6,10 @@
 // (delivered_at/opened_at/clicked_at/failed_at + delivery_status). Campaign
 // analytics (open/click/reply/bounce rates) read straight off this ledger.
 
-import { getDb } from '@/lib/supabase/client'
+// Relative import (not the @/ alias): events.ts is now pulled into the standalone-tsc compile
+// used by the offline status proofs, which do not apply the @/* path map — the same convention
+// client.ts documents for itself and gate.ts/evaluations.ts already follow.
+import { getDb } from '../supabase/client'
 
 export type MessageEvent =
   | 'queued'
@@ -69,6 +72,44 @@ function lifecyclePatch(event: MessageEvent, at: string): Record<string, unknown
   }
 }
 
+/**
+ * `blocked` is not a provider-delivery outcome — it is the record that the GATE (or the AI
+ * authority layer) refused the send. It must survive the lifecycle event that accompanies it.
+ *
+ * The send path writes `delivery_status='blocked'` plus `blocked_step`, then records a
+ * `failed` event for the ledger; without this rule the generic `failed` patch overwrote the
+ * status, so every compliance hold rendered as "Failed" on the comms surfaces while
+ * `blocked_step` still said why it was blocked. The status vocabulary was right and the data
+ * under it was being clobbered.
+ *
+ * A blocked message never reached a provider, so no genuine provider callback can apply to
+ * it. Timestamps and provider_status still record; only delivery_status is protected.
+ */
+const PROTECTED_STATUSES = new Set(['blocked'])
+
+/** Terminal provider outcomes a late `sent` must never downgrade. */
+const TERMINAL_STATUSES = ['delivered', 'failed', 'bounced', 'complained']
+
+/**
+ * PURE: reconcile the lifecycle patch with the row's CURRENT status.
+ * Returns the patch to apply, or null when the event must not touch the row at all.
+ * Unit-tested offline (tests/comms-message-status.test.mjs).
+ */
+export function reconcileLifecycle(
+  current: string | null | undefined,
+  event: MessageEvent,
+  patch: Record<string, unknown>,
+): Record<string, unknown> | null {
+  // A late `sent` never downgrades a terminal provider outcome (pre-existing rule).
+  if (event === 'sent' && current && TERMINAL_STATUSES.includes(current)) return null
+  // A gate/authority block is preserved: keep the timestamps, drop the status change.
+  if (current && PROTECTED_STATUSES.has(current) && 'delivery_status' in patch) {
+    const { delivery_status: _dropped, ...rest } = patch
+    return Object.keys(rest).length ? rest : null
+  }
+  return Object.keys(patch).length ? patch : null
+}
+
 export interface RecordEventInput {
   messageId?: string | null
   conversationId?: string | null
@@ -99,14 +140,18 @@ export async function recordMessageEvent(input: RecordEventInput): Promise<void>
 
   if (input.messageId) {
     const patch = lifecyclePatch(input.event, at)
-    // Don't overwrite a terminal delivered/failed with an earlier "sent".
-    if (input.event === 'sent') {
+    // Read the current status whenever the event would CHANGE it, so both precedence rules
+    // (terminal-beats-late-sent, and blocked-survives) are applied against real state rather
+    // than assumed. Opens/clicks carry no status and skip the read entirely.
+    let current: string | null = null
+    if ('delivery_status' in patch) {
       const { data } = await db.from('comm_messages').select('delivery_status').eq('id', input.messageId).maybeSingle()
-      if (data && ['delivered', 'failed', 'bounced', 'complained'].includes(data.delivery_status)) return
+      current = (data?.delivery_status as string) ?? null
     }
-    if (Object.keys(patch).length) {
+    const resolved = reconcileLifecycle(current, input.event, patch)
+    if (resolved) {
       try {
-        await db.from('comm_messages').update({ ...patch, provider_status: input.event, updated_at: at }).eq('id', input.messageId)
+        await db.from('comm_messages').update({ ...resolved, provider_status: input.event, updated_at: at }).eq('id', input.messageId)
       } catch {
         /* best-effort */
       }

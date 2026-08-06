@@ -14,15 +14,17 @@
 // Run: node tests/comms-message-status.test.mjs
 import assert from 'node:assert/strict'
 import { execSync } from 'node:child_process'
-import { mkdtempSync, readFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
 
-const out = mkdtempSync(join(tmpdir(), 'fsos-msgstatus-'))
+// Emitted INSIDE the project (not tmpdir) so the compiled modules can resolve node_modules —
+// events.ts pulls in the Supabase client factory. Cleaned up on exit.
+const out = mkdtempSync(join(process.cwd(), '.msgstatus-'))
+process.on('exit', () => { try { rmSync(out, { recursive: true, force: true }) } catch { /* best-effort */ } })
 execSync(
   `npx tsc src/lib/comms/message-status.ts src/lib/comms/gate.ts src/lib/compliance/guardrail.ts ` +
-    `src/lib/comms/timeline.ts ` +
+    `src/lib/comms/timeline.ts src/lib/comms/events.ts ` +
     `--outDir ${out} --module commonjs --target es2020 --moduleResolution node --skipLibCheck --esModuleInterop ` +
     `--lib es2020,dom`,
   { stdio: 'inherit' },
@@ -219,6 +221,56 @@ t('no delivery status is a success in one surface and a failure in the other', (
     const theirs = SEVERITY[statusBadge(normalizeStatus(status)).key]
     assert.equal(mine, theirs, `${status}: message log reads "${mine}", timeline reads "${theirs}"`)
   }
+})
+
+console.log('reconcileLifecycle — the status the surfaces read must not be clobbered')
+
+// events.ts writes the parent comm_messages lifecycle from the event ledger. The vocabulary
+// above is only correct if the DATA under it is: a gate/authority block writes
+// delivery_status='blocked', and the accompanying 'failed' ledger event must not overwrite it,
+// or every compliance hold renders as "Failed" while blocked_step still says why it was
+// blocked. Fix the write, not the display.
+const { reconcileLifecycle } = require(join(out, 'comms/events.js'))
+
+t('a failed event does NOT overwrite a blocked row', () => {
+  const patch = reconcileLifecycle('blocked', 'failed', { delivery_status: 'failed', failed_at: 'T' })
+  assert.ok(patch, 'the timestamp should still be recorded')
+  assert.equal(patch.delivery_status, undefined, 'blocked was downgraded to failed')
+  assert.equal(patch.failed_at, 'T', 'the terminal timestamp should still be stamped')
+})
+t('no provider outcome can overwrite a blocked row', () => {
+  for (const ev of ['sent', 'delivered', 'failed', 'bounced', 'complained']) {
+    const patch = reconcileLifecycle('blocked', ev, { delivery_status: 'x', failed_at: 'T' })
+    assert.equal(patch?.delivery_status, undefined, `${ev} overwrote a blocked row`)
+  }
+})
+t('opens and clicks still apply to a blocked row without touching its status', () => {
+  const patch = reconcileLifecycle('blocked', 'opened', { opened_at: 'T' })
+  assert.deepEqual(patch, { opened_at: 'T' })
+})
+t('the pre-existing rule still holds: a late sent never downgrades a terminal outcome', () => {
+  for (const terminal of ['delivered', 'failed', 'bounced', 'complained']) {
+    assert.equal(reconcileLifecycle(terminal, 'sent', { delivery_status: 'sent', sent_at: 'T' }), null,
+      `a late sent overwrote ${terminal}`)
+  }
+})
+t('ordinary lifecycle progression is unaffected', () => {
+  assert.deepEqual(reconcileLifecycle('queued', 'sent', { delivery_status: 'sent', sent_at: 'T' }),
+    { delivery_status: 'sent', sent_at: 'T' })
+  assert.deepEqual(reconcileLifecycle('sent', 'delivered', { delivery_status: 'delivered', delivered_at: 'T' }),
+    { delivery_status: 'delivered', delivered_at: 'T' })
+  assert.deepEqual(reconcileLifecycle('sent', 'failed', { delivery_status: 'failed', failed_at: 'T' }),
+    { delivery_status: 'failed', failed_at: 'T' })
+})
+t('an unknown/absent current status does not block a legitimate write', () => {
+  assert.deepEqual(reconcileLifecycle(null, 'delivered', { delivery_status: 'delivered', delivered_at: 'T' }),
+    { delivery_status: 'delivered', delivered_at: 'T' })
+})
+t('an empty patch resolves to no write at all', () => {
+  assert.equal(reconcileLifecycle('sent', 'queued', {}), null)
+})
+t('a blocked row renders as a failure chip — the vocabulary agrees with the preserved data', () => {
+  assert.equal(SEVERITY[deliveryStatus('blocked').variant], 'bad')
 })
 
 console.log(`\n${passed} assertions passed`)

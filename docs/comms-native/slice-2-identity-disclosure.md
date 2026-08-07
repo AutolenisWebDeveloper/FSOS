@@ -21,11 +21,18 @@
 ## Full-intro triggers (§8), all covered by the pure test
 first-ever touch on the channel · new campaign · new purpose · different sender · agency-owner/contact-owner reassignment · inactivity beyond the configured window · "who is this?" · prior disclosure unconfirmable. Otherwise → abbreviated.
 
+## Amendment 2026-08-07 (see ADR-016 §6–§9)
+Three corrections landed with the lifecycle-campaign identity rewrite; the disclosure *requirement* is unchanged.
+- **Authored introductions.** `comm_templates.introduces_sender` (mig 105) lets an approved first-touch template carry the introduction itself. The resolver returns `satisfiedByBody: true` — it records the introduction and `send.ts` still stamps the per-channel thread state, but nothing is prepended, so one message never carries two near-identical introductions. Default `false` prepends exactly as before.
+- **Insertion point.** `prependIdentityDisclosure` inserts after a body's leading `Subject:`/`Preview:` header lines (and after a standalone greeting), so an email keeps the H1 and preheader that `email-shell.ts` parses from those headers.
+- **Inactivity signal.** Measured from `comm_conversations.last_message_at`, not the age of the disclosure — so a live campaign no longer re-introduces the FSA simply for running longer than the window.
+
 ## Scope boundary (read before reviewing)
 Enforcement is **opt-in** via `SendContext.identity`. Existing send paths pass nothing → unchanged. Turning it on for delegated outreach (and enriching the `newCampaign`/`reassignment` hints from history) is the campaign-builder slice (§15). Auto-insertion is additionally gated on an **approved** config, so unverified Farmers wording never reaches a client.
 
 ## Evidence
-- `tests/comms-identity.test.mjs` — 16 assertions: every full-intro trigger, per-channel independence, inactivity boundary, render structure (names actual sender + represented agent, never impersonates), config-sourced Farmers label, idempotent prepend.
+- `tests/comms-identity.test.mjs` — 24 assertions: every full-intro trigger, per-channel independence, the contact-recency inactivity boundary, render structure (names actual sender + represented agent, never impersonates), config-sourced Farmers label, idempotent prepend, and header-aware placement.
+- `tests/lifecycle-campaign-messaging.test.mjs` — proves exactly one asset per channel per campaign introduces the sender, and that its copy names the FSA, their role, and the recipient's own agent of record.
 - `tests/rls-firewall.test.mjs` (extended) — applies mig 033+051 to ephemeral Postgres; proves a client sees **0** `comm_identity_config` rows (back-office default-deny). 10/10.
 - `npm test` (+identity) · `type-check` · `lint` · `test:rls` · `build` — all green.
 

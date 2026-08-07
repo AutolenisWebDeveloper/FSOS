@@ -139,10 +139,17 @@ export interface CampaignDispatchContext {
  * send.ts (FSA default + the resolved agent of record, with the generic "your Farmers agent"
  * fallback). Absent an APPROVED comm_identity_config nothing is disclosed (§4.3).
  */
-export function campaignIdentityContext(purpose?: MessagePurpose | null): IdentityContext {
+export function campaignIdentityContext(
+  purpose?: MessagePurpose | null,
+  /** The template about to be sent declares that its own copy carries the introduction
+   *  (comm_templates.introduces_sender, migration 105) — the platform then records the
+   *  introduction and stamps the thread without prepending a duplicate paragraph. */
+  bodyIntroduces = false,
+): IdentityContext {
   return {
     senderUserId: FSA_SENDER_ID,
     purpose: purpose ?? null,
+    bodyIntroduces,
     vars: { sender: {}, agency_owner: {} },
   }
 }

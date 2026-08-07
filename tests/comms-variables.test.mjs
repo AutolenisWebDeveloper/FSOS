@@ -26,10 +26,28 @@ const t = (name, fn) => { fn(); passed++; console.log('  ✓', name) }
 
 console.log('variable registry — one canonical set, one resolver')
 
-t('the registry defines exactly the 25 requested variables, each with a unique canonical key', () => {
-  assert.equal(V.VARIABLES.length, 25, '25 canonical variables')
+t('the registry defines exactly the 26 requested variables, each with a unique canonical key', () => {
+  assert.equal(V.VARIABLES.length, 26, '26 canonical variables')
   const keys = V.VARIABLES.map((v) => v.key)
   assert.equal(new Set(keys).size, keys.length, 'canonical keys are unique')
+})
+
+// The phrase campaign copy uses to name the client's own Farmers agent. It shares ONE helper
+// with the platform identity disclosure (identity.ts agentOfRecordReference) so the two can
+// never drift, and it degrades to the approved generic rather than a guessed name (§4.3).
+t('agent_of_record_reference reads correctly whether or not the agent name resolves', () => {
+  const named = V.buildRecipientContext({ agentOfRecord: { full_name: 'Dana Reed' } })
+  assert.equal(named.agent_of_record_reference, 'your Farmers agent, Dana Reed')
+
+  // Unresolved: the approved generic, never a doubled "your Farmers agent, your Farmers agent",
+  // never a dangling comma, never a guessed name.
+  const unknown = V.buildRecipientContext({ agentOfRecord: null })
+  assert.equal(unknown.agent_of_record_reference, 'your Farmers agent')
+  assert.equal(V.REGISTRY_COSMETIC_DEFAULTS.agent_of_record_reference, 'your Farmers agent')
+})
+
+t('agent_of_record_reference is cosmetic — it can never hard-block a send', () => {
+  assert.ok(!V.REGISTRY_BLOCKING_KEYS.includes('agent_of_record_reference'))
 })
 
 t('any casing / separator resolves to ONE canonical key', () => {

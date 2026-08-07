@@ -53,7 +53,7 @@ export const PLAYBOOKS: Playbook[] = [
     objective:
       'Introduce the FSA as someone who works alongside the client existing Farmers agent, and find out which of question / booking / information is wanted.',
     opening:
-      "Hi {{first_name}}, I'm the automated assistant for {{fsa_name}} at {{agency_name}}. As an existing client you're offered a complimentary life insurance review. Would a question, a booking, or general info help most?",
+      "Hi {{first_name}}, I'm the automated assistant for {{fsa_name}}, the {{advisor_title}} working with {{agent_of_record_reference}}. You're offered a free life insurance review. Question, booking, or general info?",
     branches: ['question', 'schedule', 'general_information', 'not_interested', 'follow_up_later', 'existing_coverage', 'unknown'],
     allowed:
       'Explain that {{fsa_name}} handles life insurance and financial services alongside the client Farmers agent. Give general educational information and offer to book time. Make clear there is no obligation and no effect on their other policies.',
@@ -64,7 +64,7 @@ export const PLAYBOOKS: Playbook[] = [
     handoff:
       "That's one for a licensed person rather than an assistant. I'm passing you to {{fsa_name}} now, and they'll come back to you directly.",
     closing:
-      "Understood, {{first_name}}, I'll close this out. It won't affect anything else with {{agency_name}}. Thanks for your time.",
+      "Understood, {{first_name}}, I'll close this out. It won't affect anything else about your coverage. Thanks for your time.",
     escalateOn: ['recommendation', 'pricing', 'quote', 'coverage_amount', 'health', 'underwriting', 'replacement', 'tax', 'legal', 'urgency', 'dissatisfaction', 'complaint', 'unknown'],
     exitConditions: ['appointment booked', 'advisor requested', 'not interested', 'future follow-up requested', 'general information sent'],
   },
@@ -182,13 +182,13 @@ export const PLAYBOOKS: Playbook[] = [
       "Hi {{first_name}}, {{fsa_name}}'s automated assistant one last time. Would you like to book a review, have us check back later, or close this out for now? Any of the three is completely fine.",
     branches: ['schedule_appointment', 'follow_up_30', 'follow_up_60', 'follow_up_90', 'custom_follow_up', 'close_campaign', 'not_interested', 'global_opt_out', 'advisor_requested'],
     allowed:
-      'Offer the three options plainly. Honor a global opt-out by routing it to suppression handling. Thank the client for their business with {{agency_name}} and make clear this does not affect their other policies.',
+      'Offer the three options plainly. Honor a global opt-out by routing it to suppression handling. Thank the client for their business with {{agent_of_record_reference}} and make clear this does not affect their other policies.',
     prohibited:
       'Never pressure, guilt, or use a final-chance framing. Never recommend a product. Never ask the client to reconsider more than once.',
     followUp:
       "I'll take the silence as a no, {{first_name}}, and close this out. Nothing further needed from you, and thank you for your time.",
     closing:
-      "Closed out, {{first_name}}. Thank you for being a client of {{agency_name}}. That's the part that matters. If a question ever comes up, reply here and {{fsa_name}} will pick it up.",
+      "Closed out, {{first_name}}. Thank you for your business with {{agent_of_record_reference}}. That's the part that matters. If a question ever comes up, reply here and {{fsa_name}} will pick it up.",
     handoff:
       "Of course, I'll pass you to {{fsa_name}} now so you can speak with a licensed person directly.",
     escalateOn: ['advisor_requested', 'recommendation', 'quote', 'pricing', 'complaint', 'unknown'],

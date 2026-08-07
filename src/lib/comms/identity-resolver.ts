@@ -28,6 +28,15 @@ export interface IdentityContext {
   reassignment?: boolean
   /** Caller signals the contact explicitly asked who is contacting them. */
   contactAskedWhoIsThis?: boolean
+  /**
+   * The authored body already carries the FSA's introduction (ADR-016 §"authored introduction"):
+   * the campaign's own first-touch asset introduces the sender, names the recipient's agent of
+   * record via {{agent_of_record_reference}}, and is an APPROVED template. The disclosure
+   * requirement is then satisfied by copy the FSA can see and edit, so the platform records the
+   * introduction for audit and marks the thread introduced WITHOUT prepending a second, nearly
+   * identical paragraph. Defaults to false, which prepends — the fail-safe direction.
+   */
+  bodyIntroduces?: boolean
   /** Names for rendering the disclosure (actual sender + represented agency owner). */
   vars: IdentityVars
 }
@@ -37,6 +46,13 @@ export interface IdentityResult {
   isFirstChannelTouch: boolean
   /** Rendered full disclosure to prepend, or null (abbreviated/established or no config). */
   disclosure: string | null
+  /**
+   * A full introduction was required AND was carried by the authored body, so nothing was
+   * prepended but the thread still counts as introduced. Callers must treat this exactly like a
+   * prepended disclosure when stamping per-channel identity state — otherwise every later touch
+   * would keep re-qualifying as "never introduced" and the platform would prepend on touch 2.
+   */
+  satisfiedByBody: boolean
   version: number | null
   reason: string
   configApproved: boolean
@@ -47,6 +63,7 @@ interface ConversationIdentityState {
   identity_disclosure_version: number | null
   identity_sender_user_id: string | null
   identity_purpose: string | null
+  last_message_at: string | null
 }
 
 interface IdentityConfigRow {
@@ -76,7 +93,7 @@ export async function resolveIdentityDisclosure(params: {
       params.conversationId
         ? db
             .from('comm_conversations')
-            .select('identity_disclosed_at, identity_disclosure_version, identity_sender_user_id, identity_purpose')
+            .select('identity_disclosed_at, identity_disclosure_version, identity_sender_user_id, identity_purpose, last_message_at')
             .eq('id', params.conversationId)
             .maybeSingle()
         : Promise.resolve({ data: null }),
@@ -100,6 +117,7 @@ export async function resolveIdentityDisclosure(params: {
     priorDisclosedAt: conv?.identity_disclosed_at ?? null,
     now: new Date().toISOString(),
     inactivityDays: cfg?.inactivity_days ?? 45,
+    lastContactAt: conv?.last_message_at ?? null,
     channelAlreadyTouched: !!conv?.identity_disclosed_at,
     newCampaign: params.ctx.newCampaign === true,
     purposeChanged: !!(conv?.identity_purpose && params.ctx.purpose && conv.identity_purpose !== params.ctx.purpose),
@@ -116,6 +134,22 @@ export async function resolveIdentityDisclosure(params: {
     // short-circuits to a full intro regardless.)
     priorDisclosureConfirmable: !!(params.ctx.senderUserId && params.ctx.purpose),
   })
+
+  // The authored first-touch body already introduces the sender — record it and mark the thread
+  // introduced, but do not prepend a duplicate. Checked BEFORE rendering so no config wording is
+  // composed for a send that will not carry it.
+  const satisfiedByBody = decision.fullIntroRequired && params.ctx.bodyIntroduces === true
+  if (satisfiedByBody) {
+    return {
+      fullIntro: true,
+      isFirstChannelTouch: decision.flags.isFirstChannelTouch,
+      disclosure: null,
+      satisfiedByBody: true,
+      version: approved && cfg ? cfg.version : null,
+      reason: `${decision.reason} (satisfied by the approved authored introduction in the message body — platform disclosure not duplicated).`,
+      configApproved: approved,
+    }
+  }
 
   let disclosure: string | null = null
   if (decision.fullIntroRequired && approved && cfg) {
@@ -138,6 +172,7 @@ export async function resolveIdentityDisclosure(params: {
     fullIntro: decision.fullIntroRequired,
     isFirstChannelTouch: decision.flags.isFirstChannelTouch,
     disclosure,
+    satisfiedByBody: false,
     version: approved && cfg ? cfg.version : null,
     reason,
     configApproved: approved,

@@ -84,7 +84,7 @@ export const PLAYBOOKS: Playbook[] = [
     objective:
       'Offer the complimentary policy review to an existing policyholder and route to booking, a question, or a clean exit.',
     opening:
-      "Hi {{first_name}}, I'm the automated assistant for {{fsa_name}} at {{agency_name}}. {{fsa_name}} offers existing policyholders a free 20-minute policy review. Would you like to book one, ask a question first, or not right now?",
+      "Hi {{first_name}}, I'm the automated assistant for {{fsa_name}}, the {{advisor_title}} working with {{agent_of_record_reference}}. Policyholders are offered a free 20-minute policy review. Book one, ask a question, or not now?",
     branches: ['book_review', 'ask_question', 'not_now', 'not_interested', 'what_is_this', 'unknown'],
     allowed:
       'Explain that the review looks at what the existing coverage provides, how long it runs, and whether the beneficiary details are current. State plainly that it obliges no change and that most reviews end with no change. Offer to book time with {{fsa_name}}.',
@@ -214,7 +214,7 @@ export const ADVISOR_SCRIPTS: AdvisorScript[] = [
     key: 'policy_review_invitation',
     title: 'Advisor Call #1 — Policy Review Invitation',
     script:
-      "Hi {{first_name}}, this is {{fsa_name}} with {{agency_name}}. I work alongside your Farmers agent on the life insurance side. I am calling about the policy you already hold with us, and specifically to offer a complimentary review of it. To be clear about what that means: I would go through what your coverage actually provides, how long it runs, and whether the beneficiary details are still right. I am not calling to move you into anything different, and most of these end with me confirming things are in order. Would twenty minutes be useful?",
+      "Hi {{first_name}}, this is {{fsa_name}}, the {{advisor_title}} working with {{agent_of_record_reference}}. I handle the life insurance side for the agency's clients, so I am a new name to you. I am calling about the policy you already hold with us, and specifically to offer a complimentary review of it. To be clear about what that means: I would go through what your coverage actually provides, how long it runs, and whether the beneficiary details are still right. I am not calling to move you into anything different, and most of these end with me confirming things are in order. Would twenty minutes be useful?",
     goals: [
       'make the existing policy visible again',
       'state explicitly that no change is being proposed',
@@ -227,7 +227,7 @@ export const ADVISOR_SCRIPTS: AdvisorScript[] = [
     key: 'final_personal_invitation',
     title: 'Advisor Call #2 — Final Personal Invitation',
     script:
-      "Hi {{first_name}}, {{fsa_name}} here with {{agency_name}}. I wanted to reach out personally once more before I close this review invitation. If you are happy with your coverage as it stands, that is a perfectly good place to be and I will leave it there. If you have ever wondered what exactly your policy does or who it pays out to, that is a twenty-minute conversation and it costs you nothing. Either way, thank you for keeping your coverage with us.",
+      "Hi {{first_name}}, {{fsa_name}} here. I wanted to reach out personally once more before I close this review invitation. If you are happy with your coverage as it stands, that is a perfectly good place to be and I will leave it there. If you have ever wondered what exactly your policy does or who it pays out to, that is a twenty-minute conversation and it costs you nothing. Either way, thank you for keeping your coverage with us.",
     goals: [
       'give the client a dignified way to decline',
       'leave one concrete, low-cost reason to say yes',

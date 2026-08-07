@@ -224,7 +224,7 @@ async function fireMessageTouch(
   // comm_templates has no `subject` column — the subject rides on the body's leading
   // "Subject:" line (template-subject.ts). Selecting a non-existent column errors (42703),
   // which blanked the body and mis-routed every email touch into the SMS branch.
-  const { data: tpl } = await db.from('comm_templates').select('body, channel').eq('id', touch.template_id).maybeSingle()
+  const { data: tpl } = await db.from('comm_templates').select('body, channel, introduces_sender').eq('id', touch.template_id).maybeSingle()
   const { data: member } = await db.from('household_members').select('email, phone, full_name').eq('id', e.member_id!).maybeSingle()
   const channel = (tpl?.channel === 'email' ? 'email' : 'sms') as 'email' | 'sms'
   const to = channel === 'email' ? member?.email : member?.phone
@@ -270,7 +270,9 @@ async function fireMessageTouch(
     isSecurity: false, // firewall re-derived server-side inside the gate; never trusted from here
     recipientContext: { full_name: member?.full_name ?? null },
     purpose: dispatchCtx.purpose,
-    identity: campaignIdentityContext(dispatchCtx.purpose),
+    // ADR-016: the first-touch assets introduce the FSA in their own approved copy, so the
+    // platform records the introduction without prepending a second one (migration 105).
+    identity: campaignIdentityContext(dispatchCtx.purpose, tpl?.introduces_sender === true),
     delegation: dispatchCtx.delegation,
     ownership: dispatchCtx.ownership ?? { representedAgencyId: e.agency_id },
     aiGenerated: isAi,

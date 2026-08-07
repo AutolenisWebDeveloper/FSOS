@@ -169,7 +169,7 @@ async function fireMessageTouch(
     await markExecution(db, e.id, touchNo, 'skipped', { reason: 'template_not_approved' })
     return false
   }
-  const { data: tpl } = await db.from('comm_templates').select('body, channel, version').eq('id', touch.template_id).maybeSingle()
+  const { data: tpl } = await db.from('comm_templates').select('body, channel, version, introduces_sender').eq('id', touch.template_id).maybeSingle()
   const { data: member } = await db.from('household_members').select('email, phone, full_name').eq('id', e.member_id!).maybeSingle()
   const channel = (tpl?.channel === 'email' ? 'email' : 'sms') as 'email' | 'sms'
   const to = channel === 'email' ? member?.email : member?.phone
@@ -215,7 +215,9 @@ async function fireMessageTouch(
     isSecurity: false, // firewall re-derived server-side inside the gate; never trusted from here
     recipientContext: { full_name: member?.full_name ?? null },
     purpose: dispatchCtx.purpose,
-    identity: campaignIdentityContext(dispatchCtx.purpose),
+    // ADR-016: the first-touch assets introduce the FSA in their own approved copy, so the
+    // platform records the introduction without prepending a second one (migration 105).
+    identity: campaignIdentityContext(dispatchCtx.purpose, tpl?.introduces_sender === true),
     delegation: dispatchCtx.delegation,
     ownership: dispatchCtx.ownership ?? { representedAgencyId: e.agency_id },
     aiGenerated: isAi,

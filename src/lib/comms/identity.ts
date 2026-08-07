@@ -36,8 +36,17 @@ export interface IdentityInput {
   priorDisclosedAt: string | null
   /** ISO "now" (supplied by the caller — never read the clock in a pure fn). */
   now: string
-  /** Configured inactivity window; a disclosure older than this is stale → refresh. */
+  /** Configured inactivity window; a thread that has gone quiet for longer re-introduces. */
   inactivityDays: number
+  /**
+   * ISO timestamp of the most recent message on this thread in EITHER direction (null = none).
+   * This — not the age of the disclosure — is what the inactivity window measures. Ageing off
+   * `priorDisclosedAt` re-introduced the FSA in the middle of a live campaign purely because
+   * the campaign had been running longer than the window, which is the opposite of the rule's
+   * intent: an introduction is refreshed when a RELATIONSHIP has gone cold, not when a
+   * conversation has simply been going on for a while.
+   */
+  lastContactAt: string | null
   /** Has THIS channel been used with this contact before? (per-channel, not global). */
   channelAlreadyTouched: boolean
   /** First message of a new campaign. */
@@ -96,10 +105,12 @@ export function evaluateIdentityDisclosure(input: IdentityInput): IdentityDecisi
   if (!input.priorDisclosureConfirmable) {
     return full('Prior disclosure cannot be confirmed as contextually clear — re-introduce.', true)
   }
-  // priorDisclosedAt is non-null here (a null one makes isFirstChannelTouch true above),
-  // but guard explicitly so the type is narrowed and the intent is clear.
-  if (input.priorDisclosedAt && daysBetween(input.priorDisclosedAt, input.now) >= input.inactivityDays) {
-    return full('Prior disclosure is older than the configured inactivity window — re-introduce.', true)
+  // Measured from the thread's last message when we know it, falling back to the disclosure
+  // itself when the thread has no recorded traffic (priorDisclosedAt is non-null here — a null
+  // one makes isFirstChannelTouch true above — so the fallback is always defined).
+  const lastTouch = input.lastContactAt ?? input.priorDisclosedAt
+  if (lastTouch && daysBetween(lastTouch, input.now) >= input.inactivityDays) {
+    return full('The thread has been inactive longer than the configured window — re-introduce.', true)
   }
 
   return {
@@ -125,23 +136,33 @@ export interface IdentityVars {
 }
 
 /**
+ * The one way FSOS refers to the recipient's agent of record in client-facing copy: "your
+ * Farmers agent, Jane Smith" when the name is confidently on file, and the approved generic
+ * "your Farmers agent" when it is not — never a guessed name (§4.3) and never the doubled
+ * "your Farmers agent, your Farmers agent".
+ *
+ * Lives here (rather than in variables.ts) because identity.ts is the pure, dependency-free
+ * module; variables.ts imports it so the {{agent_of_record_reference}} merge token and the
+ * platform disclosure's {{agency_owner.reference}} can never drift apart (CLAUDE.md §6).
+ */
+export function agentOfRecordReference(fullName?: string | null): string {
+  const name = String(fullName ?? '').trim()
+  return name ? `your Farmers agent, ${name}` : 'your Farmers agent'
+}
+
+/**
  * Render the approved disclosure by filling the CONFIG templates. Only the registered
  * identity tokens are substituted (no arbitrary expressions). Unknown/empty tokens
  * resolve to a safe neutral so a raw {{token}} never leaks to a contact.
  */
 export function renderIdentityDisclosure(config: IdentityConfig, vars: IdentityVars, mode: DisclosureMode): string {
-  // The client's AGENT OF RECORD (their Farmers agency owner). When the specific name is not
-  // confidently on file we NEVER name a wrong/guessed agent (§4.3) — we degrade to the generic
-  // "your Farmers agent". `agency_owner.reference` folds that fallback into a single phrase so a
-  // template reads naturally either way: "your Farmers agent, Jane Smith" when known, just
-  // "your Farmers agent" when not — never the doubled "your Farmers agent, your Farmers agent".
   const ownerName = vars.agency_owner.full_name?.trim() || ''
   const values: Record<string, string> = {
     'sender.first_name': vars.sender.first_name?.trim() || vars.sender.full_name?.trim()?.split(/\s+/)[0] || 'your Financial Services Agent',
     'sender.full_name': vars.sender.full_name?.trim() || 'your Financial Services Agent',
     'agency_owner.first_name': vars.agency_owner.first_name?.trim() || ownerName.split(/\s+/)[0] || 'your Farmers agent',
     'agency_owner.full_name': ownerName || 'your Farmers agent',
-    'agency_owner.reference': ownerName ? `your Farmers agent, ${ownerName}` : 'your Farmers agent',
+    'agency_owner.reference': agentOfRecordReference(ownerName),
     'communication.reason': vars.communication?.reason?.trim() || 'your coverage',
     fsa_role_label: config.fsaRoleLabel,
   }
@@ -153,12 +174,41 @@ export function renderIdentityDisclosure(config: IdentityConfig, vars: IdentityV
 }
 
 /**
- * Compose the disclosure and the message body. Idempotent: if the body already opens
- * with the disclosure (e.g. a re-render/retry), it is not duplicated.
+ * Compose the disclosure and the message body. Idempotent: if the body already contains the
+ * disclosure (e.g. a re-render/retry), it is not duplicated.
+ *
+ * The disclosure is inserted as the message's FIRST PARAGRAPH, which is not always the first
+ * LINE. A campaign email body opens with its own routing headers — a "Subject:" line (rendered
+ * as the card H1) and a "Preview:" line (the inbox preheader) — and then a greeting. Blindly
+ * prepending ahead of those headers pushed them out of the leading-header window that
+ * email-shell.ts / template-subject.ts parse, so the email lost its H1 and preheader and
+ * displayed a literal "Subject: …" line as body copy. Skipping past the headers (and past a
+ * short greeting line, so the disclosure reads as the opening sentence rather than interrupting
+ * "Hi Sarah,") keeps the disclosure equally prominent while leaving the headers intact.
+ *
+ * SMS bodies have neither headers nor a standalone greeting line, so they are unaffected.
  */
 export function prependIdentityDisclosure(disclosure: string, body: string): string {
   const d = disclosure.trim()
   if (!d) return body
-  if (body.trimStart().startsWith(d)) return body
-  return `${d}\n\n${body}`
+  if (body.includes(d)) return body
+
+  const lines = String(body ?? '').replace(/\r\n/g, '\n').split('\n')
+  let i = 0
+  // Skip the leading Subject:/Preview: header lines (and any blank lines among them).
+  for (; i < lines.length; i++) {
+    if (/^\s*$/.test(lines[i])) continue
+    if (/^\s*(subject|preview):/i.test(lines[i])) continue
+    break
+  }
+  // Skip a standalone greeting line ("Hi Sarah," / "Hello there,") so the disclosure opens the
+  // body rather than splitting the salutation from it.
+  if (i < lines.length && /^\s*(hi|hello|hey|dear|good (morning|afternoon|evening))\b.{0,60},\s*$/i.test(lines[i])) {
+    i++
+  }
+  if (i === 0) return `${d}\n\n${body}`
+
+  const head = lines.slice(0, i).join('\n').replace(/\s+$/, '')
+  const rest = lines.slice(i).join('\n').replace(/^\n+/, '')
+  return rest ? `${head}\n\n${d}\n\n${rest}` : `${head}\n\n${d}`
 }

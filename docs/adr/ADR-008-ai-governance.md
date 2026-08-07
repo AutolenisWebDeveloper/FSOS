@@ -35,7 +35,7 @@ All AI is governed by binding rules enforced at the gateway (ADR-002) and dispat
 - More engineering per AI feature (schemas, prompt versions, confidence handling, approval states).
 
 ## Related Documents
-- CLAUDE.md §4.2, §4.3, §11.1, §21
+- CLAUDE.md §4.2, §4.3, §11.1
 - DESIGN.md (AI UX standards); docs/adr/ADR-002-ai-gateway.md, ADR-004-securities-firewall.md
 - docs/adr/ADR-028-agent-tool-calling.md (governed tool-calling: read-only v1 ceiling
   enforces §11.1 "no autonomous mutation"; fail-safe input validation in code)

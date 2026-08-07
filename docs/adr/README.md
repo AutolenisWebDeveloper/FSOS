@@ -59,7 +59,7 @@
 | 032 | Cross-Sell Life Campaign (existing-client, no-active-life; 35-touch timeline) | Accepted | [`ADR-032-cross-sell-life-campaign.md`](./ADR-032-cross-sell-life-campaign.md) |
 | 033 | Communications Command Console (orchestration over the one send path) | Accepted | [`ADR-033-communications-console.md`](./ADR-033-communications-console.md) |
 | 034 | Life Win-Back Agent (first-class win-back outreach) | Accepted | [`ADR-034-life-winback-agent.md`](./ADR-034-life-winback-agent.md) |
-| 035 | Accessibility / Responsive Verification via a Manual Pre-Ship Checklist | Accepted | [`ADR-035-a11y-preship-checklist.md`](./ADR-035-a11y-preship-checklist.md) |
+| 035 | Accessibility / Responsive Verification via a Manual Pre-Ship Checklist | Withdrawn | [`ADR-035-a11y-preship-checklist.md`](./ADR-035-a11y-preship-checklist.md) |
 | 036 | Contact Import: Field Recognition & Mapping Model | Accepted | [`ADR-036-contact-import-mapping-model.md`](./ADR-036-contact-import-mapping-model.md) |
 | 037 | Communication Template Version History (database-enforced copy retention) | Accepted | [`ADR-037-comm-template-version-history.md`](./ADR-037-comm-template-version-history.md) |
 

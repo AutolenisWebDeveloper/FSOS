@@ -47,7 +47,7 @@ Auth/verification must fail **closed** in production. Example precedent: Twilio 
 - Implementing the feature itself → the relevant build skill (**fsos-crm-workflows**, **twilio-a2p-compliance**, **fsos-nigo-intelligence**, **farmers-brand-website**).
 - General code-quality review with no security/guardrail angle → the built-in **code-review** skill.
 
-## Definition of Done for an audit
+## Audit completion criteria
 
 - Every touched guardrail has a passing proof test; `npm run test:rls` green.
 - No fail-open path in production; no cross-scope read/write; no securities-prohibited field; no un-audited mutation of client/agency data.

@@ -26,7 +26,7 @@ Build entities in spine order so each has its parent to reference:
 8. **Compliance P0 surfaces:** firewall · licenses · consent · dnc (read/status).
 9. **Super Admin P0:** users · roles · permissions · ai/policies (kill switches) · audit · security · backups.
 10. **Executive dashboard** `/app` (P0) wired to real counts.
-**Gate:** a referral can flow Agency→Referral→Household→Opportunity with audit at each step; no `is_security` record can be sent to; every P0 page meets Definition of Done.
+**Gate:** a referral can flow Agency→Referral→Household→Opportunity with audit at each step; no `is_security` record can be sent to.
 
 ## PHASE 2 — P1 (professional launch)
 - Financial Review OS (the review spine: directory, board, workspace, prep, outcome→opportunity origination, calendar, due).
@@ -41,7 +41,7 @@ Build entities in spine order so each has its parent to reference:
 - Admin Portal: cases queue, document processing, data imports (wizard: mapping→preview→validate→error report→rollback→audit), support queue, user support.
 - Executive: briefing (AI priorities), KPIs, production, performance, conversion/cross-sell overviews, alerts.
 - Renewal/X-date/SLA/dormancy jobs live.
-**Gate:** every P1 page Definition of Done; every automated send passes the 13-step gate (`docs/data-guardrails.md` §5); every agent run is logged with confidence + cost.
+**Gate:** every automated send passes the 13-step gate (`docs/data-guardrails.md` §5); every agent run is logged with confidence + cost.
 
 ## PHASE 3 — P2 (operational enhancement)
 Agency map/leaderboard/health/penetration · policy lapse-risk · review types config · analytics pages (conversion, cross-sell, comms, referral) · sequences/audience builder · workflow builder (triggers/conditions/delays/branching/failure/retry) · documents missing-detection · reports builder + scheduled · commission reconciliation/chargebacks/trails/adjustments/statements · AI evaluations · admin exports/duplicates · compliance legal-holds/attestations/policies · partner training/tasks · client reviews/case-status · super workflows/sandbox/webhooks.
@@ -78,7 +78,7 @@ Custom dashboard builder · advanced forecasting · billing placeholder (only if
 
 ## QA test matrix (every important workflow gets all paths)
 For each of: referral intake→convert, household create, policy record, opportunity stage-advance, review→opportunity origination, term-conversion outreach, campaign send, commission split, case submission, document upload, AI agent run, consent capture/revoke — test **happy · empty · error · unauthorized · duplicate · cancellation · retry · recovery**.
-Plus: unit · integration · e2e (seeded local Supabase) · permission/RLS · workflow · communication-gate · AI-guardrail (recommendation must be blocked) · security · accessibility (WCAG 2.1 AA) · responsive · browser · performance · load · backup · restore · data-migration · failure/retry.
+Plus: permission/RLS · workflow · communication-gate · AI-guardrail (recommendation must be blocked) · security · backup · restore · data-migration · failure/retry.
 
 ---
 

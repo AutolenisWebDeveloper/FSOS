@@ -1,8 +1,8 @@
 # FSOS — Claude Code Prompt Pack
 
-> Copy-paste prompts for driving the FSOS build. The 18 spec files ARE the standing instructions; these prompts just point Claude Code at the right files in the right order and enforce the gates. You do NOT need a prompt per spec document — you need the setup prompt, five phase prompts, and the two verification prompts below.
+> Copy-paste prompts for driving the FSOS build. The 18 spec files ARE the standing instructions; these prompts just point Claude Code at the right files in the right order and enforce the gates. You do NOT need a prompt per spec document — you need the setup prompt, five phase prompts, and the verification prompt below.
 >
-> **Order of use:** (0) Setup once → (1) Foundation → (2) P0 → (3) P1 → (4) P2 → (5) P3. Run the **Guardrail Verification** prompt at the end of Foundation and again before every go-live. Use the **Page Definition-of-Done** prompt whenever finishing any page. Use **Resume** if a session is interrupted.
+> **Order of use:** (0) Setup once → (1) Foundation → (2) P0 → (3) P1 → (4) P2 → (5) P3. Run the **Guardrail Verification** prompt at the end of Foundation and again before every go-live. Use **Resume** if a session is interrupted.
 
 ---
 
@@ -41,11 +41,11 @@ Build the P0 (system-functional) phase per docs/build-order.md (Phase 1), using 
 
 Build entities in dependency (spine) order: Agency Network → Referral → Client & Household → Policy & Coverage → Opportunity & Pipeline → Tasks & Calendar → AI escalations queue → Compliance P0 surfaces → Super Admin P0 → Executive dashboard.
 
-For each page, meet the Definition of Done in docs/archetypes.md (data wired, validation, permissions/403, empty+loading+error+success states, archived/deleted behavior, responsive, accessibility, audit events, related-record links per docs/sitemap.md §5). Enforce the RBAC matrix (docs/specs/rbac-matrix.md) and wire each screen to its tables/APIs/jobs per docs/specs/data-api-map.md.
+For each page: wire real data, validate inputs, enforce permissions/403, write audit events, and keep related-record links per docs/sitemap.md §5. Enforce the RBAC matrix (docs/specs/rbac-matrix.md) and wire each screen to its tables/APIs/jobs per docs/specs/data-api-map.md.
 
 Guardrails apply everywhere they touch: securities firewall, the 13-step comms gate (`docs/data-guardrails.md` §5), the AI red-line, and audit on every mutation.
 
-Stop condition: the P0 gate in docs/specs/acceptance-checklist.md §2 passes — a referral flows Agency→Referral→Household→Opportunity with audit at each step, no is_security record can be sent to, and every P0 page meets Definition of Done. Run npm run build, fix all errors, and report the P0 gate as pass/fail with evidence.
+Stop condition: the P0 gate in docs/specs/acceptance-checklist.md §2 passes — a referral flows Agency→Referral→Household→Opportunity with audit at each step, and no is_security record can be sent to. Run npm run build, fix all errors, and report the P0 gate as pass/fail with evidence.
 ```
 
 ---
@@ -71,7 +71,7 @@ Stop condition: the P1 gate in docs/specs/acceptance-checklist.md §2 passes. Ru
 ```
 Build the P2 (operational enhancement) phase per docs/build-order.md (Phase 3): agency map/leaderboard/health/penetration, policy lapse-risk, review-type config, analytics pages, sequences/audience builder, workflow builder, missing-document detection, reports builder + scheduled reports, commission reconciliation/chargebacks/trails/adjustments/statements, AI evaluations, admin exports/duplicates, compliance legal-holds/attestations/policies, partner training/tasks, client reviews/case-status, super workflows/sandbox/webhooks.
 
-Constraint: no P2 feature may weaken any P0/P1 guardrail. Each page meets Definition of Done. Run npm run build, fix all errors, and confirm no acceptance-checklist item from §1 regressed.
+Constraint: no P2 feature may weaken any P0/P1 guardrail. Run npm run build, fix all errors, and confirm no acceptance-checklist item from §1 regressed.
 ```
 
 ---
@@ -80,7 +80,7 @@ Constraint: no P2 feature may weaken any P0/P1 guardrail. Each page meets Defini
 ```
 Build the P3 (advanced future) phase per docs/build-order.md (Phase 4): custom dashboard builder and advanced forecasting only. Do NOT build /super/billing unless I explicitly tell you FSOS is being commercialized as multi-tenant SaaS — it is a placeholder.
 
-Each page meets Definition of Done. Run npm run build and fix all errors. Confirm no earlier guardrail or acceptance-checklist item regressed.
+Run npm run build and fix all errors. Confirm no earlier guardrail or acceptance-checklist item regressed.
 ```
 
 ---
@@ -103,24 +103,6 @@ Write and run tests that assert ALL of these FAIL to send / are blocked + escala
 Also assert the POSITIVE cases pass: a consented, in-hours, approved-template, non-securities, non-recommendation educational/invitation message DOES send.
 
 Output a pass/fail table with the test name and evidence. Any failure is a build-blocking defect — fix it before proceeding.
-```
-
----
-
-## ★ Page Definition-of-Done (reuse for any single page before marking it complete)
-```
-For the page <ROUTE>, verify it meets the Definition of Done in docs/archetypes.md before marking complete. Check and report each:
-- Real data wired (no placeholders/mock).
-- Every input Zod-validated (client + server, same schema).
-- Permissions enforced per docs/specs/rbac-matrix.md; forbidden deep link → 403; RLS denies out-of-scope rows.
-- States built: empty, loading, error, success (+ archived/deleted if applicable).
-- Responsive: desktop, tablet, mobile.
-- Accessibility: labels, keyboard nav, aria, contrast (WCAG 2.1 AA).
-- Related-record links present per docs/sitemap.md §5 (no dead end).
-- Notifications/automations wired; audit events written on mutations (docs/specs/data-api-map.md taxonomy).
-- Guardrails honored if the page touches comms/AI/securities.
-- Acceptance criteria from the page's Part 2 spec met.
-Output a checklist with pass/fail + evidence. Do not mark the page complete if any item fails.
 ```
 
 ---

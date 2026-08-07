@@ -1,6 +1,6 @@
 # ADR-035 — Accessibility / responsive verification via a manual pre-ship checklist
 
-**Status:** Accepted
+**Status:** Withdrawn (2026-08-07 — the WCAG-AA pre-ship gating doctrine was removed from the engineering contract; the checklist remains available as an optional reference, not a required gate)
 **Date:** 2026-08-03
 **Owner:** FSOS Engineering
 

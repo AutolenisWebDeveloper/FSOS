@@ -1,9 +1,8 @@
 # Accessibility & Responsive — Manual Pre-Ship Checklist (booking surfaces)
 
-> **Run this once before each production ship of the booking program.** It closes the a11y /
-> responsive / screen-reader pre-ship gate (`deploy-notes.md`; decision: `docs/adr/ADR-035-a11y-preship-checklist.md`).
-> Standard: **WCAG 2.2 AA** (CLAUDE.md §13.1). No automated harness — this is a human pass.
-> Record the date + who ran it + result at the bottom.
+> **Retired as a required gate (2026-08-07).** ADR-035 is withdrawn and this checklist is no longer
+> enforced pre-ship; it is kept as an optional reference procedure. No automated harness — this is a
+> human pass. Record the date + who ran it + result at the bottom if run.
 
 ## Surfaces to check
 Public: **`/schedule`** (type chooser → slot picker → details → confirmation), `/schedule/success`.

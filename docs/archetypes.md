@@ -7,8 +7,6 @@
 ## The 40-point standard (what "complete" means for any page)
 1 name · 2 route · 3 portal · 4 authorized roles · 5 purpose · 6 entry points · 7 exit points · 8 parent nav · 9 child pages · 10 required data · 11 primary actions · 12 secondary actions · 13 filters · 14 search · 15 sorting · 16 pagination · 17 bulk actions · 18 form fields · 19 validation · 20 permission rules · 21 empty state · 22 loading state · 23 error state · 24 success state · 25 archived state · 26 deleted behavior · 27 mobile · 28 tablet · 29 desktop · 30 accessibility · 31 notifications · 32 automations · 33 AI involvement · 34 audit events · 35 integrations · 36 DB entities · 37 API endpoints · 38 reports/exports · 39 acceptance criteria · 40 build priority.
 
-**Definition of Done (applies to EVERY page):** real data wired (no placeholders) · every input Zod-validated · permissions enforced (403 on forbidden deep link) · empty + loading + error + success states built · archived + deleted behavior built · responsive desktop/tablet/mobile · accessible (labels, keyboard, aria, contrast) · notifications/automations wired · audit events written on mutations · no dead ends except completion screens (which offer a next action).
-
 ---
 
 ## A1 — Dashboard / Command Center

@@ -76,9 +76,9 @@ program still opens **draft** PRs so a human can review before merge.
 
 Each of Slices 2–5: audit every route's states/responsive/a11y/tokens against the baseline; fix; validate (type-check/lint/test/build + responsive matrix + a11y); one draft PR with evidence.
 
-## Per-slice Definition of Done (inherits CLAUDE.md §21)
+## Per-slice completion criteria
 
-Tokens-only · all states present · WCAG 2.2 AA · no horizontal overflow at all breakpoints · type-check/lint/test/build green · compliance/consent/securities indicators intact · no route removed/broken · no backend/schema/RLS/compliance/securities change · draft PR with a11y + responsive evidence · legal-gated copy stopped for human review.
+Tokens-only · all states present · no horizontal overflow at all breakpoints · type-check/lint/test/build green · compliance/consent/securities indicators intact · no route removed/broken · no backend/schema/RLS/compliance/securities change · draft PR with evidence · legal-gated copy stopped for human review.
 
 ## Out of scope / FYI (surfaced, not done here)
 

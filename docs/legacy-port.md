@@ -35,7 +35,7 @@
 | Contact Upload legacy UI | — | **PORT** | replaced by `/admin/data/imports/ghl` |
 | Assistant | `api/assistant` | **EVALUATE** | fold into `/app/ai` if used; else retire |
 
-**Rule for every ported page:** it is a *new FSOS page* built to the Definition of Done (`archetypes.md`) and `design-system.md` — real auth, RLS, audit on mutation, empty/loading/error states, responsive, accessible. It is **not** a copy-paste of legacy JSX.
+**Rule for every ported page:** it is a *new FSOS page* built to `archetypes.md` and `design-system.md` — real auth, RLS, audit on mutation. It is **not** a copy-paste of legacy JSX.
 
 ---
 
@@ -151,7 +151,7 @@ Legacy `api/briefing/send` (email delivery) merges into the existing briefing pa
 ---
 
 ## 5. Acceptance criteria
-- [ ] Every ported page meets the Definition of Done and `design-system.md`.
+- [ ] Every ported page follows `design-system.md`.
 - [ ] FNA Generator: FINRA disclaimer verbatim; recommendation-bearing output blocked in test; DOB via RPC.
 - [ ] GDC tiers: assumption-badged, config-editable, never presented as Farmers-published.
 - [ ] Sidebar character panels (AI Live Status, GDC Tier, FFS Contacts) live and wired to real data.

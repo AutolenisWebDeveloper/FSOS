@@ -157,4 +157,4 @@
 `entity.created · entity.updated(field diff) · entity.deleted(soft) · entity.viewed(sensitive) · stage.changed · comms.sent · comms.blocked · consent.captured · consent.revoked · firewall.blocked · ai.run · ai.action · ai.escalated · approval.decided · config.changed(before/after) · import.committed · import.rolledback · impersonation.started/ended · incident.step`
 
 ## 5. Screen → data completeness rule
-No screen ships without: its listed tables reachable via RLS, its API routes returning typed (Zod) data, its mutations writing audit, its jobs wired (if applicable), and its integration states (A12) or labeled fallback present. A screen with a table but no API, or an API but no audit, fails the Definition of Done.
+No screen ships without: its listed tables reachable via RLS, its API routes returning typed (Zod) data, its mutations writing audit, its jobs wired (if applicable), and its integration states (A12) or labeled fallback present. A screen with a table but no API, or an API but no audit, is incomplete.

@@ -48,7 +48,6 @@ Approach FSOS as a principal engineer accountable for a regulated production sys
 - **Improve existing systems over building parallel ones.** Prefer extending a service to cloning one (§6).
 - **Leave code better than you found it.** Reduce technical debt in code you touch, within the scope of the change — no drive-by rewrites, no debt added.
 - **Surface risk and better options.** If the literal request is unsafe, non-compliant, or architecturally wrong, say so and propose the correct path rather than executing it blindly.
-- **A task is not done when it works** (§21). Quality, safety, and maintainability are part of "done."
 
 ---
 
@@ -150,7 +149,7 @@ domain skill*        subagent-driven-    executing-plans      requesting-code-re
 ```
 `*` load the relevant domain/DB skill during ANALYZE based on the surface being touched.
 
-**Superpower first** — understand the system before changing it: read docs, inspect the existing implementation, trace data flows and user journeys, identify dependencies and downstream effects, choose the correct architectural layer, then plan in phases. **Frontend Design** shapes every user-facing surface. **Impeccable** runs *after* implementation as the final product-quality gate. Do not stop when a feature merely works — continue until it is coherent, refined, tested, and production-ready (§21).
+**Superpower first** — understand the system before changing it: read docs, inspect the existing implementation, trace data flows and user journeys, identify dependencies and downstream effects, choose the correct architectural layer, then plan in phases. **Frontend Design** shapes every user-facing surface. **Impeccable** runs *after* implementation as the final product-quality gate. Do not stop when a feature merely works — continue until it is coherent, refined, tested, and production-ready.
 
 ### 7.2 Skill matrix — invoke when
 
@@ -166,7 +165,7 @@ domain skill*        subagent-driven-    executing-plans      requesting-code-re
 | `test-driven-development` | Before implementing logic — write the failing test first. |
 | `fsos-testing` | **Pair with `test-driven-development` whenever the failing test is an FSOS file.** How this repo's tests are written and discovered: no test framework (not Jest, Vitest, or `node:test`), bare executable scripts under `tests/` auto-discovered by `scripts/run-tests.mjs`, `node:assert/strict`, the runtime-`tsc` compile-to-temp pattern, and the `unit` vs root-Postgres `rls` split. |
 | `systematic-debugging` | Any bug/regression — structured investigation, no guess-patching. |
-| `verification-before-completion` | Before claiming any task done — prove it against §21. |
+| `verification-before-completion` | Before claiming any task done — verify build and tests with evidence. |
 | `requesting-code-review` / `receiving-code-review` | Before/after merge — request review; handle feedback rigorously. |
 | `finishing-a-development-branch` | Merge/PR/cleanup once verified. |
 | `using-git-worktrees` | Isolated worktree for parallel or risky work. |
@@ -217,7 +216,7 @@ domain skill*        subagent-driven-    executing-plans      requesting-code-re
 5. **Build** — thin routes, Zod at the edge, services for logic, tokens for styling, archetype shells for pages. Preserve the existing architecture (§6).
 6. **Debug** (`systematic-debugging`) — reproduce, isolate, hypothesize, prove, fix the root cause. No speculative patches.
 7. **Polish** (`frontend-design` → `impeccable`) — states, responsiveness, a11y, microcopy, consistency.
-8. **Verify** (`verification-before-completion`) — run the full §21 Definition of Done. `npm run build` clean, tests green.
+8. **Verify** (`verification-before-completion`) — `npm run build` clean, tests green.
 9. **Review & finish** (`requesting-code-review` → `finishing-a-development-branch`) — request review, address feedback, then merge/cleanup.
 10. **Report** — list every changed file, assumptions made, guardrails touched, and known limitations.
 
@@ -302,7 +301,7 @@ Blocked sends are logged and escalated — never silently dropped.
 
 FSOS must be designed, implemented, tested, and maintained to the standard of a modern Fortune 500 financial-services platform — across the entire product: public site, auth, portals, frontend, backend, APIs, database, security, compliance, AI, jobs, integrations, observability, testing, docs, deployment. "Fortune 500 fintech quality" is not visual polish alone: the product must be **credible, secure, reliable, consistent, scalable, auditable, and professionally engineered end to end.** Exhaustive checklists live in `/docs`; the binding clauses below are the floor.
 
-**13.1 Frontend.** Every surface is deliberately designed for a regulated environment: **enterprise information architecture**, deliberate **visual hierarchy**, **reduced cognitive load**, **dashboard usability**, **consistent navigation**, **user-journey continuity**, **trust-building UI patterns**, and **conversion optimization** on public surfaces. Plus: clear titles/breadcrumbs, responsive desktop/tablet/mobile, semantic markup, **WCAG 2.2 AA**, keyboard nav, visible focus, proper labels, clear primary/secondary actions, confirmation before destructive actions, and full **loading / skeleton / empty (with next action) / error (with recovery) / success** states. All specific design decisions defer to `DESIGN.md`.
+**13.1 Frontend.** Every surface is deliberately designed for a regulated environment: **enterprise information architecture**, deliberate **visual hierarchy**, **reduced cognitive load**, **dashboard usability**, **consistent navigation**, **user-journey continuity**, **trust-building UI patterns**, and **conversion optimization** on public surfaces. Plus: clear titles/breadcrumbs, responsive desktop/tablet/mobile, semantic markup, keyboard nav, visible focus, proper labels, clear primary/secondary actions, confirmation before destructive actions, and full **loading / skeleton / empty (with next action) / error (with recovery) / success** states. All specific design decisions defer to `DESIGN.md`.
 
 **13.2 Dashboards.** Support operational decisions: clear priorities, actionable summaries, role-appropriate data, consistent tables (search, filter, sort, pagination, saved views), statuses, ownership, dates/deadlines, escalation visibility, quick actions, activity history, meaningful drill-downs. Never present data without helping the user see what needs attention next. (Dashboard content model: `DESIGN.md`.)
 
@@ -324,9 +323,9 @@ FSOS must be designed, implemented, tested, and maintained to the standard of a 
 
 **13.11 Background jobs.** Durable, retry-safe, idempotent where practical, observable, auditable, recoverable, protected from duplicate execution, able to record partial progress and fail without corrupting data. Long-running work never depends on an active session; it belongs in the job system, not a request handler.
 
-**13.12 Performance & reliability.** Review for query efficiency, N+1, excessive requests, duplicate computation, bundle size, render cost, caching, pagination, memory, large-file/large-dataset behavior, and concurrency (operational budget in §14). Design for failure per the error-handling standard (§16): invalid input, missing data, unauthorized access, network/integration/DB failure, partial completion, duplicate execution, timeout, retry exhaustion, concurrent/stale changes, and interruption. Failures are visible, logged, recoverable where practical, and never silently corrupt data.
+**13.12 Performance & reliability.** Review for query efficiency, N+1, excessive requests, duplicate computation, caching, pagination, memory, large-file/large-dataset behavior, and concurrency (operational budget in §14). Design for failure per the error-handling standard (§16): invalid input, missing data, unauthorized access, network/integration/DB failure, partial completion, duplicate execution, timeout, retry exhaustion, concurrent/stale changes, and interruption. Failures are visible, logged, recoverable where practical, and never silently corrupt data.
 
-**13.13 Observability & testing.** Structured logs + audit logs + error tracking + job-run/integration status + correlation IDs; never log passwords, tokens, sensitive PII, full financial account data, or secrets. Testing reflects risk: unit, service, API, integration, **authorization, RLS, guardrail, state-transition**, form-validation, a11y, responsive, e2e journeys, background-job, retry/idempotency, failure-path, and regression. Test more than the happy path. **Never** delete, weaken, skip, or rewrite a legitimate guardrail test to make a build pass.
+**13.13 Observability & testing.** Structured logs + audit logs + error tracking + job-run/integration status + correlation IDs; never log passwords, tokens, sensitive PII, full financial account data, or secrets. Testing reflects risk: unit, service, API, integration, **authorization, RLS, guardrail, state-transition**, background-job, retry/idempotency, failure-path, and regression. Test more than the happy path. **Never** delete, weaken, skip, or rewrite a legitimate guardrail test to make a build pass.
 
 **13.14 Documentation.** Kept in sync with implementation. Update affected docs (including `DESIGN.md` for any design-pattern change (§18), and the relevant ADR for any architectural change (§19)) when changing architecture, routes, APIs, data models, permissions, workflows, env vars, integrations, jobs, compliance controls, AI behavior, user journeys, or build/deploy procedures. No undocumented architectural decisions hidden only in code.
 
@@ -337,8 +336,6 @@ FSOS must be designed, implemented, tested, and maintained to the standard of a 
 Performance is a feature. Default to the cheaper, faster pattern; deviate only with reason.
 
 - **Server-first:** prefer **React Server Components**; add `'use client'` only where interactivity genuinely requires it. No client component for static/data-display content.
-- **Bundle discipline:** minimize client bundle size; **lazy-load heavy modules** (charts, editors, PDF/FNA tooling) via `dynamic()`; avoid importing large libraries into shared layouts.
-- **Render efficiency:** avoid unnecessary re-renders; memoize deliberately (not reflexively); keep component trees shallow where practical.
 - **Data access:** no N+1; index the columns you filter/join on; select only needed columns; paginate lists (§13.2/§13.7).
 - **Caching:** cache safely with Next.js `revalidate`/route caching where correctness allows; **never** cache PII across users or serve one tenant's data to another.
 - **Assets:** optimized images (`next/image`), no oversized raster where SVG suffices, fonts via `next/font`.
@@ -355,7 +352,6 @@ Before any feature is "done," verify it is production-ready:
 - **Graceful degradation:** the surface remains usable (or clearly informs the user) when a dependency is down (§16).
 - **All states present:** loading / empty / error / success (`DESIGN.md`).
 - **Security review:** `fsos-security-audit` pass on any data-touching change.
-- **Accessibility review:** `impeccable` a11y pass (WCAG 2.2 AA).
 - **Documentation:** updated where §13.14 requires.
 - **Upgrade safety:** migrations are forward-only, reversible where practical, with a rollback note; feature flags / kill switch for risky or automated surfaces.
 
@@ -402,7 +398,7 @@ The Farmers logo and brand assets are **trademarked**. As an authorized agent, u
 | Neutral gray | `#666666` | `0 0% 40%` | neutral ink/dividers |
 | White | `#FFFFFF` | `0 0% 100%` | canvas / card |
 
-The official palette is the *source of truth*; the `DESIGN.md` tokens are the *implementation*. Divergences exist only to meet WCAG 2.2 AA and are documented in `DESIGN.md`. Never hardcode a hex — resolve through a token.
+The official palette is the *source of truth*; the `DESIGN.md` tokens are the *implementation*. Divergences are documented in `DESIGN.md`. Never hardcode a hex — resolve through a token.
 
 ### 17.3 Consistency
 The identity is consistent across homepage, public pages, login, forgot-password, dashboards, nav, headers, footers, forms, emails, PDFs, reports, loading screens, empty states, error pages, favicon, and app icons. Every screen communicates trust, security, professionalism, financial expertise, stability, reliability, simplicity, and confidence — and reads as one product. When frontend work is done, audit the affected scope and replace any placeholder branding with approved branding.
@@ -462,7 +458,7 @@ The identity is consistent across homepage, public pages, login, forgot-password
 | ADR-032 | Cross-Sell Life Campaign (existing non-life client, no active life; multi-channel 35-touch/180-day timeline; `xsell_life_*` namespace, distinct from the Cross-Sell agent) |
 | ADR-033 | Communications Command Console (orchestration over the one send path; cross-campaign asset catalog view; individual/AI/test sends; no new send path, no override) |
 | ADR-034 | Life Win-Back agent (first-class win-back outreach; promotes the former `marketing_automation` stub; `winback_life` book; disabled by default until member/consent mapping verified) |
-| ADR-035 | Accessibility/responsive verification via a manual pre-ship checklist (no automated browser-test platform; single-FSA proportionality) |
+| ADR-035 | Accessibility/responsive verification via a manual pre-ship checklist — **Withdrawn 2026-08-07** (a11y-gating doctrine removed; checklist retained as an optional reference) |
 | ADR-036 | Contact-import field-recognition & mapping model (unified recognizer + template detection + composite split + mapping memory + custom fields; extends the ADR-028 `contact-consolidation-dedup` substrate) |
 | ADR-037 | Communication template version history (DB-trigger-enforced, append-only copy retention on `comm_templates`) |
 
@@ -491,35 +487,13 @@ Do not add new feature pages while a genuine P0 blocker above remains open, unle
 
 ---
 
-## 21. Definition of Done (every page and every task inherits this)
-
-**Never stop at "working."** A feature is not complete because it works or the code compiles. Continue refining until it meets the standard for engineering quality, security, usability, accessibility, performance, documentation, and maintainability. Then verify:
-
-- Implementation matches the request; existing architecture preserved (§6); no duplicate subsystem created.
-- Wired real data (no placeholders/mock arrays); Zod-validated inputs; enforced permissions (403 via `ForbiddenState`).
-- Full states: loading (skeleton, never a bare spinner) / empty (with next action) / error (isolated, retryable) / success.
-- Responsive desktop→tablet→mobile; **WCAG 2.2 AA** (labels, keyboard, aria, AA contrast on shell and canvas).
-- Backend enforces security + business rules server-side; APIs validated; errors handled per §16 (safe messages, correct status, logged); structured logs + audit events written.
-- Data integrity + RLS + guardrails intact; gold assumption badge on every config default; purple firewall marker on every `is_security` row.
-- AI paths: structured output validated, prompt version + cost logged, confidence-gated, human-approval where required (§11.1).
-- Triggered notifications/automations wired; communications compliance (§12) enforced.
-- Production-ready per §15 (logging, recovery, degradation, security + a11y review, upgrade safety).
-- Tests pass (incl. authz/RLS/guardrail/state-transition/failure-path); **no legitimate guardrail test weakened or skipped.**
-- `npm run build`, `type-check`, and `lint` all clean.
-- No dead-end pages; no placeholders left in scope; `DESIGN.md` updated if any design pattern changed (§18); relevant ADR updated if any architecture changed (§19).
-- All changed files listed; assumptions and known limitations disclosed.
-
-The result must be demonstrably more secure, usable, reliable, maintainable, and professionally engineered than what existed before the task began.
-
----
-
 ## 22. Session protocol (how to start and finish)
 
 **On start:** read this file → relevant `/docs` → relevant ADR(s) (§19) → `DESIGN.md` → the actual files in scope. Confirm the portal(s), routes, and tables you touch and which guardrails apply. Load the domain + DB + design skills for the surface.
 
 **During:** build in dependency order (Foundation → P0 → P1 → P2 → P3, `docs/build-order.md`); apply the three guardrails (§4), communications compliance (§12), and error-handling standards (§16) everywhere they touch; keep routes thin, validate at the edge, resolve styling through tokens, compose pages from archetype shells; preserve the architecture (§6).
 
-**On finish:** run the full §21 Definition of Done; `npm run build` clean; verify with `verification-before-completion`; request review; then report every changed file, assumptions made, guardrails touched, and known limitations.
+**On finish:** `npm run build` clean; verify with `verification-before-completion`; request review; then report every changed file, assumptions made, guardrails touched, and known limitations.
 
 ---
 

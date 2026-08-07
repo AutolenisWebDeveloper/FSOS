@@ -15,13 +15,11 @@
 
 ## 0. Design ambition [STANDARD]
 
-FSOS is expected to meet the design quality of modern Fortune 500 financial-technology platforms — the
-class of Stripe, Mercury, Ramp, and Plaid, and the internal enterprise software of Fidelity, Charles
-Schwab, Vanguard, Morgan Stanley, and JPMorgan Chase. **The objective is not to imitate any specific
-product**, but to reach the same level of professionalism, usability, consistency, accessibility,
-operational efficiency, and visual refinement — while remaining unmistakably consistent with the
-approved Farmers Insurance brand identity. When a choice is unclear, pick the option a regulated,
-enterprise-grade financial platform would ship.
+FSOS is expected to meet the design quality of modern Fortune 500 financial-technology platforms.
+**The objective is not to imitate any specific product**, but to reach a high level of professionalism,
+usability, consistency, accessibility, operational efficiency, and visual refinement — while remaining
+unmistakably consistent with the approved Farmers Insurance brand identity. When a choice is unclear,
+pick the option a regulated, enterprise-grade financial platform would ship.
 
 ---
 
@@ -578,7 +576,7 @@ by `tests/workspace-registry.test.mjs` and may not be weakened.
 - **Target sizes:** ≥24×24px (WCAG 2.2 2.5.8); touch targets aim ≥44×44px on mobile.
 - **Forms:** programmatic labels, error text associated to fields, linkable error summaries, no time-only or color-only signaling.
 
-Accessibility is verified in the Definition of Done (§27, `CLAUDE.md §21`), not bolted on.
+Accessibility is verified during the `impeccable` pass (§27), not bolted on.
 
 ---
 
@@ -625,18 +623,6 @@ surface of `CLAUDE.md §11.1 (AI governance)`.
 
 AI never silently takes a regulated client-facing action; the red-line (`CLAUDE.md §4.2`) governs all AI
 copy and behavior.
-
----
-
-## 26. Definition of Done — design surface [STANDARD]
-
-The design view of `CLAUDE.md §21`; both must be satisfied. Every page:
-
-Wired real data · Zod-validated inputs · enforced permissions (403 via `ForbiddenState`) · empty /
-loading (skeleton) / error (isolated, retryable) / success states · responsive across all five tiers (§14)
-· WCAG 2.2 AA (§22) · audit events written · gold assumption badge on every config default · purple
-firewall marker on every `is_security` row · approved brand assets only (§5) · AI content marked and
-governed (§25) · trust signals present (§19) · no dead ends · `DESIGN.md` updated if any pattern changed (§1).
 
 ---
 

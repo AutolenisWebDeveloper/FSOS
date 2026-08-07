@@ -15,8 +15,7 @@
 - [ ] **No AI agent exceeds permissions.** Green-zone tools only; red-line recommendation hard-blocked in eval (a slip = build-blocking defect).
 - [ ] **No securities workflow crosses the firewall.** `is_security` never auto-sent; client/partner portals never expose securities fields; suitability is a pointer, not stored.
 - [ ] **No communication bypasses consent + suppression.** 13-step dispatcher gate at send time (`../data-guardrails.md` §5); no "force send" control exists.
-- [ ] **No page complete without responsive + empty + loading + error + success states** (+ archived/deleted where applicable).
-- [ ] **No feature complete unless wired to real data and tested.**
+- [ ] **No feature complete unless wired to real data.**
 - [ ] **No invented Farmers data.** Every split/window/product-availability/carrier-rule value is an assumption-flagged, editable config default with a "verify" badge.
 - [ ] **NIGO appears nowhere** in the codebase, schema, agents, reports, or UI.
 
@@ -34,7 +33,7 @@
 **P0 gate:**
 - [ ] Referral flows Agency→Referral→Household→Opportunity with audit at each step.
 - [ ] No `is_security` record can be sent to; securities opp stores only `ffs_case_ref`.
-- [ ] Every P0 page meets Definition of Done (data/validation/permissions/states/responsive/a11y/audit).
+- [ ] Every P0 page is wired to real data with validated inputs, enforced permissions, and audit events.
 - [ ] AI escalations queue exists and is the only blocked→resolved path.
 
 **P1 gate:**
@@ -43,7 +42,7 @@
 - [ ] Compliance, Partner, Client portals enforce scope + column allowlists.
 - [ ] Template approval limited to compliance/supervisor/super; unapproved templates unusable.
 
-**P2/P3 gates:** each feature meets Definition of Done; no P2/P3 item weakens a P0/P1 guardrail.
+**P2/P3 gates:** no P2/P3 item weakens a P0/P1 guardrail.
 
 ---
 
@@ -63,12 +62,10 @@ Workflows: WF-1 Referral→Placement · WF-2 Review lifecycle · WF-3 Term Conve
 ---
 
 ## 4. QA coverage sign-off (from build-order QA matrix)
-- [ ] Unit · integration · e2e (seeded local Supabase).
 - [ ] Permission/RLS tests (every protected route + out-of-scope row).
 - [ ] Communication-gate tests (each of the 7 steps blocks correctly).
 - [ ] AI-guardrail tests (recommendation, securities, out-of-hours, unconsented all blocked).
 - [ ] Security tests (rate limit, bot, file upload, secrets, injection/XSS/CSRF).
-- [ ] Accessibility (WCAG 2.1 AA) · responsive (mobile/tablet/desktop) · browser.
 - [ ] Performance · load.
 - [ ] Backup · restore (tested restore, not just backup exists).
 - [ ] Data-migration (import preview/commit/rollback) · failure/retry.

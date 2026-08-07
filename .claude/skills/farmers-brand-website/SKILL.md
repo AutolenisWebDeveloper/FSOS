@@ -26,10 +26,6 @@ This skill is the FSOS-specific *context and guardrails* layer. For the actual c
 3. **Client-facing content boundary.** The public/client surface is non-securities, non-advice only (CLAUDE.md §4). No individualized product/investment/replacement recommendation, no securities call-to-action, no invented Farmers product claims (§2.2, §2.3). Marketing copy educates and invites; it does not recommend.
 4. **Every input validated.** Public forms (referral, upload, intake) validate with Zod and are covered by `tests/public-intake.test.mjs` — keep that gate green.
 
-## Definition of Done (CLAUDE.md §8)
-
-A public page is not done when it renders. It needs: real wired data (no placeholders), validation on every input, empty/loading/error/success states, responsive desktop/tablet/mobile, accessibility (labels, keyboard, visible focus, reduced-motion, aria), audit events where it writes, and no dead ends (a completion screen always offers a next action).
-
 ## When NOT to use this skill
 
 - Authenticated portal UI (FSA/admin/compliance/partner/client app shells) — use **impeccable** with the portal context directly; this skill is the *public* surface.

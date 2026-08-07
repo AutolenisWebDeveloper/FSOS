@@ -67,7 +67,7 @@ The audit found App A's "extra features" are mostly screens, not function — AI
 
 ## PHASE 2 — Port the four keepers
 
-Each is a **new App B page** built to `docs/archetypes.md` Definition of Done and `docs/design-system.md` — real auth, RLS, audit. Not a copy-paste of legacy JSX.
+Each is a **new App B page** built to `docs/archetypes.md` and `docs/design-system.md` — real auth, RLS, audit. Not a copy-paste of legacy JSX.
 
 **2.1 Global search** — `/api/search` reworked to query App B's model (`agency_partnerships`, `households`, `household_members`, `opportunities`, `household_policies`, `cases`), RLS-scoped, wired to the topbar ⌘K palette. **Firewall: never return an `is_security` row to a client/partner session.**
 

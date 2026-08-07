@@ -24,6 +24,7 @@ const RLS = new Set([
   'booking-reschedule-move.test.mjs',
   'booking-google-connection.test.mjs',
   'booking-calendly-reconcile.test.mjs',
+  'comm-template-version-history.test.mjs',
 ])
 
 const mode = process.argv[2] === 'rls' ? 'rls' : 'unit'

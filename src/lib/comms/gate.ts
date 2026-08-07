@@ -11,7 +11,7 @@ import { containsRecommendationLanguage, withinQuietHours } from '../compliance/
 export type GateStep =
   | 'ownership' // 0 — authoritative ownership must resolve; unresolved → assignment review
   | 'consent' // 1
-  | 'quiet_hours' // 2 — legal TCPA floor (9–20 recipient-local), non-negotiable
+  | 'quiet_hours' // 2 — legal TCPA floor (9–20 recipient-local) on SMS marketing/campaign sends
   | 'business_hours' // 2b — operator's hours of operation (can only tighten the floor)
   | 'sms_live' // 2f — SMS staged pending A2P 10DLC approval (non-escalating hold)
   | 'frequency' // 2d — per-recipient rate caps (operational deferral, §9)
@@ -66,6 +66,17 @@ export interface GateInput {
   hasConsent: boolean
   /** 2 — recipient-local hour (0–23). */
   recipientLocalHour: number
+  /**
+   * 2 — this send is EXEMPT from the quiet-hours floor. Owner-directed scope
+   * (2026-08-07): the 9:00–20:00 floor applies to SMS marketing/campaign sends only.
+   * Exempt: email (all purposes), SMS with a transactional/servicing-class purpose
+   * (purpose.ts quietHoursApply), and a human-typed 1:1 SMS reply on a LIVE
+   * conversation (inbound from the contact within the preceding 24h — send.ts).
+   * Defaults to FALSE, so every existing caller — and any unclassified send — keeps
+   * the floor. This flag relaxes ONLY step 2; consent (1), DNC/STOP (3), approval (4),
+   * recommendation (5), and the securities firewall (6) apply exactly as before.
+   */
+  quietHoursExempt?: boolean
   /**
    * 2b — inside the operator's configured hours of operation (business-local).
    * Defaults to true (no extra restriction) when omitted, so existing callers are
@@ -161,7 +172,9 @@ export function evaluateGate(input: GateInput): GateResult {
   // delegation / data-confidence trip evaluated outside operating hours still surfaces as
   // its own escalating block and is not masked as a benign "held for hours" deferral
   // (§13.9: never silently downgrade a compliance control).
-  if (!withinQuietHours(input.recipientLocalHour)) return blocked('quiet_hours')
+  if (input.quietHoursExempt !== true && !withinQuietHours(input.recipientLocalHour)) {
+    return blocked('quiet_hours')
+  }
   // 2c — on-behalf-of authority. Checked before content approval / recommendation:
   // a message the FSA is not authorized to send at all must never reach content checks.
   if (input.delegationValid === false) return blocked('delegation', true, input.delegationReason)

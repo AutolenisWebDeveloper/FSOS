@@ -131,6 +131,31 @@ Unchanged: purpose classification, purpose-scoped consent, collision, the pure c
 `'global'` caps that bound all campaign/drip outreach. No caller that omits
 `isConversationReply` is affected.
 
+## Amendment — 2026-08-07: quiet-hours floor scoped to SMS marketing sends
+
+Owner-directed. The original gate applied the 9:00–20:00 recipient-local quiet-hours floor
+(step 2) to **every** send on both channels, regardless of purpose — so transactional traffic
+(booking confirmations, appointment reminders, servicing notices) and all email deferred
+overnight alongside marketing SMS. This ADR already established that a message's purpose
+"drives … quiet-hour treatment"; that treatment is now enforced at the gate:
+
+- **Quiet hours apply:** SMS sends with a marketing-class purpose (`MARKETING`, `WORKSHOP`,
+  `BIRTHDAY`, `RELATIONSHIP` — `purpose.ts QUIET_HOURS_GATED_PURPOSES`) **and any SMS with no
+  purpose** (the unclassified campaign path fails toward gated).
+- **Quiet hours do not apply:** email (all purposes); SMS with a transactional/servicing-class
+  purpose (`TRANSACTIONAL`, `APPOINTMENT`, `SERVICING`, `APPLICATION_STATUS`,
+  `DOCUMENT_REQUEST`, `POLICY_DEADLINE`) — this covers AI replies to inbound messages, which
+  are always classified `SERVICING`; and a **human-typed 1:1 SMS only when the contact sent an
+  inbound message within the preceding 24 hours** (live conversation — resolved server-side in
+  `send.ts`, fail-closed; outside the window it stays gated like any unclassified send).
+
+The floor itself (9:00–20:00) is unchanged and never widened; `business_hours` (step 11) still
+only tightens. The exemption relaxes step 2 **only** — consent, DNC/STOP, template approval,
+the recommendation red-line, the securities firewall, and audit/escalation are untouched. In
+the same change, the recipient-local hour became DST-correct: resolved from an IANA timezone
+(default `America/Chicago`, `local-time.ts`) instead of the hardcoded UTC-6 offset that ran an
+hour off during CDT. Proof: `tests/quiet-hours-scope.test.mjs`.
+
 ## Related Documents
 
 - CLAUDE.md §4, §6, §12; master build instruction §9, §10

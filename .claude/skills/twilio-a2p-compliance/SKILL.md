@@ -20,7 +20,7 @@ There is exactly **one** gate — the pure decision core `evaluateGate` in `src/
 
 1. **ownership** — authoritative ownership (agency / agency-owner / represented-agent / actual sender) must resolve; unresolved → assignment-review queue. *Escalates.*
 2. **consent** — valid channel consent on file. *Escalates.*
-3. **quiet_hours** — recipient-local 9:00–20:00 TCPA floor (non-negotiable). *Escalates.*
+3. **quiet_hours** — recipient-local 9:00–20:00 TCPA floor on **SMS marketing/campaign sends only** (scope: `purpose.ts quietHoursApply`; email, transactional/servicing-class SMS, and human 1:1 SMS on a live conversation with inbound in the last 24h are exempt from this step only; SMS with no purpose stays gated; the floor is never widened). *Escalates.*
 4. **delegation** — the FSA↔agency-owner on-behalf-of authority is ACTIVE and in-scope. *Escalates.*
 5. **dnc** — not on internal/external do-not-contact. *Escalates.*
 6. **approved_template** — approved template or approved AI policy. *Escalates.*

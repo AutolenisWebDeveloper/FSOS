@@ -35,6 +35,8 @@ import { prependIdentityDisclosure } from './identity'
 import { parseSubjectFromBody } from './template-subject'
 import { resolveSendPolicy } from './policy-resolver'
 import type { MessagePurpose } from './purpose'
+import { quietHoursApply } from './purpose'
+import { localHourInTimeZone, withinLiveConversationWindow, DEFAULT_TIMEZONE } from './local-time'
 import { evaluateOutboundMessage } from './evaluations'
 import type { AiMessageClass } from './ai-authority'
 import { evaluateDataConfidence, type ClaimField } from './data-confidence'
@@ -65,7 +67,8 @@ export interface SendContext {
    * true, it is OR'd into gate step 1 (never reduces restrictiveness for existing callers,
    * who leave it undefined). The caller MUST have verified a durable `granted` (not later
    * `revoked`) row for this exact channel. DNC (step 3, incl. STOP opt-outs), quiet-hours
-   * (2), recommendation (5), and securities (6) are STILL enforced independently.
+   * (2, where it applies — SMS marketing scope, purpose.ts), recommendation (5), and
+   * securities (6) are STILL enforced independently.
    */
   durableConsentGranted?: boolean
   /**
@@ -80,10 +83,10 @@ export interface SendContext {
    *   • It never fires when the recipient has an EXPLICIT opt-out/revoke (member-level
    *     `consents.status='revoked'`, a purpose-scoped revoke, or a latest contact-level
    *     `revoked`) — an opt-out always wins (consentRevoked below, fail-safe).
-   *   • It relaxes ONLY step 1. Quiet hours (2), DNC/STOP (3), approved-template/AI-policy (4),
-   *     personalization (4b), recommendation red-line (5), the securities firewall (6),
-   *     data confidence (6b), delegation, A2P go-live, and frequency/collision ALL still apply
-   *     exactly as for any other send. There is still no way to send a securities recommendation
+   *   • It relaxes ONLY step 1. Quiet hours (2, per its SMS-marketing scope), DNC/STOP (3),
+   *     approved-template/AI-policy (4), personalization (4b), recommendation red-line (5),
+   *     the securities firewall (6), data confidence (6b), delegation, A2P go-live, and
+   *     frequency/collision ALL still apply exactly as for any other send. There is still no way to send a securities recommendation
    *     or reach an opted-out recipient from the console.
    * Absent/false → unchanged behavior (consent-on-file is required), so no bulk/campaign/agent
    * caller is affected.
@@ -98,8 +101,19 @@ export interface SendContext {
   templateId?: string | null
   /** Record/recipient securities flag (firewall). */
   isSecurity?: boolean
-  /** Recipient IANA-ish timezone offset from UTC in hours (default Central, -6/-5). */
+  /**
+   * Recipient timezone offset from UTC in hours, for callers that have ALREADY resolved
+   * a per-recipient offset from a real IANA zone (the workshop engine). When absent, the
+   * recipient-local hour is resolved DST-correctly from `timeZone` instead.
+   */
   utcOffsetHours?: number
+  /**
+   * Recipient IANA timezone identifier (e.g. 'America/Chicago'). Used to resolve the
+   * recipient-local hour for the quiet-hours floor when no explicit `utcOffsetHours` is
+   * given. Defaults to America/Chicago (DST-correct via Intl — the old fixed -6 default
+   * was an hour off during CDT).
+   */
+  timeZone?: string
   campaignId?: string | null
   campaignVariant?: string | null
   sequenceStep?: number | null
@@ -127,8 +141,10 @@ export interface SendContext {
   /**
    * A 1:1 reply personally typed by an authenticated, licensed operator (the FSA
    * inbox). The human IS the content approval for gate step 4 — but recommendation
-   * (5), securities (6), consent (1), quiet-hours (2), and DNC (3) are STILL
-   * enforced. Never set this for bulk/automated/AI sends.
+   * (5), securities (6), consent (1), and DNC (3) are STILL enforced. Quiet hours (2)
+   * still applies to a human-typed SMS UNLESS the contact sent an inbound message
+   * within the preceding 24h (live conversation — resolved server-side, fails closed).
+   * Never set this for bulk/automated/AI sends.
    */
   humanAuthored?: boolean
   /**
@@ -233,13 +249,17 @@ export interface SendOutcome {
   reason?: string
 }
 
-/** Conservative Central-time offset (TX). CDT = -5, CST = -6; use -6 as the floor. */
-const DEFAULT_UTC_OFFSET = -6
-
-function recipientLocalHour(utcOffsetHours = DEFAULT_UTC_OFFSET): number {
-  const utcHour = new Date().getUTCHours()
-  const local = (utcHour + utcOffsetHours + 24) % 24
-  return local
+/**
+ * Recipient-local hour for the quiet-hours floor. An explicit caller-resolved UTC offset
+ * wins (the workshop engine derives one from the session's IANA zone); otherwise the hour
+ * is resolved DST-correctly from the recipient's IANA timezone, defaulting to
+ * America/Chicago (local-time.ts — the old hardcoded -6 was wrong during CDT).
+ */
+function recipientLocalHour(utcOffsetHours?: number, timeZone?: string): number {
+  if (typeof utcOffsetHours === 'number' && Number.isFinite(utcOffsetHours)) {
+    return (new Date().getUTCHours() + utcOffsetHours + 24) % 24
+  }
+  return localHourInTimeZone(timeZone ?? DEFAULT_TIMEZONE)
 }
 
 /** True if the named comm template exists and is approved (gate step 4). */
@@ -441,6 +461,28 @@ async function onDNC(to: string, channel: Channel): Promise<boolean> {
   } catch {
     // Fail safe: if we cannot verify DNC, treat as blocked (never send blindly).
     return true
+  }
+}
+
+/**
+ * True when the conversation's most recent INBOUND message is within the 24h
+ * live-conversation window (local-time.ts) — the only condition under which a
+ * human-typed 1:1 SMS is exempt from the quiet-hours floor. FAILS CLOSED: no
+ * conversation, no inbound row, or any read error → false (the send stays gated).
+ */
+async function lastInboundWithinLiveWindow(conversationId: string): Promise<boolean> {
+  try {
+    const { data } = await getDb()
+      .from('comm_messages')
+      .select('created_at')
+      .eq('conversation_id', conversationId)
+      .eq('direction', 'inbound')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    return withinLiveConversationWindow(data?.created_at ?? null)
+  } catch {
+    return false
   }
 }
 
@@ -681,6 +723,20 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
     ctx.humanAuthored === true ||
     (ctx.aiGenerated === true && !ctx.templateId ? await hasApprovedAiPolicy(ctx.aiAuthorAgentKey) : false)
 
+  // Quiet-hours scope (owner-directed, 2026-08-07): the 9:00–20:00 recipient-local floor
+  // gates SMS MARKETING/CAMPAIGN sends only (purpose.ts quietHoursApply — email and
+  // transactional/servicing-class SMS are exempt; an SMS with NO purpose is the campaign
+  // path and stays gated). A human-typed 1:1 SMS is additionally exempt ONLY on a LIVE
+  // conversation — the contact sent an inbound message within the preceding 24h
+  // (local-time.ts window); outside that window it falls through to the unclassified
+  // default and stays gated. The lookup FAILS CLOSED (any error → not exempt). This
+  // scoping relaxes ONLY gate step 2 — consent, DNC/STOP, approval, the recommendation
+  // red-line, and the securities firewall are untouched.
+  let quietHoursExempt = !quietHoursApply(ctx.channel, ctx.purpose)
+  if (!quietHoursExempt && ctx.humanAuthored === true && conversationId) {
+    quietHoursExempt = await lastInboundWithinLiveWindow(conversationId)
+  }
+
   // On-behalf-of authority (Slice 1). Resolved FRESH here (never from an enrollment
   // snapshot). Absent delegation context → not an on-behalf-of send → step is a no-op.
   let delegationValid: boolean | undefined
@@ -796,7 +852,8 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
       ownershipResolved: ctx.ownershipResolved,
       ownershipConflict: ctx.ownershipConflict,
       hasConsent: consent,
-      recipientLocalHour: recipientLocalHour(ctx.utcOffsetHours),
+      recipientLocalHour: recipientLocalHour(ctx.utcOffsetHours, ctx.timeZone),
+      quietHoursExempt,
       withinBusinessHours,
       withinFrequencyCaps,
       frequencyReason,

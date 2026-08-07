@@ -72,7 +72,7 @@ console.log('\nlive campaign email copy')
 const CAMPAIGNS = [
   ['Win-Back', 'supabase/migrations/106_pipeline_winback_messaging_v3.sql', 'a2b00000'],
   ['Cross-Sell Life', 'supabase/migrations/107_cross_sell_life_messaging_v3.sql', 'e5c00000'],
-  ['Life Conversion', 'supabase/migrations/108_life_conversion_messaging_v3.sql', 'e1c00000'],
+  ['Life Conversion', 'supabase/migrations/110_life_conversion_messaging_v4.sql', 'e1c00000'],
 ]
 
 for (const [key, file, emailPrefix] of CAMPAIGNS) {

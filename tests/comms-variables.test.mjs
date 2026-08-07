@@ -26,10 +26,48 @@ const t = (name, fn) => { fn(); passed++; console.log('  ✓', name) }
 
 console.log('variable registry — one canonical set, one resolver')
 
-t('the registry defines exactly the 26 requested variables, each with a unique canonical key', () => {
-  assert.equal(V.VARIABLES.length, 26, '26 canonical variables')
+t('the registry defines exactly the 27 requested variables, each with a unique canonical key', () => {
+  assert.equal(V.VARIABLES.length, 27, '27 canonical variables')
   const keys = V.VARIABLES.map((v) => v.key)
   assert.equal(new Set(keys).size, keys.length, 'canonical keys are unique')
+})
+
+// ── The verified no-exam claim gate (Life Conversion v4) ─────────────────────
+// "No new medical exam" is a carrier conversion rule — never publicly documented, never assumed
+// (§4.3 / ADR-020). The clause variable renders the claim ONLY from the verified per-policy flag
+// (household_policies.conversion_no_exam = true); anything else degrades to the always-true
+// neutral phrasing. Cosmetic tier is deliberate: omitting the claim is the SAFE outcome, so an
+// unverified flag must soften the sentence, not block the whole send.
+t('conversion_exam_clause renders the no-exam claim only when the policy flag is verified true', () => {
+  const verified = V.buildRecipientContext({ policy: { policy_number: 'T-1', conversion_no_exam: true } })
+  assert.equal(verified.conversion_exam_clause, 'with no new medical exam')
+
+  for (const flag of [false, null, undefined]) {
+    const ctx = V.buildRecipientContext({ policy: { policy_number: 'T-1', conversion_no_exam: flag } })
+    assert.equal(ctx.conversion_exam_clause, undefined, `flag=${flag} must NOT resolve the claim`)
+  }
+})
+
+t('an unverified exam clause degrades to the neutral provisions phrasing and never blocks', () => {
+  assert.equal(
+    V.REGISTRY_COSMETIC_DEFAULTS.conversion_exam_clause,
+    'subject to the conversion provisions in your policy',
+  )
+  assert.ok(!V.REGISTRY_BLOCKING_KEYS.includes('conversion_exam_clause'), 'clause must be cosmetic')
+
+  const body = 'Eligible coverage may be converted to permanent life insurance {{conversion_exam_clause}}.'
+  const unverified = V.buildRecipientContext({ policy: { policy_number: 'T-1' } })
+  assert.equal(
+    personalize(body, unverified),
+    'Eligible coverage may be converted to permanent life insurance subject to the conversion provisions in your policy.',
+  )
+  assert.deepEqual(unresolvedBlockingTokens(body, unverified), [], 'unverified clause must not block the send')
+
+  const verified = V.buildRecipientContext({ policy: { policy_number: 'T-1', conversion_no_exam: true } })
+  assert.equal(
+    personalize(body, verified),
+    'Eligible coverage may be converted to permanent life insurance with no new medical exam.',
+  )
 })
 
 // The phrase campaign copy uses to name the client's own Farmers agent. It shares ONE helper

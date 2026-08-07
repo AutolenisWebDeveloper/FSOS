@@ -16,6 +16,8 @@ import { personalize, unresolvedBlockingTokens } from './personalize'
 import { advisorMergeContext } from '@/lib/site'
 import { emailUnsubscribeUrl } from './unsubscribe'
 import { loadHoursPolicy, isWithinOperatingHours } from './hours'
+import { localHourInTimeZone } from './local-time'
+import { quietHoursApply } from './purpose'
 import { conversationIsSecurity, normalizeContact } from './conversations'
 import { resolveDelegation } from './ownership'
 import { resolveSendPolicy } from './policy-resolver'
@@ -24,9 +26,9 @@ import { resolveClaimFields } from './claim-resolver'
 import { evaluateDataConfidence } from './data-confidence'
 import { verdictFromGate, summarizeSimulation, type SimulationEntry, type SimulationSummary } from './simulation-core'
 
-const DEFAULT_UTC_OFFSET = -6
 function recipientLocalHour(): number {
-  return (new Date().getUTCHours() + DEFAULT_UTC_OFFSET + 24) % 24
+  // DST-correct default-zone hour (local-time.ts) — mirrors send.ts.
+  return localHourInTimeZone()
 }
 
 async function memberConsentGranted(memberId: string, channel: 'sms' | 'email'): Promise<boolean> {
@@ -163,11 +165,15 @@ export async function simulateCampaign(campaignId: string, sampleLimit = 200): P
       dataConfidenceDecision = dc.allowed ? 'pass (claims verified)' : `blocked: unverified ${dc.unverified.join(', ')}`
     }
 
+    // Quiet-hours scope mirrors send.ts: SMS marketing/campaign sends only (email and
+    // transactional/servicing-purpose SMS exempt; SMS with no purpose stays gated).
+    const quietHoursExempt = !quietHoursApply(channel, purpose)
     const gate = evaluateGate({
       draft: rendered,
       channel,
       hasConsent,
       recipientLocalHour: localHour,
+      quietHoursExempt,
       withinBusinessHours,
       onDNC: dnc,
       usesApprovedTemplateOrPolicy: templateApproved,
@@ -195,7 +201,11 @@ export async function simulateCampaign(campaignId: string, sampleLimit = 200): P
       excludedReason: verdict.excludedReason,
       decisions: {
         consent: hasConsent ? 'pass' : 'no consent on channel',
-        quiet_hours: 'pass (recipient-local floor)',
+        quiet_hours: quietHoursExempt
+          ? 'exempt (quiet hours apply to SMS marketing sends only)'
+          : gate.blockedStep === 'quiet_hours'
+            ? 'blocked: outside the 9:00–20:00 recipient-local floor'
+            : 'pass (recipient-local floor)',
         business_hours: withinBusinessHours ? 'pass' : 'outside operating hours (deferred)',
         ...(campCtx.delegation ? { delegation: delegationValid ? 'pass (active, in-scope)' : `blocked: ${delegationReason ?? 'invalid delegation'}` } : {}),
         dnc: dnc ? 'on DNC' : 'pass',

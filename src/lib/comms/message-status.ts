@@ -115,7 +115,7 @@ const STEP_LABEL: Record<GateStep, string> = {
 const STEP_DESCRIPTION: Record<GateStep, string> = {
   ownership: 'Ownership could not be resolved — routed to assignment review.',
   consent: 'No valid channel consent on file for this recipient.',
-  quiet_hours: 'Outside the 9:00–20:00 recipient-local TCPA floor.',
+  quiet_hours: 'Outside the 9:00–20:00 recipient-local TCPA floor (SMS marketing sends).',
   business_hours: 'Outside your configured hours of operation — retries next cycle.',
   sms_live: 'SMS is staged pending A2P 10DLC approval — held, not dropped.',
   frequency: 'Recipient frequency cap reached — held for a later cycle.',

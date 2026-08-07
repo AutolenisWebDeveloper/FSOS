@@ -328,12 +328,14 @@ export async function sendWorkshopMessage(db: Db, args: SendArgs): Promise<LogSt
     return finalize('blocked', { gate_blocked_step: 'consent', reason: 'no_channel_consent' })
   }
 
-  // Quiet-hours scheduling pre-check (recipient-local). Outside → defer (retry next tick),
-  // do NOT dispatch (avoids a compliance-event escalation for a purely time-based hold).
+  // Quiet-hours scheduling pre-check (recipient-local), SMS ONLY. The quiet-hours floor
+  // is scoped to SMS marketing sends (workshop = marketing class; gate step 2 mirrors
+  // this via purpose.ts quietHoursApply — email is exempt). Outside → defer (retry next
+  // tick), do NOT dispatch (avoids a compliance-event escalation for a time-based hold).
   const nowMs = Date.now()
   const utcOffset = utcOffsetHoursForTimezone(session?.timezone, nowMs)
   const localHour = recipientLocalHour(nowMs, utcOffset)
-  if (!withinQuietHours(localHour)) {
+  if (channel === 'sms' && !withinQuietHours(localHour)) {
     return finalize('deferred', { gate_blocked_step: 'quiet_hours', reason: 'outside_quiet_hours' })
   }
 

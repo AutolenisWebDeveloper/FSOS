@@ -109,7 +109,7 @@ Every automated SMS/email passes these **13 steps in order, blocking on the firs
 
 1. **ownership** — authoritative ownership (agency / agency-owner / represented-agent / actual sender) must resolve; unresolved → assignment-review queue. *Escalates.*
 2. **consent** — valid channel consent on file. *Escalates.*
-3. **quiet_hours** — recipient-local **9:00–20:00** TCPA floor (non-negotiable). *Escalates.*
+3. **quiet_hours** — recipient-local **9:00–20:00** TCPA floor on **SMS marketing/campaign sends** (the floor itself is never widened). Scope (owner-directed, 2026-08-07; `purpose.ts quietHoursApply`): email and transactional/servicing-class SMS purposes are exempt; an SMS with **no** purpose is the campaign path and stays gated; a human-typed 1:1 SMS is exempt only on a live conversation (inbound within the preceding 24h, fail-closed). The exemption relaxes this step ONLY. *Escalates.*
 4. **delegation** — the FSA↔agency-owner on-behalf-of authority is ACTIVE and in-scope. *Escalates.*
 5. **dnc** — not on internal/external do-not-contact. *Escalates.*
 6. **approved_template** — approved template or approved AI policy. *Escalates.*

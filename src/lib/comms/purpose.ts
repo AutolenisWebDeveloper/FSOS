@@ -50,11 +50,42 @@ export type Channel = 'sms' | 'email'
 /**
  * Marketing/promotional purposes require MARKETING consent and carry unsubscribe +
  * marketing quiet-hour/frequency treatment. Purely relationship/servicing/transactional
- * purposes do not (but consent, DNC, and quiet hours are STILL enforced independently —
- * an existing relationship never overrides an opt-out; §9 birthday rule).
+ * purposes do not (but consent and DNC are STILL enforced independently — an existing
+ * relationship never overrides an opt-out; §9 birthday rule).
  */
 export function isMarketingPurpose(purpose: MessagePurpose): boolean {
   return purpose === 'MARKETING' || purpose === 'WORKSHOP'
+}
+
+/**
+ * Purposes whose SMS sends are subject to the 9:00–20:00 recipient-local quiet-hours
+ * floor (gate step 2). Marketing-class outreach only: MARKETING and WORKSHOP (the
+ * `isMarketingPurpose` set) plus BIRTHDAY and RELATIONSHIP — automated relationship
+ * touches are proactive outreach, not a reply or a transaction, so they keep the floor.
+ */
+export const QUIET_HOURS_GATED_PURPOSES: MessagePurpose[] = [
+  'MARKETING',
+  'WORKSHOP',
+  'BIRTHDAY',
+  'RELATIONSHIP',
+]
+
+/**
+ * Whether the quiet-hours floor (gate step 2) applies to a send. Owner-directed scope
+ * (2026-08-07): quiet hours gate SMS MARKETING/CAMPAIGN sends only.
+ *   • email — never quiet-hours gated (any purpose);
+ *   • SMS with a transactional/servicing-class purpose (TRANSACTIONAL, APPOINTMENT,
+ *     SERVICING, APPLICATION_STATUS, DOCUMENT_REQUEST, POLICY_DEADLINE) — not gated;
+ *   • SMS with a marketing-class purpose (QUIET_HOURS_GATED_PURPOSES) — gated;
+ *   • SMS with NO purpose — gated (the unclassified campaign path defaults to
+ *     marketing; unclassified traffic must never widen the floor).
+ * Consent, DNC/STOP, the recommendation red-line, and the securities firewall are
+ * enforced independently of this scoping and are unaffected by it.
+ */
+export function quietHoursApply(channel: Channel, purpose?: MessagePurpose | null): boolean {
+  if (channel === 'email') return false
+  if (!purpose) return true
+  return QUIET_HOURS_GATED_PURPOSES.includes(purpose)
 }
 
 /**

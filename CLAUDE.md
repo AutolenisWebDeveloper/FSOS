@@ -280,7 +280,7 @@ Migrations are forward-only, reviewed for RLS coverage, index coverage, N+1 risk
 
 Single dispatcher for all outbound communication. Rationale: `docs/adr/ADR-003-communications-dispatcher.md`. Before ANY automated SMS/email sends, the dispatcher checks, in order, and blocks on the first failure:
 1. valid consent on that channel (`consents`);
-2. within permitted quiet hours (recipient-local; enforce **9am–8pm** as the conservative floor);
+2. within permitted quiet hours — **SMS marketing/campaign sends only** (recipient-local, IANA-resolved; enforce **9am–8pm** as the conservative floor, never widened). Email (all purposes), transactional/servicing-class SMS (appointment, policy service, application status), and a human-typed 1:1 SMS on a live conversation (inbound from the contact within the preceding 24h) are exempt from this step only — consent, DNC, and every other check still apply (owner-directed scope, 2026-08-07; `purpose.ts quietHoursApply`);
 3. not on internal or applicable external DNC;
 4. approved template **or** approved AI policy;
 5. not an individualized securities recommendation;

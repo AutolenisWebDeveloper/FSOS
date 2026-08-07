@@ -28,6 +28,9 @@
 // Relative import (not the `@/` alias) so the offline personalization test-compiles that run
 // `tsc` over personalize.ts can follow this dependency chain (site.ts is dependency-free).
 import { advisorMergeContext } from '../site'
+// The ONE agent-of-record phrasing helper, shared with the platform identity disclosure
+// (identity.ts is pure + dependency-free, so importing it here adds no dependency chain).
+import { agentOfRecordReference } from './identity'
 
 /** How a referenced-but-unresolved variable is handled. */
 export type VarTier = 'cosmetic' | 'blocking'
@@ -48,7 +51,7 @@ export interface VariableDef {
   aliases?: string[]
 }
 
-// ── The 24 canonical variables ───────────────────────────────────────────────
+// ── The 26 canonical variables ───────────────────────────────────────────────
 export const VARIABLES: readonly VariableDef[] = [
   // Contact (cosmetic — degrade gracefully, never block).
   { key: 'first_name', display: 'FirstName', tier: 'cosmetic', label: 'Recipient first name', fallback: 'there' },
@@ -77,6 +80,10 @@ export const VARIABLES: readonly VariableDef[] = [
   { key: 'agent_of_record_first_name', display: 'AgentOfRecordFirstName', tier: 'cosmetic', label: 'Agent-of-record first name', fallback: 'your Farmers agent' },
   { key: 'agent_of_record_last_name', display: 'AgentOfRecordLastName', tier: 'cosmetic', label: 'Agent-of-record last name', fallback: '' },
   { key: 'agent_of_record_full_name', display: 'AgentOfRecordFullName', tier: 'cosmetic', label: 'Agent-of-record full name', fallback: 'your Farmers agent' },
+  // The phrase campaign copy should use when it names the client's own Farmers agent: reads
+  // "your Farmers agent, Jane Smith" when the name is on file and "your Farmers agent" when it
+  // is not, so one sentence is correct either way and no guessed name is ever rendered (§4.3).
+  { key: 'agent_of_record_reference', display: 'AgentOfRecordReference', tier: 'cosmetic', label: 'Agent-of-record reference phrase', fallback: 'your Farmers agent' },
   { key: 'agent_of_record_phone', display: 'AgentOfRecordPhone', tier: 'blocking', label: 'Agent-of-record phone' },
   { key: 'agent_of_record_email', display: 'AgentOfRecordEmail', tier: 'blocking', label: 'Agent-of-record email' },
 
@@ -248,6 +255,7 @@ export function buildRecipientContext(sources: PersonalizationSources = {}): Rec
   put(ctx, 'agent_of_record_full_name', aorFull)
   put(ctx, 'agent_of_record_first_name', aor?.first_name?.trim() || firstOf(aorFull))
   put(ctx, 'agent_of_record_last_name', aor?.last_name?.trim() || lastOf(aorFull))
+  put(ctx, 'agent_of_record_reference', agentOfRecordReference(aorFull))
   put(ctx, 'agent_of_record_phone', aor?.phone)
   put(ctx, 'agent_of_record_email', aor?.email)
 

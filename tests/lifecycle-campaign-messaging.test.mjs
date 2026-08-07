@@ -1,14 +1,14 @@
 // tests/lifecycle-campaign-messaging.test.mjs
-// GUARDRAIL TEST for the rebuilt lifecycle campaign messaging (migrations 099/100/101).
+// GUARDRAIL TEST for the lifecycle campaign messaging (migrations 106/107/108, the v3 copy).
 //
-// The seed migrations (082/084/086) are applied and immutable; the v2 copy ships as in-place
-// template UPDATEs in 099 (Win-Back), 100 (Cross-Sell Life), 101 (Life Conversion). Those
-// migrations carry ALL customer-facing copy, so they — not the seeds — are what must be proven
-// compliant. Migration 084 previously had no test at all; this closes that gap for all three.
+// The seed migrations (082/084/086) and the v2 copy (099/100/101) are applied and immutable;
+// the CURRENT copy ships as in-place template UPDATEs in 106 (Win-Back), 107 (Cross-Sell Life),
+// 108 (Life Conversion). Those migrations carry ALL customer-facing copy, so they — not the
+// seeds and not the superseded v2 files — are what must be proven compliant.
 //
 // What this proves, per campaign:
 //   1. Every body is recommendation-free (containsRecommendationLanguage → false). §4.2 red line.
-//   2. Every body lands as approval_status='draft' at version 2 with prior approval cleared —
+//   2. Every body lands as approval_status='draft' at version 3 with prior approval cleared —
 //      nothing can dispatch until a human approves it (sendThroughGate refuses an unapproved
 //      template). No campaign is approved or activated by this work.
 //   3. Every {{merge_token}} is on the proven-resolvable allowlist, so no send can hard-block on
@@ -19,6 +19,15 @@
 //      and duplicating it wastes segment budget and reads as machine-generated.
 //   6. Email bodies honour the wrapMarketingEmailBody contract: a Subject: line, a Preview: line,
 //      exactly ONE closer block, and a single CTA line ending in {{scheduling_link}}.
+//   7. IDENTITY (the v3 contract). FSOS is a B2B2C partnership: the FSA works WITH the client's
+//      own Farmers agent and is never that agent, and "Markist Athelus Farmers Agency" is the
+//      FSA's own practice, never the client's agency. So no body may contain {{agency_name}} or
+//      cast the sender as the recipient's local agent, and any reference to the recipient's own
+//      agent must go through {{agent_of_record_reference}} (resolved per recipient; degrades to
+//      the approved generic "your Farmers agent" rather than guessing a name, §4.3).
+//   8. INTRODUCE ONCE. Exactly one asset per channel (Email 1 / SMS 1 / AI 1) introduces the
+//      sender and is flagged introduces_sender = true; no other body re-introduces. That flag is
+//      what stops the platform disclosure (ADR-016) from prepending a second introduction.
 //
 // Pure file parsing + the real pure guardrail — no DB, no network.
 
@@ -35,14 +44,18 @@ import { createRequire } from 'node:module'
 // require()'d as real parsed objects — no regex-scraping of source. --rootDir pins the emit layout
 // so both the guardrail and the playbooks resolve at predictable paths.
 const out = mkdtempSync(join(tmpdir(), 'fsos-msg-'))
+// [display key, module dir, extra pure module holding that campaign's ADVISOR_SCRIPTS]. Only
+// Cross-Sell Life keeps its advisor scripts in a separate file; the other two export them from
+// playbooks.ts. Both surfaces are dispatched/spoken client-facing copy, so both are checked.
 const PLAYBOOK_SRC = [
-  ['Win-Back', 'pipeline-winback'],
-  ['Cross-Sell Life', 'cross-sell-life'],
-  ['Life Conversion', 'life-campaign'],
+  ['Win-Back', 'pipeline-winback', null],
+  ['Cross-Sell Life', 'cross-sell-life', 'advisor-scripts'],
+  ['Life Conversion', 'life-campaign', null],
 ]
 execSync(
   `npx tsc src/lib/compliance/guardrail.ts src/lib/comms/gsm7.ts ` +
-    PLAYBOOK_SRC.map(([, d]) => `src/lib/${d}/playbooks.ts`).join(' ') +
+    PLAYBOOK_SRC.map(([, d]) => `src/lib/${d}/playbooks.ts`).join(' ') + ' ' +
+    PLAYBOOK_SRC.filter(([, , a]) => a).map(([, d, a]) => `src/lib/${d}/${a}.ts`).join(' ') +
     ` --outDir ${out} --rootDir src/lib ` +
     `--module commonjs --target es2020 --moduleResolution node --skipLibCheck --esModuleInterop`,
   { stdio: 'inherit' },
@@ -58,45 +71,70 @@ function t(name, fn) {
   catch (e) { failures++; console.error(`  FAIL ${name}\n       ${e.message}`) }
 }
 
-// The six tokens the campaign send path provably resolves: first_name is COSMETIC (safe
-// default), the rest are BLOCKING-tier and populated by buildRecipientContext(). Introducing
-// any other token risks a personalization hard-block at gate step 4b.
+// The tokens the campaign send path provably resolves. first_name, advisor_title and
+// agent_of_record_reference are COSMETIC or always-resolved (agent_of_record_reference degrades
+// to "your Farmers agent"); the rest are BLOCKING-tier and populated by buildRecipientContext().
+// Introducing any other token risks a personalization hard-block at gate step 4b.
+//
+// agency_name is deliberately NOT here. It resolves fine — it is banned on MEANING: it is the
+// FSA's own practice name, and in copy addressed to an agency's client it reads as the client's
+// agency (see the identity assertion below).
 const ALLOWED_TOKENS = new Set([
-  'first_name', 'fsa_name', 'agency_name', 'scheduling_link', 'advisor_phone', 'advisor_email',
+  'first_name', 'fsa_name', 'advisor_title', 'agent_of_record_reference',
+  'scheduling_link', 'advisor_phone', 'advisor_email',
 ])
 
 const CAMPAIGNS = [
   {
     key: 'Win-Back',
-    v2: 'supabase/migrations/099_pipeline_winback_messaging_v2.sql',
+    v2: 'supabase/migrations/106_pipeline_winback_messaging_v3.sql',
     seed: 'supabase/migrations/084_pipeline_winback_seed.sql',
     expect: { email: 8, sms: 8, ai: 6 },
     prefixes: { email: 'a2b00000', sms: 'b2c00000', ai: 'c2d00000' },
   },
   {
     key: 'Cross-Sell Life',
-    v2: 'supabase/migrations/100_cross_sell_life_messaging_v2.sql',
+    v2: 'supabase/migrations/107_cross_sell_life_messaging_v3.sql',
     seed: 'supabase/migrations/086_cross_sell_life_seed.sql',
     expect: { email: 12, sms: 12, ai: 7 },
     prefixes: { email: 'e5c00000', sms: 'd5c00000', ai: 'c5c00000' },
   },
   {
     key: 'Life Conversion',
-    v2: 'supabase/migrations/101_life_conversion_messaging_v2.sql',
+    v2: 'supabase/migrations/108_life_conversion_messaging_v3.sql',
     seed: 'supabase/migrations/082_life_conversion_seed.sql',
     expect: { email: 7, sms: 6, ai: 5 },
     prefixes: { email: 'e1c00000', sms: 'd1c00000', ai: 'c1c00000' },
   },
 ]
 
-/** Parse the v2 migration into { id, body } records, in file order. */
+/** Parse the copy migration into { id, body, introduces } records, in file order. */
 function parseV2(sql) {
-  // Each block is: update comm_templates set … body = $body$…$body$, … where id = '<uuid>';
-  const re = /body\s*=\s*\$body\$([\s\S]*?)\$body\$[\s\S]*?where id = '([0-9a-f-]{36})';/g
+  // Each block is: update comm_templates set … body = $body$…$body$, introduces_sender = <bool>,
+  // … where id = '<uuid>';
+  const re = /body\s*=\s*\$body\$([\s\S]*?)\$body\$([\s\S]*?)where id = '([0-9a-f-]{36})';/g
   const rows = []
   let m
-  while ((m = re.exec(sql)) !== null) rows.push({ body: m[1], id: m[2] })
+  while ((m = re.exec(sql)) !== null) {
+    const tail = m[2]
+    const flag = tail.match(/introduces_sender\s*=\s*(true|false)/)
+    rows.push({ body: m[1], id: m[3], introduces: flag ? flag[1] === 'true' : null })
+  }
   return rows
+}
+
+// The phrases that would put the sender in the wrong seat: presenting the FSA as the recipient's
+// own agent, or the FSA's practice as the recipient's agency. Each is a real prior defect.
+const MISIDENTIFICATION = [
+  { re: /your (Farmers )?agent at\b/i, why: 'places the recipient\'s agent inside the FSA\'s practice' },
+  { re: /\bI am your\b[^.]{0,40}\bagent\b/i, why: 'claims to BE the recipient\'s agent' },
+  { re: /\bclient of \{\{agency_name\}\}/i, why: 'calls the recipient a client of the FSA\'s practice' },
+  { re: /\byour local (Farmers )?agen(t|cy)\b/i, why: 'casts the sender as the local agent/agency' },
+]
+
+/** The introduction is recognisable by naming the sender, their role, and the client's agent. */
+function introducesSender(body) {
+  return /\{\{fsa_name\}\}/.test(body) && /\{\{advisor_title\}\}/.test(body) && /\{\{agent_of_record_reference\}\}/.test(body)
 }
 
 /** Every {{token}} referenced in a body, canonicalized to lowercase. */
@@ -188,14 +226,74 @@ for (const c of selected) {
     }
   })
 
-  t('every update lands as draft v2 with prior approval cleared', () => {
+  t('every update lands as draft v3 with prior approval cleared', () => {
     const updates = sql.split(/^update comm_templates set$/m).slice(1)
     assert.equal(updates.length, total, 'update-statement count mismatch')
     for (const u of updates) {
       assert.match(u, /approval_status = 'draft'/, 'template not left in draft')
-      assert.match(u, /version = 2/, 'version not bumped to 2')
+      assert.match(u, /version = 3/, 'version not bumped to 3')
       assert.match(u, /approved_at = null/, 'stale approved_at not cleared')
       assert.match(u, /approved_by = null/, 'stale approved_by not cleared')
+    }
+  })
+
+  // ── Identity: who the copy says is writing (§0 — the B2B2C partnership model) ──
+  t('no body presents the FSA as the recipient\'s own agent or agency', () => {
+    for (const r of rows) {
+      assert.doesNotMatch(
+        r.body, /\{\{\s*agency_name\s*\}\}/i,
+        `${r.id} uses {{agency_name}} — the FSA's own practice name reads as the recipient's agency`,
+      )
+      for (const bad of MISIDENTIFICATION) {
+        assert.doesNotMatch(r.body, bad.re, `${r.id} ${bad.why}`)
+      }
+    }
+  })
+
+  t('the recipient\'s own agent is only ever named through the resolved reference token', () => {
+    for (const r of rows) {
+      // A bare "your Farmers agent" is the token's own fallback wording, so authoring it as a
+      // literal silently forfeits the resolved name the spine can supply for this recipient.
+      const literal = r.body.replace(/\{\{agent_of_record_reference\}\}/g, '')
+      assert.doesNotMatch(
+        literal, /your Farmers agent/i,
+        `${r.id} hardcodes "your Farmers agent" — use {{agent_of_record_reference}} so the real name resolves`,
+      )
+    }
+  })
+
+  // ── Introduce once per channel (ADR-016 + migration 105) ─────────────────────
+  t('every update sets introduces_sender explicitly', () => {
+    for (const r of rows) {
+      assert.notEqual(r.introduces, null, `${r.id} does not set introduces_sender — the flag must be deliberate`)
+    }
+  })
+
+  t('exactly one asset per channel introduces the sender, and it is the first touch', () => {
+    for (const [channel, prefix] of Object.entries(c.prefixes)) {
+      const inChannel = rows.filter((r) => r.id.startsWith(prefix))
+      const flagged = inChannel.filter((r) => r.introduces)
+      assert.equal(flagged.length, 1, `${c.key}/${channel} has ${flagged.length} introducing assets (must be exactly 1)`)
+      assert.ok(
+        flagged[0].id.endsWith('000000000001'),
+        `${c.key}/${channel} flags ${flagged[0].id} rather than the first touch`,
+      )
+    }
+  })
+
+  t('the flagged asset actually carries the introduction, and no other body does', () => {
+    for (const r of rows) {
+      if (r.introduces) {
+        assert.ok(
+          introducesSender(r.body),
+          `${r.id} is flagged introduces_sender but its copy does not name the FSA, their role, and the client's agent`,
+        )
+      } else {
+        assert.ok(
+          !introducesSender(r.body),
+          `${r.id} re-introduces the sender on a later touch — the introduction belongs to touch 1 only`,
+        )
+      }
     }
   })
 
@@ -288,8 +386,18 @@ console.log('\n▶ AI playbook dispatched bodies')
 // shipping broken copy ("your meeting with Markist on  at ...").
 const PLAYBOOK_TOKENS = new Set([...ALLOWED_TOKENS, 'appointment_time'])
 
-for (const [key, dir] of PLAYBOOK_SRC) {
+/** The playbook surface carries the same identity contract as the migration bodies. */
+function assertIdentitySafe(id, body) {
+  assert.doesNotMatch(body, /\{\{\s*agency_name\s*\}\}/i, `${id} uses {{agency_name}}`)
+  for (const bad of MISIDENTIFICATION) assert.doesNotMatch(body, bad.re, `${id} ${bad.why}`)
+  const literal = body.replace(/\{\{agent_of_record_reference\}\}/g, '')
+  assert.doesNotMatch(literal, /your Farmers agent/i, `${id} hardcodes "your Farmers agent"`)
+}
+
+for (const [key, dir, advisorFile] of PLAYBOOK_SRC) {
   const mod = require(join(out, dir, 'playbooks.js'))
+  const advisorScripts =
+    (advisorFile ? require(join(out, dir, `${advisorFile}.js`)).ADVISOR_SCRIPTS : mod.ADVISOR_SCRIPTS) ?? []
   // Only CLIENT-FACING, dispatched fields. ADVISOR_SCRIPTS are internal call scripts a licensed
   // human reads aloud — never sent over SMS — so segment/GSM-7 limits do not apply to them.
   const bodies = []
@@ -336,6 +444,26 @@ for (const [key, dir] of PLAYBOOK_SRC) {
   t(`${key}: every playbook opener identifies itself as an automated assistant`, () => {
     for (const p of mod.PLAYBOOKS ?? []) {
       assert.match(p.opening, /automated assistant/i, `${key}/${p.key}.opening does not self-identify as AI`)
+    }
+  })
+
+  // The advisor scripts are read aloud by the licensed FSA, so they are exempt from the SMS
+  // segment/GSM-7 limits — but NOT from the identity contract. Saying "this is Markist with
+  // Markist Athelus Farmers Agency, I work alongside your Farmers agent" out loud misidentifies
+  // the relationship exactly as the written copy did.
+  t(`${key}: every client-facing body identifies the sender correctly`, () => {
+    for (const b of bodies) assertIdentitySafe(b.id, b.body)
+    for (const s of advisorScripts) assertIdentitySafe(`${key}/script:${s.key}`, s.script)
+  })
+
+  t(`${key}: advisor scripts reference only resolvable merge tokens`, () => {
+    for (const s of advisorScripts) {
+      for (const m of s.script.matchAll(/\{\{\s*([a-z_]+)\s*\}\}/gi)) {
+        assert.ok(
+          PLAYBOOK_TOKENS.has(m[1].toLowerCase()),
+          `${key}/script:${s.key} uses unregistered token {{${m[1]}}}`,
+        )
+      }
     }
   })
 }

@@ -29,7 +29,7 @@ export const ADVISOR_SCRIPTS: AdvisorScript[] = [
     key: 'relationship_check_in',
     title: 'Advisor Task 1 — Relationship Check-In',
     script:
-      "Hi {{first_name}}, this is {{fsa_name}} with {{agency_name}}. I work alongside your Farmers agent on the life insurance and financial services side, so I am probably a new name to you. I am not calling to sell you anything today. I mostly wanted to introduce myself and let you know that if a question about life insurance ever comes up, you have someone here to ask. Is there anything you have wondered about that I could answer while I have you?",
+      "Hi {{first_name}}, this is {{fsa_name}}, the {{advisor_title}} working with {{agent_of_record_reference}}. I handle the life insurance and financial services side for the agency's clients, so I am probably a new name to you. I am not calling to sell you anything today. I mostly wanted to introduce myself and let you know that if a question about life insurance ever comes up, you have someone here to ask. Is there anything you have wondered about that I could answer while I have you?",
     goals: [
       'introduce the FSA as part of the existing agency relationship',
       'remove any expectation that the call leads to a sale',
@@ -42,7 +42,7 @@ export const ADVISOR_SCRIPTS: AdvisorScript[] = [
     key: 'needs_discovery',
     title: 'Advisor Task 2 — Needs Discovery',
     script:
-      "Hi {{first_name}}, it is {{fsa_name}} with {{agency_name}}. I wanted to follow up on the note I sent about a protection review. Rather than talk at you about insurance, I would find it more useful to ask: who would feel it financially if your income stopped, and what would still need paying? If those questions have easy answers, you are probably in good shape and I will say so. If they do not, that is usually where a short conversation helps.",
+      "Hi {{first_name}}, it is {{fsa_name}}. I wanted to follow up on the note I sent about a protection review. Rather than talk at you about insurance, I would find it more useful to ask: who would feel it financially if your income stopped, and what would still need paying? If those questions have easy answers, you are probably in good shape and I will say so. If they do not, that is usually where a short conversation helps.",
     goals: [
       'open with the client situation rather than a product',
       'surface who depends on the income and what obligations remain',
@@ -55,7 +55,7 @@ export const ADVISOR_SCRIPTS: AdvisorScript[] = [
     key: 'personal_review_invitation',
     title: 'Advisor Task 3 — Personal Review Invitation',
     script:
-      "Hi {{first_name}}, {{fsa_name}} here with {{agency_name}}. I wanted to invite you personally to a complimentary protection review. It runs about twenty minutes, there is no cost, and there is no obligation to do anything afterwards. We would talk through who depends on you, what would still need paying, and what you already have in place. A fair number of these end with me telling someone they are already well covered. Would that be worth twenty minutes of your time?",
+      "Hi {{first_name}}, {{fsa_name}} here. I wanted to invite you personally to a complimentary protection review. It runs about twenty minutes, there is no cost, and there is no obligation to do anything afterwards. We would talk through who depends on you, what would still need paying, and what you already have in place. A fair number of these end with me telling someone they are already well covered. Would that be worth twenty minutes of your time?",
     goals: [
       'make a specific, concrete invitation with a defined time cost',
       'state plainly that no action is required',
@@ -68,7 +68,7 @@ export const ADVISOR_SCRIPTS: AdvisorScript[] = [
     key: 'final_personal_outreach',
     title: 'Advisor Task 4 — Final Personal Outreach',
     script:
-      "Hi {{first_name}}, this is {{fsa_name}} with {{agency_name}}. I wanted to reach out once personally before I close this follow-up. If life insurance is not something you need to think about right now, that is a completely reasonable place to be and I will stop here. If it is on your mind at some point, this year or in five, call me directly and we will pick it up. Either way, thank you for being a client of the agency.",
+      "Hi {{first_name}}, this is {{fsa_name}}. I wanted to reach out once personally before I close this follow-up. If life insurance is not something you need to think about right now, that is a completely reasonable place to be and I will stop here. If it is on your mind at some point, this year or in five, call me directly and we will pick it up. Either way, thank you for being a client of the agency.",
     goals: [
       'close the sequence warmly and without pressure',
       'give the client a dignified way to decline',

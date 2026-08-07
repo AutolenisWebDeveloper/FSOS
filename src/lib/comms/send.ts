@@ -32,6 +32,7 @@ import { buildRecipientContext } from './variables'
 import { resolvePolicySource } from './policy-context'
 import { resolveIdentityDisclosure, type IdentityContext } from './identity-resolver'
 import { prependIdentityDisclosure } from './identity'
+import { parseSubjectFromBody } from './template-subject'
 import { resolveSendPolicy } from './policy-resolver'
 import type { MessagePurpose } from './purpose'
 import { evaluateOutboundMessage } from './evaluations'
@@ -488,6 +489,16 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
     }
   }
 
+  // ── Email subject, resolved at the ONE choke point ──────────────────────────
+  // comm_templates has no `subject` column: an email body carries its subject on a leading
+  // "Subject:" line, which the marketing shell renders as the card H1 (template-subject.ts).
+  // Callers that already parsed it win; every caller that did NOT (the console/test sends and
+  // the campaign-asset picker, which had no way to reach the body's header) previously shipped
+  // an envelope with no subject at all — the recipient saw "(No Subject)" on a mail whose H1
+  // read correctly. Resolving it here means no send path can regress that again.
+  const resolvedSubject =
+    ctx.channel === 'email' ? ctx.subject?.trim() || parseSubjectFromBody(ctx.body) : ctx.subject
+
   // Personalize merge tokens (safe substitution; the gate still checks the result).
   // On email the body is HTML → HTML-escape recipient-controlled merge VALUES so a
   // name/city containing markup can't inject into the delivered email or the stored
@@ -577,10 +588,12 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
       conversationId,
       ctx: identityWithOwner,
     })
-    // identity_full_intro records what was ACTUALLY prepended, not merely what was
+    // identity_full_intro records what the message ACTUALLY carried, not merely what was
     // required: when no approved config exists, idr.disclosure is null and no full intro
     // is sent — the (unmet) requirement is still captured in identityReason for audit.
-    identityFullIntro = idr.disclosure != null
+    // An introduction carried by the approved authored body counts (satisfiedByBody), so the
+    // thread is stamped as introduced and later touches do not re-introduce.
+    identityFullIntro = idr.disclosure != null || idr.satisfiedByBody
     identityFirstTouch = idr.isFirstChannelTouch
     identityVersion = idr.disclosure != null ? idr.version : null
     identityReason = idr.reason
@@ -697,7 +710,7 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
         channel: ctx.channel,
         direction: 'outbound',
         recipient: to,
-        subject: ctx.subject ?? null,
+        subject: resolvedSubject ?? null,
         body: identityBody,
         delivery_status: 'queued',
         template_id: ctx.templateId ?? null,
@@ -758,7 +771,7 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
   // instead of only the react-email-authored subset. SMS is unaffected.
   const emailReady =
     ctx.channel === 'email'
-      ? wrapMarketingEmailBody(identityBody, { preheader: ctx.subject, unsubscribeUrl: recipientCtx.unsubscribe_url })
+      ? wrapMarketingEmailBody(identityBody, { preheader: resolvedSubject, unsubscribeUrl: recipientCtx.unsubscribe_url })
       : identityBody
 
   // Instrument outbound email with open/click tracking (needs the message id). Runs AFTER
@@ -770,7 +783,7 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
   const req: DispatchRequest = {
     channel: ctx.channel,
     to,
-    subject: ctx.subject,
+    subject: resolvedSubject,
     body: sendBody,
     // Plaintext part is NOT instrumented (open/click tracking is HTML-only).
     bodyText: ctx.channel === 'email' ? identityText : undefined,

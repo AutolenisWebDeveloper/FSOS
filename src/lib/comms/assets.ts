@@ -17,6 +17,7 @@
 
 import { getDb } from '@/lib/supabase/client'
 import { isSendableKind } from './console'
+import { parseSubjectFromBody } from './template-subject'
 
 export interface SendableAssetRow {
   asset_id: string
@@ -93,7 +94,8 @@ export interface ResolvedAssetPayload {
   body: string
   /** Email plaintext part, if the asset stores one (ADR-025). */
   bodyText: string | null
-  /** Email subject if the asset carries one (workshops do; comm_templates do not). */
+  /** Email subject — workshops store it in a column; comm_templates carry it on the body's
+   *  leading "Subject:" line (template-subject.ts). Null for SMS. */
   subject: string | null
 }
 
@@ -168,7 +170,11 @@ export async function resolveAssetPayload(assetId: string, sourceTable: string):
       playbookKey: r.playbook_key,
       body: t.body,
       bodyText: t.body_text ?? null,
-      subject: null,
+      // comm_templates has no `subject` column — an email body carries its subject on a leading
+      // "Subject:" line (template-subject.ts), which is what the marketing shell renders as the
+      // card H1. Returning null here shipped every console/test send of a campaign email with an
+      // empty envelope subject ("(No Subject)" in the inbox) even though the body had one.
+      subject: channel === 'email' ? parseSubjectFromBody(t.body) ?? null : null,
     }
   } catch {
     return null

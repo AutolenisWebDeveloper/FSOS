@@ -56,7 +56,7 @@ export const PLAYBOOKS: Playbook[] = [
     objective:
       'Reopen a stalled conversation without pressure, and get a clear yes / not-now / no so the timeline can respond to reality.',
     opening:
-      "Hi {{first_name}}, I'm the automated assistant for {{fsa_name}} at {{agency_name}}. You looked into life insurance with us a while back. Is now a better time to pick it back up, or should we close it out for now?",
+      "Hi {{first_name}}, I'm the automated assistant for {{fsa_name}}, the {{advisor_title}} working with {{agent_of_record_reference}}. You looked into life insurance with us a while back. Pick it back up, or close it out?",
     branches: ['still_interested', 'not_now', 'not_interested', 'what_stopped_them', 'process_question', 'unknown'],
     allowed:
       'Acknowledge the gap warmly and without guilt. Ask what got in the way. Offer general information about how a complimentary review works, and offer to book time with {{fsa_name}}.',
@@ -208,7 +208,7 @@ export const ADVISOR_SCRIPTS: AdvisorScript[] = [
     touch_no: 8,
     title: 'Advisor Script #1 — Relationship Reconnect',
     script:
-      "Hi {{first_name}}, this is {{fsa_name}} with {{agency_name}}, I work alongside your Farmers agent on the life and financial services side. We talked a while back about life insurance and then things went quiet, which honestly happens with most people. I'm not calling to sell you anything today. I just wanted to hear whether anything has changed on your end, and to make myself available if there's a question you never got answered. If the timing still isn't right, tell me and I'll leave you alone about it.",
+      "Hi {{first_name}}, this is {{fsa_name}}, the {{advisor_title}} working with {{agent_of_record_reference}}. I handle the life and financial services side for the agency's clients. We talked a while back about life insurance and then things went quiet, which honestly happens with most people. I'm not calling to sell you anything today. I just wanted to hear whether anything has changed on your end, and to make myself available if there's a question you never got answered. If the timing still isn't right, tell me and I'll leave you alone about it.",
     goals: [
       'reconnect as a person, not a pipeline follow-up',
       'find out what actually stopped the process',
@@ -221,7 +221,7 @@ export const ADVISOR_SCRIPTS: AdvisorScript[] = [
     touch_no: 14,
     title: 'Advisor Script #2 — Final Personal Follow-Up',
     script:
-      "Hi {{first_name}}, it's {{fsa_name}} with {{agency_name}}. I wanted to reach out personally once before I close your follow-up file. If life insurance isn't a priority right now, that's a completely reasonable place to be and I'd rather know than keep checking in. If it is still on your mind, I'm glad to talk it through whenever suits you, no obligation either way. Thank you for your time, and all the best to you and your family.",
+      "Hi {{first_name}}, it's {{fsa_name}}. I wanted to reach out personally once before I close your follow-up file. If life insurance isn't a priority right now, that's a completely reasonable place to be and I'd rather know than keep checking in. If it is still on your mind, I'm glad to talk it through whenever suits you, no obligation either way. Thank you for your time, and all the best to you and your family.",
     goals: [
       'close the campaign professionally and warmly',
       'give the client an easy, dignified exit',

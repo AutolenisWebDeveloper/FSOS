@@ -173,8 +173,79 @@ t('prepend helper composes disclosure + body without duplicating when already pr
   const composed = prependIdentityDisclosure(disclosure, body)
   assert.ok(composed.startsWith(disclosure))
   assert.ok(composed.includes(body))
-  // Idempotent: if the body already opens with the disclosure, don't double it.
+  // Idempotent: if the body already carries the disclosure, don't double it.
   assert.equal(prependIdentityDisclosure(disclosure, composed), composed)
+})
+
+// The disclosure is the first PARAGRAPH, which on a campaign email is not the first LINE: the
+// body opens with the "Subject:"/"Preview:" routing headers that email-shell.ts parses into the
+// card H1 and the inbox preheader. Prepending ahead of them stripped the email of its subject
+// heading and rendered a literal "Subject: …" line as body copy.
+t('inserts AFTER the Subject:/Preview: headers so the email keeps its heading', () => {
+  const { prependIdentityDisclosure } = require(join(out, 'identity.js'))
+  const disclosure = renderIdentityDisclosure(config, vars, 'full')
+  const body = [
+    'Subject: Picking this back up?',
+    'Preview: No pressure at all.',
+    '',
+    'Hi Jonathan,',
+    '',
+    'A while back you started looking into life insurance with us.',
+  ].join('\n')
+  const composed = prependIdentityDisclosure(disclosure, body)
+  const lines = composed.split('\n')
+  assert.match(lines[0], /^Subject: Picking this back up\?$/)
+  assert.match(lines[1], /^Preview: No pressure at all\.$/)
+  // Greeting stays attached to the top; the disclosure opens the body proper.
+  assert.ok(composed.indexOf('Hi Jonathan,') < composed.indexOf(disclosure))
+  assert.ok(composed.indexOf(disclosure) < composed.indexOf('A while back'))
+  assert.equal(prependIdentityDisclosure(disclosure, composed), composed)
+})
+
+t('still leads an SMS body, which has no headers or standalone greeting', () => {
+  const { prependIdentityDisclosure } = require(join(out, 'identity.js'))
+  const disclosure = renderIdentityDisclosure(config, vars, 'full')
+  const body = 'Hi Jonathan, is life insurance still on your list?'
+  assert.ok(prependIdentityDisclosure(disclosure, body).startsWith(disclosure))
+})
+
+// ── Inactivity is measured from the last CONTACT, not the age of the disclosure ──
+// Ageing off the disclosure re-introduced the FSA mid-campaign purely because the campaign had
+// been running longer than the window — the opposite of the rule's intent.
+console.log('evaluateIdentityDisclosure — inactivity window')
+
+t('an actively-messaged thread does NOT re-introduce, however old the disclosure is', () => {
+  const d = evaluateIdentityDisclosure({
+    ...established,
+    priorDisclosedAt: '2026-01-10T12:00:00Z', // 6 months ago
+    lastContactAt: '2026-07-20T12:00:00Z', // but messaged 3 days ago
+    now: '2026-07-23T12:00:00Z',
+    inactivityDays: 45,
+  })
+  assert.equal(d.fullIntroRequired, false)
+})
+
+t('a thread that has genuinely gone quiet DOES re-introduce', () => {
+  const d = evaluateIdentityDisclosure({
+    ...established,
+    priorDisclosedAt: '2026-01-10T12:00:00Z',
+    lastContactAt: '2026-02-01T12:00:00Z',
+    now: '2026-07-23T12:00:00Z',
+    inactivityDays: 45,
+  })
+  assert.equal(d.fullIntroRequired, true)
+  assert.match(d.reason, /inactive/i)
+})
+
+t('falls back to the disclosure date when the thread has no recorded traffic', () => {
+  const d = evaluateIdentityDisclosure({
+    ...established,
+    priorDisclosedAt: '2026-01-10T12:00:00Z',
+    lastContactAt: null,
+    now: '2026-07-23T12:00:00Z',
+    inactivityDays: 45,
+  })
+  assert.equal(d.fullIntroRequired, true)
 })
 
 // ── Agent of record: the {{agency_owner.reference}} token names the client's OWN agent when

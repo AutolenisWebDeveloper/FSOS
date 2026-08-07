@@ -25,6 +25,18 @@ Two hard constraints from the contract: the exact Farmers legal/brand entity wor
 
 **5. Config surface.** `/app/comms/identity` (view status + gold assumption badge + live preview + editor) and `/api/comms/identity` (GET; POST `save`/`approve`, Zod-validated, server-authorized, audited).
 
+### Amendment (2026-08-07) — authored introductions, insertion point, and the inactivity signal
+
+Three corrections, all preserving the decision above. The disclosure **requirement** is unchanged; only *which* approved wording is delivered, *where* it is placed, and *when* it refreshes.
+
+**6. An approved authored template may carry the introduction (`comm_templates.introduces_sender`, migration 105).** The lifecycle campaigns open their first email/SMS/AI touch with an introduction of their own, so the platform prepend produced **two** near-identical introductions on one message. A template may now declare `introduces_sender = true`; `resolveIdentityDisclosure` then returns `satisfiedByBody: true` — it records the introduction (`identity_full_intro`, the audit reason) and `send.ts` still stamps the per-channel thread state, but nothing is prepended. Every later touch therefore correctly reads as "already introduced" and never re-introduces. The default is `false`, which prepends exactly as before, so the fail-safe direction is unchanged and a caller that forgets the flag over-discloses rather than under-discloses. Decision 4's guarantee holds either way: the introduction is still gate-checked, still recorded, and still cannot be silently omitted — a body that claims the flag but drops the introduction is caught by `tests/lifecycle-campaign-messaging.test.mjs`, which asserts that exactly one asset per channel carries it and that its copy actually names the FSA, their role, and the recipient's agent of record.
+
+**7. The disclosure is the first *paragraph*, not the first *line*.** A campaign email body opens with `Subject:`/`Preview:` routing headers that `email-shell.ts` parses into the card H1 and inbox preheader. Blindly prepending pushed them out of the leading-header window, so the email lost its heading and rendered a literal "Subject: …" as body copy. `prependIdentityDisclosure` now skips past those headers and past a standalone greeting line. SMS is unaffected (no headers, no standalone greeting).
+
+**8. Inactivity is measured from the thread's last message, not the age of the disclosure.** Ageing off `identity_disclosed_at` re-introduced the FSA in the middle of a live campaign purely because the campaign had been running longer than the window — the opposite of the rule's intent, which is to refresh when a *relationship* has gone cold. `IdentityInput` takes `lastContactAt` (`comm_conversations.last_message_at`) and falls back to `priorDisclosedAt` when the thread has no recorded traffic.
+
+**9. One agent-of-record phrasing helper.** `agentOfRecordReference()` in `identity.ts` renders "your Farmers agent, Jane Smith" when the name is on file and the approved generic "your Farmers agent" when it is not. It backs both the disclosure's `{{agency_owner.reference}}` and the new `{{agent_of_record_reference}}` merge variable, so campaign copy and platform disclosure cannot drift, and neither ever guesses a name (§4.3).
+
 ## Rationale
 
 - **Author-proof by construction.** The platform, not the author, decides and inserts the disclosure — the exact failure §8 is guarding against (a forgotten introduction) can't happen on a governed send.
@@ -54,7 +66,7 @@ Two hard constraints from the contract: the exact Farmers legal/brand entity wor
 
 - CLAUDE.md §4.2, §4.3; master build instruction §8
 - ADR-003, ADR-004, ADR-015
-- Migration `supabase/migrations/053_comm_identity_disclosure.sql`
-- `src/lib/comms/identity.ts`, `identity-resolver.ts`, `send.ts`
-- Tests: `tests/comms-identity.test.mjs`, `tests/rls-firewall.test.mjs` (extended)
+- Migrations `supabase/migrations/053_comm_identity_disclosure.sql`, `094_identity_disclosure_agent_of_record.sql`, `105_comm_template_introduces_sender.sql`
+- `src/lib/comms/identity.ts`, `identity-resolver.ts`, `variables.ts`, `send.ts`
+- Tests: `tests/comms-identity.test.mjs`, `tests/comms-variables.test.mjs`, `tests/lifecycle-campaign-messaging.test.mjs`, `tests/rls-firewall.test.mjs` (extended)
 - `docs/comms-native/slice-2-identity-disclosure.md`

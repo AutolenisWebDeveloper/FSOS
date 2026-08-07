@@ -59,3 +59,7 @@ data/rule_fetch_log.json
 .turn-limit-*/
 .msgstatus-*/
 .comms-out-*/
+
+# Python analysis tooling
+__pycache__/
+*.pyc

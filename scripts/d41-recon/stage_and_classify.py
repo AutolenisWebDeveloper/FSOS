@@ -236,12 +236,83 @@ def render_samples(staged, n=25):
     return out
 
 
+def write_approval_worksheet(staged, path):
+    """§3 — emit the row-level approval worksheet for every MATCH_AMBIGUOUS row.
+
+    The brief requires row-level approval, not blanket approval, so this lists one
+    line per ambiguous item with an empty `decision` column for the operator to
+    fill in (approve | reject). apply.ts refuses to run until every line is set.
+
+    Contains the identifying detail needed to actually judge a row, so it is
+    written to the operator's scratch directory and never committed.
+    """
+    import csv
+    rows = []
+
+    # 4.1 cross-sell collapse groups spanning more than one street
+    kept = [r for r in staged['crosssell'] if not excluded_reason('crosssell', r)]
+    groups = defaultdict(list)
+    for r in kept:
+        groups[r['natural_key']].append(r)
+    for key, grp in sorted(groups.items()):
+        streets = {g['derived'].get('addr_key') for g in grp if g['derived'].get('addr_key')}
+        if len(grp) < 2 or len(streets) < 2:
+            continue
+        rows.append({
+            'category': 'crosssell_multi_street_collapse',
+            'ref': hashlib.sha256(key.encode()).hexdigest()[:16],
+            'rows': len(grp),
+            'name': grp[0]['src']['full_name'],
+            'zip': grp[0]['src']['zip5'],
+            'variants': ' || '.join(sorted({g['src'].get('street') or '(no street)' for g in grp})),
+            'detail': f'{len(grp)} rows share name+ZIP across {len(streets)} street addresses',
+            'recommended': 'reject_collapse_keep_separate', 'decision': ''})
+
+    # 4.2 win-back records whose key degraded to `name|` (no ZIP)
+    wb = [r for r in staged['winback'] if not excluded_reason('winback', r)]
+    wb_collapsed, _ = collapse(wb)
+    for r in wb_collapsed:
+        if r['derived'].get('zip5'):
+            continue
+        rows.append({
+            'category': 'winback_no_zip_degraded_key',
+            'ref': hashlib.sha256(r['natural_key'].encode()).hexdigest()[:16],
+            'rows': r['collapse_count'],
+            'name': r['src']['full_name'],
+            'zip': '(none)',
+            'variants': r['src'].get('inactive_lob') or '',
+            'detail': 'winback_key has an empty ZIP segment — collision-prone',
+            'recommended': 'review_before_insert', 'decision': ''})
+
+    # 4.3 owner keys colliding across the empty-ZIP conversion key format
+    inf = {r['natural_key']: r for r in staged['inforce']}
+    cnv = {r['natural_key']: r for r in staged['conversion']}
+    for k in sorted(set(inf) & set(cnv)):
+        rows.append({
+            'category': 'owner_key_empty_zip_collision',
+            'ref': hashlib.sha256(k.encode()).hexdigest()[:16], 'rows': 2,
+            'name': inf[k]['src']['owner_name'],
+            'zip': inf[k]['src'].get('zip5') or '(none)',
+            'variants': f"in-force policy {inf[k]['policy_number']} || "
+                        f"conversion policy {cnv[k]['policy_number']}",
+            'detail': 'in-force and conversion owner keys collide on an empty ZIP segment',
+            'recommended': 'review_same_person', 'decision': ''})
+
+    with open(path, 'w', newline='') as fh:
+        w = csv.DictWriter(fh, fieldnames=['category', 'ref', 'rows', 'name', 'zip',
+                                           'variants', 'detail', 'recommended', 'decision'])
+        w.writeheader()
+        w.writerows(rows)
+    return rows
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--out', required=True, help='staging directory (PII — never commit)')
     ap.add_argument('--manifest', help='where to write the PII-free manifest')
     ap.add_argument('--samples', type=int, default=0,
                     help='print N before/after samples to stdout (contains PII)')
+    ap.add_argument('--approvals', help='write the Phase 3 row-level approval worksheet here')
     args = ap.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
@@ -258,6 +329,13 @@ def main():
     text = json.dumps(report, indent=2, sort_keys=True)
     if args.manifest:
         open(args.manifest, 'w').write(text + '\n')
+
+    if args.approvals:
+        rows = write_approval_worksheet(staged, args.approvals)
+        by_cat = Counter(r['category'] for r in rows)
+        print(f'approval worksheet: {len(rows)} rows -> {args.approvals}')
+        for cat, n in sorted(by_cat.items()):
+            print(f'  {cat}: {n}')
 
     if args.samples:
         print('\n--- PROPOSED CHANGES (before/after) — CONTAINS PII, DO NOT PASTE ---')

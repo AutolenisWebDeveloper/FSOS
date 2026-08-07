@@ -29,9 +29,12 @@
 -- them here would fork a second audit subsystem (§6). This table answers "what did
 -- the copy say"; audit_log answers "who changed its state, and when".
 --
--- APPEND-ONLY, mirroring the audit_log construction in migration 010: UPDATE and
--- DELETE are revoked from the app roles AND blocked by a trigger, so the history is
--- tamper-evident even against the table owner. The FK is `on delete restrict`
+-- APPEND-ONLY, mirroring audit_log as it stands AFTER migration 077 — not as migration
+-- 010 first built it: UPDATE and DELETE are revoked from the app roles AND blocked by a
+-- row trigger, and TRUNCATE (which those revokes miss and row triggers never see) is
+-- revoked and blocked by its own statement trigger. 077 exists because audit_log shipped
+-- without that third guard; there is no reason to reintroduce the same hole here. The
+-- history is therefore tamper-evident even against the table owner. The FK is `on delete restrict`
 -- rather than `on delete cascade` for the same reason — deleting a template must
 -- not be a way to erase the record of what it used to say. Nothing in the app hard-
 -- deletes a template (the UI archives via archived_at), so this restricts nothing
@@ -71,7 +74,7 @@ comment on table comm_template_versions is
 comment on column comm_template_versions.approval_status is
   'The approval state of the SUPERSEDED row, not the replacement. approved here means this exact body was approved and in force until superseded_at.';
 comment on column comm_template_versions.superseded_by is
-  'Best-effort actor: comm_templates.updated_by when the writer set it, else the database role. audit_log remains the authoritative actor record.';
+  'The superseding writer, recorded only when the UPDATE actually asserted one (updated_by changed). NULL for writes that set no actor — bulk SQL, scripts, migrations — and for an actor editing twice consecutively, rather than carrying a stale name forward. A wrong actor in an evidence column is worse than an absent one; audit_log remains the authoritative per-edit actor record.';
 
 create index if not exists idx_ctv_template on comm_template_versions (template_id, version desc);
 
@@ -92,7 +95,18 @@ begin
     old.id, old.version, old.name, old.channel, old.category,
     old.body, old.body_text, old.render_sha,
     old.approval_status, old.approved_at, old.approved_by,
-    coalesce(new.updated_by, old.updated_by, current_user)
+    -- Attribute ONLY when this UPDATE actually asserted an actor. updated_by is a
+    -- persisted column, so new.updated_by alone still carries the LAST setter's name
+    -- forward into writes that never touched it (a bulk SQL or script edit would be
+    -- credited to whoever last used the PATCH route). current_user is no better: inside
+    -- a SECURITY DEFINER body it resolves to the function owner, not the updater.
+    -- nullif() therefore records an actor only when the write changed one.
+    --
+    -- Known false negative: the same actor editing twice in a row leaves the second
+    -- snapshot unattributed. That is the deliberate direction to err — in a column that
+    -- exists to answer "who", absent is recoverable from audit_log (which records every
+    -- edit with its actor and timestamp) while a confidently wrong name is not.
+    nullif(new.updated_by, old.updated_by)
   );
   return null; -- AFTER trigger: the return value is ignored.
 end;
@@ -132,6 +146,25 @@ create trigger trg_ctv_no_mutate
   before update or delete on comm_template_versions
   for each row execute function comm_template_versions_block_mutation();
 
+-- TRUNCATE is a separate vector and needs its own guard: it is not covered by
+-- `revoke ... delete`, and row-level triggers do not fire for it. This is the same hole
+-- audit_log carried until migration 077 closed it; an evidence table that can be emptied
+-- in one statement is not tamper-evident. Nothing in the app, jobs, tests, or migrations
+-- truncates this table, so blocking it removes only an abuse path.
+revoke truncate on comm_template_versions from public;
+
+create or replace function comm_template_versions_block_truncate()
+returns trigger language plpgsql as $$
+begin
+  raise exception 'comm_template_versions is append-only (TRUNCATE not permitted)';
+end;
+$$;
+
+drop trigger if exists trg_ctv_no_truncate on comm_template_versions;
+create trigger trg_ctv_no_truncate
+  before truncate on comm_template_versions
+  for each statement execute function comm_template_versions_block_truncate();
+
 -- ── PRIOR HISTORY (deliberately not backfilled) ─────────────────────────────
 -- Migrations 099/100/101 already replaced the v1 lifecycle copy, so the pre-105
 -- bodies are gone from the database. They are NOT lost: migrations 082/084/086
@@ -146,5 +179,7 @@ create trigger trg_ctv_no_mutate
 --   drop function if exists comm_template_snapshot_version();
 --   drop trigger if exists trg_ctv_no_mutate on comm_template_versions;
 --   drop function if exists comm_template_versions_block_mutation();
+--   drop trigger if exists trg_ctv_no_truncate on comm_template_versions;
+--   drop function if exists comm_template_versions_block_truncate();
 --   -- The history table itself is retention evidence; drop it only deliberately:
 --   -- drop table comm_template_versions;

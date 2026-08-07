@@ -43,8 +43,16 @@ Add an append-only `comm_template_versions` table, written **by a database trigg
   three one approved, immutable artifact.
 - The function is `SECURITY DEFINER` with a pinned `search_path`: the app roles hold no INSERT on
   the history table, so an invoker-rights trigger could not write the snapshot it exists to take.
-- The table is append-only and tamper-evident on the migration-010 `audit_log` pattern: UPDATE and
-  DELETE are revoked from the app roles **and** blocked by `trg_ctv_no_mutate`, which raises.
+- The table is append-only and tamper-evident on the `audit_log` pattern **as it stands after
+  migration 077**: UPDATE and DELETE are revoked from the app roles and blocked by
+  `trg_ctv_no_mutate`, and TRUNCATE — which those revokes miss and row-level triggers never see —
+  is revoked from `public` and blocked by the statement-level `trg_ctv_no_truncate`. Migration 077
+  exists because `audit_log` shipped without that third guard; the hole is closed here at birth.
+- `superseded_by` records an actor only when the UPDATE actually asserted one
+  (`nullif(new.updated_by, old.updated_by)`). `updated_by` is a persisted column, so a bare
+  `new.updated_by` would carry the last setter's name into writes that never touched it, and
+  `current_user` inside a `SECURITY DEFINER` body resolves to the function owner rather than the
+  updater. Both are confident lies in a column that exists to answer "who".
 - The FK is `on delete restrict`, so deleting a template is not a route to erasing the record of
   what it used to say. Nothing in the app hard-deletes a template (the UI archives via
   `archived_at`), so this restricts nothing that currently happens.
@@ -104,6 +112,10 @@ body, so it fires nothing.
   remain recoverable only from migrations 082/084/086 in version control.
 - `on delete restrict` means a template with history cannot be hard-deleted without an explicit
   decision to remove its evidence first. This is deliberate friction.
+- Attribution has a known false negative: the same actor editing twice consecutively leaves the
+  second snapshot's `superseded_by` NULL, because the write asserted no *change* of actor. Erring
+  toward absent is deliberate — `audit_log` records every edit with its actor and timestamp, so a
+  missing name is recoverable while a wrong one is not.
 - The table grows without bound. Copy changes are rare and human-driven (tens per year), so no
   retention/pruning policy is defined yet; if that changes, pruning must be a deliberate,
   documented retention decision rather than an ad-hoc cleanup.

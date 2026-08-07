@@ -1,18 +1,23 @@
 // tests/lifecycle-campaign-messaging.test.mjs
-// GUARDRAIL TEST for the lifecycle campaign messaging (migrations 106/107/108, the v3 copy).
+// GUARDRAIL TEST for the lifecycle campaign messaging (the CURRENT copy migrations).
 //
-// The seed migrations (082/084/086) and the v2 copy (099/100/101) are applied and immutable;
-// the CURRENT copy ships as in-place template UPDATEs in 106 (Win-Back), 107 (Cross-Sell Life),
-// 108 (Life Conversion). Those migrations carry ALL customer-facing copy, so they — not the
-// seeds and not the superseded v2 files — are what must be proven compliant.
+// The seed migrations (082/084/086) and the superseded copy passes (099/100/101, 108) are
+// applied and immutable; the CURRENT copy ships as in-place template UPDATEs in 106 (Win-Back,
+// v3), 107 (Cross-Sell Life, v3), and 110 (Life Conversion, v4 — the conversion-focused copy).
+// Those migrations carry ALL customer-facing copy, so they — not the seeds and not the
+// superseded files — are what must be proven compliant.
 //
 // What this proves, per campaign:
 //   1. Every body is recommendation-free (containsRecommendationLanguage → false). §4.2 red line.
-//   2. Every body lands as approval_status='draft' at version 3 with prior approval cleared —
-//      nothing can dispatch until a human approves it (sendThroughGate refuses an unapproved
-//      template). No campaign is approved or activated by this work.
-//   3. Every {{merge_token}} is on the proven-resolvable allowlist, so no send can hard-block on
-//      an unresolved BLOCKING-tier token (gate step 4b / personalize.unresolvedBlockingTokens).
+//   2. Every body lands as approval_status='draft' at the campaign's current version with prior
+//      approval cleared — nothing can dispatch until a human approves it (sendThroughGate refuses
+//      an unapproved template). No campaign is approved or activated by this work.
+//   3. Every {{merge_token}} is on that campaign's proven-resolvable allowlist, so no send can
+//      hard-block on an unresolved BLOCKING-tier token (gate step 4b /
+//      personalize.unresolvedBlockingTokens). Life Conversion alone may reference the verified
+//      policy/conversion facts: its send path passes enrollment.policy_id into the gate, where
+//      resolvePolicySource() resolves them fail-closed (ADR-020/§4.3 — a recipient whose record
+//      lacks a referenced fact is blocked + escalated, never sent a guess).
 //   4. Every template ID updated is one the seed migration actually created — so a touch row can
 //      never point at a template this migration failed to rewrite.
 //   5. SMS bodies carry NO opt-out text: dispatcher.ts appends SMS_OPT_OUT_FOOTER to every SMS,
@@ -84,27 +89,48 @@ const ALLOWED_TOKENS = new Set([
   'scheduling_link', 'advisor_phone', 'advisor_email',
 ])
 
+// The verified per-recipient policy/conversion facts ONLY the Life Conversion campaign may
+// reference: its enrollment population comes from v_conversions_due (verified deadline from the
+// imported FNWL conversion list, which also supplies policy_number and the convertible amount as
+// face_amount), and its tick passes enrollment.policy_id into sendThroughGate so
+// resolvePolicySource() resolves these BLOCKING-tier variables fail-closed per recipient.
+// conversion_exam_clause is COSMETIC by design: it renders "with no new medical exam" ONLY when
+// household_policies.conversion_no_exam is verified true, and otherwise degrades to the neutral
+// "subject to the conversion provisions in your policy" — the §4.3 gate on the exam claim.
+// Win-Back and Cross-Sell sends carry no policy context, so for them these tokens would
+// hard-block every send and stay banned.
+const LIFE_CONVERSION_FACT_TOKENS = [
+  'policy_number', 'policy_face_amount', 'conversion_expiration_date',
+  'days_until_conversion_expires', 'conversion_exam_clause',
+]
+
 const CAMPAIGNS = [
   {
     key: 'Win-Back',
     v2: 'supabase/migrations/106_pipeline_winback_messaging_v3.sql',
     seed: 'supabase/migrations/084_pipeline_winback_seed.sql',
+    version: 3,
     expect: { email: 8, sms: 8, ai: 6 },
     prefixes: { email: 'a2b00000', sms: 'b2c00000', ai: 'c2d00000' },
+    extraTokens: [],
   },
   {
     key: 'Cross-Sell Life',
     v2: 'supabase/migrations/107_cross_sell_life_messaging_v3.sql',
     seed: 'supabase/migrations/086_cross_sell_life_seed.sql',
+    version: 3,
     expect: { email: 12, sms: 12, ai: 7 },
     prefixes: { email: 'e5c00000', sms: 'd5c00000', ai: 'c5c00000' },
+    extraTokens: [],
   },
   {
     key: 'Life Conversion',
-    v2: 'supabase/migrations/108_life_conversion_messaging_v3.sql',
+    v2: 'supabase/migrations/110_life_conversion_messaging_v4.sql',
     seed: 'supabase/migrations/082_life_conversion_seed.sql',
+    version: 4,
     expect: { email: 7, sms: 6, ai: 5 },
     prefixes: { email: 'e1c00000', sms: 'd1c00000', ai: 'c1c00000' },
+    extraTokens: LIFE_CONVERSION_FACT_TOKENS,
   },
 ]
 
@@ -219,19 +245,20 @@ for (const c of selected) {
   })
 
   t('every body uses only proven-resolvable merge tokens', () => {
+    const allowed = new Set([...ALLOWED_TOKENS, ...c.extraTokens])
     for (const r of rows) {
       for (const tok of tokensIn(r.body)) {
-        assert.ok(ALLOWED_TOKENS.has(tok), `unsupported token {{${tok}}} in ${r.id}`)
+        assert.ok(allowed.has(tok), `unsupported token {{${tok}}} in ${r.id}`)
       }
     }
   })
 
-  t('every update lands as draft v3 with prior approval cleared', () => {
+  t(`every update lands as draft v${c.version} with prior approval cleared`, () => {
     const updates = sql.split(/^update comm_templates set$/m).slice(1)
     assert.equal(updates.length, total, 'update-statement count mismatch')
     for (const u of updates) {
       assert.match(u, /approval_status = 'draft'/, 'template not left in draft')
-      assert.match(u, /version = 3/, 'version not bumped to 3')
+      assert.match(u, new RegExp(`version = ${c.version}\\b`), `version not bumped to ${c.version}`)
       assert.match(u, /approved_at = null/, 'stale approved_at not cleared')
       assert.match(u, /approved_by = null/, 'stale approved_by not cleared')
     }
@@ -384,7 +411,14 @@ console.log('\n▶ AI playbook dispatched bodies')
 // context fails to supply it the send HARD-BLOCKS at gate step 4b. An UNREGISTERED token is the
 // actual hazard — personalize.ts renders it as an empty string and does NOT block, silently
 // shipping broken copy ("your meeting with Markist on  at ...").
+//
+// Life Conversion playbooks may additionally reference the verified policy/conversion facts,
+// but ONLY in `opening` — the opener is dispatched by the campaign tick, which passes
+// enrollment.policy_id into the gate. followUp/handoff/closing are dispatched later by the AI
+// responder with NO policy context, so a fact token there would hard-block every one of those
+// sends. That split is asserted below, not just documented.
 const PLAYBOOK_TOKENS = new Set([...ALLOWED_TOKENS, 'appointment_time'])
+const PLAYBOOK_EXTRA_TOKENS = { 'Life Conversion': LIFE_CONVERSION_FACT_TOKENS }
 
 /** The playbook surface carries the same identity contract as the migration bodies. */
 function assertIdentitySafe(id, body) {
@@ -418,11 +452,18 @@ for (const [key, dir, advisorFile] of PLAYBOOK_SRC) {
   })
 
   t(`${key}: playbook bodies reference only resolvable merge tokens`, () => {
+    const factTokens = new Set(PLAYBOOK_EXTRA_TOKENS[key] ?? [])
     for (const b of bodies) {
+      // Fact tokens resolve ONLY on the tick-dispatched opener (policy context supplied there);
+      // on the responder-dispatched fields they would hard-block, so they are banned there.
+      const openerDispatched = b.id.endsWith('.opening')
       for (const m of b.body.matchAll(/\{\{\s*([a-z_]+)\s*\}\}/gi)) {
+        const tok = m[1].toLowerCase()
+        if (openerDispatched && factTokens.has(tok)) continue
         assert.ok(
-          PLAYBOOK_TOKENS.has(m[1].toLowerCase()),
-          `${b.id} uses unregistered token {{${m[1]}}} — renders EMPTY without blocking`,
+          PLAYBOOK_TOKENS.has(tok),
+          `${b.id} uses token {{${m[1]}}} that does not resolve on this dispatch path — ` +
+            `it would render EMPTY or hard-block the send`,
         )
       }
     }

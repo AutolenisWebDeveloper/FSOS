@@ -64,6 +64,35 @@ This coexists with the existing automatic origination (`originate.ts`), which co
 one open `term_conversion` opportunity per eligible policy from the same view; the ownership rule
 is what prevents double-touch, enforced in the campaign's shared `evaluateEligibility`.
 
+### Verified-facts copy contract (messaging v4, owner-directed 2026-08-07)
+The campaign's copy centers on the actual conversion opportunity and may state per-recipient
+policy facts — policy number, coverage (convertible) amount, conversion expiration date, days
+remaining — under a strict verified-data contract (reconciling §4.3 / ADR-020):
+
+- **Population is verified by construction.** Enrollment comes exclusively from
+  `v_conversions_due` (verified `conversion_deadline` imported from the FNWL conversion list,
+  which also supplies `policy_number` and writes the verified convertible amount as
+  `face_amount`); the enrollment row snapshots the verified deadline.
+- **Facts resolve fail-closed, never from the campaign itself.** Copy references facts only via
+  BLOCKING-tier merge variables (`{{policy_number}}`, `{{policy_face_amount}}`,
+  `{{conversion_expiration_date}}`, `{{days_until_conversion_expires}}`); the tick passes
+  `enrollment.policy_id` into `sendThroughGate()`, `resolvePolicySource()` loads the policy row,
+  and a recipient whose record lacks any referenced fact is hard-blocked at gate step
+  `personalization` and escalated — never sent a guess or blank.
+- **The "no new medical exam" claim has its own verified gate.** `{{conversion_exam_clause}}`
+  (cosmetic tier) renders "with no new medical exam" only when the verified per-policy flag
+  `household_policies.conversion_no_exam` is true (migration 109; set through the audited policy
+  PATCH — the FNWL import carries no exam field and leaves it null = unverified). Otherwise the
+  clause degrades to the always-true neutral "subject to the conversion provisions in your
+  policy" — the claim is softened, never blocked, and never assumed.
+- **Dispatch-path split for AI playbooks.** Fact tokens are permitted only in playbook
+  `opening` (tick-dispatched with policy context); `followUp`/`handoff`/`closing` are dispatched
+  by the AI responder with no policy context and stay fact-token-free. Enforced by
+  `tests/lifecycle-campaign-messaging.test.mjs`.
+- **The red line is unchanged (§4.2).** No individualized recommendation to convert, no product
+  named to convert into, no premium quoted, no replacement language; individualized questions
+  escalate to the licensed FSA. Templates land as DRAFT v4 behind the human approval gate.
+
 ## Consequences
 - **Positive:** no parallel dispatcher/scheduler/consent path; the firewall, red-line, quiet
   hours, and audit trail apply unchanged; the timeline is a pure, tested source of truth; the

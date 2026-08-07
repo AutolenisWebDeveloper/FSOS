@@ -23,10 +23,11 @@ execSync(
 const require = createRequire(import.meta.url)
 const C = require(join(out, 'template-catalog.js'))
 
-let passed = 0
+// Counts test CASES, not individual assertions — each `t(...)` below carries several.
+let cases = 0
 const t = (name, fn) => {
   fn()
-  passed++
+  cases++
   console.log('  ✓', name)
 }
 
@@ -167,4 +168,4 @@ t('filtering is presentation only — it never changes a row\'s approval status'
   }
 })
 
-console.log(`\n${passed} assertions passed — template view filters`)
+console.log(`\n${cases} tests passed — template view filters`)

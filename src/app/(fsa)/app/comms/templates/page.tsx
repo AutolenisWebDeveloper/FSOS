@@ -19,12 +19,25 @@ import {
 
 export const dynamic = 'force-dynamic'
 
+/**
+ * A repeated query param (`?q=a&q=b`, trivially produced by hand-editing a URL or by a
+ * stale bookmark) arrives as an array, not a string. Typing it as `string` would make
+ * `.trim()` throw and render a 500 instead of a list, so the param type is honest and
+ * `firstParam` collapses it to the first value.
+ */
+type SearchParams = Record<string, string | string[] | undefined>
+
+function firstParam(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) return value[0] ?? ''
+  return value ?? ''
+}
+
 // OS-12 Templates (A2). Only approved templates are sendable. The list supports view
 // filters — type (email / SMS / AI conversation) and campaign, plus name search — held in
 // the URL query so a view is deep-linkable, and bulk administration (select multiple →
 // approve / unapprove (approvers only) / delete (archive)) via the §8 command-bar pattern.
 // Authority is enforced server-side; the filters are presentation only.
-export default async function TemplatesPage(props: { searchParams: Promise<Record<string, string | undefined>> }) {
+export default async function TemplatesPage(props: { searchParams: Promise<SearchParams> }) {
   const sp = await props.searchParams
 
   const [templates, usage, session] = await Promise.all([
@@ -72,13 +85,13 @@ function TemplateLibrary({
   usageDegraded,
 }: {
   catalog: ReturnType<typeof buildCatalog>
-  searchParams: Record<string, string | undefined>
+  searchParams: SearchParams
   canApprove: boolean
   usageDegraded: boolean
 }) {
-  const format = normalizeFormat(searchParams.format)
-  const campaign = normalizeCampaign(searchParams.campaign, campaignKeys(catalog))
-  const q = (searchParams.q ?? '').trim()
+  const format = normalizeFormat(firstParam(searchParams.format))
+  const campaign = normalizeCampaign(firstParam(searchParams.campaign), campaignKeys(catalog))
+  const q = firstParam(searchParams.q).trim()
   const active = { format, campaign, q }
 
   const facets = facetCounts(catalog, active)

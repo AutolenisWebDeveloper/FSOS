@@ -236,8 +236,9 @@ t('the console deep-link key matches the asset catalog key', () => {
   }
   // assets.ts must keep re-exporting the single map — a second copy would let the console
   // and the template library drift apart.
+  // Whitespace-tolerant: a formatter reflowing the re-export must not fail this check.
   const assets = readFileSync('src/lib/comms/assets.ts', 'utf8')
-  assert.match(assets, /export \{ CAMPAIGN_LABELS, campaignLabel \} from '\.\/template-catalog'/)
+  assert.match(assets, /export\s*\{[^}]*\bCAMPAIGN_LABELS\b[^}]*\bcampaignLabel\b[^}]*\}\s*from\s*['"]\.\/template-catalog['"];?/)
 })
 
 // ─── 2. The fork is gone AND the pages still compile ──────────────────────────

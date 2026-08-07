@@ -61,5 +61,6 @@
 | 034 | Life Win-Back Agent (first-class win-back outreach) | Accepted | [`ADR-034-life-winback-agent.md`](./ADR-034-life-winback-agent.md) |
 | 035 | Accessibility / Responsive Verification via a Manual Pre-Ship Checklist | Accepted | [`ADR-035-a11y-preship-checklist.md`](./ADR-035-a11y-preship-checklist.md) |
 | 036 | Contact Import: Field Recognition & Mapping Model | Accepted | [`ADR-036-contact-import-mapping-model.md`](./ADR-036-contact-import-mapping-model.md) |
+| 037 | Communication Template Version History (database-enforced copy retention) | Accepted | [`ADR-037-comm-template-version-history.md`](./ADR-037-comm-template-version-history.md) |
 
-**Note:** ADR-011 has no file (the sequence skips it). `CLAUDE.md` §19 indexes all 40 ADRs including both documents of each colliding pair; cite a colliding ADR by filename slug, never by bare number.
+**Note:** ADR-011 has no file (the sequence skips it). `CLAUDE.md` §19 indexes all 41 ADRs including both documents of each colliding pair; cite a colliding ADR by filename slug, never by bare number.

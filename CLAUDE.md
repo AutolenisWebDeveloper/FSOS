@@ -464,6 +464,7 @@ The identity is consistent across homepage, public pages, login, forgot-password
 | ADR-034 | Life Win-Back agent (first-class win-back outreach; promotes the former `marketing_automation` stub; `winback_life` book; disabled by default until member/consent mapping verified) |
 | ADR-035 | Accessibility/responsive verification via a manual pre-ship checklist (no automated browser-test platform; single-FSA proportionality) |
 | ADR-036 | Contact-import field-recognition & mapping model (unified recognizer + template detection + composite split + mapping memory + custom fields; extends the ADR-028 `contact-consolidation-dedup` substrate) |
+| ADR-037 | Communication template version history (DB-trigger-enforced, append-only copy retention on `comm_templates`) |
 
 **Numbering collisions — cite by slug, do not renumber.** Four numbers each carry two accepted ADRs: **015**, **016**, **028**, and **029**. All eight are indexed above and all eight have live inbound references from code, migrations, tests, other ADRs, and skills, so renumbering would break existing citations. The convention is therefore: **refer to a colliding ADR by its filename slug** (`ADR-028-agent-tool-calling.md`, not "ADR-028"), never by the bare number. `docs/adr/README.md` documents the same collisions.
 

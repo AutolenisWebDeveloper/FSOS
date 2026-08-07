@@ -9,9 +9,11 @@ import { containsRecommendationLanguage } from '@/lib/compliance/guardrail'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-// PATCH — edit a template. Editing creates a NEW version (old body retained in a
-// prior version row is out of scope for P1; we bump the version + reset approval to
-// draft so an edited-after-approval template cannot send until re-approved).
+// PATCH — edit a template. Editing creates a NEW version: we bump the version + reset
+// approval to draft so an edited-after-approval template cannot send until re-approved.
+// The superseded body is NOT lost — trg_comm_templates_snapshot (migration 105, ADR-037)
+// copies the prior row into comm_template_versions in the database, so every write path
+// here and elsewhere is covered without this handler doing anything.
 export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   const auth = await requireApiRole('fsa')

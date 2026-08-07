@@ -55,12 +55,18 @@ const out = mkdtempSync(join(tmpdir(), 'fsos-campaign-'))
 // makes the layout a property of this test rather than of an unrelated import graph.
 execSync(
   `npx tsc src/lib/comms/campaign-presentation.ts src/lib/comms/message-status.ts ` +
+    `src/lib/comms/template-catalog.ts ` +
     `--rootDir src/lib --outDir ${out} --module commonjs --target es2020 --moduleResolution node ` +
     `--skipLibCheck --esModuleInterop --lib es2020,dom`,
   { stdio: 'inherit' },
 )
 const require = createRequire(import.meta.url)
 const P = require(join(out, 'comms/campaign-presentation.js'))
+// CAMPAIGN_LABELS is defined in template-catalog.ts (pure, DB-free) and re-exported by
+// assets.ts, so both the console asset picker and the template library label a campaign
+// identically. Loading the real map lets the deep-link check below assert the exported
+// keys rather than grep source text.
+const CATALOG = require(join(out, 'comms/template-catalog.js'))
 
 console.log('\ncampaign-presentation — status vocabulary')
 
@@ -219,10 +225,19 @@ t('breadcrumbs and deep links are built, not hand-typed', () => {
 t('the console deep-link key matches the asset catalog key', () => {
   // campaignTestHref sends `?campaign=<key>` to the console, which filters the asset
   // catalog by campaign_key. A key the catalog does not know renders an empty picker.
-  const assets = readFileSync('src/lib/comms/assets.ts', 'utf8')
+  // The same keys drive the /app/comms/templates campaign filter, so an unlabelled key
+  // would also show up there as a raw enum.
   for (const engine of P.CAMPAIGN_ENGINE_LIST) {
-    assert.ok(assets.includes(`${engine.key}:`), `${engine.key} is not a CAMPAIGN_LABELS key in assets.ts`)
+    assert.ok(
+      Object.prototype.hasOwnProperty.call(CATALOG.CAMPAIGN_LABELS, engine.key),
+      `${engine.key} is not a CAMPAIGN_LABELS key`,
+    )
+    assert.notEqual(CATALOG.campaignLabel(engine.key), engine.key, `${engine.key} renders as a raw enum, not a label`)
   }
+  // assets.ts must keep re-exporting the single map — a second copy would let the console
+  // and the template library drift apart.
+  const assets = readFileSync('src/lib/comms/assets.ts', 'utf8')
+  assert.match(assets, /export \{ CAMPAIGN_LABELS, campaignLabel \} from '\.\/template-catalog'/)
 })
 
 // ─── 2. The fork is gone AND the pages still compile ──────────────────────────

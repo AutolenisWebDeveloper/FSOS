@@ -5,7 +5,7 @@ license: Proprietary — internal FSOS use only.
 metadata:
   project: FSOS
   subsystem: marketing-planning
-  guardrails: "2.1, 2.2, 2.3"
+  guardrails: "CLAUDE.md §4.1 securities firewall, §4.2 AI green-zone/red-line, §4.3 no-invented-Farmers-data"
 ---
 
 # FSOS Marketing & Outreach Planning
@@ -19,8 +19,8 @@ The single most important thing to internalize: FSOS already owns the *execution
 Every plan uses this structure, in this order. This is a contract: a marketing plan for this practice IS these six parts. Fill each with concrete, practice-specific content — not placeholders.
 
 1. **Objective.** One measurable business outcome, tied to the aggregate-root spine (a stage advance, a review booked, an opportunity originated, a stalled case re-engaged). State the target segment size and the time window. Name which existing campaign or comms surface will carry it (see mapping below).
-2. **Audience segment / ICP.** Who this reaches, defined by data the practice actually holds (household attributes, policy/coverage status, opportunity stage, referral source, prior engagement). State the *inclusion* and *exclusion* rules explicitly — exclusions are a compliance surface (securities-flagged, no consent, DNC, active conversation, recently contacted). Never define a segment on invented Farmers data (§2.3).
-3. **Message map.** The content themes and the sequence of touches — what each touch says at a *theme* level (educate, invite, remind, follow up, offer a review, schedule). Every theme stays inside the green zone: it may educate, qualify, gather info, schedule, remind, route, follow up, or escalate. It may **never** recommend a product/policy/investment/allocation/replacement, make a suitability or best-interest determination, or issue a securities call to action (§2.1, §2.2). Note where a human hand-off / escalation is the planned next step.
+2. **Audience segment / ICP.** Who this reaches, defined by data the practice actually holds (household attributes, policy/coverage status, opportunity stage, referral source, prior engagement). State the *inclusion* and *exclusion* rules explicitly — exclusions are a compliance surface (securities-flagged, no consent, DNC, active conversation, recently contacted). Never define a segment on invented Farmers data (§4.3).
+3. **Message map.** The content themes and the sequence of touches — what each touch says at a *theme* level (educate, invite, remind, follow up, offer a review, schedule). Every theme stays inside the green zone: it may educate, qualify, gather info, schedule, remind, route, follow up, or escalate. It may **never** recommend a product/policy/investment/allocation/replacement, make a suitability or best-interest determination, or issue a securities call to action (§4.1, §4.2). Note where a human hand-off / escalation is the planned next step.
 4. **Channel + cadence table.** A table: for each touch — channel (email via Resend / SMS via Twilio-A2P / task for a human call), day offset, theme, and the gating precondition. SMS and email cadence must respect quiet hours (9am–8pm recipient-local floor) and frequency caps. Map the whole cadence onto an existing campaign timeline rather than inventing a scheduler.
 5. **Consent & compliance checklist.** Explicit, per-channel: consent basis on record, TCPA prior express written consent for any SMS, TRAIGA AI disclosure present, DNC honored, securities firewall clear (`is_security` excluded), Reg BI / FINRA framing on any advice-adjacent content, and the mandatory educational footer where FNA/educational material appears. A plan that can't check these is not ready to hand off.
 6. **KPIs / measurement.** How success is judged against the Objective — leading indicators (delivery, engagement, reply, opt-out rate) and the lagging spine outcome (reviews booked, opportunities originated/advanced, cases opened). State the opt-out-rate ceiling that would pause the effort.
@@ -29,7 +29,7 @@ Every plan uses this structure, in this order. This is a contract: a marketing p
 
 FSOS ships three campaigns and one native comms platform. A plan targets one of these — it does not propose a new engine.
 
-- **Life Conversion Campaign (ADR-029).** Multi-channel single-timeline extension; eligibility is *Active Opportunity Ownership*. Plan here when the effort is converting a term/eligible life opportunity the practice already owns.
+- **Life Conversion Campaign (`ADR-029-life-conversion-campaign.md` — 029 is a colliding number; cite by slug).** Multi-channel single-timeline extension; eligibility is *Active Opportunity Ownership*. Plan here when the effort is converting a term/eligible life opportunity the practice already owns.
 - **Cross-Sell Life Campaign (ADR-032, `xsell_life_*`).** Existing non-life client with no active life; multi-channel 35-touch / 180-day timeline. Distinct from the Cross-Sell *agent*. Plan here for cross-sell-to-life pushes into the existing book.
 - **Pipeline Win-Back Campaign (ADR-031).** Stalled *internal* opportunity re-engagement. Keep it separate from imported `win_back` (a distinct, imported-contact concept) — name which one you mean. Plan here for reviving stalled pipeline.
 - **Native comms module (`src/lib/comms/`, `/app/comms`; ADRs 013–025).** Campaigns, sequences, enrollments, templates, the campaign library of pre-built compliance-ready blueprints, and the conversation lifecycle (a reply pauses promotional automation). General nurtures, content calendars, and one-off sequences plan into this surface. Prefer an existing library blueprint over a net-new sequence.
@@ -40,10 +40,10 @@ If a request doesn't fit any of these, say so and plan the *closest* fit plus th
 
 These are not review steps applied at the end; they shape the segment, the message map, and the cadence as you write them.
 
-1. **Securities firewall (§2.1).** Plans may only educate, qualify, gather info, schedule, remind, route, follow up, and escalate. Never plan a message that recommends a product/policy/investment/allocation/replacement, makes a suitability/best-interest determination, or is a securities call to action. Any `is_security`-flagged contact is **excluded** from an automated segment and routed to human/FFS handling — build that exclusion into the segment definition, not as an afterthought.
-2. **AI green-zone / red-line (§2.2).** Everything the plan schedules for automated send stays green-zone. Anything advice-adjacent, ambiguous, or a client request for a recommendation is a **planned human/FSA escalation**, never an automated touch. Say in the plan where the hand-off happens.
+1. **Securities firewall (§4.1).** Plans may only educate, qualify, gather info, schedule, remind, route, follow up, and escalate. Never plan a message that recommends a product/policy/investment/allocation/replacement, makes a suitability/best-interest determination, or is a securities call to action. Any `is_security`-flagged contact is **excluded** from an automated segment and routed to human/FFS handling — build that exclusion into the segment definition, not as an afterthought.
+2. **AI green-zone / red-line (§4.2).** Everything the plan schedules for automated send stays green-zone. Anything advice-adjacent, ambiguous, or a client request for a recommendation is a **planned human/FSA escalation**, never an automated touch. Say in the plan where the hand-off happens.
 3. **Consent, TCPA & TRAIGA (§12).** Every SMS in the plan requires TCPA prior express written consent and a TRAIGA AI disclosure; every plan carries Reg BI / FINRA framing on advice-adjacent content. Quiet hours (9am–8pm recipient-local floor), DNC, and frequency caps are cadence constraints, stated in the channel table. Educational/FNA content carries the mandatory footer.
-4. **No invented Farmers data (§2.3).** Commission splits, term-conversion windows, product availability, and carrier/FFS rules are **not** public facts. A plan may reference them only as clearly-labeled, editable config defaults ("verify") — never as asserted numbers or claims in message themes. Segment definitions rest on data the practice actually holds.
+4. **No invented Farmers data (§4.3).** Commission splits, term-conversion windows, product availability, and carrier/FFS rules are **not** public facts. A plan may reference them only as clearly-labeled, editable config defaults ("verify") — never as asserted numbers or claims in message themes. Segment definitions rest on data the practice actually holds.
 
 ## Boundaries — what this skill does NOT do
 

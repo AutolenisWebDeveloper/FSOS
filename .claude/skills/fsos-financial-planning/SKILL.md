@@ -5,8 +5,8 @@ license: Proprietary — internal FSOS use only.
 metadata:
   project: FSOS
   subsystem: financial-planning
-  guardrails: "4.1 securities firewall, 4.3 no-invented-data, §1 analyze-not-recommend"
-  adrs: "ADR-015 calculation engine, ADR-016 data model"
+  guardrails: "CLAUDE.md §4.1 securities firewall, §4.3 no-invented-Farmers-data, §4.2 AI red-line (analyze, never recommend)"
+  adrs: "ADR-015-fna-calculation-engine.md, ADR-016-fna-data-model.md (015/016 are colliding numbers — cite by slug)"
 ---
 
 # FSOS Financial Planning
@@ -21,7 +21,7 @@ the non-negotiable architecture principle.
    clock, no RNG. Every formula returns the traceable `CalcResult` envelope
    (`formula_id`, `formula_version`, inputs, input_sources, assumptions_used,
    intermediates, output, rounding, currency, warnings, missing_inputs,
-   confidence, computed_at). Compiles standalone for offline tests. **ADR-015.**
+   confidence, computed_at). Compiles standalone for offline tests. **`ADR-015-fna-calculation-engine.md`.**
 2. **Plan-type registry** — `src/lib/fna/plan-types.ts`. PURE config. A plan type
    declares its input `fields` (shared by intake UI + orchestrator + completeness)
    and its `analyses` (engine formula ids). **Adding a plan type is a new entry
@@ -33,7 +33,7 @@ the non-negotiable architecture principle.
 4. **Data model** — migration `060_fna_data_model.sql`, `src/lib/fna/store.ts`,
    `src/lib/fna/plan-lifecycle.ts`. `fna_plans` / immutable `fna_versions` /
    `fna_inputs` (with provenance) / `fna_assumption_sets` / `fna_results` /
-   `fna_scenarios` / `fna_goals` / `fna_data_quality_exceptions`. **ADR-016.**
+   `fna_scenarios` / `fna_goals` / `fna_data_quality_exceptions`. **`ADR-016-fna-data-model.md`.**
 5. **API + UI** — thin routes under `/api/fna/plans/*`; RSC pages under `/app/fna`.
 
 ## Hard rules (enforced, not advisory)

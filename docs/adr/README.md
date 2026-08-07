@@ -4,14 +4,18 @@
 >
 > This index is generated from the files' own headers (title + `**Status:**`). Keep it in sync when adding, renumbering, or superseding an ADR.
 
-## ⚠ Numbering collisions (current reality — do not renumber here)
+## ⚠ Numbering collisions (current reality — cite by slug, do not renumber)
 
-Two numbers each currently have **two** files on disk — a comms ADR and an FNA ADR:
+**Four** numbers each currently have **two** files on disk:
 
 - **ADR-015** — `ADR-015-delegated-agency-communication.md` **and** `ADR-015-fna-calculation-engine.md`
 - **ADR-016** — `ADR-016-identity-disclosure-engine.md` **and** `ADR-016-fna-data-model.md`
+- **ADR-028** — `ADR-028-agent-tool-calling.md` **and** `ADR-028-contact-consolidation-dedup.md`
+- **ADR-029** — `ADR-029-life-conversion-campaign.md` **and** `ADR-029-household-materialization.md`
 
-**⚠ numbering collision — see `CLAUDE.md` §19, which assigns 015 = Delegated agency-communication and 016 = First-contact identity disclosure.** The FNA calculation-engine and FNA data-model ADRs collide on those numbers and need renumbering. This index documents current reality accurately; the renumber/move is being handled separately — **do not** renumber or move any ADR file as part of reading this index.
+**Resolution: all eight documents keep their numbers and are cited by filename slug.** Every one of the four numbers has live inbound references from code comments, migrations, tests, other ADRs, and installed skills, so renumbering would break existing citations rather than clarify them. `CLAUDE.md` §19 indexes all eight and records the same convention.
+
+**When citing a colliding ADR, write the slug** — `ADR-028-agent-tool-calling.md`, not "ADR-028". A bare number in these four ranges is ambiguous and must be read from context. **Do not** renumber or move any ADR file as part of reading this index.
 
 ## Index
 
@@ -46,5 +50,16 @@ Two numbers each currently have **two** files on disk — a comms ADR and an FNA
 | 025 | Email Rendering: Hybrid React → Stored, Immutable, Deterministic HTML + Plaintext | Accepted | [`ADR-025-email-rendering.md`](./ADR-025-email-rendering.md) |
 | 026 | Social Content Module | Accepted | [`ADR-026-social-content-module.md`](./ADR-026-social-content-module.md) |
 | 027 | Native FSOS Booking (Calendly replacement) | Accepted | [`ADR-027-native-booking.md`](./ADR-027-native-booking.md) |
+| 028 ⚠ | Governed Agent Tool-Calling **(⚠ shares 028 — cite by slug)** | Accepted | [`ADR-028-agent-tool-calling.md`](./ADR-028-agent-tool-calling.md) |
+| 028 ⚠ | Contact Consolidation, Dedup Strategy & Staging Reconciliation **(⚠ shares 028 — cite by slug)** | Accepted | [`ADR-028-contact-consolidation-dedup.md`](./ADR-028-contact-consolidation-dedup.md) |
+| 029 ⚠ | Life Conversion Campaign (multi-channel timeline + Active Opportunity Ownership) **(⚠ shares 029 — cite by slug)** | Accepted | [`ADR-029-life-conversion-campaign.md`](./ADR-029-life-conversion-campaign.md) |
+| 029 ⚠ | Household Materialization (contact → household spine) **(⚠ shares 029 — cite by slug)** | Accepted | [`ADR-029-household-materialization.md`](./ADR-029-household-materialization.md) |
+| 030 | Contact Segmentation (the targeting layer) | Accepted | [`ADR-030-contact-segmentation.md`](./ADR-030-contact-segmentation.md) |
+| 031 | Pipeline Win-Back Campaign (stalled internal-opportunity re-engagement) | Accepted | [`ADR-031-pipeline-winback-campaign.md`](./ADR-031-pipeline-winback-campaign.md) |
+| 032 | Cross-Sell Life Campaign (existing-client, no-active-life; 35-touch timeline) | Accepted | [`ADR-032-cross-sell-life-campaign.md`](./ADR-032-cross-sell-life-campaign.md) |
+| 033 | Communications Command Console (orchestration over the one send path) | Accepted | [`ADR-033-communications-console.md`](./ADR-033-communications-console.md) |
+| 034 | Life Win-Back Agent (first-class win-back outreach) | Accepted | [`ADR-034-life-winback-agent.md`](./ADR-034-life-winback-agent.md) |
+| 035 | Accessibility / Responsive Verification via a Manual Pre-Ship Checklist | Accepted | [`ADR-035-a11y-preship-checklist.md`](./ADR-035-a11y-preship-checklist.md) |
+| 036 | Contact Import: Field Recognition & Mapping Model | Accepted | [`ADR-036-contact-import-mapping-model.md`](./ADR-036-contact-import-mapping-model.md) |
 
-**Note:** ADR-011 has no file (the sequence skips it). `CLAUDE.md` §19 lists the canonical ADR subjects; where §19 and a filename disagree (the 015/016 collision above), §19's assignment is authoritative for the number.
+**Note:** ADR-011 has no file (the sequence skips it). `CLAUDE.md` §19 indexes all 40 ADRs including both documents of each colliding pair; cite a colliding ADR by filename slug, never by bare number.

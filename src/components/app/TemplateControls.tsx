@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Field } from '@/components/forms/Field'
 import { TEMPLATE_CATEGORY, TemplateCreateSchema } from '@/lib/validation/schemas'
 import { postJson, patchJson, firstFieldError } from '@/lib/client/api'
+import { FORMAT_LABELS, campaignLabel, type CatalogTemplate } from '@/lib/comms/template-catalog'
 
 export function TemplateCreateForm() {
   const router = useRouter()
@@ -107,14 +108,12 @@ export function TemplateBodyEditor({ id, body }: { id: string; body: string }) {
   )
 }
 
-export interface TemplateRow {
-  id: string
-  name: string
-  channel: string
-  category: string | null
-  approval_status: string
-  version: number
-}
+/**
+ * The list row is the derived catalog row: `format` (email / SMS / AI conversation) and
+ * `campaigns` come from `@/lib/comms/template-catalog`, so the table shows the same two
+ * axes the view filters operate on.
+ */
+export type TemplateRow = CatalogTemplate
 
 function approvalBadgeVariant(status: string): 'won' | 'pending' | 'draft' {
   return status === 'approved' ? 'won' : status === 'submitted' ? 'pending' : 'draft'
@@ -213,7 +212,7 @@ export function TemplateBulkTable({ templates, canApprove }: { templates: Templa
         </div>
       ) : null}
 
-      <div className="rounded-lg border">
+      <div className="overflow-x-auto rounded-lg border">
         <Table>
           <TableHeader>
             <TableRow>
@@ -221,7 +220,8 @@ export function TemplateBulkTable({ templates, canApprove }: { templates: Templa
                 <RowCheckbox checked={allSelected} indeterminate={someSelected} onChange={toggleAll} label="Select all templates" />
               </TableHead>
               <TableHead>Name</TableHead>
-              <TableHead>Channel</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>Campaign</TableHead>
               <TableHead>Category</TableHead>
               <TableHead>Version</TableHead>
               <TableHead>Approval</TableHead>
@@ -234,7 +234,15 @@ export function TemplateBulkTable({ templates, canApprove }: { templates: Templa
                   <RowCheckbox checked={selected.has(t.id)} onChange={() => toggle(t.id)} label={`Select ${t.name}`} />
                 </TableCell>
                 <TableCell><Link href={`/app/comms/templates/${t.id}`} className="font-medium text-primary hover:underline">{t.name}</Link></TableCell>
-                <TableCell><Badge variant="outline">{t.channel}</Badge></TableCell>
+                <TableCell><Badge variant="outline">{FORMAT_LABELS[t.format]}</Badge></TableCell>
+                <TableCell className="text-muted-foreground">
+                  {/* A template reused by several campaigns lists each — the console can send any of them. */}
+                  <span className="flex flex-wrap gap-1">
+                    {t.campaigns.map((c) => (
+                      <Badge key={c} variant="secondary" className="font-normal">{campaignLabel(c)}</Badge>
+                    ))}
+                  </span>
+                </TableCell>
                 <TableCell className="capitalize text-muted-foreground">{(t.category ?? '').replace(/_/g, ' ')}</TableCell>
                 <TableCell>v{t.version}</TableCell>
                 <TableCell><Badge variant={approvalBadgeVariant(t.approval_status)}>{t.approval_status}</Badge></TableCell>

@@ -117,7 +117,7 @@ Shell: top bar (global search, notifications, AI-priorities bell, profile, porta
 - `/app/comms` — AI Communications Center — operational Overview (Slice 9A rebuild; in-hub `CommsSubnav` via `comms/layout.tsx`) **[A2]** *(P1)*
 - `/app/comms/inbox` — Two-way inbox (threaded conversations) **[A2]** *(P1)* · `/app/comms/inbox/[id]` — Conversation thread **[A3]** *(P1)*
 - `/app/comms/sms` **[A2]** *(P1)* · `/app/comms/email` **[A2]** *(P1)*
-- `/app/comms/templates` **[A2]** *(P1)* · `/app/comms/templates/[id]` — Editor + approval/versioning **[A5]** *(P1)*
+- `/app/comms/templates` — Template library; view filters `?format=email|sms|ai_conversation&campaign=<key>|__library&q=` (deep-linkable; type + campaign derived from the ADR-033 `comm_sendable_assets` catalog) **[A2]** *(P1)* · `/app/comms/templates/[id]` — Editor + approval/versioning **[A5]** *(P1)*
 - `/app/comms/campaigns` **[A2]** *(P1)* · `/app/comms/campaigns/new` **[A6]** *(P1)* · `/app/comms/campaigns/[id]` **[A3]** *(P1)*
 - `/app/comms/sequences` **[A2]** *(P2)* · `/app/comms/audience` **[A5]** *(P2)* · `/app/comms/library` — Campaign library (ADR-023) **[A2]** *(P1)*
 - `/app/comms/assignments` — Assignment Review / ownership queue (ADR-015) **[A2]** *(P1)* · `/app/comms/identity` — First-contact identity disclosure config (ADR-016) **[A2]** *(P1)*

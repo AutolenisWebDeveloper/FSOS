@@ -294,7 +294,7 @@ Extends the core set. Every pattern resolves color through tokens, ships all sta
 keyboard-operable, and is responsive (§14).
 
 - **KPI cards** — one canonical implementation: `MetricCard` (`dashboards/primitives`) with `valueSize` (`lg` 30px = the A1 executive tile, `md` 28px = dense metric rows), `tone`, optional `delta` + `spark`. `StatTile` (`archetypes/shells`) is the stable A1 alias that delegates to `MetricCard` — **do not fork a second tile**. Mono eyebrow label, large `.numeric` value, trend indicator (§15.2), drill-in link. Never a bare number.
-- **Filters:** grouped, labeled, active-filter chips + one-click "clear all"; state reflected in the URL (§12).
+- **Filters:** grouped, labeled, active-filter chips + one-click "clear all"; state reflected in the URL (§12). **Reference implementation:** `TemplateFilters` (`components/app`) on `/app/comms/templates` — the primary axis uses `Segmented` (`mode="choice"`), secondary axes use a labeled native `<select>`, search submits a form, and every option carries a **facet count computed with the other axes applied** so a `0` means "empty in this view", not "empty overall". Selecting a filter pushes a query param (`?format=…&campaign=…&q=…`); the sentinel value `all` removes the param so the unfiltered view has a clean URL. Filtered-empty renders the "clear filters" empty state (§17), never the truly-empty one.
 - **Search:** debounced, scoped, typeahead where useful; distinct empty-query vs no-results; keyboard-navigable. Global search is real (multi-entity), never a stub.
 - **Command bar:** appears on bulk selection — count + scoped actions + clear; destructive actions confirm.
 - **Command palette:** `⌘K`/`Ctrl-K`, fuzzy nav + actions, grouped, fully keyboard-driven, permission-aware.

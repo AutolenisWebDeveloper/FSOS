@@ -40,19 +40,12 @@ export interface AssetFilters {
   limit?: number
 }
 
-/** Human labels for the campaign groupings the picker renders (spec §5). */
-export const CAMPAIGN_LABELS: Record<string, string> = {
-  life_conversion: 'Life Conversion',
-  cross_sell_life: 'Cross-Sell Life',
-  pipeline_winback: 'Pipeline Win-Back',
-  workshops: 'Workshops',
-  __library: 'Template Library',
-}
-
-/** The stable label for a catalog row's campaign grouping. */
-export function campaignLabel(campaignKey: string | null): string {
-  return campaignKey ? (CAMPAIGN_LABELS[campaignKey] ?? campaignKey) : CAMPAIGN_LABELS.__library
-}
+/**
+ * Human labels for the campaign groupings the picker renders (spec §5). Defined once in
+ * `./template-catalog` (pure, DB-free) and re-exported here so the console picker and the
+ * template library label a campaign identically — one map, not two (CLAUDE.md §6).
+ */
+export { CAMPAIGN_LABELS, campaignLabel } from './template-catalog'
 
 /**
  * List sendable assets from the cross-campaign catalog, filtered by channel/campaign/search.

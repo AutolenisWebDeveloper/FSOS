@@ -7,7 +7,9 @@
 //   • a body_text-only change DOES snapshot (ADR-025 makes body + body_text one artifact);
 //   • the trigger fires for a caller holding NO insert privilege on the history table —
 //     the proof that SECURITY DEFINER is load-bearing and not decoration;
-//   • the history is append-only: UPDATE and DELETE raise, even for the table owner;
+//   • a write that asserts no actor records NULL rather than carrying a stale name forward;
+//   • the history is append-only: UPDATE, DELETE and TRUNCATE all raise, even for the table
+//     owner — TRUNCATE being the vector audit_log carried until migration 077;
 //   • a template carrying history cannot be deleted (on delete restrict) — deletion must
 //     not be a way to erase the record of what the copy used to say;
 //   • RLS hides the history from a client, while an internal role can read it.
@@ -180,6 +182,17 @@ try {
     )
   })
 
+  // This edit set no updated_by, so the actor must be NULL. Note updated_by is a PERSISTED
+  // column: it still reads 'editor-two' from the earlier edit, so a bare new.updated_by would
+  // credit that prior editor for a write they had nothing to do with. current_user is no help
+  // either — inside a SECURITY DEFINER body it is the function owner. Absent beats wrong.
+  t('an unattributed write records NO actor rather than a stale one', () => {
+    assert.equal(
+      psqlQuery(`select coalesce(superseded_by,'<null>') from comm_template_versions where template_id='${TPL}' order by version desc limit 1;`),
+      '<null>',
+    )
+  })
+
   // ── 5. Append-only, tamper-evident ────────────────────────────────────────
   t('UPDATE on the history raises, even as the table owner', () => {
     assert.equal(psqlErrors(`update comm_template_versions set body='REWRITTEN' where template_id='${TPL}';`), true)
@@ -187,6 +200,13 @@ try {
 
   t('DELETE from the history raises, even as the table owner', () => {
     assert.equal(psqlErrors(`delete from comm_template_versions where template_id='${TPL}';`), true)
+  })
+
+  // The vector audit_log carried until migration 077: TRUNCATE bypasses both the DELETE
+  // revoke and the row-level trigger, so it needs its own statement-level guard.
+  t('TRUNCATE on the history raises (the mig-077 vector, closed here at birth)', () => {
+    assert.equal(psqlErrors('truncate comm_template_versions;'), true)
+    assert.equal(psqlQuery(`select count(*) from comm_template_versions where template_id='${TPL}';`), '3')
   })
 
   // ── 6. Deleting the template cannot erase its history ─────────────────────

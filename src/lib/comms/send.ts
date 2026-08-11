@@ -760,7 +760,7 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
   // id are patched after dispatch.
   let messageId: string | undefined
   try {
-    const { data } = await db
+    const { data, error } = await db
       .from('comm_messages')
       .insert({
         channel: ctx.channel,
@@ -813,9 +813,24 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
       })
       .select('id')
       .maybeSingle()
+    // supabase-js does NOT throw on a DB constraint failure — it returns the error here. The
+    // message-of-record is the §13.9 record of every send; a failed insert must be OBSERVABLE, not
+    // silently swallowed. (Audit finding F-1: World-2 campaign sends fed a per-campaign-table id
+    // into campaign_id, whose FK targets comm_campaigns, so every insert failed into this ignored
+    // `error` and no message-of-record was ever written — invisibly. Never let this class of
+    // failure hide again.)
+    if (error) {
+      console.error('[comms] message-of-record insert failed:', error.message, {
+        channel: ctx.channel,
+        campaignId: ctx.campaignId ?? null,
+        entity: ctx.entity ?? null,
+        conversationId,
+      })
+    }
     messageId = data?.id
-  } catch {
-    /* best-effort; dispatcher still writes the durable audit + escalation */
+  } catch (err) {
+    // A genuine throw (network/client) is also logged — never a bare silent swallow.
+    console.error('[comms] message-of-record insert threw:', err instanceof Error ? err.message : String(err))
   }
 
   // Premium branding at the single send choke-point (DESIGN.md §31): wrap the personalized

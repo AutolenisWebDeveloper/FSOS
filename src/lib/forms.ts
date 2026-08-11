@@ -4,10 +4,10 @@
 // internal auth round-trip).
 
 import { getDb } from '@/lib/supabase/client'
-import { SMS_OPT_OUT_FOOTER } from '@/lib/compliance'
 import { generateFormToken } from '@/lib/tokens'
 import { escapeHtml } from '@/lib/http'
 import { sendEmail } from '@/lib/messaging'
+import { sendThroughGate } from '@/lib/comms/send'
 import { resolveSender } from '@/lib/comms/senders'
 import { renderEmailShell, paragraphHtml, buttonHtml, fineHtml } from '@/lib/notifications/email-shell'
 
@@ -160,43 +160,44 @@ export async function sendForm(input: SendFormInput): Promise<SendFormResult> {
   }
 
   if ((channel === 'sms' || channel === 'both') && phone) {
+    // Route the form-link SMS through the ONE gated pipeline (sendThroughGate) — identical to every
+    // other outbound SMS. Consent, DNC/STOP, the A2P 10DLC hold, the securities firewall, the audit
+    // trail, and the message-of-record are ALL enforced there. This replaces a raw inline Twilio
+    // fetch that bypassed every one of them (audit finding F-3). The dispatcher appends the
+    // carrier-required "Reply STOP to opt out." footer, so it is no longer appended here.
+    //
+    // Purpose = TRANSACTIONAL: a staff-initiated, per-client form link is an operational/servicing
+    // message, not marketing — quiet-hours- and marketing-consent-exempt, while consent, DNC/STOP,
+    // and the securities firewall still apply. humanAuthored = true: the send is 1:1 and operator-
+    // initiated (POST /api/forms/send is requireInternalAuth-gated), so the licensed operator is the
+    // content approval for gate step 4 (there is no comm_templates row for a form link). Consent is
+    // NOT waived — a recipient with no channel consent is blocked+escalated by the gate, never sent.
+    const e164 = phone.startsWith('+') ? phone : `+1${phone.replace(/\D/g, '')}`
+    const smsBody = `Hi ${client_name || 'there'}, Markist sent you a secure form to complete before your appointment. Tap to open: ${link}`
     try {
-      const accountSid = process.env.TWILIO_ACCOUNT_SID
-      const authToken = process.env.TWILIO_AUTH_TOKEN
-      const fromNumber = process.env.TWILIO_PHONE_NUMBER
-      if (!accountSid || !authToken || !fromNumber) {
-        sms_error = 'Twilio env not set (TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_PHONE_NUMBER)'
-      }
-      if (accountSid && authToken && fromNumber) {
-        const smsBody = `Hi ${client_name || 'there'}, Markist sent you a secure form to complete before your appointment. Tap to open: ${link}\n\n${SMS_OPT_OUT_FOOTER}`
-        const res = await fetch(
-          `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
-          {
-            method: 'POST',
-            headers: {
-              Authorization: 'Basic ' + Buffer.from(`${accountSid}:${authToken}`).toString('base64'),
-              'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: new URLSearchParams({
-              From: fromNumber,
-              To: phone.startsWith('+') ? phone : `+1${phone.replace(/\D/g, '')}`,
-              Body: smsBody,
-            }).toString(),
-          },
-        )
-        if (res.ok) {
-          sms_sent = true
-          await db.from('form_sends').insert({
-            submission_id: submission.submission_id,
-            customer_id: customer_id || null,
-            form_id,
-            channel: 'sms',
-            destination: phone,
-          })
-        } else {
-          sms_error = `Twilio ${res.status}: ${(await res.text()).slice(0, 200)}`
-          console.error('[forms] Twilio SMS error:', sms_error)
-        }
+      const outcome = await sendThroughGate({
+        channel: 'sms',
+        to: e164,
+        body: smsBody,
+        actor: 'system:forms',
+        purpose: 'TRANSACTIONAL',
+        humanAuthored: true,
+        isSecurity: false,
+        entity: { type: 'form_submission', id: submission.submission_id },
+        recipientContext: { full_name: client_name || null },
+      })
+      if (outcome.sent) {
+        sms_sent = true
+        await db.from('form_sends').insert({
+          submission_id: submission.submission_id,
+          customer_id: customer_id || null,
+          form_id,
+          channel: 'sms',
+          destination: phone,
+        })
+      } else {
+        sms_error = outcome.reason || 'SMS blocked by the compliance gate'
+        console.error('[forms] SMS gate-blocked:', sms_error)
       }
     } catch (err) {
       sms_error = err instanceof Error ? err.message : String(err)

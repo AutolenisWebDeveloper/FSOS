@@ -21,6 +21,7 @@ import type { GateResult } from './gate'
 import { getOrCreateConversation, touchConversation, normalizeContact, type Channel } from './conversations'
 import { loadHoursPolicy, isWithinOperatingHours } from './hours'
 import { recordMessageEvent } from './events'
+import { writeAudit } from '@/lib/audit/log'
 import { personalize, unresolvedBlockingTokens, type RecipientContext } from './personalize'
 import { BUSINESS } from '@/lib/site'
 import { emailUnsubscribeUrl } from './unsubscribe'
@@ -759,6 +760,7 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
   // so a blocked send is still visible in the timeline. The final status/provider
   // id are patched after dispatch.
   let messageId: string | undefined
+  let messageOfRecordError: string | undefined
   try {
     const { data, error } = await db
       .from('comm_messages')
@@ -820,6 +822,7 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
     // `error` and no message-of-record was ever written — invisibly. Never let this class of
     // failure hide again.)
     if (error) {
+      messageOfRecordError = error.message
       console.error('[comms] message-of-record insert failed:', error.message, {
         channel: ctx.channel,
         campaignId: ctx.campaignId ?? null,
@@ -830,7 +833,43 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
     messageId = data?.id
   } catch (err) {
     // A genuine throw (network/client) is also logged — never a bare silent swallow.
-    console.error('[comms] message-of-record insert threw:', err instanceof Error ? err.message : String(err))
+    messageOfRecordError = err instanceof Error ? err.message : String(err)
+    console.error('[comms] message-of-record insert threw:', messageOfRecordError)
+  }
+
+  // FAIL CLOSED (audit finding F-1): the §13.9 message-of-record is a REQUIRED artifact of
+  // every send. A provider send must NEVER silently succeed while its message-of-record insert
+  // failed. If the pre-insert errored or returned no id, we withhold the send entirely — the
+  // dispatcher/provider is never reached — and record the withholding observably. This closes
+  // the exact class of failure behind F-1 (World-2 campaign ids violated the campaign_id FK, the
+  // insert failed, and the send went out anyway with no record). A transient DB fault now defers
+  // the send (retried next cycle) instead of shipping an untraceable message.
+  if (!messageId) {
+    const reason = `Message-of-record could not be created — send withheld${messageOfRecordError ? ` (${messageOfRecordError})` : ''}.`
+    try {
+      await writeAudit({
+        actor: ctx.actor,
+        action: 'comms.blocked',
+        entity: ctx.entity?.type ?? (conversationId ? 'conversation' : 'message'),
+        entityId: ctx.entity?.id ?? conversationId ?? null,
+        diff: {
+          channel: ctx.channel,
+          to,
+          blockedStep: 'message_of_record',
+          reason: messageOfRecordError ?? 'message-of-record insert returned no id',
+          sourceCampaignKey: ctx.sourceCampaignKey ?? null,
+        },
+      })
+    } catch {
+      /* best-effort — the console.error above is the durable signal if audit is also down */
+    }
+    return {
+      sent: false,
+      blocked: true,
+      gate: { allowed: false, escalate: true, reason },
+      conversationId: conversationId ?? undefined,
+      reason,
+    }
   }
 
   // Premium branding at the single send choke-point (DESIGN.md §31): wrap the personalized

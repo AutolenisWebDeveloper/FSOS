@@ -95,6 +95,7 @@ export interface GateOutcomePresentation {
 
 /** Advisor-facing wording for each gate step. Never shown as a raw enum. */
 const STEP_LABEL: Record<GateStep, string> = {
+  message_content: 'Invalid message content',
   ownership: 'Ownership unresolved',
   consent: 'No consent',
   quiet_hours: 'Quiet hours',
@@ -113,6 +114,7 @@ const STEP_LABEL: Record<GateStep, string> = {
 }
 
 const STEP_DESCRIPTION: Record<GateStep, string> = {
+  message_content: 'No usable body, an unsupported channel, or a channel/content-type mismatch — withheld before dispatch.',
   ownership: 'Ownership could not be resolved — routed to assignment review.',
   consent: 'No valid channel consent on file for this recipient.',
   quiet_hours: 'Outside the 9:00–20:00 recipient-local TCPA floor (SMS marketing sends).',

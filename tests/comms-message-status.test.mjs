@@ -82,6 +82,7 @@ console.log('message-status — gate outcome tiers')
 const DEFERRALS = ['sms_live', 'business_hours', 'frequency', 'collision']
 // Everything else escalates to a human.
 const BLOCKS = [
+  'message_content',
   'ownership',
   'consent',
   'quiet_hours',

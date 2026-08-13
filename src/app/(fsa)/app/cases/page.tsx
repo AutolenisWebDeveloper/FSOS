@@ -1,13 +1,10 @@
 import Link from 'next/link'
 import { LayoutGrid, ClipboardList, Briefcase, Workflow, CheckCircle2, ShieldAlert } from 'lucide-react'
 import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
-import { Badge } from '@/components/ui/badge'
-import { SecuritiesChip, securitiesRowClass } from '@/components/ui/securities'
-import { Numeric } from '@/components/ui/typography'
 import { Button } from '@/components/ui/button'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
 import { PageStatStrip, type PageStat } from '@/components/app/PageStatStrip'
+import { CaseList } from '@/components/app/CaseList'
 
 export const dynamic = 'force-dynamic'
 
@@ -56,20 +53,15 @@ export default async function CasesPage() {
       ) : (
         <div className="space-y-6">
           <PageStatStrip stats={stats} />
-          <div className="rounded-lg border">
-            <Table>
-              <TableHeader><TableRow><TableHead>Household</TableHead><TableHead>Status</TableHead><TableHead>Submitted</TableHead></TableRow></TableHeader>
-              <TableBody>
-                {cases.data.map((c) => (
-                  <TableRow key={c.id} className={c.is_security ? securitiesRowClass : undefined}>
-                    <TableCell><Link href={`/app/cases/${c.id}`} className="font-medium text-primary hover:underline">{c.household_id ? hhMap.get(c.household_id) ?? 'Case' : 'Case'}</Link>{c.is_security ? <SecuritiesChip className="ml-2" /> : null}</TableCell>
-                    <TableCell><Badge variant={c.status === 'issued' || c.status === 'in_service' ? 'won' : c.status === 'declined' || c.status === 'withdrawn' ? 'lost' : 'active'}>{c.status.replace(/_/g, ' ')}</Badge></TableCell>
-                    <TableCell className="text-muted-foreground"><Numeric>{c.submitted_at ? new Date(c.submitted_at).toLocaleDateString('en-US') : '—'}</Numeric></TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+          <CaseList
+            rows={cases.data.map((c) => ({
+              id: c.id,
+              household_name: c.household_id ? hhMap.get(c.household_id) ?? 'Case' : 'Case',
+              status: c.status,
+              is_security: c.is_security,
+              submitted_at: c.submitted_at,
+            }))}
+          />
         </div>
       )}
     </ListShell>

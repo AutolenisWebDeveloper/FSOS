@@ -83,8 +83,8 @@ const ENROLLMENT_STATUS: Record<string, Presentation> = {
   enrolled: { variant: 'active', label: 'Enrolled', description: 'Enrolled and awaiting its first touch.' },
   paused: { variant: 'pending', label: 'Paused', description: 'Held. No proactive touch will fire.' },
   paused_by_admin: { variant: 'pending', label: 'Paused by admin', description: 'Held by an operator. No proactive touch will fire.' },
-  paused_for_conversation: { variant: 'pending', label: 'In conversation', description: 'A live customer conversation is open — proactive touches are suppressed (ADR-018).' },
-  conversation_active: { variant: 'pending', label: 'In conversation', description: 'A live customer conversation is open — proactive touches are suppressed (ADR-018).' },
+  paused_for_conversation: { variant: 'pending', label: 'In conversation', description: 'A live customer conversation is open — proactive touches are suppressed.' },
+  conversation_active: { variant: 'pending', label: 'In conversation', description: 'A live customer conversation is open — proactive touches are suppressed.' },
   waiting_for_advisor: { variant: 'pending', label: 'Waiting for advisor', description: 'Held pending a human advisor task.' },
   advisor_owned: { variant: 'pending', label: 'Advisor owned', description: 'A licensed advisor owns this relationship; automation stands down.' },
   appointment_scheduled: { variant: 'won', label: 'Appointment booked', description: 'Reached an appointment — the campaign goal for this stage.' },
@@ -114,10 +114,10 @@ export function enrollmentStatus(status: string | null | undefined): Presentatio
 // ─── Touch kind ───────────────────────────────────────────────────────────────
 
 const TOUCH_KIND: Record<string, Presentation> = {
-  email: { variant: 'outline', label: 'Email', description: 'Templated email, dispatched through the compliance gate.' },
-  sms: { variant: 'outline', label: 'SMS', description: 'Templated SMS, dispatched through the compliance gate.' },
-  ai_conversation: { variant: 'outline', label: 'AI conversation', description: 'AI-opened conversation. Substantive questions escalate to a licensed advisor (§4.2).' },
-  advisor_outreach: { variant: 'outline', label: 'Advisor outreach', description: 'A human task. A missed task never stalls the timeline (§9a).' },
+  email: { variant: 'outline', label: 'Email', description: 'Templated email touch.' },
+  sms: { variant: 'outline', label: 'SMS', description: 'Templated SMS touch.' },
+  ai_conversation: { variant: 'outline', label: 'AI conversation', description: 'AI-opened conversation. Substantive questions go to a licensed advisor.' },
+  advisor_outreach: { variant: 'outline', label: 'Advisor outreach', description: 'A human task. A missed task never stalls the timeline.' },
 }
 
 export function touchKind(kind: string | null | undefined): Presentation {
@@ -202,7 +202,7 @@ export const CAMPAIGN_ENGINES: Record<CampaignEngineKey, CampaignEngine> = {
     touches: 20,
     days: 180,
     description:
-      '180-day, 20-touch term-conversion review campaign across email, SMS, AI conversation, and advisor outreach. Every send passes the compliance gate; eligibility is re-checked before every touch.',
+      '180-day, 20-touch term-conversion review campaign across email, SMS, AI conversation, and advisor outreach.',
     versioned: false,
   },
   cross_sell_life: {
@@ -214,7 +214,7 @@ export const CAMPAIGN_ENGINES: Record<CampaignEngineKey, CampaignEngine> = {
     touches: 35,
     days: 180,
     description:
-      '180-day, 35-touch life-insurance cross-sell to existing agency clients. Every send passes the compliance gate; AI conversations stay behind the §4.2 red line.',
+      '180-day, 35-touch life-insurance cross-sell to existing agency clients.',
     versioned: true,
   },
   pipeline_winback: {
@@ -226,7 +226,7 @@ export const CAMPAIGN_ENGINES: Record<CampaignEngineKey, CampaignEngine> = {
     touches: 24,
     days: 120,
     description:
-      '120-day, 24-touch re-engagement for stalled internal pipeline opportunities. Every send passes the compliance gate. Distinct from the imported win-back list at /app/winback (ADR-031).',
+      '120-day, 24-touch re-engagement for stalled internal pipeline opportunities. Separate from the imported win-back list at /app/winback.',
     versioned: false,
   },
   district_nurture: {
@@ -238,7 +238,7 @@ export const CAMPAIGN_ENGINES: Record<CampaignEngineKey, CampaignEngine> = {
     touches: 40,
     days: 365,
     description:
-      'Agent-facing 12-month Financial Services nurture for Farmers district agents — 24 emails, 12 SMS, and 4 quarterly live touchpoints teaching them to spot financial signals and refer to the licensed FSA. Every send passes the compliance gate (ADR-038).',
+      'Agent-facing 12-month Financial Services nurture for Farmers district agents — 24 emails, 12 SMS, and 4 quarterly live touchpoints teaching them to spot financial signals and refer to the licensed FSA.',
     versioned: false,
   },
 }

@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { DetailShell, Section, AssumptionBadge } from '@/components/archetypes'
+import { DetailShell, Section } from '@/components/archetypes'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { TimeCell } from '@/components/ui/time'
@@ -75,7 +75,6 @@ export default async function DistrictNurtureDetailPage(props: { params: Promise
       status={
         <div className="flex items-center gap-2">
           <CampaignStatusBadge status={config.status} />
-          {config.is_assumption && <AssumptionBadge />}
         </div>
       }
       rail={<Rail unapprovedCount={unapprovedCount} />}
@@ -298,7 +297,7 @@ export default async function DistrictNurtureDetailPage(props: { params: Promise
         {/* 10 — Configuration & settings */}
         <Section
           title="Configuration & settings"
-          description="Editable operational defaults. Gold-badged values are config defaults to verify, not Farmers-published figures."
+          description="Editable operational defaults."
         >
           <Card className="p-5">
             <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -309,12 +308,12 @@ export default async function DistrictNurtureDetailPage(props: { params: Promise
                 note="Baseline = the later of this date and the enrollment day"
               />
               <Field label="Daily enrollment limit" value={String(config.daily_enrollment_limit)} note="New agents enrolled per day" />
-              <Field label="Re-enroll cooldown" value={`${config.reenroll_cooldown_days} days`} assumption />
-              <Field label="Resume cooling-off" value={`${config.resume_cooling_off_days} days`} assumption />
-              <Field label="Live-touch task due" value={`${config.advisor_due_hours} hours`} assumption />
-              <Field label="Live-touch escalate after" value={`${config.advisor_overdue_escalate_hours} hours`} assumption />
-              <Field label="Live-touch reassign after" value={`${config.advisor_reassign_after_hours} hours`} assumption />
-              <Field label="Conversation timeout" value={`${config.conversation_timeout_hours} hours`} assumption />
+              <Field label="Re-enroll cooldown" value={`${config.reenroll_cooldown_days} days`} />
+              <Field label="Resume cooling-off" value={`${config.resume_cooling_off_days} days`} />
+              <Field label="Live-touch task due" value={`${config.advisor_due_hours} hours`} />
+              <Field label="Live-touch escalate after" value={`${config.advisor_overdue_escalate_hours} hours`} />
+              <Field label="Live-touch reassign after" value={`${config.advisor_reassign_after_hours} hours`} />
+              <Field label="Conversation timeout" value={`${config.conversation_timeout_hours} hours`} />
               <Field
                 label="Live-touch hold behavior"
                 value={config.advisor_hold_behavior}
@@ -355,19 +354,16 @@ function Field({
   value,
   node,
   note,
-  assumption,
 }: {
   label: string
   value?: string
   node?: React.ReactNode
   note?: string
-  assumption?: boolean
 }) {
   return (
     <div>
       <dt className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-muted-foreground">
         {label}
-        {assumption && <AssumptionBadge label="default" />}
       </dt>
       <dd className="mt-1 text-sm font-medium">{node ?? value}</dd>
       {note && <dd className="mt-0.5 text-xs text-muted-foreground">{note}</dd>}

@@ -23,7 +23,6 @@ interface CampaignRow {
   id: string
   name: string
   status: string
-  is_assumption: boolean
   simulated_at: string | null
 }
 
@@ -46,7 +45,7 @@ export default async function DistrictNurturePage() {
     (db) =>
       db
         .from('district_nurture_campaigns')
-        .select('id, name, status, is_assumption, simulated_at')
+        .select('id, name, status, simulated_at')
         .order('created_at', { ascending: true })
         .limit(10),
     [],
@@ -95,7 +94,6 @@ export default async function DistrictNurturePage() {
         <CampaignHeaderActions
           engine={ENGINE}
           status={campaign.status}
-          isAssumption={campaign.is_assumption}
           manageHref={campaignDetailHref(ENGINE, campaign.id)}
         />
       }

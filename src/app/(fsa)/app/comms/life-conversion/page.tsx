@@ -24,7 +24,6 @@ interface CampaignRow {
   id: string
   name: string
   status: string
-  is_assumption: boolean
   simulated_at: string | null
 }
 
@@ -38,7 +37,7 @@ interface EnrollmentRow {
 
 export default async function LifeConversionPage() {
   const campaigns = await load<CampaignRow[]>(
-    (db) => db.from('life_campaigns').select('id, name, status, is_assumption, simulated_at').order('created_at', { ascending: true }).limit(10),
+    (db) => db.from('life_campaigns').select('id, name, status, simulated_at').order('created_at', { ascending: true }).limit(10),
     [],
   )
 
@@ -79,7 +78,6 @@ export default async function LifeConversionPage() {
         <CampaignHeaderActions
           engine={ENGINE}
           status={campaign.status}
-          isAssumption={campaign.is_assumption}
           manageHref={campaignDetailHref(ENGINE, campaign.id)}
         />
       }

@@ -24,7 +24,6 @@ interface CampaignRow {
   id: string
   name: string
   status: string
-  is_assumption: boolean
   simulated_at: string | null
 }
 
@@ -41,7 +40,7 @@ export default async function PipelineWinbackPage() {
     (db) =>
       db
         .from('pipeline_winback_campaigns')
-        .select('id, name, status, is_assumption, simulated_at')
+        .select('id, name, status, simulated_at')
         .order('created_at', { ascending: true })
         .limit(10),
     [],
@@ -90,7 +89,6 @@ export default async function PipelineWinbackPage() {
         <CampaignHeaderActions
           engine={ENGINE}
           status={campaign.status}
-          isAssumption={campaign.is_assumption}
           manageHref={campaignDetailHref(ENGINE, campaign.id)}
         />
       }

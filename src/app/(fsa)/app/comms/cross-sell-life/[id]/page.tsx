@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { DetailShell, Section, EmptyState, AssumptionBadge } from '@/components/archetypes'
+import { DetailShell, Section, EmptyState } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -73,7 +73,6 @@ export default async function CrossSellLifeDetailPage(props: { params: Promise<{
         <div className="flex items-center gap-2">
           <CampaignStatusBadge status={s.status} />
           <Badge variant="outline" title="Campaign version">v{s.version}</Badge>
-          {s.is_assumption && <AssumptionBadge />}
         </div>
       }
       rail={<CampaignCrossLinks current={ENGINE.key} engines={CAMPAIGN_ENGINE_LIST} />}
@@ -244,25 +243,25 @@ export default async function CrossSellLifeDetailPage(props: { params: Promise<{
 
         <Section
           title="Configuration & settings"
-          description="Editable operational defaults. Gold-badged values are config defaults to verify (§4.3), not Farmers-published figures."
+          description="Editable operational defaults."
         >
           <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <Setting label="Message purpose" value={s.purpose ?? '—'} />
             <Setting label="Delegated sender" value={s.delegation_id ? 'Configured' : 'None (FSA is sender)'} />
             <Setting label="Represented agency owner" value={s.represented_agency_owner_id ? 'Set' : '—'} />
-            <Setting label="Daily enrollment limit" value={String(s.daily_enrollment_limit)} assumption />
-            <Setting label="Re-enrollment cooldown" value={`${s.reenroll_cooldown_days} days`} assumption />
-            <Setting label="Resume cooling-off" value={`${s.resume_cooling_off_days} days`} assumption />
-            <Setting label="Send on weekends" value={s.send_on_weekends ? 'Yes' : 'No'} assumption />
-            <Setting label="Send on holidays" value={s.send_on_holidays ? 'Yes' : 'No'} assumption />
-            <Setting label="Advisor task due" value={`${s.advisor_due_hours} hours`} assumption />
-            <Setting label="Advisor escalate after" value={`${s.advisor_overdue_escalate_hours} hours`} assumption />
-            <Setting label="Advisor reassign after" value={`${s.advisor_reassign_after_hours} hours`} assumption />
+            <Setting label="Daily enrollment limit" value={String(s.daily_enrollment_limit)} />
+            <Setting label="Re-enrollment cooldown" value={`${s.reenroll_cooldown_days} days`} />
+            <Setting label="Resume cooling-off" value={`${s.resume_cooling_off_days} days`} />
+            <Setting label="Send on weekends" value={s.send_on_weekends ? 'Yes' : 'No'} />
+            <Setting label="Send on holidays" value={s.send_on_holidays ? 'Yes' : 'No'} />
+            <Setting label="Advisor task due" value={`${s.advisor_due_hours} hours`} />
+            <Setting label="Advisor escalate after" value={`${s.advisor_overdue_escalate_hours} hours`} />
+            <Setting label="Advisor reassign after" value={`${s.advisor_reassign_after_hours} hours`} />
             <Setting label="Advisor hold behavior" value={s.advisor_hold_behavior} />
-            <Setting label="Conversation timeout" value={`${s.conversation_timeout_hours} hours`} assumption />
-            <Setting label="Intent confidence threshold" value={String(s.intent_confidence_threshold)} assumption />
-            <Setting label="Resume behavior" value={s.resume_behavior.replace(/_/g, ' ')} assumption />
-            <Setting label="Replay policy" value={s.replay_policy.replace(/_/g, ' ')} assumption />
+            <Setting label="Conversation timeout" value={`${s.conversation_timeout_hours} hours`} />
+            <Setting label="Intent confidence threshold" value={String(s.intent_confidence_threshold)} />
+            <Setting label="Resume behavior" value={s.resume_behavior.replace(/_/g, ' ')} />
+            <Setting label="Replay policy" value={s.replay_policy.replace(/_/g, ' ')} />
           </dl>
         </Section>
 
@@ -344,12 +343,11 @@ function Field({ label, value, node, mono }: { label: string; value?: string; no
   )
 }
 
-function Setting({ label, value, assumption }: { label: string; value: string; assumption?: boolean }) {
+function Setting({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg border p-3">
       <dt className="flex items-center gap-2 text-xs text-muted-foreground">
         {label}
-        {assumption && <AssumptionBadge />}
       </dt>
       <dd className="mt-1 text-sm font-medium">{value}</dd>
     </div>

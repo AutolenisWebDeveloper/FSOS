@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { DetailShell, Section, AssumptionBadge } from '@/components/archetypes'
+import { DetailShell, Section } from '@/components/archetypes'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { load } from '@/lib/data/query'
@@ -56,7 +56,6 @@ export default async function LifeConversionDetailPage(props: { params: Promise<
       status={
         <div className="flex items-center gap-2">
           <CampaignStatusBadge status={s.status} />
-          {s.is_assumption && <AssumptionBadge />}
         </div>
       }
       rail={<CampaignCrossLinks current={ENGINE.key} engines={CAMPAIGN_ENGINE_LIST} />}
@@ -190,30 +189,30 @@ export default async function LifeConversionDetailPage(props: { params: Promise<
           <dl className="grid gap-3 sm:grid-cols-2">
             <Rule term="Eligibility (Active Opportunity Ownership)" def="Enrolled only with a verified conversion deadline, no securities flag, no open term-conversion opportunity, and not opted out. Rechecked before enrollment and before every touch." />
             <Rule term="A reply pauses automation" def="Any genuine inbound reply pauses the timeline; it resumes only on manual resume, a resolved/closed conversation, or after the cooling-off period." />
-            <Rule term="Resume cooling-off" def={`${s.resume_cooling_off_days} days quiet before automation resumes.`} assumption />
-            <Rule term="Conversation timeout" def={`A one-reply-then-silent conversation closes as abandoned after ${s.conversation_timeout_hours} hours (advisor-owned conversations are exempt).`} assumption />
-            <Rule term="Advisor outreach" def={`Task due in ${s.advisor_due_hours}h; escalates after ${s.advisor_overdue_escalate_hours}h overdue; reassigns after ${s.advisor_reassign_after_hours}h. Completion requires a logged outreach attempt.`} assumption />
+            <Rule term="Resume cooling-off" def={`${s.resume_cooling_off_days} days quiet before automation resumes.`} />
+            <Rule term="Conversation timeout" def={`A one-reply-then-silent conversation closes as abandoned after ${s.conversation_timeout_hours} hours (advisor-owned conversations are exempt).`} />
+            <Rule term="Advisor outreach" def={`Task due in ${s.advisor_due_hours}h; escalates after ${s.advisor_overdue_escalate_hours}h overdue; reassigns after ${s.advisor_reassign_after_hours}h. Completion requires a logged outreach attempt.`} />
             <Rule term="Advisor hold behavior" def={s.advisor_hold_behavior === 'proceed' ? 'Timeline proceeds past an incomplete advisor task (logged as missed).' : 'Timeline holds until the advisor task is fulfilled or times out.'} />
-            <Rule term="Deadline safety" def={`Enrollment is declined (routed to advisor review) unless Day 180 lands ≥ ${s.early_enrollment_buffer_days} days before the verified deadline.`} assumption />
+            <Rule term="Deadline safety" def={`Enrollment is declined (routed to advisor review) unless Day 180 lands ≥ ${s.early_enrollment_buffer_days} days before the verified deadline.`} />
             <Rule term="Exits" def="Appointment booked, application started, conversion completed, or opt-out each exit the campaign to the appropriate workflow." />
           </dl>
           </Card>
         </Section>
 
         {/* 8 — Configuration & settings */}
-        <Section title="Configuration & settings" description="Editable operational defaults. Gold-badged values are config defaults to verify (§4.3), not Farmers-published figures.">
+        <Section title="Configuration & settings" description="Editable operational defaults.">
           <Card className="p-5">
           <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <Setting label="Message purpose" value={s.purpose ?? '—'} />
             <Setting label="Delegated sender" value={s.delegation_id ? 'Configured' : 'None (FSA is sender)'} />
-            <Setting label="Daily enrollment limit" value={String(s.daily_enrollment_limit)} assumption />
-            <Setting label="Re-enrollment cooldown" value={`${s.reenroll_cooldown_days} days`} assumption />
-            <Setting label="Resume cooling-off" value={`${s.resume_cooling_off_days} days`} assumption />
-            <Setting label="Advisor task due" value={`${s.advisor_due_hours} hours`} assumption />
-            <Setting label="Advisor escalate after" value={`${s.advisor_overdue_escalate_hours} hours`} assumption />
-            <Setting label="Advisor reassign after" value={`${s.advisor_reassign_after_hours} hours`} assumption />
-            <Setting label="Conversation timeout" value={`${s.conversation_timeout_hours} hours`} assumption />
-            <Setting label="Early-enrollment buffer" value={`${s.early_enrollment_buffer_days} days`} assumption />
+            <Setting label="Daily enrollment limit" value={String(s.daily_enrollment_limit)} />
+            <Setting label="Re-enrollment cooldown" value={`${s.reenroll_cooldown_days} days`} />
+            <Setting label="Resume cooling-off" value={`${s.resume_cooling_off_days} days`} />
+            <Setting label="Advisor task due" value={`${s.advisor_due_hours} hours`} />
+            <Setting label="Advisor escalate after" value={`${s.advisor_overdue_escalate_hours} hours`} />
+            <Setting label="Advisor reassign after" value={`${s.advisor_reassign_after_hours} hours`} />
+            <Setting label="Conversation timeout" value={`${s.conversation_timeout_hours} hours`} />
+            <Setting label="Early-enrollment buffer" value={`${s.early_enrollment_buffer_days} days`} />
             <Setting label="Advisor hold behavior" value={s.advisor_hold_behavior} />
             <Setting label="Created" node={<TimeCell value={s.created_at} precision="date" />} />
           </dl>
@@ -250,19 +249,19 @@ function PlaybookLine({ label, value, danger }: { label: string; value: string; 
   )
 }
 
-function Rule({ term, def, assumption }: { term: string; def: string; assumption?: boolean }) {
+function Rule({ term, def }: { term: string; def: string }) {
   return (
     <div className="rounded-lg border p-3">
-      <dt className="flex items-center gap-2 text-sm font-medium">{term}{assumption && <AssumptionBadge />}</dt>
+      <dt className="flex items-center gap-2 text-sm font-medium">{term}</dt>
       <dd className="mt-1 text-xs text-muted-foreground">{def}</dd>
     </div>
   )
 }
 
-function Setting({ label, value, node, assumption }: { label: string; value?: string; node?: React.ReactNode; assumption?: boolean }) {
+function Setting({ label, value, node }: { label: string; value?: string; node?: React.ReactNode }) {
   return (
     <div className="rounded-lg border p-3">
-      <dt className="flex items-center gap-2 text-xs text-muted-foreground">{label}{assumption && <AssumptionBadge />}</dt>
+      <dt className="flex items-center gap-2 text-xs text-muted-foreground">{label}</dt>
       <dd className="mt-1 text-sm font-medium">{node ?? value}</dd>
     </div>
   )

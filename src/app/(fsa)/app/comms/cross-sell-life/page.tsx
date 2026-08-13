@@ -25,7 +25,6 @@ interface CampaignRow {
   name: string
   status: string
   version: number
-  is_assumption: boolean
   simulated_at: string | null
 }
 
@@ -34,7 +33,7 @@ export default async function CrossSellLifePage() {
     (db) =>
       db
         .from('xsell_life_campaigns')
-        .select('id, name, status, version, is_assumption, simulated_at')
+        .select('id, name, status, version, simulated_at')
         .order('created_at', { ascending: true })
         .limit(25),
     [],
@@ -81,7 +80,7 @@ function CampaignPanel({ campaign, analytics }: { campaign: CampaignRow; analyti
   const rates = analytics?.rates
   return (
     <Card className="p-5">
-      {/* Header — name, version, status, assumption badge, link to management center */}
+      {/* Header — name, version, status, link to management center */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <Link
@@ -98,7 +97,6 @@ function CampaignPanel({ campaign, analytics }: { campaign: CampaignRow; analyti
           engine={ENGINE}
           status={campaign.status}
           version={campaign.version}
-          isAssumption={campaign.is_assumption}
           manageHref={campaignDetailHref(ENGINE, campaign.id)}
         />
       </div>

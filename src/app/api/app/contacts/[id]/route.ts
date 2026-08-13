@@ -73,12 +73,20 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
   }
 }
 
-// Soft-delete a contact.
+// Delete a contact. Default is a SOFT delete (sets deleted_at — recoverable in DB).
+// `?mode=purge` performs a PERMANENT (hard) delete, removing the row outright; FKs into
+// contacts(id) are ON DELETE SET NULL, so references detach without cascading into
+// households. Purge is a destructive mutation and is narrowed to fsa + super_admin
+// (matching bulk delete and suppression); soft delete stays available to staff/admin.
 export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   const auth = await requireApiRole('fsa')
   if (!auth.ok) return auth.response
-  const denied = requirePermission(auth.session, ['fsa', 'licensed_staff', 'admin', 'super_admin'])
+  const purge = req.nextUrl.searchParams.get('mode') === 'purge'
+  const denied = requirePermission(
+    auth.session,
+    purge ? ['fsa', 'super_admin'] : ['fsa', 'licensed_staff', 'admin', 'super_admin'],
+  )
   if (denied) return denied
 
   try {
@@ -87,11 +95,13 @@ export async function DELETE(req: NextRequest, props: { params: Promise<{ id: st
     const { data: existing } = await db.from('contacts').select('id').eq('id', params.id).is('deleted_at', null).maybeSingle()
     if (!existing) return NextResponse.json({ error: 'Contact not found' }, { status: 404 })
 
-    const { error } = await db.from('contacts').update({ deleted_at: new Date().toISOString() }).eq('id', params.id)
+    const { error } = purge
+      ? await db.from('contacts').delete().eq('id', params.id)
+      : await db.from('contacts').update({ deleted_at: new Date().toISOString() }).eq('id', params.id)
     if (error) return dbErrorResponse('app/contacts/[id]', error)
 
-    await writeAudit({ actor, action: 'entity.deleted', entity: 'contact', entityId: params.id, diff: null })
-    return NextResponse.json({ ok: true })
+    await writeAudit({ actor, action: 'entity.deleted', entity: 'contact', entityId: params.id, diff: { mode: purge ? 'purge' : 'soft' } })
+    return NextResponse.json({ ok: true, purged: purge })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed to delete contact' }, { status: 500 })
   }

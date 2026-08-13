@@ -22,12 +22,12 @@ export const runtime = 'nodejs'
 interface Row extends ContactRow {}
 
 export default async function ContactCenterPage() {
-  const [res, report] = await Promise.all([
-    loadAll<Row & { agency_partnership_id: string | null; email_lc: string | null; phone_digits: string | null }>(
+  const [res, report, agencyRes] = await Promise.all([
+    loadAll<Row & { agency_partnership_id: string | null; source: string | null; email_lc: string | null; phone_digits: string | null }>(
       (db) =>
         db
           .from('contacts')
-          .select('id, full_name, email, phone, company, contact_type, tags, status, created_at, agency_partnership_id, email_lc, phone_digits')
+          .select('id, full_name, email, phone, company, contact_type, tags, status, created_at, agency_partnership_id, source, email_lc, phone_digits')
           .is('deleted_at', null)
           .order('created_at', { ascending: false }),
     ),
@@ -41,6 +41,12 @@ export default async function ContactCenterPage() {
         return null
       }
     })(),
+    // Agency names for the "referring agency" filter/delete dimension. Degrades to an
+    // empty map so the surface still renders (filters fall back to the raw id) if the
+    // read fails.
+    loadAll<{ id: string; agency_name: string }>((db) =>
+      db.from('agency_partnerships').select('id, agency_name').order('agency_name', { ascending: true }),
+    ),
   ])
 
   const actions = (
@@ -89,6 +95,33 @@ export default async function ContactCenterPage() {
   }
   const session = await getServerSession()
   const canManageComms = !!session?.roles?.some((role) => role === 'fsa' || role === 'super_admin')
+  // Permanent deletion is a destructive mutation, narrowed to fsa + super_admin
+  // (server-enforced too). Staff/admin see the list without the purge controls.
+  const canDelete = canManageComms
+
+  // Agency id → display name, for the "referring agency" filter and delete dimension.
+  const agencyNameById = new Map<string, string>()
+  if (agencyRes.ok) for (const a of agencyRes.data) agencyNameById.set(a.id, a.agency_name)
+
+  // Attach the agency display name and expose source as `campaign` to each row.
+  const listRows = rows.map((r) => ({
+    ...r,
+    agency_name: r.agency_partnership_id ? agencyNameById.get(r.agency_partnership_id) ?? null : null,
+  }))
+
+  // Filter options built from the loaded book — agencies present, campaign (source)
+  // streams present, and groups (tags) present — each sorted for a stable dropdown.
+  const agencyOptions = Array.from(
+    new Map(
+      listRows
+        .filter((r) => r.agency_partnership_id)
+        .map((r) => [r.agency_partnership_id as string, r.agency_name ?? (r.agency_partnership_id as string)] as const),
+    ).entries(),
+  )
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+  const campaignOptions = Array.from(new Set(listRows.map((r) => r.source).filter((s): s is string => !!s))).sort((a, b) => a.localeCompare(b))
+  const groupOptions = Array.from(new Set(listRows.flatMap((r) => r.tags))).sort((a, b) => a.localeCompare(b))
 
   // Prefer the DB-side consolidation report; fall back to what the loaded rows can
   // show if the report view is unavailable (older DB without migration 070).
@@ -123,7 +156,15 @@ export default async function ContactCenterPage() {
           description="Add a contact manually, or import a CSV, TSV, Excel, or JSON file through the Upload Center."
         />
       ) : (
-        <ContactList rows={rows} suppression={suppressionView} canManageComms={canManageComms} />
+        <ContactList
+          rows={listRows}
+          suppression={suppressionView}
+          canManageComms={canManageComms}
+          canDelete={canDelete}
+          agencyOptions={agencyOptions}
+          campaignOptions={campaignOptions}
+          groupOptions={groupOptions}
+        />
       )}
     </ListShell>
   )

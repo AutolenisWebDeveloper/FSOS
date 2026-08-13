@@ -4,7 +4,7 @@ import { DetailShell, ErrorState, StatusBadge } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { load } from '@/lib/data/query'
-import { CampaignActivateControls } from '@/components/app/CampaignControls'
+import { CampaignActivateControls, CampaignRenameControl } from '@/components/app/CampaignControls'
 
 export const dynamic = 'force-dynamic'
 
@@ -35,7 +35,12 @@ export default async function CampaignDetailPage(props: { params: Promise<{ id: 
       description={`${c.channel ?? ''} campaign`}
       breadcrumb={[{ label: 'FSA', href: '/app' }, { label: 'Comms', href: '/app/comms' }, { label: 'Campaigns', href: '/app/comms/campaigns' }, { label: c.name }]}
       status={<StatusBadge status={c.status === 'active' ? 'active' : c.status === 'completed' ? 'won' : c.status === 'paused' ? 'pending' : 'draft'} label={c.status} />}
-      actions={<CampaignActivateControls id={c.id} status={c.status} />}
+      actions={
+        <div className="flex flex-wrap items-start gap-2">
+          <CampaignRenameControl id={c.id} name={c.name} />
+          <CampaignActivateControls id={c.id} status={c.status} />
+        </div>
+      }
       rail={
         <div className="space-y-3 text-sm">
           <p className="font-medium">Template</p>

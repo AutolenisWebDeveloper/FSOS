@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
 import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
+import { CampaignPatchSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
 import { dispatchCampaign } from '@/lib/comms/campaign'
 import { simulateCampaign } from '@/lib/comms/simulation'
@@ -25,6 +26,39 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
     if (error) return dbErrorResponse('comms/campaigns/[id]', error)
     if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     return NextResponse.json({ campaign: data })
+  } catch (e) {
+    return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed' }, { status: 500 })
+  }
+}
+
+// PATCH — edit an existing campaign's editable fields (currently just its name).
+// A rename carries no compliance-gate implication, so it is allowed in any status and
+// does not touch lifecycle state, the audience, or the attached template.
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  const auth = await requireApiRole('fsa')
+  if (!auth.ok) return auth.response
+  const denied = requirePermission(auth.session, ['fsa', 'licensed_staff', 'super_admin'])
+  if (denied) return denied
+
+  const parsed = await readJson(req)
+  if ('error' in parsed) return parsed.error
+  const v = CampaignPatchSchema.safeParse(parsed.data)
+  if (!v.success) return NextResponse.json({ error: 'Invalid update', details: v.error.flatten() }, { status: 400 })
+
+  try {
+    const db = getDb()
+    const actor = actorOf(auth.session)
+    const { data: rows, error } = await db
+      .from('comm_campaigns')
+      .update({ ...v.data, updated_at: new Date().toISOString() })
+      .eq('id', params.id)
+      .select('id, name')
+    if (error) return dbErrorResponse('comms/campaigns/[id]', error)
+    // 0 rows affected → the campaign id doesn't exist. Report it rather than a false success.
+    if (!rows || rows.length === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    await writeAudit({ actor, action: 'entity.updated', entity: 'comm_campaign', entityId: params.id, diff: { ...v.data } })
+    return NextResponse.json({ ok: true, campaign: rows[0] })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed' }, { status: 500 })
   }

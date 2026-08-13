@@ -4,6 +4,7 @@ import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Button } from '@/components/ui/button'
 import { load } from '@/lib/data/query'
 import { AgencyList, type AgencyRow } from '@/components/app/AgencyList'
+import { getServerSession } from '@/lib/auth/session'
 
 export const dynamic = 'force-dynamic'
 
@@ -60,7 +61,11 @@ export default async function AgenciesPage() {
       ytd_referrals: Number(a.ytd_referrals ?? 0),
       overdue_checkin: overdueMap.get(a.id) ?? false,
     }))
-    body = <AgencyList rows={rows} />
+    // Archive/permanent-delete is a destructive mutation, narrowed to fsa + super_admin
+    // (server-enforced too). Staff see the directory without the management controls.
+    const session = await getServerSession()
+    const canManage = !!session?.roles?.some((role) => role === 'fsa' || role === 'super_admin')
+    body = <AgencyList rows={rows} canManage={canManage} />
   }
 
   return (

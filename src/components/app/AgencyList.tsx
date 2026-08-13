@@ -2,15 +2,20 @@
 
 import * as React from 'react'
 import Link from 'next/link'
-import { Building2, Download } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { Building2, Download, Archive, ArchiveRestore, Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Field } from '@/components/forms/Field'
+import { ModalShell } from '@/components/archetypes'
 import { Money, Numeric } from '@/components/ui/typography'
 import { EmptyState } from '@/components/archetypes'
 import { AGENCY_STATUS } from '@/lib/validation/schemas'
+import { patchJson, postJson, deleteJson, firstFieldError } from '@/lib/client/api'
 
 export interface AgencyRow {
   id: string
@@ -30,12 +35,18 @@ function fmtDate(s: string | null) {
   return s ? new Date(s).toLocaleDateString('en-US') : '—'
 }
 
-export function AgencyList({ rows }: { rows: AgencyRow[] }) {
+export function AgencyList({ rows, canManage = false }: { rows: AgencyRow[]; canManage?: boolean }) {
+  const router = useRouter()
   const [q, setQ] = React.useState('')
   const [status, setStatus] = React.useState('')
   const [overdue, setOverdue] = React.useState(false)
   const [sort, setSort] = React.useState<'premium' | 'contact' | 'name'>('premium')
   const [page, setPage] = React.useState(0)
+  const [selected, setSelected] = React.useState<Set<string>>(new Set())
+  const [busy, setBusy] = React.useState<string | null>(null)
+  const [bulk, setBulk] = React.useState<null | { scope: 'selected' | 'filter'; mode: 'archive' | 'purge' }>(null)
+  const [confirmText, setConfirmText] = React.useState('')
+  const [bulkBusy, setBulkBusy] = React.useState(false)
 
   const filtered = React.useMemo(() => {
     let r = rows
@@ -55,6 +66,85 @@ export function AgencyList({ rows }: { rows: AgencyRow[] }) {
 
   const pageRows = filtered.slice(page * PAGE, page * PAGE + PAGE)
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE))
+
+  // Selection is constrained to the current filter set (across pages).
+  const filteredIds = React.useMemo(() => new Set(filtered.map((r) => r.id)), [filtered])
+  const selectedInFiltered = React.useMemo(() => [...selected].filter((id) => filteredIds.has(id)), [selected, filteredIds])
+  const allFilteredSelected = filtered.length > 0 && selectedInFiltered.length === filtered.length
+  // A filter narrows the directory — the basis for a safe "act on all matching".
+  const structuredFilterActive = !!(status || q.trim() || overdue)
+  const filterSummary = React.useMemo(() => {
+    const parts: string[] = []
+    if (status) parts.push(`status “${status}”`)
+    if (overdue) parts.push('overdue check-in')
+    if (q.trim()) parts.push(`matching “${q.trim()}”`)
+    return parts.join(' · ') || 'the whole directory'
+  }, [status, overdue, q])
+
+  function toggleOne(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  function toggleAllFiltered() {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (allFilteredSelected) filtered.forEach((r) => next.delete(r.id))
+      else filtered.forEach((r) => next.add(r.id))
+      return next
+    })
+  }
+
+  async function setArchived(a: AgencyRow, archived: boolean) {
+    setBusy(a.id)
+    const res = archived
+      ? await postJson('/api/app/agencies/bulk-delete', { ids: [a.id], mode: 'archive' })
+      : await patchJson(`/api/agencies/${a.id}`, { archived: false })
+    setBusy(null)
+    if (!res.ok) return toast.error(firstFieldError(res.error).message)
+    toast.success(archived ? 'Agency archived.' : 'Agency restored.')
+    router.refresh()
+  }
+
+  async function purgeOne(a: AgencyRow) {
+    if (!window.confirm(`Permanently delete ${a.agency_name}? This removes the partnership, its owner records, delegations, and commission splits. Households, contacts, and policies it referred are kept but unlinked. This cannot be undone.`)) return
+    setBusy(a.id)
+    const res = await deleteJson(`/api/agencies/${a.id}?mode=purge`)
+    setBusy(null)
+    if (!res.ok) return toast.error(firstFieldError(res.error).message)
+    toast.success('Agency permanently deleted.')
+    setSelected((prev) => {
+      const next = new Set(prev)
+      next.delete(a.id)
+      return next
+    })
+    router.refresh()
+  }
+
+  const bulkTargetIds = bulk?.scope === 'selected' ? selectedInFiltered : filtered.map((r) => r.id)
+
+  async function applyBulk() {
+    if (!bulk) return
+    if (bulk.mode === 'purge' && confirmText.trim().toUpperCase() !== 'DELETE') return toast.error('Type DELETE to confirm.')
+    const ids = bulkTargetIds
+    if (ids.length === 0) return
+    setBulkBusy(true)
+    const res = await postJson<{ affected: number }>('/api/app/agencies/bulk-delete', { ids, mode: bulk.mode })
+    setBulkBusy(false)
+    if (!res.ok) return toast.error(firstFieldError(res.error).message || res.error.reason || 'Operation failed.')
+    toast.success(
+      bulk.mode === 'purge'
+        ? `Permanently deleted ${res.data.affected} agenc${res.data.affected === 1 ? 'y' : 'ies'}.`
+        : `Archived ${res.data.affected} agenc${res.data.affected === 1 ? 'y' : 'ies'}.`,
+    )
+    setBulk(null)
+    setConfirmText('')
+    setSelected(new Set())
+    router.refresh()
+  }
 
   function exportCsv() {
     const header = ['Agency', 'Owner', 'Status', 'YTD Premium', 'YTD Referrals', 'Last Contact']
@@ -110,6 +200,36 @@ export function AgencyList({ rows }: { rows: AgencyRow[] }) {
         </Button>
       </div>
 
+      {/* Act-on-all-matching — appears when a filter narrows the directory and the viewer
+          may manage it. Operates on every matching agency, not just the current page. */}
+      {canManage && structuredFilterActive && filtered.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2">
+          <span className="text-sm">
+            <span className="font-medium">{filtered.length}</span> match <span className="text-muted-foreground">{filterSummary}</span>.
+          </span>
+          <Button variant="outline" size="sm" onClick={() => { setConfirmText(''); setBulk({ scope: 'filter', mode: 'archive' }) }}>
+            <Archive className="h-4 w-4" /> Archive all
+          </Button>
+          <Button variant="destructive" size="sm" onClick={() => { setConfirmText(''); setBulk({ scope: 'filter', mode: 'purge' }) }}>
+            <Trash2 className="h-4 w-4" /> Delete all permanently
+          </Button>
+        </div>
+      ) : null}
+
+      {/* Bulk-action bar — appears when agencies are selected. */}
+      {canManage && selectedInFiltered.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2">
+          <span className="text-sm font-medium">{selectedInFiltered.length} selected</span>
+          <Button variant="outline" size="sm" onClick={() => { setConfirmText(''); setBulk({ scope: 'selected', mode: 'archive' }) }}>
+            <Archive className="h-4 w-4" /> Archive
+          </Button>
+          <Button variant="destructive" size="sm" onClick={() => { setConfirmText(''); setBulk({ scope: 'selected', mode: 'purge' }) }}>
+            <Trash2 className="h-4 w-4" /> Delete permanently
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>Clear</Button>
+        </div>
+      ) : null}
+
       {filtered.length === 0 ? (
         <EmptyState
           icon={Building2}
@@ -128,17 +248,28 @@ export function AgencyList({ rows }: { rows: AgencyRow[] }) {
             <Table>
               <TableHeader>
                 <TableRow>
+                  {canManage ? (
+                    <TableHead className="w-8">
+                      <input type="checkbox" aria-label="Select all matching agencies" checked={allFilteredSelected} onChange={toggleAllFiltered} />
+                    </TableHead>
+                  ) : null}
                   <TableHead>Agency</TableHead>
                   <TableHead>Owner</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">YTD Premium</TableHead>
                   <TableHead className="text-right">Referrals</TableHead>
                   <TableHead>Last Contact</TableHead>
+                  {canManage ? <TableHead className="w-10 text-right"><span className="sr-only">Actions</span></TableHead> : null}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {pageRows.map((a) => (
-                  <TableRow key={a.id}>
+                  <TableRow key={a.id} data-selected={selected.has(a.id) || undefined}>
+                    {canManage ? (
+                      <TableCell>
+                        <input type="checkbox" aria-label={`Select ${a.agency_name}`} checked={selected.has(a.id)} onChange={() => toggleOne(a.id)} />
+                      </TableCell>
+                    ) : null}
                     <TableCell>
                       <Link href={`/app/agencies/${a.id}`} className="font-medium text-primary hover:underline">
                         {a.agency_name}
@@ -159,6 +290,18 @@ export function AgencyList({ rows }: { rows: AgencyRow[] }) {
                     <TableCell className="text-right"><Money value={a.ytd_placed_premium} /></TableCell>
                     <TableCell className="text-right"><Numeric>{a.ytd_referrals}</Numeric></TableCell>
                     <TableCell className="text-muted-foreground"><Numeric>{fmtDate(a.last_contact_at)}</Numeric></TableCell>
+                    {canManage ? (
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-1">
+                          {a.archived_at ? (
+                            <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Restore" disabled={busy === a.id} onClick={() => setArchived(a, false)}><ArchiveRestore className="h-4 w-4" /></Button>
+                          ) : (
+                            <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Archive" disabled={busy === a.id} onClick={() => setArchived(a, true)}><Archive className="h-4 w-4" /></Button>
+                          )}
+                          <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Delete permanently" disabled={busy === a.id} onClick={() => purgeOne(a)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                        </div>
+                      </TableCell>
+                    ) : null}
                   </TableRow>
                 ))}
               </TableBody>
@@ -203,6 +346,36 @@ export function AgencyList({ rows }: { rows: AgencyRow[] }) {
           ) : null}
         </>
       )}
+
+      {/* Bulk archive / permanent-delete confirmation. */}
+      <ModalShell
+        open={bulk !== null}
+        onOpenChange={(o) => { if (!o) { setBulk(null); setConfirmText('') } }}
+        title={bulk?.mode === 'purge' ? 'Permanently delete agencies?' : 'Archive agencies?'}
+        description={
+          bulk?.mode === 'purge'
+            ? `This permanently removes ${bulkTargetIds.length} agenc${bulkTargetIds.length === 1 ? 'y' : 'ies'} (${bulk?.scope === 'filter' ? filterSummary : 'selected'}) along with their owner records, activation, delegations, and commission splits. Households, contacts, and policies they referred are kept but unlinked. This cannot be undone.`
+            : `This archives ${bulkTargetIds.length} agenc${bulkTargetIds.length === 1 ? 'y' : 'ies'} (${bulk?.scope === 'filter' ? filterSummary : 'selected'}). They're hidden from active views but fully recoverable — nothing is deleted.`
+        }
+        footer={
+          <>
+            <Button variant="outline" onClick={() => { setBulk(null); setConfirmText('') }} disabled={bulkBusy}>Cancel</Button>
+            <Button
+              variant={bulk?.mode === 'purge' ? 'destructive' : 'default'}
+              onClick={applyBulk}
+              disabled={bulkBusy || bulkTargetIds.length === 0 || (bulk?.mode === 'purge' && confirmText.trim().toUpperCase() !== 'DELETE')}
+            >
+              {bulkBusy ? 'Working…' : bulk?.mode === 'purge' ? `Delete ${bulkTargetIds.length} permanently` : `Archive ${bulkTargetIds.length}`}
+            </Button>
+          </>
+        }
+      >
+        {bulk?.mode === 'purge' ? (
+          <Field id="agency_delete_confirm" label="Type DELETE to confirm" required>
+            <Input value={confirmText} onChange={(e) => setConfirmText(e.target.value)} placeholder="DELETE" aria-label="Type DELETE to confirm permanent deletion" autoComplete="off" />
+          </Field>
+        ) : null}
+      </ModalShell>
     </div>
   )
 }

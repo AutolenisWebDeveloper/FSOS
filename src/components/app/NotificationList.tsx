@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { Bell, Check, CheckCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { MonoLabel } from '@/components/ui/typography'
+import { ListPagination } from '@/components/ui/pagination'
+import { paginate } from '@/lib/data/paginate'
 import { EmptyState, ErrorState } from '@/components/archetypes'
 import { patchJson } from '@/lib/client/api'
 
@@ -35,7 +37,10 @@ export function NotificationList({
 }) {
   const [items, setItems] = React.useState<Notification[]>(initial)
   const [busy, setBusy] = React.useState(false)
+  const [page, setPage] = React.useState(0)
+  const [pageSize, setPageSize] = React.useState(25)
   const unread = items.filter((n) => !n.read_at).length
+  const paged = paginate(items, page, pageSize)
 
   async function markOne(id: string) {
     setBusy(true)
@@ -71,7 +76,7 @@ export function NotificationList({
         </Button>
       </div>
       <ul className="divide-y rounded-lg border">
-        {items.map((n) => {
+        {paged.items.map((n) => {
           const row = (
             <div className={n.read_at ? 'flex items-start gap-3 px-4 py-3' : 'flex items-start gap-3 bg-accent/5 px-4 py-3'}>
               <span
@@ -115,6 +120,14 @@ export function NotificationList({
           )
         })}
       </ul>
+      <ListPagination
+        page={paged.page}
+        pageSize={pageSize}
+        total={items.length}
+        noun="notification"
+        onPageChange={setPage}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(0) }}
+      />
     </div>
   )
 }

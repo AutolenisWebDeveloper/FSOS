@@ -10,6 +10,8 @@ import { Badge } from '@/components/ui/badge'
 import { SecuritiesChip, securitiesRowClass } from '@/components/ui/securities'
 import { Numeric } from '@/components/ui/typography'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { ListPagination } from '@/components/ui/pagination'
+import { paginate } from '@/lib/data/paginate'
 import { EmptyState } from '@/components/archetypes'
 
 export interface EscalationRow {
@@ -74,12 +76,18 @@ export function EscalationList({
 }) {
   const router = useRouter()
   const [filter, setFilter] = React.useState<'open' | 'handled' | 'dismissed' | 'all'>('open')
+  const [page, setPage] = React.useState(0)
+  const [pageSize, setPageSize] = React.useState(50)
 
   const filtered = React.useMemo(() => {
     if (filter === 'all') return rows
     if (filter === 'open') return rows.filter((r) => isOpen(r.outcome))
     return rows.filter((r) => r.outcome === filter)
   }, [rows, filter])
+
+  React.useEffect(() => setPage(0), [filter])
+
+  const paged = paginate(filtered, page, pageSize)
 
   return (
     <div className="space-y-6">
@@ -112,7 +120,7 @@ export function EscalationList({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((r) => {
+              {paged.items.map((r) => {
                 const href = targetHref(r.target_type, r.target_id)
                 const securities = isSecurities(r.reason, r.blocked_step)
                 return (
@@ -158,6 +166,14 @@ export function EscalationList({
           </Table>
         </div>
       )}
+      <ListPagination
+        page={paged.page}
+        pageSize={pageSize}
+        total={filtered.length}
+        noun="escalation"
+        onPageChange={setPage}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(0) }}
+      />
 
       <Card>
         <CardHeader>

@@ -66,7 +66,7 @@ export default async function WinbackPage() {
 
   const actions = (
     <div className="hidden flex-wrap gap-2 sm:flex">
-      <Button asChild variant="outline" size="sm"><Link href="/app/contacts?source=winback_life">All contacts</Link></Button>
+      <Button asChild variant="outline" size="sm"><Link href="/app/households?view=win-back">All contacts</Link></Button>
       <Button asChild variant="outline" size="sm"><Link href="/app/comms">Outreach</Link></Button>
       <Button asChild variant="outline" size="sm"><Link href="/app/winback/import">Import list</Link></Button>
       <OriginateWinBackButton />
@@ -143,7 +143,7 @@ export default async function WinbackPage() {
 
       {/* ── Executive KPIs ─────────────────────────────────────────────────── */}
       <MetricGrid>
-        <MetricCard label="Total lapsed clients" value={kpis.total.toLocaleString()} href="/app/contacts?source=winback_life" icon={Heart} tone="brand" hint="In the win-back book" />
+        <MetricCard label="Total lapsed clients" value={kpis.total.toLocaleString()} href="/app/households?view=win-back" icon={Heart} tone="brand" hint="In the win-back book" />
         <MetricCard label="Contactable" value={kpis.reachable.toLocaleString()} href="/app/comms" icon={PhoneCall} tone="positive" hint="Phone or email, not suppressed" />
         <MetricCard label="Suppressed" value={kpis.suppressed.toLocaleString()} icon={ShieldOff} tone="attention" hint="DNC or unsubscribed" />
         <MetricCard label="Agencies covered" value={kpis.linkedAgencies.toLocaleString()} href="/app/agencies" icon={Building2} tone="neutral" hint="Books with lapsed life" />
@@ -230,7 +230,7 @@ export default async function WinbackPage() {
       </div>
 
       {/* ── Recently added ─────────────────────────────────────────────────── */}
-      <Section title="Recently added" action={<PanelLink href="/app/contacts?source=winback_life">All win-back contacts</PanelLink>}>
+      <Section title="Recently added" action={<PanelLink href="/app/households?view=win-back">All win-back contacts</PanelLink>}>
         <Panel title="Win-back intake" icon={ContactIcon} bodyClassName="pt-2">
           <ActivityFeed items={feed} emptyLabel="No win-back contacts yet. Import a lapsed-life list to begin." />
         </Panel>

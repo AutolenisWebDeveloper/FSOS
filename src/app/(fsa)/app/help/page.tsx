@@ -20,7 +20,7 @@ const GUIDE: { label: string; href: string; desc: string }[] = [
   { label: 'FNA Generator', href: '/app/fna', desc: 'Generate a compliant Financial Needs Analysis (gaps only, no product picks).' },
   { label: 'Commissions & GDC', href: '/app/commissions/gdc', desc: 'Rolling GDC, tier, and expected payout (config defaults are labeled).' },
   { label: 'AI Operations', href: '/app/ai', desc: 'Agent runs, escalations, and the kill switch.' },
-  { label: 'FFS Key Contacts', href: '/app/contacts', desc: 'Sales desk, wholesaler, compliance, and OSJ numbers.' },
+  { label: 'FFS Key Contacts', href: '/app/directory', desc: 'Sales desk, wholesaler, compliance, and OSJ numbers.' },
 ]
 
 export default async function HelpPage() {

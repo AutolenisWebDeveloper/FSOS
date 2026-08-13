@@ -87,6 +87,28 @@ export const AgencyPatchSchema = z
   .refine((v) => Object.keys(v).length > 0, 'No fields to update')
 export type AgencyPatch = z.infer<typeof AgencyPatchSchema>
 
+// ARCHIVE (soft, recoverable) or PURGE (permanent hard delete) of agency partnerships —
+// individually, by explicit multi-selection, or by status. Exactly one target: a
+// non-empty `ids` list OR a discriminating `filter` (a specific status — a scope-only
+// filter is refused so a bulk op can never target the whole directory). `dryRun` previews
+// the count without changing anything.
+export const AgencyBulkDeleteSchema = z
+  .object({
+    ids: z.array(uuid).max(100000).optional(),
+    filter: z
+      .object({
+        status: z.enum(AGENCY_STATUS).nullish(),
+        scope: z.enum(['active', 'archived', 'all']).optional(),
+      })
+      .optional(),
+    mode: z.enum(['archive', 'purge']).default('archive'),
+    dryRun: z.boolean().optional().default(false),
+  })
+  .refine((v) => (v.ids && v.ids.length > 0) || !!v.filter, {
+    message: 'Provide agency ids or a filter.',
+  })
+export type AgencyBulkDelete = z.infer<typeof AgencyBulkDeleteSchema>
+
 // ─── Referral (OS-03) ──────────────────────────────────────────────────────────
 export const ReferralCreateSchema = z.object({
   referred_name: z.string().trim().min(1, 'Referred name is required').max(200),

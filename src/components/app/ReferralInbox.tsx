@@ -11,6 +11,8 @@ import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Numeric } from '@/components/ui/typography'
+import { ListPagination } from '@/components/ui/pagination'
+import { paginate } from '@/lib/data/paginate'
 import { EmptyState } from '@/components/archetypes'
 import { REFERRAL_ENGAGEMENT } from '@/lib/validation/schemas'
 import { patchJson } from '@/lib/client/api'
@@ -40,6 +42,8 @@ export function ReferralInbox({ rows }: { rows: ReferralRow[] }) {
   const [untouchedOnly, setUntouchedOnly] = React.useState(false)
   const [breachedOnly, setBreachedOnly] = React.useState(false)
   const [busy, setBusy] = React.useState<string | null>(null)
+  const [page, setPage] = React.useState(0)
+  const [pageSize, setPageSize] = React.useState(50)
 
   const filtered = React.useMemo(() => {
     let r = rows
@@ -51,6 +55,10 @@ export function ReferralInbox({ rows }: { rows: ReferralRow[] }) {
     if (breachedOnly) r = r.filter((x) => x.sla_breached)
     return [...r].sort((a, b) => (a.sla_due_at ?? '').localeCompare(b.sla_due_at ?? ''))
   }, [rows, q, status, engagement, untouchedOnly, breachedOnly])
+
+  React.useEffect(() => setPage(0), [q, status, engagement, untouchedOnly, breachedOnly])
+
+  const paged = paginate(filtered, page, pageSize)
 
   async function logFirstTouch(id: string) {
     setBusy(id)
@@ -113,7 +121,7 @@ export function ReferralInbox({ rows }: { rows: ReferralRow[] }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((r) => (
+              {paged.items.map((r) => (
                 <TableRow key={r.id} className={r.sla_breached ? 'bg-destructive/5' : undefined}>
                   <TableCell>
                     <Link href={`/app/referrals/${r.id}`} className="font-medium text-primary hover:underline">
@@ -144,6 +152,14 @@ export function ReferralInbox({ rows }: { rows: ReferralRow[] }) {
           </Table>
         </div>
       )}
+      <ListPagination
+        page={paged.page}
+        pageSize={pageSize}
+        total={filtered.length}
+        noun="referral"
+        onPageChange={setPage}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(0) }}
+      />
     </div>
   )
 }

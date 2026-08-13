@@ -16,12 +16,12 @@
 // at send time, not just at enrollment time (WF-9 invariant).
 
 import { getDb } from '@/lib/supabase/client'
+import { writeAudit } from '@/lib/audit/log'
 import { dispatch, type DispatchRequest } from './dispatcher'
 import type { GateResult } from './gate'
 import { getOrCreateConversation, touchConversation, normalizeContact, type Channel } from './conversations'
 import { loadHoursPolicy, isWithinOperatingHours } from './hours'
 import { recordMessageEvent } from './events'
-import { writeAudit } from '@/lib/audit/log'
 import { personalize, unresolvedBlockingTokens, type RecipientContext } from './personalize'
 import { BUSINESS } from '@/lib/site'
 import { emailUnsubscribeUrl } from './unsubscribe'
@@ -758,7 +758,11 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
 
   // Pre-insert the message row (queued) so email tracking can reference its id and
   // so a blocked send is still visible in the timeline. The final status/provider
-  // id are patched after dispatch.
+  // id are patched after dispatch. This row IS the message-of-record (§13.9): the
+  // body snapshot, consent-at-send, and delivery status live here — so a failed
+  // write FAILS THE SEND (audited + escalated below), never a silent skip. A
+  // silently-swallowed FK failure here once cost every campaign send its record
+  // (docs/audit/outbound-campaigns-2026-08-07.md).
   let messageId: string | undefined
   let messageOfRecordError: string | undefined
   try {
@@ -858,10 +862,28 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
           blockedStep: 'message_of_record',
           reason: messageOfRecordError ?? 'message-of-record insert returned no id',
           sourceCampaignKey: ctx.sourceCampaignKey ?? null,
+          campaignId: ctx.campaignId ?? null,
+          templateId: ctx.templateId ?? null,
         },
       })
     } catch {
       /* best-effort — the console.error above is the durable signal if audit is also down */
+    }
+    // Escalate to the human-FSA queue (§16.6): a withheld send is a recoverable failure that
+    // needs operator attention (fix the record path, then the deferred touch retries).
+    try {
+      await db.from('agent_actions').insert({
+        kind: 'escalation',
+        actor: ctx.actor,
+        outcome: 'escalated',
+        target_type: ctx.entity?.type ?? 'conversation',
+        target_id: ctx.entity?.id ?? convHouseholdId ?? conversationId,
+        reason: 'message_of_record_write_failed',
+        blocked_step: 'message_of_record',
+        note: reason,
+      })
+    } catch {
+      /* best-effort escalation; the audit row above is the durable record */
     }
     return {
       sent: false,

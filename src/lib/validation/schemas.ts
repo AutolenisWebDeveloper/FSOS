@@ -158,6 +158,28 @@ export const HouseholdPatchSchema = z
   })
   .refine((v) => Object.keys(v).length > 0, 'No fields to update')
 
+// ARCHIVE (soft, recoverable) or PURGE (permanent hard delete) of households from the
+// book — individually, by explicit multi-selection, or by referring agency. Exactly one
+// target must be provided: a non-empty `ids` list OR a discriminating `filter` (a
+// referring agency — a scope-only filter is refused so a bulk op can never target the
+// whole book). `dryRun` previews the count without changing anything.
+export const HouseholdBulkDeleteSchema = z
+  .object({
+    ids: z.array(uuid).max(100000).optional(),
+    filter: z
+      .object({
+        referringAgencyId: uuid.nullish(),
+        scope: z.enum(['active', 'archived', 'all']).optional(),
+      })
+      .optional(),
+    mode: z.enum(['archive', 'purge']).default('archive'),
+    dryRun: z.boolean().optional().default(false),
+  })
+  .refine((v) => (v.ids && v.ids.length > 0) || !!v.filter, {
+    message: 'Provide household ids or a filter.',
+  })
+export type HouseholdBulkDelete = z.infer<typeof HouseholdBulkDeleteSchema>
+
 export const MemberBaseSchema = z.object({
   full_name: z.string().trim().min(1, 'Full name is required').max(200),
   relationship: z.string().trim().max(60).optional(),

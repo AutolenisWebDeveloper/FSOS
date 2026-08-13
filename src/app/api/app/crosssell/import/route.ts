@@ -5,6 +5,7 @@ import { writeAudit } from '@/lib/audit/log'
 import { parseContactsFile } from '@/lib/contacts/parseFile'
 import { parseCrossSellTable, summarizeCrossSell, type CrossSellRecord } from '@/lib/import/crossSellList'
 import { createBatch } from '@/lib/import/auditWriter'
+import { materializeContact, type MaterializableContact } from '@/lib/services/householdMaterialize'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -163,10 +164,26 @@ export async function POST(req: NextRequest) {
 
   // ── COMMIT ──────────────────────────────────────────────────────────────
   try {
-    // 1. Insert new cross-sell contacts.
+    // 1. Insert new cross-sell contacts, then materialize each into the household
+    // spine so it lands in the one book immediately (the book is the single source of
+    // truth) rather than waiting for the daily orphan backfill. Idempotent +
+    // best-effort per contact: a materialization hiccup is swallowed, never fails the
+    // import — the daily backfill remains the safety net.
+    let materialized = 0
     for (let i = 0; i < insertRows.length; i += CHUNK) {
-      const { error } = await db.from('contacts').insert(insertRows.slice(i, i + CHUNK))
+      const { data: inserted, error } = await db
+        .from('contacts')
+        .insert(insertRows.slice(i, i + CHUNK))
+        .select('id, full_name, first_name, last_name, email, phone, address, city, state, zip, contact_type, agency_partnership_id, owner_scope')
       if (error) throw new Error(`contacts insert failed: ${error.message}`)
+      for (const c of (inserted ?? []) as MaterializableContact[]) {
+        try {
+          const r = await materializeContact(db, c)
+          if (r.householdId && r.action !== 'error') materialized++
+        } catch {
+          /* best-effort: daily backfillOrphanHouseholds will retry */
+        }
+      }
     }
     // 2. Enrich matched contacts in place (no-overwrite patches).
     let updated = 0
@@ -196,7 +213,7 @@ export async function POST(req: NextRequest) {
       filename: file.name,
       summary,
       plan,
-      committed: { contacts_created: insertRows.length, contacts_enriched: updated },
+      committed: { contacts_created: insertRows.length, contacts_enriched: updated, households_materialized: materialized },
     })
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Commit failed' }, { status: 500 })

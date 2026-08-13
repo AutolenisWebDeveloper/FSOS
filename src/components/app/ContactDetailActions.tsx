@@ -27,7 +27,7 @@ export function ContactDetailActions({ id, status, name }: { id: string; status:
     setBusy(false)
     if (!res.ok) return toast.error(firstFieldError(res.error).message)
     toast.success('Contact deleted.')
-    router.push('/app/contacts')
+    router.push('/app/households')
   }
 
   return (

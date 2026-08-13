@@ -10,6 +10,8 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { MonoLabel, Money } from '@/components/ui/typography'
 import { StatusBadge, EmptyState } from '@/components/archetypes'
 import { SecuritiesChip } from '@/components/ui/securities'
+import { ListPagination } from '@/components/ui/pagination'
+import { paginate } from '@/lib/data/paginate'
 import { patchJson, firstFieldError } from '@/lib/client/api'
 
 export interface OpraTransferRow {
@@ -39,6 +41,8 @@ function badgeStatus(r: OpraTransferRow): 'active' | 'pending' | 'won' | 'draft'
 export function OpraTransferList({ rows }: { rows: OpraTransferRow[] }) {
   const router = useRouter()
   const [busy, setBusy] = React.useState<string | null>(null)
+  const [page, setPage] = React.useState(0)
+  const [pageSize, setPageSize] = React.useState(50)
 
   // Uncontacted first, then by transfer date.
   const sorted = React.useMemo(
@@ -49,6 +53,8 @@ export function OpraTransferList({ rows }: { rows: OpraTransferRow[] }) {
       }),
     [rows],
   )
+
+  const paged = paginate(sorted, page, pageSize)
 
   async function toggle(row: OpraTransferRow, patch: Record<string, unknown>, label: string) {
     setBusy(row.id + Object.keys(patch)[0])
@@ -72,6 +78,7 @@ export function OpraTransferList({ rows }: { rows: OpraTransferRow[] }) {
   }
 
   return (
+    <div className="space-y-4">
     <div className="overflow-x-auto rounded-lg border">
       <Table>
         <TableHeader>
@@ -88,7 +95,7 @@ export function OpraTransferList({ rows }: { rows: OpraTransferRow[] }) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {sorted.map((r) => (
+          {paged.items.map((r) => (
             <TableRow key={r.id} className={r.is_security ? 'border-l-2 border-l-status-security' : undefined}>
               <TableCell className="font-medium">
                 <div className="flex flex-wrap items-center gap-2">
@@ -155,6 +162,15 @@ export function OpraTransferList({ rows }: { rows: OpraTransferRow[] }) {
           ))}
         </TableBody>
       </Table>
+    </div>
+      <ListPagination
+        page={paged.page}
+        pageSize={pageSize}
+        total={sorted.length}
+        noun="transfer"
+        onPageChange={setPage}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(0) }}
+      />
     </div>
   )
 }

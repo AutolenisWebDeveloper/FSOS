@@ -15,6 +15,8 @@ import { ModalShell } from '@/components/archetypes'
 import { cn } from '@/lib/utils'
 import { EmptyState } from '@/components/archetypes'
 import { ContactPeek } from '@/components/archetypes/contact/peek'
+import { ListPagination } from '@/components/ui/pagination'
+import { paginate } from '@/lib/data/paginate'
 import { CONTACT_VIEWS, type ContactViewKey } from '@/lib/contacts/views'
 import { patchJson, postJson, deleteJson, firstFieldError } from '@/lib/client/api'
 
@@ -59,6 +61,8 @@ export function HouseholdList({
   const [view, setView] = React.useState<ContactViewKey>(initialView)
   const [agency, setAgency] = React.useState('')
   const [peekId, setPeekId] = React.useState<string | null>(null)
+  const [page, setPage] = React.useState(0)
+  const [pageSize, setPageSize] = React.useState(50)
   const [selected, setSelected] = React.useState<Set<string>>(new Set())
   const [busy, setBusy] = React.useState<string | null>(null)
 
@@ -77,6 +81,10 @@ export function HouseholdList({
     if (dncOnly) r = r.filter((h) => h.do_not_contact)
     return r
   }, [rows, q, dncOnly, view, agency])
+
+  React.useEffect(() => setPage(0), [q, dncOnly, view, agency])
+
+  const paged = paginate(filtered, page, pageSize)
 
   const filteredIds = React.useMemo(() => new Set(filtered.map((r) => r.id)), [filtered])
   const selectedVisible = React.useMemo(() => [...selected].filter((id) => filteredIds.has(id)), [selected, filteredIds])
@@ -281,7 +289,7 @@ export function HouseholdList({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((h) => (
+              {paged.items.map((h) => (
                 <TableRow key={h.id} data-selected={selected.has(h.id) || undefined}>
                   {canManage ? (
                     <TableCell>
@@ -320,7 +328,14 @@ export function HouseholdList({
           </Table>
         </div>
       )}
-      <p className="text-xs text-muted-foreground">{filtered.length} household{filtered.length === 1 ? '' : 's'} shown.</p>
+      <ListPagination
+        page={paged.page}
+        pageSize={pageSize}
+        total={filtered.length}
+        noun="household"
+        onPageChange={setPage}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(0) }}
+      />
       <ContactPeek householdId={peekId} onOpenChange={(v) => !v && setPeekId(null)} />
 
       {/* Bulk archive / permanent-delete confirmation. */}

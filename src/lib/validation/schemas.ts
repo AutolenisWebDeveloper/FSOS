@@ -1152,6 +1152,31 @@ export const ContactPatchSchema = z
   .refine((v) => Object.keys(v).length > 0, { message: 'No changes provided' })
 export type ContactPatch = z.infer<typeof ContactPatchSchema>
 
+// PERMANENT (hard) deletion of Contact Center contacts — individually, by explicit
+// multi-selection, or in bulk by campaign (source) / agency / group (tag) / type.
+// Exactly one target must be provided: a non-empty `ids` list OR a `filter`. A
+// filter-driven delete must be discriminating (agency/source/tag/type present) — the
+// route refuses a status-only filter so a bulk delete can never target the whole book.
+// `dryRun` previews the target count without deleting.
+export const ContactBulkDeleteSchema = z
+  .object({
+    ids: z.array(uuid).max(100000).optional(),
+    filter: z
+      .object({
+        agencyPartnershipId: uuid.nullish(),
+        source: z.string().trim().max(80).nullish(),
+        tag: z.string().trim().max(60).nullish(),
+        contactType: z.enum(CONTACT_TYPE).nullish(),
+        status: z.enum(['active', 'archived', 'all']).optional(),
+      })
+      .optional(),
+    dryRun: z.boolean().optional().default(false),
+  })
+  .refine((v) => (v.ids && v.ids.length > 0) || !!v.filter, {
+    message: 'Provide contact ids or a filter to delete.',
+  })
+export type ContactBulkDelete = z.infer<typeof ContactBulkDeleteSchema>
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // AI Knowledge Library + two-way conversations + campaign variants (migration 033).
 // ═══════════════════════════════════════════════════════════════════════════════

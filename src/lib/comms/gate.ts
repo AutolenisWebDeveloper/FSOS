@@ -19,6 +19,7 @@ export type GateStep =
   | 'collision' // 2e — higher-priority campaign / active conversation underway (§10)
   | 'delegation' // 2c — FSA↔agency-owner on-behalf-of authority must be ACTIVE + in-scope
   | 'dnc' // 3
+  | 'suppression' // 3b — BUSINESS suppression (agent-level book / individual client), separate from DNC
   | 'approved_template' // 4
   | 'personalization' // 4b — a required (blocking-tier) merge token did not resolve
   | 'recommendation' // 5
@@ -87,6 +88,26 @@ export interface GateInput {
   withinBusinessHours?: boolean
   /** 3 — on internal/external DNC. */
   onDNC: boolean
+  /**
+   * 3b — BUSINESS suppression: this recipient is excluded from applicable NON-transactional
+   * FSOS outreach because their agent's whole book is blocked, or they are individually
+   * blocked (suppression.ts resolves the effective decision from the policy layers at send
+   * time). This is a SEPARATE layer from DNC (step 3) and consent (step 1): it NEVER
+   * overrides or is overridden by a regulatory opt-out, and it applies to non-transactional
+   * sends only (the caller passes false for transactional/servicing messages). Defaults to
+   * FALSE so existing callers are unaffected. A true is a NON-escalating block (an intentional
+   * operator exclusion, not a compliance violation) — audited as comms.suppressed, never sent.
+   */
+  businessSuppressed?: boolean
+  /**
+   * 3b — the effective suppression state was RELIABLY determined. Defaults to TRUE. A false is
+   * the fail-closed case (a suppression lookup error/timeout/orphaned state): the send is
+   * WITHHELD exactly like a positive suppression — unknown must never become allowed. Checked
+   * only when the send is business-suppression-eligible (non-transactional).
+   */
+  suppressionResolved?: boolean
+  /** 3b — which layer suppressed / why (for the audit + UI: 'individual' vs 'agent_book'). */
+  suppressionReason?: string
   /** 4 — approved template or approved AI policy. */
   usesApprovedTemplateOrPolicy: boolean
   /**
@@ -141,6 +162,7 @@ const BLOCK: Record<GateStep, string> = {
   business_hours: 'Outside configured hours of operation — held for the next in-hours cycle.',
   sms_live: 'SMS is staged pending A2P 10DLC approval — held until the campaign is approved.',
   dnc: 'Recipient is on the do-not-contact list.',
+  suppression: 'Recipient is excluded from applicable outreach by agent-level or individual communication suppression.',
   approved_template: 'Message does not use an approved template or AI policy.',
   personalization: 'A required merge token did not resolve — held for the FSA to complete.',
   recommendation: 'Message contains individualized recommendation / call-to-action language.',
@@ -201,6 +223,19 @@ export function evaluateGate(input: GateInput): GateResult {
   // a message the FSA is not authorized to send at all must never reach content checks.
   if (input.delegationValid === false) return blocked('delegation', true, input.delegationReason)
   if (input.onDNC) return blocked('dnc')
+  // 3b — BUSINESS suppression (agent-level book / individual client). Ordered right AFTER the
+  // regulatory DNC step and BEFORE content/campaign checks, matching the required decision
+  // order: consent → DNC/STOP → individual suppression → agent/book suppression → campaign
+  // eligibility. This is a business exclusion, not a compliance violation, so it does NOT
+  // escalate (avoids flooding the FSA queue when a whole book is blocked) — but it is still a
+  // hard withhold that is audited (comms.suppressed) and never sent. The resolver applies the
+  // individual→agent ordering, so `suppressionReason` already names the winning layer.
+  // Fail-closed first: an undetermined suppression state withholds the send just like a
+  // positive one — unknown must never become allowed.
+  if (input.suppressionResolved === false) {
+    return blocked('suppression', false, input.suppressionReason ?? 'Effective suppression could not be determined — fail closed.')
+  }
+  if (input.businessSuppressed === true) return blocked('suppression', false, input.suppressionReason)
   if (!input.usesApprovedTemplateOrPolicy) return blocked('approved_template')
   // 4b — content integrity: a required (blocking-tier) merge token that did not resolve means the
   // body would ship with an empty placeholder (a blank appointment time, a missing opt-out or

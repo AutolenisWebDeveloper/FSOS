@@ -14,6 +14,7 @@ import { SMS_OPT_OUT_FOOTER } from '../compliance'
 import type { AuditEntry } from '../audit/log'
 import type { SendResult } from '../messaging'
 import type { EmailStream } from './senders'
+import type { SuppressionSubject, SuppressionDecision } from './suppression'
 
 export interface DispatchRequest {
   channel: 'sms' | 'email'
@@ -36,6 +37,17 @@ export interface DispatchRequest {
    * mail.). Absent → 'marketing' (the gated path is the campaign path). SMS ignores it.
    */
   messageClass?: EmailStream
+  /**
+   * FINAL PROVIDER-BOUNDARY suppression re-check subject (master build instruction: "Final
+   * Provider-Boundary Re-check"). When present, the dispatcher re-evaluates effective BUSINESS
+   * suppression FRESH immediately before the irreversible provider call — so a message that
+   * was gate-cleared while the recipient was eligible is still stopped if the client or their
+   * agent became blocked in the interim (queue/retry/async gap). The send path supplies this
+   * ONLY for business-suppression-eligible (non-transactional) sends; transactional/servicing
+   * sends omit it and are never business-suppressed. Absent → no re-check (existing callers
+   * unaffected).
+   */
+  suppressionSubject?: SuppressionSubject
 }
 
 export interface DispatchResult {
@@ -58,6 +70,12 @@ export interface DispatchDeps {
   recordComplianceEvent(req: DispatchRequest, gate: GateResult): Promise<void>
   createEscalation(req: DispatchRequest, gate: GateResult): Promise<void>
   writeAudit(entry: AuditEntry): Promise<void>
+  /**
+   * Final-boundary suppression re-check. Re-resolves effective BUSINESS suppression from the
+   * DB immediately before send. Default → resolveEffectiveSuppression (suppression.ts), which
+   * fails CLOSED (suppressed) on any lookup error. Injected in tests.
+   */
+  verifyNotSuppressed(subject: SuppressionSubject): Promise<SuppressionDecision>
   send(
     channel: 'sms' | 'email',
     to: string,
@@ -116,6 +134,12 @@ export const defaultDeps: DispatchDeps = {
     const { writeAudit } = await import('../audit/log')
     await writeAudit(entry)
   },
+  async verifyNotSuppressed(subject) {
+    // Lazy import keeps this file loadable without eagerly pulling the DB reader (the pure
+    // gate path stays testable). resolveEffectiveSuppression fails closed on any error.
+    const { resolveEffectiveSuppression } = await import('./suppression')
+    return resolveEffectiveSuppression(subject)
+  },
   async send(channel, to, body, subject, bodyText, messageClass) {
     const { sendSms, sendEmail } = await import('../messaging')
     if (channel === 'sms') return sendSms(to, body)
@@ -151,13 +175,15 @@ export async function dispatch(req: DispatchRequest, deps: DispatchDeps = defaul
     }
     await deps.writeAudit({
       actor: req.actor,
-      // Securities blocks are firewall events; deferrals are comms.deferred; all other
-      // blocks are comms.blocked.
+      // Securities blocks are firewall events; BUSINESS suppression is comms.suppressed;
+      // other deferrals are comms.deferred; all remaining blocks are comms.blocked.
       action: gate.blockedStep === 'is_security'
         ? 'firewall.blocked'
-        : gate.escalate
-          ? 'comms.blocked'
-          : 'comms.deferred',
+        : gate.blockedStep === 'suppression'
+          ? 'comms.suppressed'
+          : gate.escalate
+            ? 'comms.blocked'
+            : 'comms.deferred',
       entity: req.entity?.type ?? 'message',
       entityId: req.entity?.id ?? null,
       diff: { channel: req.channel, to: req.to, blockedStep: gate.blockedStep, reason: gate.reason },
@@ -165,7 +191,42 @@ export async function dispatch(req: DispatchRequest, deps: DispatchDeps = defaul
     return { sent: false, gate, escalated: gate.escalate }
   }
 
-  // Passed the gate → send. SMS carries the carrier-required opt-out footer.
+  // FINAL PROVIDER-BOUNDARY RE-CHECK (mandatory). The gate above ran on context the caller
+  // computed; between then and now the client or their agent may have been blocked. Re-resolve
+  // effective BUSINESS suppression FRESH here — the last point before the irreversible provider
+  // call — so a queued/retried/async send that was eligible when built is still WITHHELD if
+  // suppression flipped. Fail-closed: verifyNotSuppressed returns `suppressed` on any lookup
+  // error, so an undetermined state never sends. Runs ONLY when the send path marked this send
+  // business-suppression-eligible (non-transactional) by supplying a subject.
+  if (req.suppressionSubject) {
+    const decision = await deps.verifyNotSuppressed(req.suppressionSubject)
+    if (decision.suppressed) {
+      const boundaryGate: GateResult = {
+        allowed: false,
+        blockedStep: 'suppression',
+        reason: decision.reason ?? 'Recipient is suppressed from applicable outreach (boundary re-check).',
+        escalate: false,
+      }
+      await deps.writeAudit({
+        actor: req.actor,
+        action: 'comms.suppressed',
+        entity: req.entity?.type ?? 'message',
+        entityId: req.entity?.id ?? null,
+        diff: {
+          channel: req.channel,
+          to: req.to,
+          blockedStep: 'suppression',
+          reason: boundaryGate.reason,
+          layer: decision.layer,
+          resolved: decision.resolved,
+          boundary: true,
+        },
+      })
+      return { sent: false, gate: boundaryGate, escalated: false }
+    }
+  }
+
+  // Passed the gate + boundary re-check → send. SMS carries the carrier-required opt-out footer.
   const body = req.channel === 'sms' ? `${req.body}\n\n${SMS_OPT_OUT_FOOTER}` : req.body
   // Email multipart: pass the stored plaintext part when present (SMS is single-part).
   const result = await deps.send(

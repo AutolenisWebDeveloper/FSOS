@@ -158,7 +158,18 @@ async function execute(args: RunAgentArgs): Promise<RunAgentResult> {
     async send(req) {
       // The dispatcher runs the 7-step gate and escalates on block; a blocked
       // message is never sent. We just record the run linkage in the note.
-      await dispatch({ ...req, actor, escalationNote: `agent:${args.agentKey} run:${runId}` })
+      // AI-agent sends ARE the "AI-initiated outreach" business suppression targets, so hand the
+      // dispatcher a suppression subject (derived from the recipient/entity when the caller did
+      // not supply one) — the final provider-boundary re-check then withholds any send to a
+      // client whose agent's book, or the client individually, is blocked. Fail-closed inside
+      // the resolver, so an undetermined state is never sent.
+      const suppressionSubject =
+        req.suppressionSubject ?? {
+          contactId: req.entity?.type === 'contact' ? req.entity.id : null,
+          phone: req.channel === 'sms' ? req.to : null,
+          email: req.channel === 'email' ? req.to : null,
+        }
+      await dispatch({ ...req, suppressionSubject, actor, escalationNote: `agent:${args.agentKey} run:${runId}` })
     },
     async escalate(reason, detail) {
       await db.from('agent_actions').insert({

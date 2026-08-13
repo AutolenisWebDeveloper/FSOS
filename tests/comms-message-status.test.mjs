@@ -80,7 +80,8 @@ console.log('message-status — gate outcome tiers')
 
 // The four non-escalating steps in gate.ts: held and retried, no compliance event.
 const DEFERRALS = ['sms_live', 'business_hours', 'frequency', 'collision']
-// Everything else escalates to a human.
+// Everything else surfaces as a BLOCKED tier. Most escalate to a human; `suppression` is a
+// non-escalating BUSINESS exclusion (agent-level/individual) that is still a hard withhold.
 const BLOCKS = [
   'message_content',
   'ownership',
@@ -88,6 +89,7 @@ const BLOCKS = [
   'quiet_hours',
   'delegation',
   'dnc',
+  'suppression',
   'approved_template',
   'personalization',
   'recommendation',

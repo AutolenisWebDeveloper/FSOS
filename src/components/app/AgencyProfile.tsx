@@ -10,6 +10,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { load } from '@/lib/data/query'
 import { LogActivityButton } from '@/components/app/LogActivityButton'
 import { GhlSyncButton } from '@/components/app/GhlSyncButton'
+import { AgencyCommunicationsControl } from '@/components/app/AgencyCommunicationsControl'
+import { getAgencySuppressionStatus, type AgencySuppressionStatus } from '@/lib/comms/suppression-admin'
+import { getServerSession } from '@/lib/auth/session'
 
 // Valid P0 tabs (spec p0-core OS-02): overview + referrals. Any other tab param
 // 404s within the shell (acceptance criterion).
@@ -53,6 +56,18 @@ export async function AgencyProfile({ id, tab }: { id: string; tab: AgencyTab })
   }
   const agency = res.data
   if (!agency) notFound()
+
+  // Agent-level communication suppression status + whether the viewer may manage it.
+  // Fetched fail-soft (defaults to active) so a suppression read hiccup never 500s the profile.
+  let suppression: AgencySuppressionStatus | null = null
+  try {
+    suppression = await getAgencySuppressionStatus(id)
+  } catch {
+    suppression = null
+  }
+  const session = await getServerSession()
+  const canManageComms = !!session?.roles?.some((r) => r === 'fsa' || r === 'super_admin')
+  const commsBlocked = suppression?.status === 'blocked'
 
   const breadcrumb = [
     { label: 'FSA', href: '/app' },
@@ -103,6 +118,7 @@ export async function AgencyProfile({ id, tab }: { id: string; tab: AgencyTab })
         <span className="flex items-center gap-2">
           <StatusBadge status={agency.status === 'producing' ? 'won' : agency.status === 'terminated' ? 'lost' : 'active'} label={agency.status} />
           {agency.archived_at ? <Badge variant="draft">archived</Badge> : null}
+          {commsBlocked ? <Badge variant="blocked">Comms blocked</Badge> : null}
         </span>
       }
       actions={
@@ -138,7 +154,7 @@ export async function AgencyProfile({ id, tab }: { id: string; tab: AgencyTab })
       </nav>
 
       {tab === 'overview' ? (
-        <OverviewTab id={id} agency={agency} />
+        <OverviewTab id={id} agency={agency} suppression={suppression} canManageComms={canManageComms} />
       ) : tab === 'referrals' ? (
         <ReferralsTab id={id} />
       ) : tab === 'penetration' ? (
@@ -156,7 +172,17 @@ export async function AgencyProfile({ id, tab }: { id: string; tab: AgencyTab })
   )
 }
 
-async function OverviewTab({ id, agency }: { id: string; agency: Agency }) {
+async function OverviewTab({
+  id,
+  agency,
+  suppression,
+  canManageComms,
+}: {
+  id: string
+  agency: Agency
+  suppression: AgencySuppressionStatus | null
+  canManageComms: boolean
+}) {
   const activation = await load<{ stage: string }[]>(
     (db) => db.from('agency_activation').select('stage').eq('agency_id', id).order('created_at', { ascending: false }).limit(1),
     [],
@@ -186,6 +212,21 @@ async function OverviewTab({ id, agency }: { id: string; agency: Agency }) {
 
   return (
     <div className="mt-4 space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Client communications</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <AgencyCommunicationsControl
+            agencyId={id}
+            initialStatus={suppression?.status ?? 'active'}
+            bookCount={suppression?.book_count ?? 0}
+            reason={suppression?.reason ?? null}
+            blockedAt={suppression?.blocked_at ?? null}
+            canManage={canManageComms}
+          />
+        </CardContent>
+      </Card>
       {hasContact ? (
         <Card>
           <CardHeader>

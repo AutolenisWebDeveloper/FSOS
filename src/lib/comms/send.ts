@@ -44,6 +44,7 @@ import { evaluateDataConfidence, type ClaimField } from './data-confidence'
 import { latestConsentGranted, smsTail } from './contact-consent'
 import { purposeToConsentPurpose } from './purpose'
 import { streamForPurpose } from './senders'
+import { isBusinessSuppressible, resolveEffectiveSuppression, type SuppressionSubject } from './suppression'
 
 export interface SendContext {
   channel: Channel
@@ -239,6 +240,16 @@ export interface SendContext {
    * apply exactly as for a live send; is_test grants NO exemption.
    */
   isTest?: boolean
+  /**
+   * Explicit BUSINESS-suppression opt-out for a KNOWN transactional/servicing send that
+   * carries no marketing purpose (e.g. appointment reminders, which are quiet-hours-gated for
+   * safety but must never be book-suppressed). Set FALSE to declare the send non-suppressible.
+   * Absent → suppressibility is derived from the purpose (businessSuppressionApplies) and the
+   * send's nature (human-authored / test sends are never business-suppressed). This is the
+   * narrow, explicit escape hatch for correctly-classified transactional automation — it never
+   * relaxes consent, DNC, quiet hours, or any regulatory control.
+   */
+  suppressible?: boolean
 }
 
 export interface SendOutcome {
@@ -912,11 +923,54 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
   const sendBody =
     ctx.channel === 'email' && messageId ? instrumentEmailHtml(emailReady, messageId) : emailReady
 
+  // ── BUSINESS suppression (agent-level book / individual client), §ordering: after DNC ──
+  // Applies to NON-transactional outreach only (marketing/campaign/nurture/AI outreach);
+  // transactional/servicing sends are never business-suppressed. Resolved FRESH here at send
+  // time from the policy layers (suppression.ts) so a client newly assigned to a blocked agent
+  // inherits the restriction and a reassigned client recalculates — no per-client copies. The
+  // decision fails CLOSED (suppressed) on a lookup error. The same subject is handed to the
+  // dispatcher for the final provider-boundary re-check just before transmission.
+  // Business suppression applies to NON-transactional AUTOMATED/AI outreach. It never applies to:
+  //   • a human-authored 1:1 send (a deliberate operator action, not automated outreach),
+  //   • a test send (a verified-self pipeline proof, not client outreach),
+  //   • a caller that explicitly declares itself transactional (suppressible === false, e.g.
+  //     appointment reminders), or
+  //   • a transactional/servicing purpose (businessSuppressionApplies === false).
+  // Unknown/absent purpose on an automated send still fails CLOSED (suppressible) so marketing
+  // can never slip through unclassified.
+  const suppressionEligible = isBusinessSuppressible({
+    purpose: ctx.purpose,
+    humanAuthored: ctx.humanAuthored,
+    isTest: ctx.isTest,
+    suppressible: ctx.suppressible,
+  })
+  let suppressionSubject: SuppressionSubject | undefined
+  let businessSuppressed: boolean | undefined
+  let suppressionResolved: boolean | undefined
+  let suppressionReason: string | undefined
+  if (suppressionEligible) {
+    suppressionSubject = {
+      memberId: convMemberId,
+      householdId: convHouseholdId,
+      agencyId: convAgencyId,
+      contactId: ctx.entity?.type === 'contact' ? ctx.entity.id : null,
+      phone: ctx.channel === 'sms' ? to : null,
+      email: ctx.channel === 'email' ? to : null,
+    }
+    const decision = await resolveEffectiveSuppression(suppressionSubject)
+    businessSuppressed = decision.suppressed
+    suppressionResolved = decision.resolved
+    suppressionReason = decision.reason
+  }
+
   const req: DispatchRequest = {
     channel: ctx.channel,
     to,
     subject: resolvedSubject,
     body: sendBody,
+    // Final provider-boundary re-check subject (non-transactional sends only). Absent for
+    // transactional/servicing sends so they are never business-suppressed.
+    suppressionSubject,
     // Plaintext part is NOT instrumented (open/click tracking is HTML-only).
     bodyText: ctx.channel === 'email' ? identityText : undefined,
     // Reputation stream for the envelope From (email): marketing/workshop → mail.,
@@ -938,6 +992,12 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
       delegationValid,
       delegationReason,
       onDNC: dnc,
+      // 3b — BUSINESS suppression (agent-level book / individual client). Separate from DNC:
+      // it never overrides a regulatory opt-out and applies to non-transactional sends only.
+      // Undefined for transactional/servicing sends (suppressionEligible === false).
+      businessSuppressed,
+      suppressionResolved,
+      suppressionReason,
       usesApprovedTemplateOrPolicy: approved,
       // 4b — fail-closed personalization: a required merge token that did not resolve blocks +
       // escalates (never ship an empty appointment time / opt-out link / advisor identity).

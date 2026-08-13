@@ -47,17 +47,32 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
   }
 }
 
-export async function DELETE(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+// Remove a household. Default is a SOFT delete (sets deleted_at — recoverable in DB).
+// `?mode=purge` PERMANENTLY hard-deletes the aggregate: the cascade removes members,
+// policies, reviews, FNA plans, notes, consents, and campaign enrollments, while
+// appointments / cases / opportunities / referrals detach (ON DELETE SET NULL). Both
+// paths are narrowed to fsa + super_admin.
+export async function DELETE(req: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   const auth = await requireApiRole('fsa')
   if (!auth.ok) return auth.response
   const denied = requirePermission(auth.session, ['fsa', 'super_admin'])
   if (denied) return denied
+  const purge = req.nextUrl.searchParams.get('mode') === 'purge'
   try {
-    const { data, error } = await getDb().from('households').update({ deleted_at: new Date().toISOString() }).eq('id', params.id).is('deleted_at', null).select('id').maybeSingle()
+    const db = getDb()
+    if (purge) {
+      const { data: existing } = await db.from('households').select('id').eq('id', params.id).is('deleted_at', null).maybeSingle()
+      if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      const { error } = await db.from('households').delete().eq('id', params.id)
+      if (error) return dbErrorResponse('households/[id]', error)
+      await writeAudit({ actor: actorOf(auth.session), action: 'entity.deleted', entity: 'household', entityId: params.id, diff: { mode: 'purge' } })
+      return NextResponse.json({ ok: true, purged: true })
+    }
+    const { data, error } = await db.from('households').update({ deleted_at: new Date().toISOString() }).eq('id', params.id).is('deleted_at', null).select('id').maybeSingle()
     if (error) return dbErrorResponse('households/[id]', error)
     if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-    await writeAudit({ actor: actorOf(auth.session), action: 'entity.deleted', entity: 'household', entityId: params.id })
+    await writeAudit({ actor: actorOf(auth.session), action: 'entity.deleted', entity: 'household', entityId: params.id, diff: { mode: 'soft' } })
     return NextResponse.json({ ok: true })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed' }, { status: 500 })

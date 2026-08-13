@@ -287,15 +287,15 @@ const FSA: Workspace[] = [
     section: 'Book',
     icon: 'Contact',
     home: '/app/households',
-    // Canonical CRM Contacts surface (redesign §1). Owns both the household
-    // aggregate and the legacy /app/contacts sub-surfaces (segments, review,
-    // detail) so their sidebar resolves to this one unified workspace; the bare
-    // /app/contacts list redirects here.
+    // Canonical CRM Contacts surface (redesign §1). The book (households) is the
+    // single source of truth; the flat /app/contacts store is now import-staging
+    // that always materializes into the book, and its bare list redirects here. The
+    // remaining /app/contacts sub-surfaces (segments, import review, detail) stay and
+    // resolve to this one unified workspace.
     match: ['/app/households', '/app/contacts'],
     description: 'Contacts across the book — households, members, segments, and leads.',
     nav: [
       { href: '/app/households', label: 'All Contacts', icon: 'Contact', exact: true },
-      { href: '/app/contacts', label: 'Contact Center', icon: 'Contact' },
       { href: '/app/contacts/segments', label: 'Segments', icon: 'Users' },
       { href: '/app/uploads', label: 'Upload Center', icon: 'Upload' },
       { href: '/app/contacts/review', label: 'Import Review', icon: 'ClipboardCheck' },

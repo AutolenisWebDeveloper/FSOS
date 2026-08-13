@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button'
 import { loadAll } from '@/lib/data/query'
 import { HouseholdList, type HouseholdRow } from '@/components/app/HouseholdList'
 import { PageStatStrip, type PageStat } from '@/components/app/PageStatStrip'
-import { contactViewKeys, CONTACT_VIEW_KEYS, CONTACT_VIEW_WINDOWS, type ContactViewKey } from '@/lib/contacts/views'
+import { contactViewKeys, CONTACT_VIEW_KEYS, CONTACT_VIEW_WINDOWS, isContactView, type ContactViewKey } from '@/lib/contacts/views'
+import { getServerSession } from '@/lib/auth/session'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,7 +15,9 @@ const LAPSED_POLICY = new Set(['lapsed', 'cancelled', 'non_renewed'])
 
 // OS-04 Household Directory (A2). Full book — loadAll pages past PostgREST's row
 // cap so every household (and correct per-household counts) is loaded.
-export default async function HouseholdsPage() {
+export default async function HouseholdsPage({ searchParams }: { searchParams?: Promise<{ view?: string }> }) {
+  const sp = (await searchParams) ?? {}
+  const initialView: ContactViewKey = sp.view && isContactView(sp.view) ? sp.view : 'all'
   const now = Date.now()
   const contactCutoff = new Date(now - CONTACT_VIEW_WINDOWS.needsContactDays * 86400000).toISOString()
   const [households, members, policies, opps, agencies, reviews, recentActivity] = await Promise.all([
@@ -91,6 +94,7 @@ export default async function HouseholdsPage() {
       return {
         id: h.id,
         primary_name: h.primary_name,
+        referring_agency_id: h.referring_agency_id,
         agency_name: h.referring_agency_id ? agencyMap.get(h.referring_agency_id) ?? null : null,
         members: count(memberRows, h.id),
         policies: ps.length,
@@ -100,6 +104,22 @@ export default async function HouseholdsPage() {
         views,
       }
     })
+
+    // Agencies present in the book — the "referring agency" filter/delete dimension.
+    const agencyOptions = Array.from(
+      new Map(
+        rows
+          .filter((r) => r.referring_agency_id)
+          .map((r) => [r.referring_agency_id as string, r.agency_name ?? (r.referring_agency_id as string)] as const),
+      ).entries(),
+    )
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+
+    // Archive/permanent-delete is a destructive mutation, narrowed to fsa + super_admin
+    // (server-enforced too). Staff see the book without the management controls.
+    const session = await getServerSession()
+    const canManage = !!session?.roles?.some((role) => role === 'fsa' || role === 'super_admin')
 
     // Book-level summary — computed from the data already loaded (no new query).
     const dncCount = households.data.filter((h) => h.do_not_contact).length
@@ -113,7 +133,7 @@ export default async function HouseholdsPage() {
     body = (
       <div className="space-y-6">
         <PageStatStrip stats={stats} />
-        <HouseholdList rows={rows} viewCounts={viewCounts} />
+        <HouseholdList rows={rows} viewCounts={viewCounts} agencyOptions={agencyOptions} canManage={canManage} initialView={initialView} />
       </div>
     )
   }

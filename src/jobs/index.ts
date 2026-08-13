@@ -62,6 +62,10 @@ export const JOBS: Record<string, JobHandler> = {
   'cross-sell-life-enroll': async () => (await h()).crossSellLifeEnroll(),
   'cross-sell-life-tick': async () => (await h()).crossSellLifeTick(),
   'cross-sell-life-retry': async () => (await h()).crossSellLifeRetry(),
+  // District Agent FS Nurture ("The Second Conversation", ADR-038) — agent-facing 40-touch/365-day
+  // curriculum scheduler + retry/dead-letter sweep. Every send routes through the gate; idempotent per touch.
+  'district-nurture-tick': async () => (await h()).districtNurtureTick(),
+  'district-nurture-retry': async () => (await h()).districtNurtureRetry(),
   'backup-verify': async () => (await h()).backupVerify(),
 }
 

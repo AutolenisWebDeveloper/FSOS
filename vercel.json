@@ -12,6 +12,8 @@
     { "path": "/api/cron/cross-sell-life-enroll", "schedule": "0 13 * * *" },
     { "path": "/api/cron/cross-sell-life-tick", "schedule": "0 16 * * *" },
     { "path": "/api/cron/cross-sell-life-retry", "schedule": "30 * * * *" },
+    { "path": "/api/cron/district-nurture-tick", "schedule": "0 14 * * *" },
+    { "path": "/api/cron/district-nurture-retry", "schedule": "30 * * * *" },
     { "path": "/api/cron/data-quality", "schedule": "0 7 * * *" },
     { "path": "/api/cron/social-publish", "schedule": "*/5 * * * *" },
     { "path": "/api/cron/booking-reminders", "schedule": "*/15 * * * *" }

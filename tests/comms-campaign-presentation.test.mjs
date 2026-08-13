@@ -41,6 +41,8 @@ const CONSUMERS = [
   'src/app/(fsa)/app/comms/cross-sell-life/[id]/page.tsx',
   'src/app/(fsa)/app/comms/pipeline-winback/page.tsx',
   'src/app/(fsa)/app/comms/pipeline-winback/[id]/page.tsx',
+  'src/app/(fsa)/app/comms/district-nurture/page.tsx',
+  'src/app/(fsa)/app/comms/district-nurture/[id]/page.tsx',
 ]
 
 // ─── 1. The pure vocabulary ───────────────────────────────────────────────────
@@ -152,9 +154,9 @@ t('only an approved template reads as dispatchable', () => {
 
 console.log('\ncampaign-presentation — engine registry')
 
-t('the registry covers exactly the three native engines', () => {
-  assert.deepEqual(Object.keys(P.CAMPAIGN_ENGINES).sort(), ['cross_sell_life', 'life_conversion', 'pipeline_winback'])
-  assert.equal(P.CAMPAIGN_ENGINE_LIST.length, 3)
+t('the registry covers exactly the four native engines', () => {
+  assert.deepEqual(Object.keys(P.CAMPAIGN_ENGINES).sort(), ['cross_sell_life', 'district_nurture', 'life_conversion', 'pipeline_winback'])
+  assert.equal(P.CAMPAIGN_ENGINE_LIST.length, 4)
 })
 
 t('every engine key matches its own record key', () => {
@@ -180,6 +182,7 @@ t('registry touch counts and day spans match each engine schedule.ts', () => {
     life_conversion: 'src/lib/life-campaign/schedule.ts',
     cross_sell_life: 'src/lib/cross-sell-life/schedule.ts',
     pipeline_winback: 'src/lib/pipeline-winback/schedule.ts',
+    district_nurture: 'src/lib/district-nurture/schedule.ts',
   }
   for (const engine of P.CAMPAIGN_ENGINE_LIST) {
     const src = readFileSync(SCHEDULES[engine.key], 'utf8')

@@ -147,6 +147,7 @@ const FSA: Workspace[] = [
       { href: '/app/comms/life-conversion', label: 'Life Conversion', icon: 'CalendarClock' },
       { href: '/app/comms/cross-sell-life', label: 'Cross-Sell Life', icon: 'Shuffle' },
       { href: '/app/comms/pipeline-winback', label: 'Win-Back', icon: 'Repeat' },
+      { href: '/app/comms/district-nurture', label: 'Second Conversation', icon: 'GraduationCap' },
       { href: '/app/comms/sequences', label: 'Sequences', icon: 'Workflow' },
       { href: '/app/comms/templates', label: 'Templates', icon: 'ClipboardList' },
       { href: '/app/comms/library', label: 'Library', icon: 'BookOpen' },

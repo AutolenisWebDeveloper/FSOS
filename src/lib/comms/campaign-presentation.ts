@@ -161,7 +161,7 @@ export function winbackCategory(key: string | null | undefined): string {
 
 // ─── Shared campaign identity ─────────────────────────────────────────────────
 
-export type CampaignEngineKey = 'life_conversion' | 'cross_sell_life' | 'pipeline_winback'
+export type CampaignEngineKey = 'life_conversion' | 'cross_sell_life' | 'pipeline_winback' | 'district_nurture'
 
 export interface CampaignEngine {
   key: CampaignEngineKey
@@ -229,6 +229,18 @@ export const CAMPAIGN_ENGINES: Record<CampaignEngineKey, CampaignEngine> = {
       '120-day, 24-touch re-engagement for stalled internal pipeline opportunities. Every send passes the compliance gate. Distinct from the imported win-back list at /app/winback (ADR-031).',
     versioned: false,
   },
+  district_nurture: {
+    key: 'district_nurture',
+    title: 'The Second Conversation',
+    href: '/app/comms/district-nurture',
+    apiRoot: '/api/district-nurture',
+    seedMigration: '113',
+    touches: 40,
+    days: 365,
+    description:
+      'Agent-facing 12-month Financial Services nurture for Farmers district agents — 24 emails, 12 SMS, and 4 quarterly live touchpoints teaching them to spot financial signals and refer to the licensed FSA. Every send passes the compliance gate (ADR-038).',
+    versioned: false,
+  },
 }
 
 /** Stable iteration order for cross-links and any "all engines" surface. */
@@ -236,6 +248,7 @@ export const CAMPAIGN_ENGINE_LIST: CampaignEngine[] = [
   CAMPAIGN_ENGINES.life_conversion,
   CAMPAIGN_ENGINES.cross_sell_life,
   CAMPAIGN_ENGINES.pipeline_winback,
+  CAMPAIGN_ENGINES.district_nurture,
 ]
 
 /** Breadcrumb trail for any campaign surface. One definition replaces three `crumb()` copies. */

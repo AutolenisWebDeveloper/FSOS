@@ -129,3 +129,37 @@ single migration path.
 | Template v3 reset at 20:20 UTC 08-07; xsell drafts, life approved | `comm_templates` `updated_at` / `approval_status` |
 | 46/46 recipients SMS-consented | `consents` join on sent enrollments |
 | Migration tracking ends 2026-07-17 | `supabase_migrations.schema_migrations` |
+
+---
+
+## Remediation (2026-08-13)
+
+Owner-directed follow-up. Before remediation landed, one further Life Conversion tick fired
+on 2026-08-10 (21 more sends via the same blank-SMS path), bringing the Finding 2 total to
+**88** affected sends.
+
+1. **All three campaigns paused** (production, 2026-08-13 02:28 UTC): `life_campaigns`,
+   `xsell_life_campaigns`, `pipeline_winback_campaigns` → `status = 'paused'`, with
+   `campaign.paused` audit-log entries recording the reason. Nothing sends until the FSA
+   re-activates after verifying the deployed build includes the fixes below.
+2. **Finding 1 fixed — message-of-record.** Migration `109_comm_campaign_engine_registry.sql`
+   (applied to production and tracked) mirrors every engine campaign into `comm_campaigns`
+   as an inert, archived registry row — same UUID, `category='engine_registry'` — with DB
+   triggers keeping the registry in sync for future campaign rows, so the
+   `comm_messages.campaign_id` FK now holds. `sendThroughGate` no longer swallows a failed
+   pre-insert: a send whose message-of-record cannot be written is **blocked**, audited
+   (`comms.blocked`, step `message_record`), and escalated (`src/lib/comms/send.ts`).
+   Decision recorded in ADR-013 (amendment).
+3. **Finding 2 fixed — blank-SMS fallback.** All three ticks now fail closed on an
+   unloadable/channel-less/empty-bodied template via the shared `usableTemplate()`
+   predicate (`src/lib/comms/usable-template.ts`) — the execution is left `'scheduled'`
+   with reason `template_load_failed` (A2P-hold semantics: retried next run, never
+   consumed, never defaulted to SMS with a blank body).
+4. **Guardrail test:** `tests/campaign-send-fail-closed.test.mjs` proves the predicate and
+   statically asserts the fail-closed wiring in all three ticks and `send.ts` (§13.13 —
+   may not be weakened).
+
+**Still open:** deploy this branch to production before re-activating any campaign (the
+2026-08-10 sends prove the deployed build predates the repo-head select fix); Finding 3
+(re-approve xsell v3 templates); Finding 4 (reconcile migrations 021–108 into tracking);
+FSA decision on re-firing the consumed touch #1 / acknowledging the 88 broken texts.

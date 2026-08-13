@@ -16,6 +16,7 @@
 // at send time, not just at enrollment time (WF-9 invariant).
 
 import { getDb } from '@/lib/supabase/client'
+import { writeAudit } from '@/lib/audit/log'
 import { dispatch, type DispatchRequest } from './dispatcher'
 import type { GateResult } from './gate'
 import { getOrCreateConversation, touchConversation, normalizeContact, type Channel } from './conversations'
@@ -757,10 +758,15 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
 
   // Pre-insert the message row (queued) so email tracking can reference its id and
   // so a blocked send is still visible in the timeline. The final status/provider
-  // id are patched after dispatch.
+  // id are patched after dispatch. This row IS the message-of-record (§13.9): the
+  // body snapshot, consent-at-send, and delivery status live here — so a failed
+  // write FAILS THE SEND (audited + escalated below), never a silent skip. A
+  // silently-swallowed FK failure here once cost every campaign send its record
+  // (docs/audit/outbound-campaigns-2026-08-07.md).
   let messageId: string | undefined
+  let messageRecordError: string | undefined
   try {
-    const { data } = await db
+    const { data, error } = await db
       .from('comm_messages')
       .insert({
         channel: ctx.channel,
@@ -813,9 +819,48 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
       })
       .select('id')
       .maybeSingle()
+    if (error) messageRecordError = error.message
     messageId = data?.id
-  } catch {
-    /* best-effort; dispatcher still writes the durable audit + escalation */
+  } catch (err) {
+    messageRecordError = err instanceof Error ? err.message : String(err)
+  }
+  if (!messageId) {
+    const reason = `Message record could not be written (${messageRecordError ?? 'insert returned no id'}); send blocked — no dispatch without a message-of-record (§13.9).`
+    await writeAudit({
+      actor: ctx.actor,
+      action: 'comms.blocked',
+      entity: ctx.entity?.type ?? 'message',
+      entityId: ctx.entity?.id ?? conversationId ?? null,
+      diff: {
+        channel: ctx.channel,
+        to,
+        blockedStep: 'message_record',
+        reason: messageRecordError ?? 'insert returned no id',
+        campaignId: ctx.campaignId ?? null,
+        templateId: ctx.templateId ?? null,
+      },
+    })
+    try {
+      await db.from('agent_actions').insert({
+        kind: 'escalation',
+        actor: ctx.actor,
+        outcome: 'escalated',
+        target_type: ctx.entity?.type ?? 'conversation',
+        target_id: ctx.entity?.id ?? convHouseholdId ?? conversationId,
+        reason: 'message_record_write_failed',
+        blocked_step: 'message_record',
+        note: reason,
+      })
+    } catch {
+      /* best-effort escalation; the audit row above is the durable record */
+    }
+    return {
+      sent: false,
+      blocked: true,
+      gate: { allowed: false, escalate: true, reason },
+      conversationId: conversationId ?? undefined,
+      reason,
+    }
   }
 
   // Premium branding at the single send choke-point (DESIGN.md §31): wrap the personalized

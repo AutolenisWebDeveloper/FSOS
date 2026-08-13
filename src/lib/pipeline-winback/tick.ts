@@ -13,6 +13,7 @@
 import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
 import { sendThroughGate, isTemplateApproved } from '@/lib/comms/send'
+import { usableTemplate } from '@/lib/comms/usable-template'
 import { campaignDispatchContext, campaignIdentityContext } from '@/lib/comms/campaign'
 import { smsA2pApproved } from '@/lib/comms/a2p'
 import { getOrCreateConversation } from '@/lib/comms/conversations'
@@ -212,11 +213,19 @@ async function fireMessageTouch(
   // "Subject:" line (template-subject.ts). Selecting a non-existent column errors (42703),
   // which blanked the body and mis-routed every email touch into the SMS branch.
   const { data: tpl } = await db.from('comm_templates').select('body, channel, introduces_sender').eq('id', touch.template_id).maybeSingle()
+  // Fail closed on an unloadable/empty template: NEVER fall through to the SMS default with
+  // a blank body (a schema-drifted select once nulled this fetch and 88 clients received
+  // near-empty texts; docs/audit/outbound-campaigns-2026-08-07.md). Left 'scheduled' — like
+  // the A2P hold — so the touch retries next run instead of being consumed.
+  if (!usableTemplate(tpl)) {
+    await markExecution(db, e.id, touchNo, 'scheduled', { reason: 'template_load_failed' })
+    return false
+  }
 
   // Recipient: the household member if present, else the originating contact (win-back leads
   // may have a contact but no materialized member yet).
   const recipient = await resolveRecipient(db, e)
-  const channel = (tpl?.channel === 'email' ? 'email' : 'sms') as 'email' | 'sms'
+  const channel = (tpl.channel === 'email' ? 'email' : 'sms') as 'email' | 'sms'
   const to = channel === 'email' ? recipient.email : recipient.phone
 
   // SMS A2P hold: leave the execution 'scheduled' and do NOT advance past it — retried next run.
@@ -246,8 +255,8 @@ async function fireMessageTouch(
   const outcome = await sendThroughGate({
     channel,
     to,
-    subject: parseSubjectFromBody(tpl?.body),
-    body: tpl?.body ?? '',
+    subject: parseSubjectFromBody(tpl.body),
+    body: tpl.body,
     actor: SYSTEM,
     memberId: e.member_id,
     householdId: e.household_id,
@@ -261,7 +270,7 @@ async function fireMessageTouch(
     purpose: dispatchCtx.purpose,
     // ADR-016: the first-touch assets introduce the FSA in their own approved copy, so the
     // platform records the introduction without prepending a second one (migration 105).
-    identity: campaignIdentityContext(dispatchCtx.purpose, tpl?.introduces_sender === true),
+    identity: campaignIdentityContext(dispatchCtx.purpose, tpl.introduces_sender === true),
     delegation: dispatchCtx.delegation,
     ownership: dispatchCtx.ownership ?? { representedAgencyId: e.agency_id },
     aiGenerated: isAi,

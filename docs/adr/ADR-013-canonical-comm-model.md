@@ -64,6 +64,27 @@ The legacy `006` engine (`campaigns`, `campaign_enrollments`) and its `/api/camp
 - A forward migration of any live `006` enrollments is required before the tables can be retired (its own slice, reconciliation report + rollback).
 - Until that migration lands, `/api/campaigns/*` and the `006` tables remain present (frozen) as a deprecation surface — reviewers must guard against new callers.
 
+## Amendment (2026-08-13) — engine-campaign registry rows
+
+The multi-channel campaign engines (Life Conversion ADR-029, Pipeline Win-Back ADR-031,
+Cross-Sell Life ADR-032) keep their campaign configuration in their own tables, but their
+sends flow through the one send path and must land in `comm_messages` — whose
+`campaign_id` FK references `comm_campaigns(id)`. Originally nothing bridged the two, so
+every engine send failed the `comm_messages` insert on the FK and (because the insert was
+best-effort) shipped with **no message-of-record** (audit:
+`docs/audit/outbound-campaigns-2026-08-07.md`).
+
+**Decision:** every engine campaign is mirrored into `comm_campaigns` as an inert
+*registry row* (same UUID, `category = 'engine_registry'`, `status = 'paused'`,
+`archived_at` set so console lists — which filter `archived_at is null` — never show it,
+and no processor — which acts on `status = 'active'` — ever runs it). DB triggers on the
+three engine tables keep the registry in sync (migration
+`109_comm_campaign_engine_registry.sql`), so future engine campaigns (version resets mint
+new UUIDs) can never silently break the FK again. The `comm_messages` pre-insert is now
+**fail-closed**: a send whose message-of-record cannot be written is blocked, audited
+(`comms.blocked`, step `message_record`), and escalated — never dispatched
+(`src/lib/comms/send.ts`; guardrail test `tests/campaign-send-fail-closed.test.mjs`).
+
 ## Related Documents
 
 - CLAUDE.md §1, §6, §10; master build instruction §0, §2.A, §5, §15

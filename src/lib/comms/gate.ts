@@ -9,6 +9,7 @@
 import { containsRecommendationLanguage, withinQuietHours } from '../compliance/guardrail'
 
 export type GateStep =
+  | 'message_content' // 0− — usable body + supported channel + no channel/content-type mismatch (F-2)
   | 'ownership' // 0 — authoritative ownership must resolve; unresolved → assignment review
   | 'consent' // 1
   | 'quiet_hours' // 2 — legal TCPA floor (9–20 recipient-local) on SMS marketing/campaign sends
@@ -130,6 +131,7 @@ export interface GateResult {
 }
 
 const BLOCK: Record<GateStep, string> = {
+  message_content: 'Message has no usable body, an unsupported channel, or a channel/content-type mismatch — not sent.',
   ownership: 'Ownership could not be resolved — routed to assignment review; not sent.',
   frequency: 'Recipient frequency cap reached — held for a later cycle.',
   collision: 'A higher-priority campaign or active conversation is underway — send paused.',
@@ -161,6 +163,26 @@ function blocked(step: GateStep, escalate = true, reason?: string): GateResult {
  * business hours is a soft deferral. Every block escalates EXCEPT business_hours.
  */
 export function evaluateGate(input: GateInput): GateResult {
+  // 0− CONTENT INTEGRITY (audit finding F-2) — the architectural backstop that makes an
+  // invalid message impossible to dispatch, regardless of which caller produced it. Checked
+  // FIRST so no downstream step can mask it and no code path can ship:
+  //   • an unsupported channel (only 'sms'/'email' reach a provider),
+  //   • an empty or whitespace-only body (the 67 blank email-as-SMS incident: an email
+  //     template resolved to SMS with body ''), or
+  //   • email/HTML content routed to the SMS channel (a template-channel mismatch).
+  // Escalating hard block — never a silent drop. NOTE: for SMS the dispatcher appends the
+  // opt-out footer AFTER the gate, so this validates the ACTUAL authored body (the footer can
+  // never turn an empty message into a "non-empty" one that slips past a downstream check).
+  if (input.channel !== 'sms' && input.channel !== 'email') {
+    return blocked('message_content', true, `Unsupported channel "${String((input as { channel?: unknown }).channel)}".`)
+  }
+  const body = typeof input.draft === 'string' ? input.draft : ''
+  if (body.trim() === '') {
+    return blocked('message_content', true, `Empty ${input.channel} body — nothing to send.`)
+  }
+  if (input.channel === 'sms' && /<!doctype html|<html[\s>]|<\/html>|<body[\s>]|<table[\s>]/i.test(body)) {
+    return blocked('message_content', true, 'HTML/email content resolved onto the SMS channel — template/channel mismatch.')
+  }
   // 0 — ownership is a PRECONDITION: an unresolved/ambiguous owner means we cannot
   // trust any downstream signal (consent, delegation) for this contact. Route to the
   // assignment-review queue instead of sending.

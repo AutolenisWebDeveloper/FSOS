@@ -47,6 +47,9 @@ export async function sendEmail(
   if (!apiKey) return { ok: false, error: 'RESEND_API_KEY not set' }
   if (!from || /yourdomain\.com/i.test(from)) return { ok: false, error: 'RESEND_FROM_EMAIL not a verified sender' }
   if (!to) return { ok: false, error: 'No recipient email' }
+  // F-2 provider-boundary backstop: never hand Resend an empty body. The gate is the primary
+  // enforcement (gate.ts step message_content); this is defense-in-depth for any direct caller.
+  if (!html || html.trim() === '') return { ok: false, error: 'empty_email_body' }
   const replyTo = opts?.replyTo || process.env.RESEND_REPLY_TO || undefined
   try {
     const resend = new Resend(apiKey)
@@ -90,6 +93,15 @@ export async function sendSms(to: string, body: string): Promise<SendResult> {
   const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID
   if (!sid || !token || (!from && !messagingServiceSid)) return { ok: false, error: 'Twilio env not set' }
   if (!to) return { ok: false, error: 'No recipient phone' }
+  // F-2 provider-boundary backstop: an SMS must carry a real body. The gate (gate.ts step
+  // message_content) is the primary enforcement on the authored body BEFORE the opt-out footer
+  // is appended; this is defense-in-depth so no code path — even one that skips the gate — can
+  // place a blank/whitespace SMS or push email/HTML content onto Twilio. This is the last line
+  // before api.twilio.com and it fails closed.
+  if (!body || body.trim() === '') return { ok: false, error: 'empty_sms_body' }
+  if (/<!doctype html|<html[\s>]|<\/html>|<body[\s>]|<table[\s>]/i.test(body)) {
+    return { ok: false, error: 'html_body_in_sms' }
+  }
   try {
     const params: Record<string, string> = { To: to, Body: body }
     if (messagingServiceSid) params.MessagingServiceSid = messagingServiceSid

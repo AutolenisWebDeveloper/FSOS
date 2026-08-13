@@ -74,16 +74,27 @@ every engine send failed the `comm_messages` insert on the FK and (because the i
 best-effort) shipped with **no message-of-record** (audit:
 `docs/audit/outbound-campaigns-2026-08-07.md`).
 
-**Decision:** every engine campaign is mirrored into `comm_campaigns` as an inert
-*registry row* (same UUID, `category = 'engine_registry'`, `status = 'paused'`,
-`archived_at` set so console lists — which filter `archived_at is null` — never show it,
-and no processor — which acts on `status = 'active'` — ever runs it). DB triggers on the
-three engine tables keep the registry in sync (migration
-`109_comm_campaign_engine_registry.sql`), so future engine campaigns (version resets mint
-new UUIDs) can never silently break the FK again. The `comm_messages` pre-insert is now
-**fail-closed**: a send whose message-of-record cannot be written is blocked, audited
-(`comms.blocked`, step `message_record`), and escalated — never dispatched
-(`src/lib/comms/send.ts`; guardrail test `tests/campaign-send-fail-closed.test.mjs`).
+**Decision (two independent remediations, reconciled 2026-08-13):**
+
+1. **Attribution:** engine sends pass `campaignId: null` and attribute the campaign via
+   send provenance instead — `source_kind = 'campaign_asset'` +
+   `source_campaign_key = <family>` (`life_conversion` / `cross_sell_life` /
+   `pipeline_winback`) plus the enrollment entity linkage. `comm_messages.campaign_id`
+   remains strictly a World-1 broadcast reference; an engine (World-2) id is never fed
+   into the FK. Pinned by the guardrail test `tests/campaign-message-of-record.test.mjs`.
+2. **Fail-closed message-of-record:** the `comm_messages` pre-insert error is captured and
+   logged, and a send whose message-of-record cannot be written is **withheld** — audited
+   (`comms.blocked`, step `message_of_record`) and escalated to the human-FSA queue —
+   never dispatched (`src/lib/comms/send.ts`; behavioral proof
+   `tests/comms-message-of-record-failclosed.test.mjs`, wiring invariants
+   `tests/campaign-send-fail-closed.test.mjs`).
+3. **Defense-in-depth registry:** every engine campaign is additionally mirrored into
+   `comm_campaigns` as an inert registry row (same UUID,
+   `category = 'engine_registry'`, `status = 'paused'`, `archived_at` set so console
+   lists — which filter `archived_at is null` — never show it), trigger-synced from the
+   three engine tables (migration `109_comm_campaign_engine_registry.sql`). With (1) in
+   place the runtime never relies on it; it exists so any stray or legacy caller that
+   does pass an engine UUID cannot lose its record to the FK again.
 
 ## Related Documents
 

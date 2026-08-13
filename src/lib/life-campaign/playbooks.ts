@@ -3,28 +3,39 @@
 // versioned data. Each playbook is an internal script the AI conversation engine grounds on;
 // every substantive/individualized question routes to advisor escalation (conversation.ts /
 // §4.2 red-line). The AI-conversation touch (§5) sends the playbook `opening` as a
-// comm_template (category life_conversion_ai, migration 101); the branch/escalation metadata
+// comm_template (category life_conversion_ai, migration 110); the branch/escalation metadata
 // drives classification and handoff and is surfaced in the campaign detail view.
 //
 // This module fills a gap rather than adding a pattern: pipeline-winback and cross-sell-life
-// already carry exactly this artifact, and Life Conversion previously had AI openers seeded as
-// templates with no governing playbook and two advisor touches with no script at all. The field
-// shape is shared with both sibling modules so all three campaigns present ONE playbook model
-// (CLAUDE.md §6).
+// already carry exactly this artifact. The field shape is shared with both sibling modules so
+// all three campaigns present ONE playbook model (CLAUDE.md §6).
 //
-// ── AUDIENCE + THE CENTRAL CONSTRAINT ─────────────────────────────────────────
-// These recipients own an in-force life policy. The tempting hook — "your policy has a
-// conversion option and the window is closing" — is exactly what §4.3 and ADR-020 forbid:
-// term-conversion windows, product availability, and carrier rules are not publicly documented,
-// and FSOS holds no verified per-policy conversion data for these contacts. Accordingly NO
-// playbook may assert that the recipient's policy has a conversion option, state or imply a
-// deadline, name a product to convert into, or suggest replacing, exchanging, or modifying
-// existing coverage. Time-limited features may be described ONLY as a general category worth
-// checking, with the review itself as the thing that establishes the facts.
+// ── AUDIENCE + THE VERIFIED-FACTS CONTRACT (messaging v4, owner-directed 2026-08-07) ─────────
+// These recipients own an in-force Farmers TERM policy that carries a conversion privilege with
+// a VERIFIED deadline: the enrollment population comes exclusively from v_conversions_due (the
+// imported FNWL conversion list — verified conversion_deadline, policy_number, and convertible
+// amount as face_amount). The campaign is ABOUT that privilege: eligible term coverage may be
+// converted to permanent life insurance before the recipient's own verified deadline.
 //
-// The replacement red line is the sharpest one here: this audience already owns coverage, so any
-// discussion of changing it is a regulated suitability/replacement matter that escalates to the
-// licensed FSA immediately and is never handled by the AI.
+// The copy may therefore state the VERIFIED facts — and only those. Every fact resolves
+// per-recipient through BLOCKING-tier merge tokens ({{conversion_expiration_date}},
+// {{days_until_conversion_expires}}, …) that fail closed at gate step `personalization`
+// (§4.3 / ADR-020): a recipient whose record lacks a referenced fact is blocked + escalated,
+// never sent a guess. IMPORTANT DISPATCH-PATH SPLIT: fact tokens are allowed ONLY in `opening`
+// (dispatched by the campaign tick, which supplies enrollment.policy_id to the gate);
+// followUp/handoff/closing are dispatched later by the AI responder with NO policy context, so
+// they must stay fact-token-free or every such send would hard-block. Enforced by
+// tests/lifecycle-campaign-messaging.test.mjs.
+//
+// The "no new medical exam" claim has its own verified gate ({{conversion_exam_clause}} +
+// household_policies.conversion_no_exam, migration 109) and is made in EMAIL copy only — the
+// AI never asserts underwriting/exam facts in its own words.
+//
+// The red line is unchanged (§4.2): the AI never recommends converting, never names a product
+// to convert into, never quotes a premium, never assesses suitability, and never discusses
+// replacing coverage. It states verified facts, explains the privilege in GENERAL terms,
+// books the complimentary conversion review, and escalates everything individualized to the
+// licensed FSA.
 
 export interface Playbook {
   key: string
@@ -54,7 +65,8 @@ export interface Playbook {
 
 // Every escalation list includes the four that are non-negotiable for an existing policyholder:
 // anything about their specific contract, anything about cost, anything medical, and any hint of
-// replacement. The AI answers none of these.
+// replacement. The AI answers none of these — including "should I convert?", which is precisely
+// the individualized recommendation the red line reserves for the licensed FSA.
 const POLICYHOLDER_ESCALATIONS = [
   'policy_specifics',
   'existing_coverage',
@@ -78,91 +90,92 @@ const POLICYHOLDER_ESCALATIONS = [
 
 export const PLAYBOOKS: Playbook[] = [
   {
-    key: 'initial_check_in',
+    key: 'conversion_check_in',
     touch_no: 3,
-    title: 'Conversation #1 — Initial Check-In',
+    title: 'Conversation #1 — Initial Conversion Check-In',
     objective:
-      'Offer the complimentary policy review to an existing policyholder and route to booking, a question, or a clean exit.',
+      'Make the verified conversion window visible, offer the complimentary conversion review, and route to booking, a question, or a clean exit.',
     opening:
-      "Hi {{first_name}}, I'm the automated assistant for {{fsa_name}}, the {{advisor_title}} working with {{agent_of_record_reference}}. Policyholders are offered a free 20-minute policy review. Book one, ask a question, or not now?",
+      "Hi {{first_name}}, I'm the automated assistant for {{fsa_name}}, the {{advisor_title}} working with {{agent_of_record_reference}}. Your term conversion option expires {{conversion_expiration_date}}. Free review, question, or not now?",
     branches: ['book_review', 'ask_question', 'not_now', 'not_interested', 'what_is_this', 'unknown'],
     allowed:
-      'Explain that the review looks at what the existing coverage provides, how long it runs, and whether the beneficiary details are current. State plainly that it obliges no change and that most reviews end with no change. Offer to book time with {{fsa_name}}.',
+      'Explain in general terms that a term-conversion privilege lets eligible term coverage become permanent life insurance before the deadline on the policy, and that the review covers the available choices with free permanent-coverage quotes and no obligation. Offer to book time with {{fsa_name}}.',
     prohibited:
-      "Never state or imply what the recipient's policy contains, how long it runs, or that it has any particular option or deadline. Never suggest their existing coverage is inadequate. Never recommend a product, coverage amount, or premium.",
+      'Never go beyond the verified facts on file. Never say whether converting would be right for the recipient, never name a product to convert into, never quote a premium, never state exam or underwriting requirements, and never suggest their existing coverage is inadequate.',
     followUp:
-      "No reply needed if the timing is wrong, {{first_name}}. One word is plenty: BOOK, QUESTION, or NO. Any of the three is a good answer.",
+      'No reply needed if the timing is wrong, {{first_name}}. One word is plenty: BOOK, QUESTION, or NO. Any of the three is a good answer.',
     handoff:
       "That's about your specific policy, so it needs a licensed person rather than an assistant. I'm passing this to {{fsa_name}}, who will come back to you directly.",
     closing:
-      "Understood, {{first_name}}, I'll close this out. You keep your cover exactly as it is, and nothing changes. Thanks for your time.",
+      "Understood, {{first_name}}, I'll close this out. Your coverage stays exactly as it is, and nothing changes. Thanks for your time.",
     escalateOn: POLICYHOLDER_ESCALATIONS,
     exitConditions: ['appointment booked', 'advisor requested', 'not interested', 'future follow-up requested'],
   },
   {
-    key: 'life_changes',
+    key: 'how_conversion_works',
     touch_no: 6,
-    title: 'Conversation #2 — Life Changes',
+    title: 'Conversation #2 — How Conversion Works',
     objective:
-      'Surface a change since the policy was purchased that makes a review genuinely worthwhile, then offer a conversation.',
+      'Educate in general terms on what a term-conversion privilege is, so the recipient can decide whether a review is worth their time.',
     opening:
-      "Hi {{first_name}}, {{fsa_name}}'s automated assistant here. Has anything changed since you took out your life policy, such as marriage, children, a move, or a change in income?",
-    branches: ['marriage', 'children', 'home_move', 'income_change', 'debt_paid_off', 'retirement_planning', 'no_change', 'prefers_not_to_answer'],
+      "Hi {{first_name}}, {{fsa_name}}'s automated assistant here. Do you know how the conversion option on your term policy works? I can explain in general terms, or book you a free review before {{conversion_expiration_date}}.",
+    branches: ['explain_generally', 'book_review', 'ask_question', 'already_know', 'not_interested', 'unknown'],
     allowed:
-      'Thank the client for sharing. Note in general terms that a change like that is a common prompt to check whether an existing arrangement still does what was intended, and offer to book time with {{fsa_name}}.',
+      'Give the general explanation: term coverage runs for a set period; a conversion privilege lets eligible term coverage be converted to permanent coverage before the policy deadline; the specifics live in the contract and are what the review establishes. Offer to book time with {{fsa_name}}.',
     prohibited:
-      'Never say a change means their coverage is now insufficient, and never quantify anything. Never propose adding, changing, or replacing coverage in response to a life event — that is a licensed conversation.',
+      "Never state what the recipient's own contract permits beyond the verified deadline on file, never quantify costs or amounts, and never characterize conversion as the right or best choice for them. Anything individualized escalates.",
     followUp:
-      "If nothing has changed, {{first_name}}, that's a perfectly good answer. Would you like me to check back another time, or leave it here?",
+      'Happy to leave it here if the timing is wrong, {{first_name}}. If you would like the short general explanation or a review later, one word does it: EXPLAIN or BOOK.',
     handoff:
-      "Thanks for telling me. That deserves a proper conversation rather than a text thread, so I'm handing this to {{fsa_name}}, who's licensed to talk it through.",
+      "That question is about your specific contract, and I would only be guessing. I'm passing it to {{fsa_name}}, who can read your actual policy and give you a real answer.",
     closing:
-      "Thanks for letting me know, {{first_name}}. I'll leave it there. If something changes later on, reply here and {{fsa_name}} will pick it up.",
+      "Thanks for the time, {{first_name}}. I'll leave it there. If a question about the conversion option comes up later, reply here and {{fsa_name}} will pick it up.",
     escalateOn: POLICYHOLDER_ESCALATIONS,
-    exitConditions: ['relevant change surfaced → offer a review', 'advisor requested', 'not interested', 'future follow-up requested'],
+    exitConditions: ['general explanation given', 'appointment booked', 'advisor requested', 'not interested'],
   },
   {
-    key: 'open_questions',
+    key: 'partial_conversion',
     touch_no: 10,
-    title: 'Conversation #3 — Open Questions',
-    objective: 'Invite the one question the policyholder has never asked, then route it to a licensed answer.',
+    title: 'Conversation #3 — Partial Conversion',
+    objective:
+      'Surface the fact that conversion is not all-or-nothing, which removes the most common reason people dismiss it without a review.',
     opening:
-      "Hi {{first_name}}, this is {{fsa_name}}'s automated assistant. Is there anything about your current life cover you have wondered about, such as how long it runs or who it pays out to?",
-    branches: ['how_long_it_runs', 'who_it_pays', 'what_it_costs', 'what_happens_at_the_end', 'general_how_it_works', 'nothing_right_now'],
+      "Hi {{first_name}}, this is {{fsa_name}}'s automated assistant. Converting your term policy is not all or nothing - a portion of eligible coverage may qualify. Want a free review of your choices before {{conversion_expiration_date}}?",
+    branches: ['book_review', 'how_partial_works', 'ask_question', 'not_interested', 'unknown'],
     allowed:
-      'Explain in general terms what kinds of questions a review answers, and that the answers come from reading the actual contract rather than from assumptions. Offer to have {{fsa_name}} answer the question directly, by email or on a call.',
+      'Explain in general terms that many term policies allow converting only part of the eligible coverage while the rest stays term, and that which portions and options apply is exactly what the review reads out of the contract. Offer to book time with {{fsa_name}}.',
     prohibited:
-      "Never answer a question about the recipient's own policy — the AI has no verified contract data and must not guess. Every policy-specific question escalates, without exception.",
+      'Never state what portion of the recipient\'s coverage is convertible, never suggest an amount to convert, and never discuss premiums. A "how much should I convert" question is an individualized recommendation and escalates immediately.',
     followUp:
-      "No question is a fine answer too, {{first_name}}. If one occurs to you later, reply to this thread any time and {{fsa_name}} will answer it.",
+      'No pressure either way, {{first_name}}. If knowing your partial-conversion choices would help, reply BOOK and I will set up the free review.',
     handoff:
-      "I'd only be guessing at that, and I would rather not. I'm passing it to {{fsa_name}}, who can look at your actual policy and give you a real answer.",
+      "What applies to your specific coverage needs a licensed person with your contract in front of them. I'm handing this to {{fsa_name}} to walk you through it properly.",
     closing:
       "No problem at all, {{first_name}}. I'll close this out, and you can reply here whenever a question comes up.",
     escalateOn: POLICYHOLDER_ESCALATIONS,
-    exitConditions: ['question escalated to advisor', 'appointment booked', 'not interested'],
+    exitConditions: ['appointment booked', 'question escalated to advisor', 'not interested'],
   },
   {
-    key: 'beneficiary_check',
+    key: 'deadline_check',
     touch_no: 15,
-    title: 'Conversation #4 — Beneficiary Check',
+    title: 'Conversation #4 — Deadline Check',
     objective:
-      'Prompt a genuinely useful self-check that costs the client nothing, and build trust by giving value without an ask.',
+      'State the verified time remaining plainly and capture a decision path while there is still comfortable room before the deadline.',
     opening:
-      "Hi {{first_name}}, {{fsa_name}}'s automated assistant here. A quick one worth checking: is the beneficiary named on your policy still the person you would choose today? It is the most common detail to go out of date.",
-    branches: ['still_correct', 'needs_updating', 'not_sure', 'how_do_i_check', 'not_interested'],
+      "Hi {{first_name}}, {{fsa_name}}'s automated assistant here. Your conversion window closes {{conversion_expiration_date}}, {{days_until_conversion_expires}} days from now. Book a free review, ask a question, or leave it for now?",
+    branches: ['book_review', 'ask_question', 'leave_it', 'not_interested', 'unknown'],
     allowed:
-      'Confirm that this is worth checking periodically and that it is the client\'s own decision entirely. Explain in general terms that beneficiary details are changed through the carrier or with the advisor\'s help. Offer to have {{fsa_name}} walk them through it.',
+      'State the verified deadline and days remaining, note that after the deadline the conversion option is no longer part of the policy, and make clear there is no obligation to convert anything. Offer to book time with {{fsa_name}}.',
     prohibited:
-      'Never state who the current beneficiary is, never suggest who it should be, and never take a beneficiary change instruction in this channel. Any actual change request escalates to {{fsa_name}} immediately.',
+      'Never manufacture urgency beyond the verified date, never imply the recipient will be harmed by declining, and never recommend converting. The deadline is stated as fact, not as pressure.',
     followUp:
-      "No need to reply, {{first_name}}. This one is genuinely just worth knowing. If you check and something looks off, {{fsa_name}} can help you sort it.",
+      "One line back is plenty, {{first_name}}: BOOK, QUESTION, or LEAVE IT. Any of the three is a fine answer, and LEAVE IT simply means your coverage carries on as is.",
     handoff:
-      "A beneficiary change has to go through a licensed person and the carrier's own process, so I'm passing this to {{fsa_name}} to handle properly with you.",
+      "That deserves a licensed answer rather than an assistant's. I'm passing you to {{fsa_name}}, who will come back to you before your window closes.",
     closing:
-      "Glad it's in order, {{first_name}}. I'll leave it there. Reply any time if anything else comes up.",
+      "Understood, {{first_name}}. I'll leave it with you. If you change your mind while the window is open, reply here any time.",
     escalateOn: POLICYHOLDER_ESCALATIONS,
-    exitConditions: ['beneficiary change requested → escalate', 'appointment booked', 'confirmed current', 'not interested'],
+    exitConditions: ['appointment booked', 'advisor requested', 'declined for now', 'not interested'],
   },
   {
     key: 'final_invitation',
@@ -170,18 +183,18 @@ export const PLAYBOOKS: Playbook[] = [
     title: 'Conversation #5 — Final Invitation',
     objective: 'Close the campaign respectfully, capture a future follow-up if wanted, and preserve the relationship.',
     opening:
-      "Hi {{first_name}}, {{fsa_name}}'s automated assistant one last time. Would you like to book your free policy review, have us check back later, or close this out for now? Any of the three is fine.",
+      "Hi {{first_name}}, {{fsa_name}}'s automated assistant one last time. Your conversion option ends {{conversion_expiration_date}}. Book a free review, have us check back, or close this out? Any of the three is fine.",
     branches: ['book_review', 'follow_up_later', 'close_campaign', 'not_interested', 'global_opt_out', 'advisor_requested'],
     allowed:
-      'Offer the three options plainly. Honor a global opt-out by routing it to suppression handling. Thank the client and make clear their coverage is unaffected either way.',
+      'Offer the three options plainly. Honor a global opt-out by routing it to suppression handling. Thank the client and make clear their existing coverage is unaffected whichever they choose.',
     prohibited:
-      'Never pressure, use a final-chance framing, or imply risk from declining. Never recommend a product. Never ask the client to reconsider more than once.',
+      'Never pressure, never use a final-chance framing beyond the factual end date, and never imply risk from declining. Never recommend a product. Never ask the client to reconsider more than once.',
     followUp:
       "I'll take the silence as a no, {{first_name}}, and close this out. Nothing further needed, and thank you for your time.",
     handoff:
       "Of course, I'll pass you to {{fsa_name}} now so you can speak with a licensed person directly.",
     closing:
-      "Closed out, {{first_name}}. Your cover carries on exactly as it is. If a question ever comes up, reply here and {{fsa_name}} will pick it straight up.",
+      "Closed out, {{first_name}}. Your coverage carries on exactly as it is. If a question ever comes up, reply here and {{fsa_name}} will pick it straight up.",
     escalateOn: ['advisor_request', 'policy_specifics', 'replacement', 'complaint', 'unknown'],
     exitConditions: ['appointment booked', 'future follow-up scheduled', 'campaign closed', 'global opt-out requested'],
   },
@@ -207,19 +220,22 @@ export interface AdvisorScript {
 
 // The two Advisor Outreach touches (touch 7 / day 48 and touch 13 / day 135). These are HUMAN
 // tasks — the tick creates a work_task and a logged outreach ATTEMPT fulfils the touch; nothing
-// here is auto-dispatched. They are conversation openers, not scripts to be read aloud.
+// here is auto-dispatched. They are conversation openers, not scripts to be read aloud. The
+// advisor reads the recipient's verified deadline, policy number, and convertible amount off the
+// campaign detail view (the enrollment snapshot) — the script deliberately carries no fact
+// tokens, since it is spoken, not merge-rendered.
 export const ADVISOR_SCRIPTS: AdvisorScript[] = [
   {
     touch_no: 7,
-    key: 'policy_review_invitation',
-    title: 'Advisor Call #1 — Policy Review Invitation',
+    key: 'conversion_review_invitation',
+    title: 'Advisor Call #1 — Conversion Review Invitation',
     script:
-      "Hi {{first_name}}, this is {{fsa_name}}, the {{advisor_title}} working with {{agent_of_record_reference}}. I handle the life insurance side for the agency's clients, so I am a new name to you. I am calling about the policy you already hold with us, and specifically to offer a complimentary review of it. To be clear about what that means: I would go through what your coverage actually provides, how long it runs, and whether the beneficiary details are still right. I am not calling to move you into anything different, and most of these end with me confirming things are in order. Would twenty minutes be useful?",
+      "Hi {{first_name}}, this is {{fsa_name}}, the {{advisor_title}} working with {{agent_of_record_reference}}. I handle the life insurance side for the agency's clients, so I am a new name to you. I am calling about the term life policy you hold with us: it includes a conversion option, and that option has an expiration date. Before it passes I would like to offer you a complimentary conversion review. We would go through what the option lets you do, what converting all, some, or none of your eligible coverage would look like, and free quotes for the permanent choices, with no obligation to change anything. Would twenty minutes be useful?",
     goals: [
-      'make the existing policy visible again',
-      'state explicitly that no change is being proposed',
-      'confirm the beneficiary details are current',
-      'book a review only where the client wants one',
+      'make the verified conversion window visible before it closes',
+      'state explicitly that no change is being proposed on the call',
+      'explain the all/some/none choice in general terms',
+      'book a conversion review only where the client wants one',
     ],
   },
   {
@@ -227,10 +243,10 @@ export const ADVISOR_SCRIPTS: AdvisorScript[] = [
     key: 'final_personal_invitation',
     title: 'Advisor Call #2 — Final Personal Invitation',
     script:
-      "Hi {{first_name}}, {{fsa_name}} here. I wanted to reach out personally once more before I close this review invitation. If you are happy with your coverage as it stands, that is a perfectly good place to be and I will leave it there. If you have ever wondered what exactly your policy does or who it pays out to, that is a twenty-minute conversation and it costs you nothing. Either way, thank you for keeping your coverage with us.",
+      "Hi {{first_name}}, {{fsa_name}} here. I wanted to reach out personally once more before your conversion window closes. If you are happy letting the option lapse and keeping your term coverage as it stands, that is a perfectly good decision and I will leave it there. If you have ever wanted to know what converting some or all of your eligible coverage would look like, that is a twenty-minute conversation, the quotes are free, and it costs you nothing to hear it. Either way, thank you for keeping your coverage with us.",
     goals: [
-      'give the client a dignified way to decline',
-      'leave one concrete, low-cost reason to say yes',
+      'give the client a dignified way to let the option lapse',
+      'leave one concrete, low-cost reason to review before the deadline',
       'close the invitation without pressure',
       'preserve the policyholder relationship for future service',
     ],

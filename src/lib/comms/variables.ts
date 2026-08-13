@@ -51,7 +51,7 @@ export interface VariableDef {
   aliases?: string[]
 }
 
-// ── The 26 canonical variables ───────────────────────────────────────────────
+// ── The 27 canonical variables ───────────────────────────────────────────────
 export const VARIABLES: readonly VariableDef[] = [
   // Contact (cosmetic — degrade gracefully, never block).
   { key: 'first_name', display: 'FirstName', tier: 'cosmetic', label: 'Recipient first name', fallback: 'there' },
@@ -66,6 +66,11 @@ export const VARIABLES: readonly VariableDef[] = [
   { key: 'policy_face_amount', display: 'PolicyFaceAmount', tier: 'blocking', label: 'Policy face amount' },
   { key: 'conversion_expiration_date', display: 'ConversionExpirationDate', tier: 'blocking', label: 'Term-conversion window closes', aliases: ['ConversionDeadline'] },
   { key: 'days_until_conversion_expires', display: 'DaysUntilConversionExpires', tier: 'blocking', label: 'Days until conversion window closes' },
+  // The gate on the "no new medical exam" claim (§4.3 / ADR-020): resolves to the claim ONLY
+  // when the policy's verified conversion_no_exam flag is true; otherwise the cosmetic fallback
+  // renders the always-true neutral phrasing. Cosmetic tier is deliberate — omitting the claim
+  // is the safe outcome, so an unverified flag softens the sentence rather than blocking the send.
+  { key: 'conversion_exam_clause', display: 'ConversionExamClause', tier: 'cosmetic', label: 'No-exam conversion clause (verified policies only)', fallback: 'subject to the conversion provisions in your policy' },
 
   // Advisor — the FSA (site.ts). The legacy {{fsa_name}} token stays its own key for backward
   // compatibility (the context builder sets BOTH fsa_name and advisor_name to the FSA), so
@@ -200,6 +205,8 @@ export interface PersonalizationSources {
     effective_date?: string | null
     face_amount?: string | number | null
     conversion_deadline?: string | null
+    /** Verified "conversion requires no new medical exam" flag; null/undefined = unverified. */
+    conversion_no_exam?: boolean | null
   } | null
   /** Overrides (rarely needed — identity defaults come from site.ts). */
   scheduling_link?: string | null
@@ -270,6 +277,9 @@ export function buildRecipientContext(sources: PersonalizationSources = {}): Rec
     put(ctx, 'conversion_expiration_date', formatDisplayDate(p.conversion_deadline))
     const days = daysUntil(p.conversion_deadline, nowISO)
     if (days != null) put(ctx, 'days_until_conversion_expires', String(days))
+    // The no-exam claim renders ONLY from the verified flag — strict === true, never truthiness,
+    // and never a fallback here: an unresolved clause takes the neutral cosmetic default instead.
+    if (p.conversion_no_exam === true) put(ctx, 'conversion_exam_clause', 'with no new medical exam')
   }
 
   return ctx

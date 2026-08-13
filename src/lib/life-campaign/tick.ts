@@ -10,7 +10,6 @@
 import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
 import { sendThroughGate, isTemplateApproved } from '@/lib/comms/send'
-import { usableTemplate } from '@/lib/comms/usable-template'
 import { campaignDispatchContext, campaignIdentityContext } from '@/lib/comms/campaign'
 import { smsA2pApproved } from '@/lib/comms/a2p'
 import { getOrCreateConversation } from '@/lib/comms/conversations'
@@ -208,7 +207,10 @@ async function enrollSweep(db: ReturnType<typeof getDb>, cfg: CampaignConfig, no
   return enrolled
 }
 
-async function fireMessageTouch(
+// Exported for the fail-closed regression proof (tests/campaign-template-failclosed.test.mjs),
+// which drives this function with a stubbed sendThroughGate and asserts a null/empty/invalid
+// template is skipped WITHOUT any dispatch. Not part of the module's runtime API otherwise.
+export async function fireMessageTouch(
   db: ReturnType<typeof getDb>,
   cfg: CampaignConfig,
   e: EnrollmentRow,
@@ -226,16 +228,23 @@ async function fireMessageTouch(
   // "Subject:" line (template-subject.ts). Selecting a non-existent column errors (42703),
   // which blanked the body and mis-routed every email touch into the SMS branch.
   const { data: tpl } = await db.from('comm_templates').select('body, channel, introduces_sender').eq('id', touch.template_id).maybeSingle()
-  // Fail closed on an unloadable/empty template: NEVER fall through to the SMS default with
-  // a blank body (a schema-drifted select once nulled this fetch and 88 clients received
-  // near-empty texts; docs/audit/outbound-campaigns-2026-08-07.md). Left 'scheduled' — like
-  // the A2P hold — so the touch retries next run instead of being consumed.
-  if (!usableTemplate(tpl)) {
-    await markExecution(db, e.id, touchNo, 'scheduled', { reason: 'template_load_failed' })
+  // FAIL CLOSED (audit finding F-2b): a template that resolves null (deleted/raced since the
+  // approval check above), carries a channel that is neither 'email' nor 'sms', or has an empty/
+  // whitespace body must NEVER be dispatched. The old code defaulted an unknown channel to SMS and
+  // sent `tpl?.body ?? ''` — the exact path that shipped 67 blank SMS. Skip the touch with an
+  // actionable reason (mirrors the template_not_approved skip) rather than sending anything.
+  if (!tpl || (tpl.channel !== 'email' && tpl.channel !== 'sms') || !tpl.body || tpl.body.trim() === '') {
+    await markExecution(db, e.id, touchNo, 'skipped', {
+      reason: !tpl
+        ? 'template_unresolved'
+        : tpl.channel !== 'email' && tpl.channel !== 'sms'
+          ? 'template_channel_invalid'
+          : 'template_body_empty',
+    })
     return false
   }
   const { data: member } = await db.from('household_members').select('email, phone, full_name').eq('id', e.member_id!).maybeSingle()
-  const channel = (tpl.channel === 'email' ? 'email' : 'sms') as 'email' | 'sms'
+  const channel = tpl.channel as 'email' | 'sms'
   const to = channel === 'email' ? member?.email : member?.phone
 
   // SMS A2P hold: leave the execution 'scheduled' and do NOT advance past it — retried next run.
@@ -274,14 +283,20 @@ async function fireMessageTouch(
     policyId: e.policy_id,
     entity: { type: 'life_campaign_enrollment', id: e.id },
     templateId: touch.template_id,
-    campaignId: e.campaign_id,
+    // F-1 fix: NEVER put a life_campaigns.id into comm_messages.campaign_id — that column's FK
+    // targets comm_campaigns (World 1), so a World-2 id silently failed the message-of-record AND
+    // event-ledger inserts for every send. Attribute the campaign via source provenance + the
+    // entity linkage (entity → life_campaign_enrollment → campaign) instead.
+    campaignId: null,
+    sourceKind: 'campaign_asset',
+    sourceCampaignKey: 'life_conversion',
     sequenceStep: touchNo,
     isSecurity: false, // firewall re-derived server-side inside the gate; never trusted from here
     recipientContext: { full_name: member?.full_name ?? null },
     purpose: dispatchCtx.purpose,
     // ADR-016: the first-touch assets introduce the FSA in their own approved copy, so the
     // platform records the introduction without prepending a second one (migration 105).
-    identity: campaignIdentityContext(dispatchCtx.purpose, tpl.introduces_sender === true),
+    identity: campaignIdentityContext(dispatchCtx.purpose, tpl?.introduces_sender === true),
     delegation: dispatchCtx.delegation,
     ownership: dispatchCtx.ownership ?? { representedAgencyId: e.agency_id },
     aiGenerated: isAi,

@@ -20,7 +20,7 @@ export async function resolvePolicySource(
   try {
     const { data } = await getDb()
       .from('household_policies')
-      .select('policy_number, policy_type, issue_date, effective_date, face_amount, conversion_deadline')
+      .select('policy_number, policy_type, issue_date, effective_date, face_amount, conversion_deadline, conversion_no_exam')
       .eq('id', policyId)
       .maybeSingle()
     const row = data as {
@@ -30,6 +30,7 @@ export async function resolvePolicySource(
       effective_date?: string | null
       face_amount?: string | number | null
       conversion_deadline?: string | null
+      conversion_no_exam?: boolean | null
     } | null
     if (!row) return null
     return {
@@ -39,6 +40,8 @@ export async function resolvePolicySource(
       effective_date: row.effective_date ?? null,
       face_amount: row.face_amount ?? null,
       conversion_deadline: row.conversion_deadline ?? null,
+      // Gates {{ConversionExamClause}}: the no-exam claim renders only when this is verified true.
+      conversion_no_exam: row.conversion_no_exam ?? null,
     }
   } catch {
     return null

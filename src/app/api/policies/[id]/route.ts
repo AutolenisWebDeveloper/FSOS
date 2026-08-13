@@ -21,6 +21,9 @@ const PatchSchema = z
     issue_date: dateOrNull,
     renewal_date: dateOrNull,
     conversion_deadline: dateOrNull,
+    // Verified per-policy fact (§4.3): true only after the FSA confirms the policy's conversion
+    // rules allow conversion with no new medical exam; null = unverified (claim never rendered).
+    conversion_no_exam: z.boolean().nullable().optional(),
     archived: z.boolean().optional(),
   })
   .refine((v) => Object.keys(v).length > 0, 'No changes')

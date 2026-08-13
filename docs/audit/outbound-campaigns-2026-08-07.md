@@ -142,21 +142,26 @@ on 2026-08-10 (21 more sends via the same blank-SMS path), bringing the Finding 
    `xsell_life_campaigns`, `pipeline_winback_campaigns` → `status = 'paused'`, with
    `campaign.paused` audit-log entries recording the reason. Nothing sends until the FSA
    re-activates after verifying the deployed build includes the fixes below.
-2. **Finding 1 fixed — message-of-record.** Migration `109_comm_campaign_engine_registry.sql`
-   (applied to production and tracked) mirrors every engine campaign into `comm_campaigns`
-   as an inert, archived registry row — same UUID, `category='engine_registry'` — with DB
-   triggers keeping the registry in sync for future campaign rows, so the
-   `comm_messages.campaign_id` FK now holds. `sendThroughGate` no longer swallows a failed
-   pre-insert: a send whose message-of-record cannot be written is **blocked**, audited
-   (`comms.blocked`, step `message_record`), and escalated (`src/lib/comms/send.ts`).
-   Decision recorded in ADR-013 (amendment).
-3. **Finding 2 fixed — blank-SMS fallback.** All three ticks now fail closed on an
-   unloadable/channel-less/empty-bodied template via the shared `usableTemplate()`
-   predicate (`src/lib/comms/usable-template.ts`) — the execution is left `'scheduled'`
-   with reason `template_load_failed` (A2P-hold semantics: retried next run, never
-   consumed, never defaulted to SMS with a blank body).
-4. **Guardrail test:** `tests/campaign-send-fail-closed.test.mjs` proves the predicate and
-   statically asserts the fail-closed wiring in all three ticks and `send.ts` (§13.13 —
+2. **Finding 1 fixed — message-of-record.** Two independent remediations landed and were
+   reconciled (ADR-013 amendment): engine ticks now attribute campaign sends via
+   provenance (`campaignId: null` + `source_campaign_key`, mains PRs #282/#283 — pinned by
+   `tests/campaign-message-of-record.test.mjs`), so no engine id ever hits the
+   `comm_campaigns` FK; and `sendThroughGate` no longer swallows a failed pre-insert — a
+   send whose message-of-record cannot be written is **withheld**, logged, audited
+   (`comms.blocked`, step `message_of_record`), and escalated to the human-FSA queue
+   (`src/lib/comms/send.ts`; behavioral proof
+   `tests/comms-message-of-record-failclosed.test.mjs`). Migration
+   `109_comm_campaign_engine_registry.sql` (applied to production, trigger-synced)
+   additionally registers every engine campaign in `comm_campaigns` as inert
+   defense-in-depth, so even a stray engine-UUID write cannot lose its record.
+3. **Finding 2 fixed — blank-SMS fallback.** All three ticks fail closed on a
+   null/invalid-channel/empty-bodied template with granular skip reasons
+   (`template_unresolved` / `template_channel_invalid` / `template_body_empty`) instead of
+   defaulting to SMS with a blank body (main PRs #282/#283; behavioral proof
+   `tests/campaign-template-failclosed.test.mjs`).
+4. **Guardrail test:** `tests/campaign-send-fail-closed.test.mjs` statically pins the
+   fail-closed wiring (captured insert error, block + audit + escalation, granular tick
+   validation) so a refactor cannot quietly reintroduce the silent-swallow shape (§13.13 —
    may not be weakened).
 
 **Still open:** deploy this branch to production before re-activating any campaign (the

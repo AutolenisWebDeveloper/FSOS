@@ -764,7 +764,7 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
   // silently-swallowed FK failure here once cost every campaign send its record
   // (docs/audit/outbound-campaigns-2026-08-07.md).
   let messageId: string | undefined
-  let messageRecordError: string | undefined
+  let messageOfRecordError: string | undefined
   try {
     const { data, error } = await db
       .from('comm_messages')
@@ -819,27 +819,58 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
       })
       .select('id')
       .maybeSingle()
-    if (error) messageRecordError = error.message
+    // supabase-js does NOT throw on a DB constraint failure — it returns the error here. The
+    // message-of-record is the §13.9 record of every send; a failed insert must be OBSERVABLE, not
+    // silently swallowed. (Audit finding F-1: World-2 campaign sends fed a per-campaign-table id
+    // into campaign_id, whose FK targets comm_campaigns, so every insert failed into this ignored
+    // `error` and no message-of-record was ever written — invisibly. Never let this class of
+    // failure hide again.)
+    if (error) {
+      messageOfRecordError = error.message
+      console.error('[comms] message-of-record insert failed:', error.message, {
+        channel: ctx.channel,
+        campaignId: ctx.campaignId ?? null,
+        entity: ctx.entity ?? null,
+        conversationId,
+      })
+    }
     messageId = data?.id
   } catch (err) {
-    messageRecordError = err instanceof Error ? err.message : String(err)
+    // A genuine throw (network/client) is also logged — never a bare silent swallow.
+    messageOfRecordError = err instanceof Error ? err.message : String(err)
+    console.error('[comms] message-of-record insert threw:', messageOfRecordError)
   }
+
+  // FAIL CLOSED (audit finding F-1): the §13.9 message-of-record is a REQUIRED artifact of
+  // every send. A provider send must NEVER silently succeed while its message-of-record insert
+  // failed. If the pre-insert errored or returned no id, we withhold the send entirely — the
+  // dispatcher/provider is never reached — and record the withholding observably. This closes
+  // the exact class of failure behind F-1 (World-2 campaign ids violated the campaign_id FK, the
+  // insert failed, and the send went out anyway with no record). A transient DB fault now defers
+  // the send (retried next cycle) instead of shipping an untraceable message.
   if (!messageId) {
-    const reason = `Message record could not be written (${messageRecordError ?? 'insert returned no id'}); send blocked — no dispatch without a message-of-record (§13.9).`
-    await writeAudit({
-      actor: ctx.actor,
-      action: 'comms.blocked',
-      entity: ctx.entity?.type ?? 'message',
-      entityId: ctx.entity?.id ?? conversationId ?? null,
-      diff: {
-        channel: ctx.channel,
-        to,
-        blockedStep: 'message_record',
-        reason: messageRecordError ?? 'insert returned no id',
-        campaignId: ctx.campaignId ?? null,
-        templateId: ctx.templateId ?? null,
-      },
-    })
+    const reason = `Message-of-record could not be created — send withheld${messageOfRecordError ? ` (${messageOfRecordError})` : ''}.`
+    try {
+      await writeAudit({
+        actor: ctx.actor,
+        action: 'comms.blocked',
+        entity: ctx.entity?.type ?? (conversationId ? 'conversation' : 'message'),
+        entityId: ctx.entity?.id ?? conversationId ?? null,
+        diff: {
+          channel: ctx.channel,
+          to,
+          blockedStep: 'message_of_record',
+          reason: messageOfRecordError ?? 'message-of-record insert returned no id',
+          sourceCampaignKey: ctx.sourceCampaignKey ?? null,
+          campaignId: ctx.campaignId ?? null,
+          templateId: ctx.templateId ?? null,
+        },
+      })
+    } catch {
+      /* best-effort — the console.error above is the durable signal if audit is also down */
+    }
+    // Escalate to the human-FSA queue (§16.6): a withheld send is a recoverable failure that
+    // needs operator attention (fix the record path, then the deferred touch retries).
     try {
       await db.from('agent_actions').insert({
         kind: 'escalation',
@@ -847,8 +878,8 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
         outcome: 'escalated',
         target_type: ctx.entity?.type ?? 'conversation',
         target_id: ctx.entity?.id ?? convHouseholdId ?? conversationId,
-        reason: 'message_record_write_failed',
-        blocked_step: 'message_record',
+        reason: 'message_of_record_write_failed',
+        blocked_step: 'message_of_record',
         note: reason,
       })
     } catch {

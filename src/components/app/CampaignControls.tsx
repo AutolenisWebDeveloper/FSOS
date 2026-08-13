@@ -8,8 +8,9 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Field } from '@/components/forms/Field'
 import { WizardShell } from '@/components/archetypes'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { TEMPLATE_CATEGORY } from '@/lib/validation/schemas'
-import { postJson, firstFieldError } from '@/lib/client/api'
+import { postJson, patchJson, firstFieldError } from '@/lib/client/api'
 import { MESSAGE_PURPOSES } from '@/lib/comms/purpose'
 import { CLAIM_FIELD_KEYS } from '@/lib/comms/claims'
 
@@ -146,6 +147,58 @@ export function CampaignBuilder({ templates, delegations = [] }: { templates: { 
         </div>
       ) : null}
     </WizardShell>
+  )
+}
+
+/** Rename a campaign after creation. A rename carries no compliance implication, so it is
+ *  allowed in any status; it PATCHes only the name and refreshes the server component. */
+export function CampaignRenameControl({ id, name }: { id: string; name: string }) {
+  const router = useRouter()
+  const [open, setOpen] = React.useState(false)
+  const [value, setValue] = React.useState(name)
+  const [saving, setSaving] = React.useState(false)
+
+  // Re-seed the input from the current name whenever the dialog is (re)opened, so a
+  // cancelled edit never lingers and a rename elsewhere is reflected.
+  function onOpenChange(next: boolean) {
+    if (next) setValue(name)
+    setOpen(next)
+  }
+
+  async function save() {
+    const trimmed = value.trim()
+    if (!trimmed) { toast.error('Enter a campaign name.'); return }
+    if (trimmed === name) { setOpen(false); return }
+    setSaving(true)
+    const res = await patchJson<{ campaign: { id: string; name: string } }>(`/api/comms/campaigns/${id}`, { name: trimmed })
+    setSaving(false)
+    if (!res.ok) { toast.error(firstFieldError(res.error).message); return }
+    toast.success('Campaign renamed.')
+    setOpen(false)
+    router.refresh()
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <Button size="sm" variant="outline" onClick={() => onOpenChange(true)}>Rename</Button>
+      <DialogContent>
+        <DialogHeader><DialogTitle>Rename campaign</DialogTitle></DialogHeader>
+        <Field id="campaign-rename" label="Campaign name" required>
+          <Input
+            id="campaign-rename"
+            value={value}
+            autoFocus
+            maxLength={160}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void save() } }}
+          />
+        </Field>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>Cancel</Button>
+          <Button onClick={save} disabled={saving || !value.trim() || value.trim() === name}>{saving ? 'Saving…' : 'Save'}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 

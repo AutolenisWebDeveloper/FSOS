@@ -518,6 +518,16 @@ export const CampaignCreateSchema = z.object({
   })
 export type CampaignCreate = z.infer<typeof CampaignCreateSchema>
 
+// Edit an existing campaign. Only the human-facing label is editable here — a rename
+// has no compliance-gate implication (unlike a template body edit), so it is allowed in
+// any status. Audience/template/channel changes stay confined to the create wizard.
+export const CampaignPatchSchema = z
+  .object({
+    name: z.string().trim().min(1, 'Name is required').max(160).optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, 'No fields to update')
+export type CampaignPatch = z.infer<typeof CampaignPatchSchema>
+
 // ─── Documents (OS-13) ──────────────────────────────────────────────────────────
 export const DocumentRequestSchema = z.object({
   household_id: uuid,

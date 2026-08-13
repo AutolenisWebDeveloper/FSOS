@@ -3,7 +3,6 @@ import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { MetricCard, type Tone } from '@/components/dashboards/primitives'
-import { AssumptionBadge } from '@/components/archetypes'
 import {
   campaignStatus,
   enrollmentStatus,
@@ -135,21 +134,19 @@ export function FunnelStat({
 // ─── Header actions ───────────────────────────────────────────────────────────
 
 /**
- * The action cluster every campaign header carries: state, the assumption marker, the
- * console test deep-link, and the drill-in. Real `Button`s, so focus, hover, and
+ * The action cluster every campaign header carries: state, the console test deep-link,
+ * and the drill-in. Real `Button`s, so focus, hover, and
  * press behave like the rest of FSOS.
  */
 export function CampaignHeaderActions({
   engine,
   status,
-  isAssumption,
   version,
   manageHref,
   manageLabel = 'Open campaign',
 }: {
   engine: CampaignEngine
   status: string
-  isAssumption?: boolean
   /** Cross-Sell Life only — the versioned engine. */
   version?: number
   manageHref?: string
@@ -159,7 +156,6 @@ export function CampaignHeaderActions({
     <div className="flex flex-wrap items-center gap-2">
       <CampaignStatusBadge status={status} />
       {typeof version === 'number' ? <Badge variant="outline" title="Campaign version">v{version}</Badge> : null}
-      {isAssumption ? <AssumptionBadge /> : null}
       <Button variant="outline" size="sm" asChild>
         <Link href={campaignTestHref(engine)}>Test this campaign</Link>
       </Button>

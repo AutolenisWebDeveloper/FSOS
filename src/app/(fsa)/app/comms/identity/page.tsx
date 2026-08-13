@@ -10,9 +10,8 @@ import { IdentityEditor } from './identity-editor'
 export const dynamic = 'force-dynamic'
 
 // Slice 2 — Identity disclosure configuration (§8). The approved wording the platform
-// auto-inserts on first contact. Shows approval status, the "config default — verify"
-// gold badge while unverified, a live preview, and the editor. Nothing is auto-inserted
-// until the config is approved.
+// auto-inserts on first contact. Shows approval status, a live preview, and the editor.
+// Nothing is auto-inserted until the config is approved.
 interface IdentityConfig {
   fsa_role_label: string
   full_template: string
@@ -60,7 +59,6 @@ export default async function IdentityConfigPage() {
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-medium">Status</span>
               <Badge variant={cfg.data.approval_status === 'approved' ? 'won' : 'pending'}>{cfg.data.approval_status}</Badge>
-              {cfg.data.is_assumption && <Badge variant="assumption">config default — verify</Badge>}
               <span className="text-xs text-muted-foreground">v{cfg.data.version}</span>
             </div>
             {cfg.data.approval_status !== 'approved' && (

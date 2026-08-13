@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { DetailShell, Section, AssumptionBadge } from '@/components/archetypes'
+import { DetailShell, Section } from '@/components/archetypes'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { TimeCell } from '@/components/ui/time'
@@ -68,7 +68,6 @@ export default async function PipelineWinbackDetailPage(props: { params: Promise
       status={
         <div className="flex items-center gap-2">
           <CampaignStatusBadge status={config.status} />
-          {config.is_assumption && <AssumptionBadge />}
         </div>
       }
       rail={<Rail unapprovedCount={unapprovedCount} />}
@@ -268,19 +267,19 @@ export default async function PipelineWinbackDetailPage(props: { params: Promise
         {/* 8 — Configuration & settings */}
         <Section
           title="Configuration & settings"
-          description="Editable operational defaults. Gold-badged values are config defaults to verify (§4.3), not Farmers-published figures."
+          description="Editable operational defaults."
         >
           <Card className="p-5">
             <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
               <Field label="Message purpose" value={config.purpose ?? '—'} note="Marketing consent and unsubscribe are enforced at the gate" />
               <Field label="Daily enrollment limit" value={String(config.daily_enrollment_limit)} note="New enrollments per day" />
-              <Field label="Staleness floor" value={`${config.stale_min_days} days`} note="Minimum inactivity before re-engagement" assumption />
-              <Field label="Re-enroll cooldown" value={`${config.reenroll_cooldown_days} days`} assumption />
-              <Field label="Resume cooling-off" value={`${config.resume_cooling_off_days} days`} assumption />
-              <Field label="Advisor task due" value={`${config.advisor_due_hours} hours`} assumption />
-              <Field label="Advisor escalate after" value={`${config.advisor_overdue_escalate_hours} hours`} assumption />
-              <Field label="Advisor reassign after" value={`${config.advisor_reassign_after_hours} hours`} assumption />
-              <Field label="Conversation timeout" value={`${config.conversation_timeout_hours} hours`} assumption />
+              <Field label="Staleness floor" value={`${config.stale_min_days} days`} note="Minimum inactivity before re-engagement" />
+              <Field label="Re-enroll cooldown" value={`${config.reenroll_cooldown_days} days`} />
+              <Field label="Resume cooling-off" value={`${config.resume_cooling_off_days} days`} />
+              <Field label="Advisor task due" value={`${config.advisor_due_hours} hours`} />
+              <Field label="Advisor escalate after" value={`${config.advisor_overdue_escalate_hours} hours`} />
+              <Field label="Advisor reassign after" value={`${config.advisor_reassign_after_hours} hours`} />
+              <Field label="Conversation timeout" value={`${config.conversation_timeout_hours} hours`} />
               <Field
                 label="Advisor hold behavior"
                 value={config.advisor_hold_behavior}
@@ -316,19 +315,16 @@ function Field({
   value,
   node,
   note,
-  assumption,
 }: {
   label: string
   value?: string
   node?: React.ReactNode
   note?: string
-  assumption?: boolean
 }) {
   return (
     <div>
       <dt className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-muted-foreground">
         {label}
-        {assumption && <AssumptionBadge label="default" />}
       </dt>
       <dd className="mt-1 text-sm font-medium">{node ?? value}</dd>
       {note && <dd className="mt-0.5 text-xs text-muted-foreground">{note}</dd>}

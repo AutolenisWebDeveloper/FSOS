@@ -5,7 +5,9 @@ import { Button } from '@/components/ui/button'
 import { loadAll } from '@/lib/data/query'
 import { getDb } from '@/lib/supabase/client'
 import { loadContactConsolidationReport, type ContactConsolidationReport } from '@/lib/services/contactConsolidation'
-import { ContactList, type ContactRow } from '@/components/app/ContactList'
+import { ContactList, type ContactRow, type ContactSuppressionView } from '@/components/app/ContactList'
+import { getBlockedContactIds, getBlockedAgencyIds, getDncContactIds } from '@/lib/comms/suppression-admin'
+import { getServerSession } from '@/lib/auth/session'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -21,11 +23,11 @@ interface Row extends ContactRow {}
 
 export default async function ContactCenterPage() {
   const [res, report] = await Promise.all([
-    loadAll<Row>(
+    loadAll<Row & { agency_partnership_id: string | null; email_lc: string | null; phone_digits: string | null }>(
       (db) =>
         db
           .from('contacts')
-          .select('id, full_name, email, phone, company, contact_type, tags, status, created_at')
+          .select('id, full_name, email, phone, company, contact_type, tags, status, created_at, agency_partnership_id, email_lc, phone_digits')
           .is('deleted_at', null)
           .order('created_at', { ascending: false }),
     ),
@@ -68,6 +70,26 @@ export default async function ContactCenterPage() {
   }
 
   const rows = res.data
+  // Effective communication-suppression view for the displayed contacts (business layers +
+  // regulatory DNC), shown DISTINCTLY per contact. Individual = client-level block; agent =
+  // the contact's agency book is blocked; dnc = a regulatory do-not-contact match. Fail-soft:
+  // a suppression read hiccup leaves the map empty (no false "blocked" badges), and the send
+  // gate remains the authoritative enforcement regardless of what the list shows.
+  const [blockedContactIds, blockedAgencyIds, dncIds] = await Promise.all([
+    getBlockedContactIds(rows.map((r) => r.id)).catch(() => new Set<string>()),
+    getBlockedAgencyIds(rows.map((r) => r.agency_partnership_id).filter((x): x is string => !!x)).catch(() => new Set<string>()),
+    getDncContactIds(rows.map((r) => ({ id: r.id, email_lc: r.email_lc, phone_digits: r.phone_digits }))).catch(() => new Set<string>()),
+  ])
+  const suppressionView: Record<string, ContactSuppressionView> = {}
+  for (const r of rows) {
+    const individual = blockedContactIds.has(r.id)
+    const agent = !!(r.agency_partnership_id && blockedAgencyIds.has(r.agency_partnership_id))
+    const dnc = dncIds.has(r.id)
+    if (individual || agent || dnc) suppressionView[r.id] = { individual, agent, dnc }
+  }
+  const session = await getServerSession()
+  const canManageComms = !!session?.roles?.some((role) => role === 'fsa' || role === 'super_admin')
+
   // Prefer the DB-side consolidation report; fall back to what the loaded rows can
   // show if the report view is unavailable (older DB without migration 070).
   const total = report?.total ?? rows.length
@@ -101,7 +123,7 @@ export default async function ContactCenterPage() {
           description="Add a contact manually, or import a CSV, TSV, Excel, or JSON file through the Upload Center."
         />
       ) : (
-        <ContactList rows={rows} />
+        <ContactList rows={rows} suppression={suppressionView} canManageComms={canManageComms} />
       )}
     </ListShell>
   )

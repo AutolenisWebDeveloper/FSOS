@@ -132,6 +132,10 @@ async function sendAppointmentMessage(
     // bypass TCPA prior-express-written consent — so it is forced false for SMS.
     durableConsentGranted: opts.channel === 'email' ? opts.durableConsentGranted : false,
     isSecurity: false,
+    // Appointment reminders/confirmations are TRANSACTIONAL: never excluded by agent-level or
+    // individual business communication suppression (they carry no marketing purpose, so this
+    // declares them non-suppressible explicitly — without altering their quiet-hours handling).
+    suppressible: false,
     actor: opts.actor,
     entity: { type: 'appointment', id: opts.appt.id },
     // Merge context + signed reschedule/cancel manage links (unused tokens render empty).

@@ -23,6 +23,7 @@ import { campaignClaimKeys, buildDataConfidence } from './claims'
 import { resolveClaimFields } from './claim-resolver'
 import { segmentMemberIds } from '@/lib/segments/resolve'
 import type { SegmentRule } from '@/lib/segments/rules'
+import { loadBlockedSets } from './suppression'
 
 export interface DispatchCounts {
   audience: number
@@ -92,7 +93,7 @@ export async function resolveAudience(campaign: { channel: string; audience: { k
     full_name: string | null
     households: { referring_agency_id: string | null } | null
   }[]
-  return rows
+  const mapped = rows
     .map((r) => ({
       member_id: r.id,
       household_id: r.household_id,
@@ -102,6 +103,18 @@ export async function resolveAudience(campaign: { channel: string; audience: { k
       full_name: r.full_name,
     }))
     .filter((r) => (channel === 'email' ? !!r.email : !!r.phone))
+
+  // BUSINESS suppression (campaign-eligibility layer): proactively drop recipients whose
+  // agent's whole book is blocked, or who are individually blocked, so a broadcast never
+  // enrolls/attempts a send the gate would only block. Batched (2–3 queries, no N+1) and
+  // best-effort — the per-send gate + provider-boundary re-check remain the fail-closed
+  // authority, so an error here never lets a suppressed recipient through.
+  const { blockedAgencyIds, blockedMemberIds } = await loadBlockedSets({
+    agencyIds: mapped.map((r) => r.agency_id).filter((x): x is string => !!x),
+    memberIds: mapped.map((r) => r.member_id),
+  })
+  if (blockedAgencyIds.size === 0 && blockedMemberIds.size === 0) return mapped
+  return mapped.filter((r) => !(r.agency_id && blockedAgencyIds.has(r.agency_id)) && !blockedMemberIds.has(r.member_id))
 }
 
 // Deterministic weighted variant pick keyed on the member id, so a given recipient

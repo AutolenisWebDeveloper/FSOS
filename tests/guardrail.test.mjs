@@ -112,6 +112,34 @@ t('every block escalates; step order is consent→quiet→dnc→template→rec�
   assert.equal(r.blockedStep, 'consent')
 })
 
+t('business suppression blocks AFTER dnc, BEFORE template — non-escalating, never overrides DNC', () => {
+  // A suppressed recipient is withheld at the new step.
+  const sup = evaluateGate({ draft: 'hi', channel: 'sms', ...okCtx, businessSuppressed: true })
+  assert.equal(sup.allowed, false)
+  assert.equal(sup.blockedStep, 'suppression')
+  assert.equal(sup.escalate, false) // intentional business exclusion, not a compliance escalation
+  // DNC is a REGULATORY control and wins over business suppression when both trip (ordering).
+  const both = evaluateGate({ draft: 'hi', channel: 'sms', ...okCtx, onDNC: true, businessSuppressed: true })
+  assert.equal(both.blockedStep, 'dnc')
+  // Suppression precedes the template/approval (campaign-eligibility) check.
+  const beforeTemplate = evaluateGate({
+    draft: 'hi', channel: 'sms', ...okCtx, businessSuppressed: true, usesApprovedTemplateOrPolicy: false,
+  })
+  assert.equal(beforeTemplate.blockedStep, 'suppression')
+})
+
+t('suppression FAILS CLOSED when state is undetermined (resolved=false)', () => {
+  const r = evaluateGate({ draft: 'hi', channel: 'sms', ...okCtx, suppressionResolved: false })
+  assert.equal(r.allowed, false)
+  assert.equal(r.blockedStep, 'suppression')
+  assert.equal(r.escalate, false)
+})
+
+t('suppression defaults off — existing callers unaffected', () => {
+  const r = evaluateGate({ draft: 'Reminder: your review is tomorrow.', channel: 'sms', ...okCtx })
+  assert.equal(r.allowed, true)
+})
+
 console.log('Securities firewall (guardrail 1)')
 
 t('forbidden substantive securities fields are detected', () => {

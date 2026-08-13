@@ -1397,3 +1397,36 @@ export const NigoIssuePatchSchema = z.object({
   response_text: z.string().trim().max(20_000).nullable().optional(),
 })
 export type NigoIssuePatch = z.infer<typeof NigoIssuePatchSchema>
+
+// ─── Communication suppression (agent-level book / individual client) ──────────
+// A business exclusion from applicable non-transactional outreach. A reason is REQUIRED
+// when blocking (auditability); unblocking may omit it. Discriminated by scope so an
+// agent-book op carries an agencyId and a client op carries a non-empty contactIds set.
+const suppressionReason = z.string().trim().max(500).nullable().optional()
+
+export const SuppressionApplySchema = z
+  .discriminatedUnion('scope', [
+    z.object({
+      scope: z.literal('agency'),
+      agencyId: uuid,
+      status: z.enum(['blocked', 'active']),
+      reason: suppressionReason,
+    }),
+    z.object({
+      scope: z.literal('client'),
+      contactIds: z.array(uuid).min(1).max(1000),
+      status: z.enum(['blocked', 'active']),
+      reason: suppressionReason,
+    }),
+  ])
+  .superRefine((v, ctx) => {
+    // A reason is REQUIRED when blocking (auditability); unblocking may omit it.
+    if (v.status === 'blocked' && (!v.reason || v.reason.trim().length < 3)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'A reason (min 3 chars) is required to block communications.',
+        path: ['reason'],
+      })
+    }
+  })
+export type SuppressionApply = z.infer<typeof SuppressionApplySchema>

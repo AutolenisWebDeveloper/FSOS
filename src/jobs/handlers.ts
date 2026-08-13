@@ -432,6 +432,24 @@ export async function pipelineWinbackRetry(): Promise<JobResult> {
   return { ok: r.ok, handled: r.retried + r.deadLettered, note: r.note }
 }
 
+// district-nurture-tick — advance the District Agent FS Nurture Campaign ("The Second
+// Conversation", ADR-038). Agent-facing 40-touch / 365-day curriculum: resume closed-workflow
+// pauses, daily enroll fresh district agents, then advance each active enrollment by at most one
+// due touch, eligibility rechecked before every touch, every send through the same gate.
+export async function districtNurtureTick(): Promise<JobResult> {
+  const { districtNurtureTick } = await import('@/lib/district-nurture/tick')
+  const r = await districtNurtureTick()
+  return { ok: r.ok, handled: r.handled, note: r.note }
+}
+
+// district-nurture-retry — retry/dead-letter sweep for stuck District Nurture executions.
+// Fails soft before migration 114 is applied (no-op, never a cron error).
+export async function districtNurtureRetry(): Promise<JobResult> {
+  const { runRetrySweep } = await import('@/lib/district-nurture/jobs')
+  const r = await runRetrySweep()
+  return { ok: r.ok, handled: r.retried + r.deadLettered, note: r.note }
+}
+
 // cross-sell-life-enroll — daily eligibility + enrollment sweep for the Cross-Sell Life Campaign
 // (§24). Fills the day's configurable quota from the highest-scoring gap households (existing
 // non-life clients with no active life relationship); enrolls only when the campaign is Active.

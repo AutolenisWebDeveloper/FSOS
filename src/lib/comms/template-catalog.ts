@@ -48,12 +48,13 @@ export const CAMPAIGN_LABELS: Record<string, string> = {
   life_conversion: 'Life Conversion',
   cross_sell_life: 'Cross-Sell Life',
   pipeline_winback: 'Pipeline Win-Back',
+  district_nurture: 'The Second Conversation',
   workshops: 'Workshops',
   [LIBRARY_KEY]: 'Template Library',
 }
 
 /** Stable display order for the campaign filter; unknown keys sort alphabetically after. */
-const CAMPAIGN_ORDER = ['life_conversion', 'cross_sell_life', 'pipeline_winback', 'workshops']
+const CAMPAIGN_ORDER = ['life_conversion', 'cross_sell_life', 'pipeline_winback', 'district_nurture', 'workshops']
 
 /** The stable label for a catalog row's campaign grouping. */
 export function campaignLabel(campaignKey: string | null): string {
@@ -73,6 +74,8 @@ const CATEGORY_CAMPAIGN: Record<string, string> = {
   cross_sell_life_ai: 'cross_sell_life',
   pipeline_winback: 'pipeline_winback',
   pipeline_winback_ai: 'pipeline_winback',
+  district_nurture: 'district_nurture',
+  district_nurture_ai: 'district_nurture',
 }
 
 /** A `comm_templates` row as the list page selects it. */

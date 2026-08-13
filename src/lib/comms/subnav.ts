@@ -30,6 +30,7 @@ export const COMMS_SUBNAV_GROUPS: CommsSubnavGroup[] = [
       { href: '/app/comms/life-conversion', label: 'Life conversion' },
       { href: '/app/comms/cross-sell-life', label: 'Cross-sell life' },
       { href: '/app/comms/pipeline-winback', label: 'Win-back' },
+      { href: '/app/comms/district-nurture', label: 'Second conversation' },
     ],
   },
   {

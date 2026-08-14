@@ -13,6 +13,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
+import { ListPagination } from '@/components/ui/pagination'
+import { paginate } from '@/lib/data/paginate'
 import { EmptyState, StatusBadge, type StatusKey } from '@/components/archetypes'
 import { STATUS_MAP } from '@/components/app/CalendarView'
 import { AppointmentStatusControls } from '@/components/app/AppointmentStatusControls'
@@ -45,6 +47,8 @@ export function AppointmentList({ rows }: { rows: AppointmentListRow[] }) {
   const [q, setQ] = React.useState('')
   const [status, setStatus] = React.useState<StatusFilter>('all')
   const [asc, setAsc] = React.useState(true)
+  const [page, setPage] = React.useState(0)
+  const [pageSize, setPageSize] = React.useState(50)
 
   const filtered = React.useMemo(() => {
     let r = rows
@@ -63,6 +67,10 @@ export function AppointmentList({ rows }: { rows: AppointmentListRow[] }) {
       return asc ? cmp : -cmp
     })
   }, [rows, q, status, asc])
+
+  React.useEffect(() => setPage(0), [q, status, asc])
+
+  const paged = paginate(filtered, page, pageSize)
 
   function exportCsv() {
     const header = ['When', 'Who', 'Type', 'Format', 'Status']
@@ -144,7 +152,7 @@ export function AppointmentList({ rows }: { rows: AppointmentListRow[] }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((a) => {
+              {paged.items.map((a) => {
                 const s = badgeFor(a.status)
                 return (
                   <TableRow key={a.id}>
@@ -173,6 +181,14 @@ export function AppointmentList({ rows }: { rows: AppointmentListRow[] }) {
           </Table>
         </div>
       )}
+      <ListPagination
+        page={paged.page}
+        pageSize={pageSize}
+        total={filtered.length}
+        noun="appointment"
+        onPageChange={setPage}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(0) }}
+      />
     </div>
   )
 }

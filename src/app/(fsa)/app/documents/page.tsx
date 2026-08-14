@@ -1,10 +1,8 @@
 import Link from 'next/link'
 import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
-import { Numeric } from '@/components/ui/typography'
+import { DocumentList } from '@/components/app/DocumentList'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,21 +19,7 @@ export default async function DocumentsPage() {
       ) : docs.data.length === 0 ? (
         <EmptyState title="No documents yet" description="Uploaded documents are virus-scanned and classified to a household or case." />
       ) : (
-        <div className="rounded-lg border">
-          <Table>
-            <TableHeader><TableRow><TableHead>File</TableHead><TableHead>Classification</TableHead><TableHead>Scan</TableHead><TableHead>Retention</TableHead></TableRow></TableHeader>
-            <TableBody>
-              {docs.data.map((d) => (
-                <TableRow key={d.id}>
-                  <TableCell><Link href={`/app/documents/${d.id}`} className="font-medium text-primary hover:underline">{d.file_name ?? 'Document'}</Link>{d.legal_hold ? <Badge variant="blocked" className="ml-2">legal hold</Badge> : null}</TableCell>
-                  <TableCell className="text-muted-foreground">{d.classification ?? d.entity_type ?? '—'}</TableCell>
-                  <TableCell><Badge variant={d.scan_status === 'clean' ? 'won' : d.scan_status === 'infected' ? 'lost' : 'pending'}>{d.scan_status}</Badge></TableCell>
-                  <TableCell className="text-muted-foreground"><Numeric>{d.retention_until ?? '—'}</Numeric></TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <DocumentList rows={docs.data} />
       )}
     </ListShell>
   )

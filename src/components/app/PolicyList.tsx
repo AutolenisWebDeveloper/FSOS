@@ -10,6 +10,8 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { SecuritiesChip, securitiesRowClass } from '@/components/ui/securities'
 import { Numeric } from '@/components/ui/typography'
+import { ListPagination } from '@/components/ui/pagination'
+import { paginate } from '@/lib/data/paginate'
 import { EmptyState } from '@/components/archetypes'
 import { POLICY_STATUS } from '@/lib/validation/schemas'
 
@@ -30,6 +32,8 @@ export function PolicyList({ rows }: { rows: PolicyRow[] }) {
   const [q, setQ] = React.useState('')
   const [status, setStatus] = React.useState('')
   const [book, setBook] = React.useState('')
+  const [page, setPage] = React.useState(0)
+  const [pageSize, setPageSize] = React.useState(50)
 
   const hasAgency = React.useMemo(() => rows.some((p) => p.agency_name), [rows])
 
@@ -41,6 +45,10 @@ export function PolicyList({ rows }: { rows: PolicyRow[] }) {
     if (book) r = r.filter((p) => (book === 'own' ? p.is_with_us : !p.is_with_us))
     return r
   }, [rows, q, status, book])
+
+  React.useEffect(() => setPage(0), [q, status, book])
+
+  const paged = paginate(filtered, page, pageSize)
 
   if (rows.length === 0) {
     return (
@@ -83,7 +91,7 @@ export function PolicyList({ rows }: { rows: PolicyRow[] }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((p) => (
+              {paged.items.map((p) => (
                 <TableRow key={p.id} className={p.is_security ? securitiesRowClass : undefined}>
                   <TableCell>
                     <Link href={`/app/policies/${p.id}`} className="font-medium text-primary hover:underline"><Numeric>{p.policy_number ?? 'Unnumbered'}</Numeric></Link>
@@ -110,6 +118,15 @@ export function PolicyList({ rows }: { rows: PolicyRow[] }) {
           </Table>
         </div>
       )}
+      <ListPagination
+        page={paged.page}
+        pageSize={pageSize}
+        total={filtered.length}
+        noun="policy"
+        nounPlural="policies"
+        onPageChange={setPage}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(0) }}
+      />
     </div>
   )
 }

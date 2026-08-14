@@ -10,6 +10,8 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { SecuritiesChip, securitiesRowClass } from '@/components/ui/securities'
 import { Money } from '@/components/ui/typography'
+import { ListPagination } from '@/components/ui/pagination'
+import { paginate } from '@/lib/data/paginate'
 import { EmptyState } from '@/components/archetypes'
 import { OPPORTUNITY_STAGE, REFERRAL_ENGAGEMENT } from '@/lib/validation/schemas'
 import type { OppCard } from '@/components/app/OpportunityBoard'
@@ -19,6 +21,8 @@ export function OpportunityList({ rows }: { rows: OppCard[] }) {
   const [stage, setStage] = React.useState('')
   const [engagement, setEngagement] = React.useState('')
   const [secOnly, setSecOnly] = React.useState(false)
+  const [page, setPage] = React.useState(0)
+  const [pageSize, setPageSize] = React.useState(50)
 
   const filtered = React.useMemo(() => {
     let r = rows
@@ -29,6 +33,10 @@ export function OpportunityList({ rows }: { rows: OppCard[] }) {
     if (secOnly) r = r.filter((o) => o.is_security)
     return r
   }, [rows, q, stage, engagement, secOnly])
+
+  React.useEffect(() => setPage(0), [q, stage, engagement, secOnly])
+
+  const paged = paginate(filtered, page, pageSize)
 
   if (rows.length === 0) {
     return (
@@ -71,7 +79,7 @@ export function OpportunityList({ rows }: { rows: OppCard[] }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((o) => (
+              {paged.items.map((o) => (
                 <TableRow key={o.id} className={o.is_security ? securitiesRowClass : undefined}>
                   <TableCell>
                     <Link href={`/app/opportunities/${o.id}`} className="font-medium text-primary hover:underline">{o.household_name ?? 'Opportunity'}</Link>
@@ -86,6 +94,15 @@ export function OpportunityList({ rows }: { rows: OppCard[] }) {
           </Table>
         </div>
       )}
+      <ListPagination
+        page={paged.page}
+        pageSize={pageSize}
+        total={filtered.length}
+        noun="opportunity"
+        nounPlural="opportunities"
+        onPageChange={setPage}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(0) }}
+      />
     </div>
   )
 }

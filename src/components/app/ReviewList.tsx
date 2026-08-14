@@ -9,6 +9,8 @@ import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Numeric } from '@/components/ui/typography'
+import { ListPagination } from '@/components/ui/pagination'
+import { paginate } from '@/lib/data/paginate'
 import { EmptyState } from '@/components/archetypes'
 import { REVIEW_TYPE, REVIEW_STAGE } from '@/lib/validation/schemas'
 
@@ -33,6 +35,8 @@ export function ReviewList({ rows }: { rows: ReviewRow[] }) {
   const [q, setQ] = React.useState('')
   const [type, setType] = React.useState('')
   const [stage, setStage] = React.useState('')
+  const [page, setPage] = React.useState(0)
+  const [pageSize, setPageSize] = React.useState(50)
 
   const filtered = React.useMemo(() => {
     let r = rows
@@ -42,6 +46,10 @@ export function ReviewList({ rows }: { rows: ReviewRow[] }) {
     if (stage) r = r.filter((x) => x.stage === stage)
     return r
   }, [rows, q, type, stage])
+
+  React.useEffect(() => setPage(0), [q, type, stage])
+
+  const paged = paginate(filtered, page, pageSize)
 
   if (rows.length === 0) {
     return (
@@ -82,7 +90,7 @@ export function ReviewList({ rows }: { rows: ReviewRow[] }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((r) => (
+              {paged.items.map((r) => (
                 <TableRow key={r.id}>
                   <TableCell>
                     <Link href={`/app/reviews/${r.id}`} className="font-medium text-primary hover:underline">{r.household_name ?? 'Review'}</Link>
@@ -97,6 +105,14 @@ export function ReviewList({ rows }: { rows: ReviewRow[] }) {
           </Table>
         </div>
       )}
+      <ListPagination
+        page={paged.page}
+        pageSize={pageSize}
+        total={filtered.length}
+        noun="review"
+        onPageChange={setPage}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(0) }}
+      />
     </div>
   )
 }

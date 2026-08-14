@@ -14,6 +14,8 @@ import { Field } from '@/components/forms/Field'
 import { ModalShell } from '@/components/archetypes'
 import { Money, Numeric } from '@/components/ui/typography'
 import { EmptyState } from '@/components/archetypes'
+import { ListPagination } from '@/components/ui/pagination'
+import { paginate } from '@/lib/data/paginate'
 import { AGENCY_STATUS } from '@/lib/validation/schemas'
 import { patchJson, postJson, deleteJson, firstFieldError } from '@/lib/client/api'
 
@@ -29,8 +31,6 @@ export interface AgencyRow {
   overdue_checkin: boolean
 }
 
-const PAGE = 25
-
 function fmtDate(s: string | null) {
   return s ? new Date(s).toLocaleDateString('en-US') : '—'
 }
@@ -42,6 +42,7 @@ export function AgencyList({ rows, canManage = false }: { rows: AgencyRow[]; can
   const [overdue, setOverdue] = React.useState(false)
   const [sort, setSort] = React.useState<'premium' | 'contact' | 'name'>('premium')
   const [page, setPage] = React.useState(0)
+  const [pageSize, setPageSize] = React.useState(25)
   const [selected, setSelected] = React.useState<Set<string>>(new Set())
   const [busy, setBusy] = React.useState<string | null>(null)
   const [bulk, setBulk] = React.useState<null | { scope: 'selected' | 'filter'; mode: 'archive' | 'purge' }>(null)
@@ -64,8 +65,8 @@ export function AgencyList({ rows, canManage = false }: { rows: AgencyRow[]; can
 
   React.useEffect(() => setPage(0), [q, status, overdue, sort])
 
-  const pageRows = filtered.slice(page * PAGE, page * PAGE + PAGE)
-  const pages = Math.max(1, Math.ceil(filtered.length / PAGE))
+  const paged = paginate(filtered, page, pageSize)
+  const pageRows = paged.items
 
   // Selection is constrained to the current filter set (across pages).
   const filteredIds = React.useMemo(() => new Set(filtered.map((r) => r.id)), [filtered])
@@ -329,21 +330,15 @@ export function AgencyList({ rows, canManage = false }: { rows: AgencyRow[]; can
             ))}
           </div>
 
-          {pages > 1 ? (
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">
-                {filtered.length} agencies · page {page + 1} of {pages}
-              </span>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
-                  Previous
-                </Button>
-                <Button variant="outline" size="sm" disabled={page >= pages - 1} onClick={() => setPage((p) => p + 1)}>
-                  Next
-                </Button>
-              </div>
-            </div>
-          ) : null}
+          <ListPagination
+            page={paged.page}
+            pageSize={pageSize}
+            total={filtered.length}
+            noun="agency"
+            nounPlural="agencies"
+            onPageChange={setPage}
+            onPageSizeChange={(n) => { setPageSize(n); setPage(0) }}
+          />
         </>
       )}
 

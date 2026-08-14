@@ -8,6 +8,8 @@ import { Select } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { SecuritiesChip, securitiesRowClass } from '@/components/ui/securities'
 import { Money } from '@/components/ui/typography'
+import { ListPagination } from '@/components/ui/pagination'
+import { paginate } from '@/lib/data/paginate'
 import { EmptyState, AssumptionBadge } from '@/components/archetypes'
 import { PRODUCT_FAMILY } from '@/lib/validation/schemas'
 
@@ -29,12 +31,18 @@ export interface CommissionRow {
 export function CommissionList({ rows, emptyLabel }: { rows: CommissionRow[]; emptyLabel: string }) {
   const [family, setFamily] = React.useState('')
   const [secOnly, setSecOnly] = React.useState(false)
+  const [page, setPage] = React.useState(0)
+  const [pageSize, setPageSize] = React.useState(50)
   const filtered = React.useMemo(() => {
     let r = rows
     if (family) r = r.filter((x) => x.product_family === family)
     if (secOnly) r = r.filter((x) => x.is_security)
     return r
   }, [rows, family, secOnly])
+
+  React.useEffect(() => setPage(0), [family, secOnly])
+
+  const paged = paginate(filtered, page, pageSize)
 
   if (rows.length === 0) return <EmptyState icon={DollarSign} title={emptyLabel} description="Commissions are created when an opportunity is placed/issued." />
 
@@ -52,7 +60,7 @@ export function CommissionList({ rows, emptyLabel }: { rows: CommissionRow[]; em
         <Table>
           <TableHeader><TableRow><TableHead>Agency</TableHead><TableHead>Family</TableHead><TableHead className="text-right">Total</TableHead><TableHead className="text-right">FSA</TableHead><TableHead className="text-right">Agency</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
           <TableBody>
-            {filtered.map((c) => (
+            {paged.items.map((c) => (
               <TableRow key={c.id} className={c.is_security ? securitiesRowClass : undefined}>
                 <TableCell><Link href={`/app/commissions/${c.id}`} className="font-medium text-primary hover:underline">{c.agency_name ?? 'Direct'}</Link>{c.is_security ? <SecuritiesChip className="ml-2" /> : null}{c.is_trail ? <Badge variant="outline" className="ml-2">trail</Badge> : null}</TableCell>
                 <TableCell className="capitalize text-muted-foreground">{c.product_family ?? '—'}</TableCell>
@@ -65,6 +73,14 @@ export function CommissionList({ rows, emptyLabel }: { rows: CommissionRow[]; em
           </TableBody>
         </Table>
       </div>
+      <ListPagination
+        page={paged.page}
+        pageSize={pageSize}
+        total={filtered.length}
+        noun="commission"
+        onPageChange={setPage}
+        onPageSizeChange={(n) => { setPageSize(n); setPage(0) }}
+      />
     </div>
   )
 }

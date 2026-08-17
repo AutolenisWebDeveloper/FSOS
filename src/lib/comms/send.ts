@@ -657,6 +657,46 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
     }
   }
 
+  // FAIL CLOSED (audit finding P1-A — the email sibling of F-2): the AUTHORED body
+  // (post-personalization, post-identity-disclosure, PRE branded-shell wrap) must carry real
+  // content. The gate's `message_content` backstop validates req.body, which for EMAIL is the
+  // already-wrapped branded shell (Farmers logo + CAN-SPAM footer) and is therefore NEVER empty
+  // — even when the template body resolved to ''. So an empty/whitespace email template would
+  // ship as a signature-only "near-empty" email on the broadcast/drip/legacy paths (the campaign
+  // ticks guard upstream; those three paths do not). Catch it HERE, at the single send
+  // choke-point, so every caller inherits the guard — the email analog of the 67-client blank-SMS
+  // incident. SMS empties are already blocked at the gate; this is defense in depth for both
+  // channels and runs BEFORE the wrap so the shell can never mask an empty body.
+  if (identityBody.trim() === '') {
+    const reason = `Empty ${ctx.channel} body — nothing to send; withheld before branded-shell wrap.`
+    try {
+      await writeAudit({
+        actor: ctx.actor,
+        action: 'comms.blocked',
+        entity: ctx.entity?.type ?? (conversationId ? 'conversation' : 'message'),
+        entityId: ctx.entity?.id ?? conversationId ?? null,
+        diff: {
+          channel: ctx.channel,
+          to,
+          blockedStep: 'message_content',
+          reason,
+          sourceCampaignKey: ctx.sourceCampaignKey ?? null,
+          campaignId: ctx.campaignId ?? null,
+          templateId: ctx.templateId ?? null,
+        },
+      })
+    } catch {
+      /* best-effort audit; the return below still withholds the send */
+    }
+    return {
+      sent: false,
+      blocked: true,
+      gate: { allowed: false, escalate: true, reason },
+      conversationId: conversationId ?? undefined,
+      reason,
+    }
+  }
+
   // Compute the gate context FRESH (send-time re-check — WF-9 invariant). Step 4
   // is satisfied by an approved template OR, for AI-authored replies with no
   // template, an approved AI policy (both AI kill switches on).
@@ -688,30 +728,46 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
   // the channel-wide check — a purpose-level revoke must win over a channel grant; a
   // durable workshop grant can still OR in. Frequency/collision become non-escalating gate
   // deferrals. Absent ctx.purpose → unchanged behavior.
+  // Per-recipient FREQUENCY caps (§9) apply to EVERY campaign send, not only those that declared a
+  // purpose (audit finding P1-B: `withinFrequencyCaps` used to be computed only inside `if
+  // (ctx.purpose)`, so a purposeless campaign — and the entire legacy `/api/campaigns/run` drip —
+  // ran with NO min-interval / SMS-per-day / marketing-email-per-day / combined-touch cap). An
+  // unclassified campaign send is treated as MARKETING for capping — the same default the stream
+  // router (streamForPurpose) and the quiet-hours floor (quietHoursApply) already apply. Purpose-
+  // scoped CONSENT and campaign COLLISION stay opt-in to an EXPLICIT purpose: a defaulted purpose
+  // must never newly replace the channel-wide consent read or pause on a §10 collision the caller
+  // did not opt into. Consent, DNC/STOP, approval, the red-line, and the firewall are all enforced
+  // independently below regardless.
+  const effectivePurpose = ctx.purpose ?? 'MARKETING'
   let withinFrequencyCaps: boolean | undefined
   let frequencyReason: string | undefined
   let collisionPaused: boolean | undefined
   let collisionReason: string | undefined
-  if (ctx.purpose) {
+  {
     const policy = await resolveSendPolicy({
       memberId: convMemberId,
       channel: ctx.channel,
-      purpose: ctx.purpose,
+      purpose: effectivePurpose,
       conversationId,
       activeCampaignPurpose: ctx.activeCampaignPurpose ?? null,
       // Reply-scoped caps for a live conversation turn; outreach caps for everything else.
       frequencyPolicyId: ctx.isConversationReply === true ? 'reply' : 'global',
     })
-    if (policy.consentForPurpose !== null) {
-      // A purpose-scoped grant/revoke replaces the channel-wide read. The console/self-test
-      // waiver still ORs in — it is already purpose-revoke-aware (consentRevoked checked the
-      // purpose-scoped row), so consentWaiverApplies is false whenever this purpose was revoked.
-      consent = policy.consentForPurpose || ctx.durableConsentGranted === true || consentWaiverApplies
-    }
+    // FREQUENCY applies to every send (purpose defaulted above).
     withinFrequencyCaps = policy.frequency.allowed
     frequencyReason = policy.frequency.reason
-    collisionPaused = !policy.collision.allowed
-    collisionReason = policy.collision.reason
+    // CONSENT replacement + COLLISION remain gated on an EXPLICIT caller purpose (behavior for
+    // purposeless sends is unchanged apart from now honoring the frequency caps).
+    if (ctx.purpose) {
+      if (policy.consentForPurpose !== null) {
+        // A purpose-scoped grant/revoke replaces the channel-wide read. The console/self-test
+        // waiver still ORs in — it is already purpose-revoke-aware (consentRevoked checked the
+        // purpose-scoped row), so consentWaiverApplies is false whenever this purpose was revoked.
+        consent = policy.consentForPurpose || ctx.durableConsentGranted === true || consentWaiverApplies
+      }
+      collisionPaused = !policy.collision.allowed
+      collisionReason = policy.collision.reason
+    }
   }
 
   // Data confidence (Slice 6, §13): a message making SPECIFIC claims on unverified/
@@ -999,6 +1055,10 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
       suppressionResolved,
       suppressionReason,
       usesApprovedTemplateOrPolicy: approved,
+      // 5 — B3-1: relax the recommendation red-line ONLY for a supervisor-approved, human-authored
+      // template (a real approved template id on a NON-AI send). AI-generated content — even when it
+      // rides an approved AI policy — never qualifies, so the firewall on the agent is untouched.
+      approvedHumanTemplate: approved === true && !!ctx.templateId && ctx.aiGenerated !== true,
       // 4b — fail-closed personalization: a required merge token that did not resolve blocks +
       // escalates (never ship an empty appointment time / opt-out link / advisor identity).
       personalizationResolved: unresolvedTokens.length === 0,

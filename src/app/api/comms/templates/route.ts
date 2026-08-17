@@ -4,7 +4,6 @@ import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { TemplateCreateSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
-import { containsRecommendationLanguage } from '@/lib/compliance/guardrail'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -35,11 +34,11 @@ export async function POST(req: NextRequest) {
   const v = TemplateCreateSchema.safeParse(parsed.data)
   if (!v.success) return NextResponse.json({ error: 'Invalid template', details: v.error.flatten() }, { status: 400 })
 
-  // The editor blocks individualized recommendation language before it can even be saved.
-  if (containsRecommendationLanguage(v.data.body)) {
-    return NextResponse.json({ error: 'Template contains individualized recommendation / call-to-action language. Education/invitation only.', reason: 'recommendation' }, { status: 422 })
-  }
-
+  // B3-1: a human-authored template may carry ordinary suggestive marketing copy at save time. It
+  // still seeds as DRAFT and requires supervisor approval before any campaign can use it, and the
+  // send gate only relaxes its recommendation red-line for an APPROVED template — so the approval
+  // workflow, not a save-time block, is the accountable control. The securities firewall, consent,
+  // DNC, and template approval all still apply to every send.
   try {
     const db = getDb()
     const actor = actorOf(auth.session)

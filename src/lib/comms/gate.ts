@@ -111,6 +111,17 @@ export interface GateInput {
   /** 4 — approved template or approved AI policy. */
   usesApprovedTemplateOrPolicy: boolean
   /**
+   * 5 — this send uses an APPROVED, human-authored TEMPLATE (a real template id that cleared the
+   * compliance/supervisor approval workflow), NOT AI-generated content. Defaults to FALSE, so the
+   * recommendation red-line (step 5) applies exactly as before to AI drafts and un-templated sends.
+   * When TRUE the red-line is relaxed for this send (owner decision B3-1): a licensed human authored
+   * the copy and a supervisor approved it, so ordinary suggestive marketing wording ("a term policy
+   * may be a great fit") is permitted. This NEVER relaxes the securities firewall (step 6,
+   * `isSecurity`), consent, DNC, approval, or any other step — only the individualized-recommendation
+   * wording check, and only for supervisor-approved human templates.
+   */
+  approvedHumanTemplate?: boolean
+  /**
    * 4b — every BLOCKING-tier merge token the body references resolved (advisor/agency identity,
    * the unsubscribe/scheduling links, and booking specifics). Defaults to TRUE so existing
    * callers are unaffected. A false is a HARD block that ESCALATES: a message missing required
@@ -242,7 +253,11 @@ export function evaluateGate(input: GateInput): GateResult {
   // manage link, absent advisor/agency identity). Escalating hard block — never sent, routed to
   // the FSA to complete (§13; personalize.unresolvedBlockingTokens is the send-time source).
   if (input.personalizationResolved === false) return blocked('personalization', true, input.personalizationReason)
-  if (containsRecommendationLanguage(input.draft)) return blocked('recommendation')
+  // 5 — individualized recommendation / call-to-action red-line. Relaxed ONLY for a supervisor-
+  // approved, human-authored template (B3-1): the human author + approval workflow is the accountable
+  // control there, so ordinary suggestive marketing copy is allowed. AI-generated and un-templated
+  // sends still get the full red-line. The securities firewall below is unaffected.
+  if (!input.approvedHumanTemplate && containsRecommendationLanguage(input.draft)) return blocked('recommendation')
   if (input.isSecurity) return blocked('is_security')
   // 6b — a specific claim on unverified/conflicting data (§13). Escalates: exclude the
   // contact + raise a verification task; never send on a guess.

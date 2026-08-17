@@ -27,7 +27,6 @@ import { sendThroughGate } from '@/lib/comms/send'
 import { isWithinOperatingHours } from '@/lib/comms/hours'
 import { searchKnowledge, renderKnowledgeContext } from '@/lib/knowledge/library'
 import { containsRecommendationLanguage } from '@/lib/compliance/guardrail'
-import { FINRA_DISCLAIMER } from '@/lib/compliance'
 import { writeAudit } from '@/lib/audit/log'
 import {
   OUTREACH_AGENTS,
@@ -433,9 +432,12 @@ export async function runOutreachAgent(agentKey: OutreachAgentKey): Promise<{ se
           continue
         }
 
-        // Email carries the required educational disclaimer; SMS stays short (footer
-        // appended by the dispatcher). The gate is still the final authority.
-        const body = item.channel === 'email' ? `${draft}\n\n${FINRA_DISCLAIMER}` : draft
+        // Per the owner decision (B3-4) the auto-appended FINRA disclaimer is removed from
+        // client-facing AI outreach — ordinary booking/nurture email should read as a plain note,
+        // not compliance boilerplate. The securities firewall is unaffected: a recommendation-shaped
+        // draft was already escalated above (recommendation_language), and the gate remains the final
+        // authority on every send. SMS opt-out footer is still appended by the dispatcher.
+        const body = draft
 
         const outcome = await sendThroughGate({
           channel: item.channel,

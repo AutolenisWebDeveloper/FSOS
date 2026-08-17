@@ -11,7 +11,7 @@
 import { runGateway } from '@/lib/ai/gateway'
 import { searchKnowledge, renderKnowledgeContext, recordCitations, type RetrievedChunk } from '@/lib/knowledge/library'
 import { containsRecommendationLanguage } from '@/lib/compliance/guardrail'
-import { FINRA_DISCLAIMER } from '@/lib/compliance'
+import { siteUrl } from '@/lib/site'
 import { getDb } from '@/lib/supabase/client'
 import type { Conversation } from '@/lib/comms/conversations'
 
@@ -23,7 +23,11 @@ You operate strictly in the GREEN ZONE. You MAY: acknowledge the message, answer
 
 If the contact asks for advice, a recommendation, a specific product, pricing/suitability, or anything securities-related, DO NOT answer it — instead say a licensed specialist (Markist) will follow up personally, and keep the reply to that hand-off. Prefer to under-answer and escalate rather than cross a line.
 
-Use the Knowledge Library context only as background. Never state a value flagged "CONFIG DEFAULT — verify" as an established fact. Keep replies concise (SMS: <320 chars; email: a few short sentences). Do not add signatures, disclaimers, or opt-out footers — the system appends required footers. Output ONLY the reply text, nothing else.`
+Use the Knowledge Library context only as background. Never state a value flagged "CONFIG DEFAULT — verify" as an established fact.
+
+SCHEDULING: your PRIMARY objective is to help the contact book a review with Markist. When the contact is open to scheduling — or asks how/when — share Markist's real booking link, which is provided to you below as "BOOKING LINK". Use that exact URL verbatim; NEVER invent, guess, shorten, or alter a scheduling URL, and never state a specific date/time as available yourself (the booking page shows Markist's real openings). One clear invitation with the link is enough.
+
+Keep replies concise (SMS: <320 chars; email: a few short sentences). Do not add signatures, disclaimers, or opt-out footers — the system appends required footers. Output ONLY the reply text, nothing else.`
 
 export interface DraftResult {
   draft: string
@@ -44,8 +48,11 @@ export async function draftReply(
   inboundBody: string,
   history: HistoryMsg[],
 ): Promise<DraftResult | { error: string }> {
-  // Retrieve knowledge relevant to the inbound question (client-safe context only).
-  const chunks = await searchKnowledge(inboundBody, { limit: 5, clientSafeOnly: false })
+  // Retrieve knowledge relevant to the inbound question — CLIENT-SAFE context only. This draft is
+  // sent to a real prospect, so internal-only knowledge must never surface in it (I-7: the flag
+  // previously read `false`, contradicting this contract). Risk-topic content is still held by the
+  // firewall regardless; this narrows the retrieval corpus to what is safe to say to a client.
+  const chunks = await searchKnowledge(inboundBody, { limit: 5, clientSafeOnly: true })
   const knowledge = renderKnowledgeContext(chunks)
 
   const transcript = history
@@ -53,8 +60,14 @@ export async function draftReply(
     .map((m) => `${m.direction === 'inbound' ? 'Contact' : 'Markist'}: ${(m.body || '').slice(0, 500)}`)
     .join('\n')
 
+  // I-6 — the REAL booking link, resolved server-side, so the agent shares Markist's actual
+  // scheduler (the existing self-serve booking flow reads his real availability, checks conflicts,
+  // writes the calendar, and sends the confirmations) instead of omitting it or inventing a URL.
+  const bookingLink = `${siteUrl()}/schedule`
+
   const userContent =
     (knowledge ? knowledge + '\n\n' : '') +
+    `BOOKING LINK (share verbatim when scheduling): ${bookingLink}\n\n` +
     `CONVERSATION SO FAR (${conversation.channel}):\n${transcript || '(no prior messages)'}\n\n` +
     `LATEST INBOUND FROM CONTACT:\n${inboundBody.slice(0, 1500)}\n\n` +
     `Draft Markist's green-zone reply now.`
@@ -83,7 +96,12 @@ export async function draftReply(
     // use it — hand off. (The gate would block it anyway; this avoids a wasted send.)
     const escalateOnly = containsRecommendationLanguage(draft)
     if (escalateOnly) {
-      draft = `Thanks for reaching out! This is a great question for Markist, your licensed Farmers Financial Services specialist — he'll follow up with you personally. ${FINRA_DISCLAIMER}`
+      // Securities firewall (Bucket 2, intact): a recommendation-shaped draft is replaced with a
+      // plain hand-off that defers to the licensed human — the compliance control lives here, in the
+      // deferral itself, not in an appended disclaimer sentence. Per the owner decision (B3-4) the
+      // auto-appended FINRA disclaimer is removed from client-facing replies; the hand-off still
+      // routes every real advice question to the licensed FSA.
+      draft = `Thanks for reaching out! This is a great question for Markist, your licensed Farmers Financial Services specialist — he'll follow up with you personally.`
     }
 
     if (runId) {

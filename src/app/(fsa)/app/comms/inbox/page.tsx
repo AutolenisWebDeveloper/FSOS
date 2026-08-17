@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
 import { TimeCell } from '@/components/ui/time'
 
@@ -47,14 +47,15 @@ export default async function InboxPage() {
         <EmptyState title="No conversations yet" description="Inbound SMS/email and replies appear here, threaded by contact." />
       ) : (
         <Table>
+          <TableCaption srOnly>Two-way conversation threads, one row per contact, with channel, linkage, last activity, and status flags.</TableCaption>
           <TableHeader>
             <TableRow>
-              <TableHead>Contact</TableHead>
-              <TableHead>Channel</TableHead>
-              <TableHead>Linked</TableHead>
-              <TableHead>Last</TableHead>
-              <TableHead>Flags</TableHead>
-              <TableHead></TableHead>
+              <TableHead scope="col">Contact</TableHead>
+              <TableHead scope="col">Channel</TableHead>
+              <TableHead scope="col">Linked</TableHead>
+              <TableHead scope="col">Last</TableHead>
+              <TableHead scope="col">Flags</TableHead>
+              <TableHead scope="col"><span className="sr-only">Open thread</span></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -78,8 +79,8 @@ export default async function InboxPage() {
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-wrap gap-1">
-                    {c.is_security ? <Badge variant="blocked">securities</Badge> : null}
-                    {c.ai_autoreply ? <Badge variant="won">AI auto-reply</Badge> : null}
+                    {c.is_security ? <Badge variant="security">securities</Badge> : null}
+                    {c.ai_autoreply ? <Badge variant="secondary">AI auto-reply</Badge> : null}
                     {c.status !== 'open' ? <Badge variant="outline">{c.status}</Badge> : null}
                   </div>
                 </TableCell>

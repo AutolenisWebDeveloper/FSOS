@@ -6,11 +6,13 @@
 // parallel scheduler, no fabricated calendar integration.
 //
 // Green-zone: advancing an appointment's status and creating an internal reschedule
-// task is data assembly — it sends nothing. Any outreach that follows still flows
-// through the workforce + the 7-step gate.
+// task is data assembly. A terminal transition (no_show / completed) additionally fires the
+// corresponding client-facing lifecycle notice (no-show follow-up / recap) — best-effort, fire-once
+// via the booking ledger, and routed through the SAME 7-step gate as every other send.
 
 import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
+import { sendAppointmentNotice } from '@/lib/booking/notify'
 import {
   canTransition,
   planNoShowRecovery,
@@ -82,6 +84,20 @@ export async function setAppointmentStatus(
     entityId: appointmentId,
     diff: { from, to: toStatus, note: opts.note ?? null },
   })
+
+  // B-5 — fire the client-facing lifecycle notice on a terminal transition. A no-show gets a
+  // "sorry we missed you / rebook" note; a completed appointment gets a recap thank-you. These
+  // legs previously had templates but no trigger (dead legs). Best-effort and fire-once via the
+  // booking notification ledger, and routed through the SAME 7-step gate + transactional fallback
+  // as every other booking notice — the status change has already committed, so a deferred/blocked
+  // notice never fails this transition.
+  if (toStatus === 'no_show' || toStatus === 'completed') {
+    try {
+      await sendAppointmentNotice(appointmentId, toStatus === 'no_show' ? 'no_show_followup' : 'recap', { actor })
+    } catch {
+      /* best-effort — the transition + audit above are the durable record */
+    }
+  }
 
   return { ok: true, id: appointmentId, from, to: toStatus }
 }

@@ -188,3 +188,33 @@ Type-check + unit + RLS actually execute and report real results (above). The th
 5. **Design fixes** — approve the FIX-NOW design batch (securities-marker color, Compliance tablist a11y, metric tiles, table a11y, native selects, JSON dumps)?
 
 Nothing above is applied. On your go-ahead I proceed into Phase 5 (fix → check → refix, one item at a time) on the approved scope only.
+
+---
+
+## 7. PHASE 5 — Implemented (approved scope), verified & pushed
+
+Decisions captured at the checkpoint: full agent→booking handoff; apply all safety fixes; loosen the template red-line for human templates (confirm diff first); remove the FINRA disclaimer; keep internal calendar + Zoom (no Google write).
+
+Each item ran the fix → review → regression → validate loop. Baseline and after are real executed results.
+
+| Item | Change | Proof | Status |
+|---|---|---|---|
+| **P1-A** | `send.ts` withholds an empty AUTHORED body before the email branded-shell wrap, at the single choke-point (all callers inherit). | `tests/comms-empty-email-failclosed.mjs` (8/8) — empty/whitespace email never dispatched on the real path; valid email/SMS still dispatch. | ✅ done + pushed |
+| **P1-B** | `send.ts` resolves the send policy with a defaulted MARKETING purpose so per-recipient frequency caps apply to purposeless + legacy campaigns; consent/collision stay opt-in to an explicit purpose. | `tests/comms-frequency-purposeless.mjs` (5/5) — purposeless send carries the frequency verdict into the gate. | ✅ done + pushed |
+| **B-3** | `booking/notify.ts` `deliverLeg` falls back to a guaranteed transactional notice on `template_not_approved` (email, non-confirmation), claiming the fire-once ledger. Pure content builder in `notify-core.ts`. | `booking-notify` test extended (+8: every event non-empty, states what/when, rebook CTA). | ✅ done + pushed |
+| **B3-4** | Removed the auto-appended FINRA disclaimer from the two client-facing sites (`ai/workforce.ts` outreach email, `ai/responder.ts` hand-off reply). Firewall unchanged. | AI/comms suites pass; scoped away from FNA reports/social posts/internal surfaces (see note). | ✅ done + pushed |
+| **I-7** | `ai/responder.ts` retrieval `clientSafeOnly:true` to match its client-safe contract. | Conversation suites pass. | ✅ done + pushed |
+| **I-6** | `ai/responder.ts` given Markist's REAL booking link + instructed to share it verbatim; connects reply→agent→booking through the ONE existing booking path (no invented URLs, no parallel entry point). | Type-check + conversation suites pass. | ✅ done + pushed |
+
+**Full re-verification after the batch:** `tsc --noEmit` clean · `next lint` clean · **181/181 unit files pass** · **14/14 RLS files pass**. No regressions; every Bucket-2 control's tests (gate, firewall, consent/STOP, message-of-record, template approval, audit) still green.
+
+### Awaiting your decision (not applied)
+- **B3-1** (template red-line) — precise diff below; needs sign-off (touches gate step 5).
+- **I-4 full AI auto-booking** — the agent parsing a free-text time and WRITING the calendar itself. Deliberately NOT shipped autonomously: it adds a second booking entry point (vs the hard invariant "no parallel booking path / use the existing system") and, more importantly, cannot be end-to-end verified here (Supabase/Google Calendar/Twilio need OAuth absent in this session). The reliable seam (I-6 link handoff through the existing flow) is live; recommend I-4 as a carefully-staged follow-up only if you want the agent itself to book.
+- **I-2** cross-sell inbound-intent auto-advance — needs an intent classifier; the reply already pauses + escalates to you, so this is convenience, deferrable.
+- **B-5** wire `no_show_followup` + `recap` — new client-facing messages on status change; content builder already exists (from B-3), needs your OK to fire them.
+- **B-1** null-host double-book guard — requires a migration.
+- **I-3** proactive agent-runner cron — turns on autonomous outreach; sensitive.
+- **Design FIX-NOW batch** — securities-marker color (red→purple), Compliance tablist a11y, metric tiles, table a11y, native selects, JSON dumps. Additive; not yet applied.
+
+**B3-4 scope note:** removed only from client-facing AI outreach/replies. FNA report disclosures, public social-post disclaimers, and internal decision-support surfaces were left intact (a formal report/post disclaimer is standard and removing it could create real exposure for a licensed agent). Tell me if you want it gone from those too.

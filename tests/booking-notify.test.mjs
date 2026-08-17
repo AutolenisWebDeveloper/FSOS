@@ -16,7 +16,7 @@ execSync(
   { stdio: 'inherit' },
 )
 const require = createRequire(import.meta.url)
-const { formatAppointmentTime, meetingDetailsText, buildBookingContext, isReminderDue, DEFAULT_REMINDER_LEAD_HOURS } =
+const { formatAppointmentTime, meetingDetailsText, buildBookingContext, isReminderDue, DEFAULT_REMINDER_LEAD_HOURS, buildBookingFallbackContent } =
   require(join(out, 'notify-core.js'))
 
 let passed = 0
@@ -101,6 +101,40 @@ t('not due when the booking itself was made inside the lead window (confirmation
 })
 t('default lead is 24h', () => {
   assert.equal(DEFAULT_REMINDER_LEAD_HOURS, 24)
+})
+
+// B-3 — the transactional fallback content is fail-closed by construction: for EVERY lifecycle
+// event it produces a non-empty subject/heading/lede AND rows that state WHAT + WHEN + HOW, so a
+// template-not-approved fallback can never ship an empty/placeholder message.
+console.log('buildBookingFallbackContent (B-3 fallback)')
+const fbInp = {
+  agent: 'Markist Reed', typeName: 'Coverage Review', name: 'Dana',
+  appointmentTime: 'Monday, August 3, 2026 at 9:00 AM CDT',
+  meetingDetails: 'Join your video meeting here: https://zoom.us/j/9',
+  rescheduleUrl: 'https://x/schedule?manage=r', cancelUrl: 'https://x/schedule?manage=c',
+  scheduleUrl: 'https://x/schedule',
+}
+for (const ev of ['rescheduled', 'cancellation', 'reminder', 'no_show_followup', 'recap', 'unknown_event']) {
+  t(`fallback content for "${ev}" is non-empty and states what/when`, () => {
+    const c = buildBookingFallbackContent(ev, fbInp)
+    assert.ok(c.subject.trim().length > 0, 'subject non-empty')
+    assert.ok(c.heading.trim().length > 0, 'heading non-empty')
+    assert.ok(c.lede.trim().length > 0, 'lede non-empty')
+    assert.ok(c.rows.some((r) => r.value === fbInp.appointmentTime), 'carries the appointment time')
+    assert.ok(c.rows.some((r) => r.value === 'Coverage Review'), 'carries the appointment type')
+    // Green-zone: no recommendation language in any fallback copy.
+    assert.doesNotMatch(`${c.subject} ${c.heading} ${c.lede} ${c.note}`, /you should (buy|invest|convert|roll)/i)
+  })
+}
+t('fallback degrades name to "there" and typeName to a safe default when unknown', () => {
+  const c = buildBookingFallbackContent('reminder', { ...fbInp, name: '', typeName: '' })
+  assert.match(c.heading, /there/)
+  assert.ok(c.rows.some((r) => r.value === 'your appointment'))
+})
+t('cancellation + no_show point the client to rebooking (never a dead end)', () => {
+  for (const ev of ['cancellation', 'no_show_followup']) {
+    assert.match(buildBookingFallbackContent(ev, fbInp).note, /rebook/i)
+  }
 })
 
 console.log(`\nAll ${passed} assertions passed.`)

@@ -11,10 +11,11 @@
 
 import { getDb } from '@/lib/supabase/client'
 import { unwrapOne } from '@/lib/data/query'
-import { CONTACT, siteUrl } from '@/lib/site'
+import { BUSINESS, CONTACT, siteUrl } from '@/lib/site'
 import { sendThroughGate } from '@/lib/comms/send'
+import { sendVisitorAck } from '@/lib/notifications/transactional'
 import { signManageToken, manageTokenKey, MANAGE_TOKEN_TTL_MS } from './manage-tokens'
-import { buildBookingContext, DEFAULT_REMINDER_LEAD_HOURS } from './notify-core'
+import { buildBookingContext, buildBookingFallbackContent, DEFAULT_REMINDER_LEAD_HOURS } from './notify-core'
 import { type LifecycleEvent, sourceKeyFor, dueReminderOffsets } from './notify-events'
 import { smsA2pApproved } from '@/lib/comms/a2p'
 
@@ -201,6 +202,47 @@ async function releaseDelivery(db: Db, id: string): Promise<void> {
 }
 
 /**
+ * B-3 — the guaranteed TRANSACTIONAL fallback for a lifecycle notice whose approved template is not
+ * yet available (templates seed as `draft`). Built entirely from the appointment's own data, so the
+ * message is NEVER empty (fail-closed by construction: it always states WHAT and WHEN) and a
+ * reschedule / cancellation / reminder is never silently dropped while templates await approval —
+ * the same guarantee book.ts already gives the INITIAL confirmation. Email only: SMS has no
+ * transactional carve-out (A2P/TCPA), so an SMS leg still defers rather than falling back.
+ */
+async function sendBookingTransactionalFallback(
+  db: Db,
+  appt: ApptRow,
+  event: LifecycleEvent,
+): Promise<NotifyOutcome> {
+  const contact = unwrapOne(appt.contacts)
+  const type = unwrapOne(appt.appointment_types)
+  const to = contact?.email
+  if (!to || !appt.starts_at) return { sent: false, reason: 'no_recipient' }
+  const ctx = buildBookingContext({
+    fullName: contact?.full_name,
+    startsAt: appt.starts_at,
+    bookerTimezone: appt.booker_timezone,
+    meetingMode: appt.meeting_mode ?? type?.meeting_mode ?? 'video',
+    joinUrl: appt.join_url,
+    phone: contact?.phone,
+    location: OFFICE_LOCATION,
+  })
+  const links = manageUrls(appt)
+  const { subject, heading, lede, rows, note } = buildBookingFallbackContent(event, {
+    agent: BUSINESS.agent,
+    typeName: type?.name || 'your appointment',
+    name: ctx.first_name,
+    appointmentTime: ctx.appointment_time,
+    meetingDetails: ctx.meeting_details,
+    rescheduleUrl: links.reschedule_url,
+    cancelUrl: links.cancel_url,
+    scheduleUrl: `${siteUrl()}/schedule`,
+  })
+  const result = await sendVisitorAck({ to, subject, heading, lede, rows, note: note || undefined })
+  return { sent: result.ok === true, reason: result.ok ? undefined : result.error ?? 'fallback_failed', messageId: result.id }
+}
+
+/**
  * Deliver ONE leg (email or SMS) for a lifecycle event through the ledger: claim → send →
  * record/release. Fire-once is the UNIQUE-key claim; a deferred/blocked send releases the claim to
  * retry. The gate is unchanged — consent, quiet-hours, DNC, approved-template, recommendation, and
@@ -240,8 +282,21 @@ async function deliverLeg(
     await markDeliverySent(db, claim.id, outcome.messageId)
     return outcome
   }
-  // Not sent (template not approved yet, quiet hours, no SMS consent, transient block) → release
-  // the claim so a later tick (reminders) or a re-invocation (immediate events) can retry.
+  // B-3 — the approved template isn't available yet (they seed as `draft`). For EMAIL, fall back to
+  // a guaranteed transactional notice built from the appointment's own data, so a reschedule /
+  // cancellation / reminder / recap / no-show-follow-up is NEVER silently dropped while templates
+  // await approval. ONLY the template-availability reason falls back; a genuine consent / DNC /
+  // quiet-hours / no-recipient hold must still defer (release the claim to retry). 'confirmation' is
+  // excluded — book.ts owns its fallback, so falling back here too would double-send the first booking.
+  if (args.channel === 'email' && args.event !== 'confirmation' && outcome.reason === 'template_not_approved') {
+    const fb = await sendBookingTransactionalFallback(db, appt, args.event)
+    if (fb.sent) {
+      await markDeliverySent(db, claim.id, fb.messageId)
+      return fb
+    }
+  }
+  // Not sent (quiet hours, no SMS consent, transient block, or a fallback that could not send) →
+  // release the claim so a later tick (reminders) or a re-invocation (immediate events) can retry.
   await releaseDelivery(db, claim.id)
   return outcome
 }

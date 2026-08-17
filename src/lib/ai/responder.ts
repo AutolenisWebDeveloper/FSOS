@@ -11,7 +11,6 @@
 import { runGateway } from '@/lib/ai/gateway'
 import { searchKnowledge, renderKnowledgeContext, recordCitations, type RetrievedChunk } from '@/lib/knowledge/library'
 import { containsRecommendationLanguage } from '@/lib/compliance/guardrail'
-import { FINRA_DISCLAIMER } from '@/lib/compliance'
 import { getDb } from '@/lib/supabase/client'
 import type { Conversation } from '@/lib/comms/conversations'
 
@@ -83,7 +82,12 @@ export async function draftReply(
     // use it — hand off. (The gate would block it anyway; this avoids a wasted send.)
     const escalateOnly = containsRecommendationLanguage(draft)
     if (escalateOnly) {
-      draft = `Thanks for reaching out! This is a great question for Markist, your licensed Farmers Financial Services specialist — he'll follow up with you personally. ${FINRA_DISCLAIMER}`
+      // Securities firewall (Bucket 2, intact): a recommendation-shaped draft is replaced with a
+      // plain hand-off that defers to the licensed human — the compliance control lives here, in the
+      // deferral itself, not in an appended disclaimer sentence. Per the owner decision (B3-4) the
+      // auto-appended FINRA disclaimer is removed from client-facing replies; the hand-off still
+      // routes every real advice question to the licensed FSA.
+      draft = `Thanks for reaching out! This is a great question for Markist, your licensed Farmers Financial Services specialist — he'll follow up with you personally.`
     }
 
     if (runId) {

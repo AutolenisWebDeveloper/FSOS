@@ -231,6 +231,51 @@ Supabase MCP access to the production project (`supabase-FSOS`, ref `ynxaqeejjme
 - **Full repo-vs-live schema drift audit (read-only):** tables **0 missing**, named constraints **0 missing** (after 091), indexes **2 trivial gaps** only — `idx_form_submissions_pending` and `idx_opra_uncontacted`, both performance-only indexes from `001_initial_schema` on legacy/low-volume tables (`form_submissions`, `opra_cases`). Three other "missing" indexes (`idx_msg_member_channel_sent`, `uq_consents_member_channel_nopurpose`, `uq_consents_member_channel_purpose`) are correctly absent — migration `055` intentionally dropped them. Column-, RLS-policy-, and function/trigger-level drift were **not** exhaustively audited (a deeper pass is available if wanted).
 - **Live-send smoke tests (P1-A / B-3) were NOT run** — those fixes are on this PR, not yet merged/deployed, and the app's Twilio/Resend send path can't be driven from this session. Run them post-deploy in the app; the P1-A audit-log verification query is in the PR description.
 
+---
+
+## 9. PHASE 8 — Deep prod drift pass: RLS, policies, functions, triggers, columns (READ-ONLY, report-only)
+
+Nothing applied. Every item tagged VERIFIED (queried prod directly) or INFERRED.
+
+### 🔴 Security finding — anon-readable PII on `form_submissions` (VERIFIED)
+- **What:** prod carries a policy `public_form_token_read` on `form_submissions` — `SELECT` to role `public`, `USING (true)` — i.e. **no row restriction**. Confirmed by evaluating **as the `anon` role in-DB**: all **9** rows are readable, **1** carrying `response_data` + `fna_report` (a client's financial-needs-analysis answers + AI report) plus `ip_address`/`customer_id`. The `anon` key is public (shipped in the frontend), so this is an anonymous read path to that PII. VERIFIED.
+- **It is prod-only drift:** `public_form_token_read` does **not** exist anywhere in `supabase/migrations/` — it was hand-added to prod. VERIFIED.
+- **Not load-bearing for the app:** the app reads `form_submissions` server-side via the service role (which bypasses RLS), so removing/tightening this policy does not break app functionality. INFERRED (high — 9 server routes use `getDb()`, none rely on an anon read).
+- **Blast radius:** small (9 rows, 1 sensitive) — `form_submissions` is a legacy table largely superseded by `form_responses`. Still a real anonymous-PII-read exposure.
+- **Could not** complete the external REST confirmation — the sandbox egress proxy blocks direct HTTPS to `*.supabase.co` (returns its own 403 to CONNECT); the in-DB `SET ROLE anon` evaluation is the equivalent proof. Whether PostgREST exposes `public` to anon over REST is the one remaining variable (Supabase default = yes; the app's public-form features imply the schema is exposed).
+- **Recommended fix (NOT applied — your call, and via migration not a hand-write):** drop `public_form_token_read`, or replace it with a token-scoped `USING` (e.g. match a signed form token) if any anon-read-by-token flow is actually intended. Add it to the repo migration set so prod and repo converge.
+
+### RLS posture — otherwise clean (VERIFIED)
+- **All 37 tables the repo enables RLS on have RLS ENABLED in prod.** No table is silently unprotected.
+- **Only one over-permissive policy exists in the entire prod schema** (the one above). A full scan for `USING (true)` / null-qual policies to non-service roles returned exactly that row; the write-side scan (permissive `WITH CHECK` to non-service roles) returned **none**.
+- Five tables are RLS-enabled with **0 policies** (`availability_blackouts`, `booking_calendar_connections`, `customer_documents`, `ghl_upload_batches`, `tasks`) — this is **deny-all by design** (the repo defines no policies for them either); server-only access via the service role. Not drift, not exposure.
+
+### Schema objects — near-exact match (VERIFIED)
+- **Tables:** 0 missing. **Named constraints:** 0 missing (after the 091 backfill). **Triggers:** all 49 present, 0 missing.
+- **Indexes:** 2 trivial performance gaps only (`idx_form_submissions_pending`, `idx_opra_uncontacted`, both from `001` on legacy tables). Three other repo index names are correctly absent (migration `055` dropped them).
+- **Functions:** 2 missing — `customer_dob_get`, `customer_dob_set`. **Column:** `customers.dob_enc` missing. These three are the **DOB-at-rest encryption** feature: prod has `encrypt_dob`/`decrypt_dob` but **not** the `dob_enc` ciphertext column or the get/set accessors, so `customers.dob` is stored **plaintext**. Per migration `044` this is a documented **owner decision** (keyless deploy leaves DOB plaintext rather than failing closed) — likely intentional, **but** DOB is PII, so confirm this is the intended at-rest posture. INFERRED-intentional.
+- **Scope note:** functions + triggers were checked in FULL; the column check was a **targeted sample** of ~27 security-relevant columns (of 158 repo-added columns), not exhaustive. A complete column diff is available on request.
+
+---
+
+## 10. Proposal (NOT implemented) — production migration control
+
+**The systemic finding behind everything above:** prod has **no `schema_migrations` ledger**, and changes are applied by hand (that is how `091` was missed and how `119` / `public_form_token_read` were pre-applied outside any PR). Until this is fixed, prod will keep drifting silently. This ranks above the remaining feature work.
+
+Two options; **Option A recommended** (smaller, self-healing, uses the tooling that already exists).
+
+### Option A — adopt the `schema_migrations` ledger prod already lacks (recommended)
+`scripts/migrate.mjs` already creates and reads `schema_migrations` and only applies files not yet recorded. The gap is that prod was never bootstrapped into it. Steps:
+1. **Read-only reconcile first:** run the drift diff in this report against prod; produce the definitive list of applied-vs-repo (this pass shows it is: everything except the 2 trivial indexes + the DOB-encryption trio + whatever the full column diff adds).
+2. **Backfill the ledger without re-running DDL:** `create table if not exists schema_migrations (...)`, then insert one row per migration filename that is already reflected in the live schema (idempotent migrations mean this is safe; the two trivial indexes + DOB items are the only ones NOT yet applied and should be applied through the runner, not marked).
+3. **From then on:** `DATABASE_URL=… npm run migrate` on every deploy (Vercel build step or a release job) — idempotent, recorded, and it fails loudly if a migration errors. No more hand-writes.
+4. **Guardrail:** forbid direct SQL-editor DDL as policy; all schema changes land as a migration file in a PR.
+
+### Option B — CI schema-diff gate (heavier, complementary)
+A CI job that (a) applies all repo migrations to an ephemeral Postgres (the RLS harness already does this), (b) dumps its schema, (c) dumps prod's schema (read-only), and (d) fails the build on any diff. Catches drift in BOTH directions (including hand-added objects like `public_form_token_read`, which Option A alone would not flag). More infra to build and maintain; best added **after** Option A as the belt to its suspenders.
+
+**Recommendation:** Option A now (it directly closes the silent-drift mechanism and is mostly wiring up tooling that already exists), Option B later for two-directional enforcement. Neither is implemented here — this is the read-only proposal you asked for; it awaits your go-ahead.
+
 ### Awaiting your decision (not applied)
 - **B3-1** (template red-line) — precise diff below; needs sign-off (touches gate step 5).
 - **I-4 full AI auto-booking** — the agent parsing a free-text time and WRITING the calendar itself. Deliberately NOT shipped autonomously: it adds a second booking entry point (vs the hard invariant "no parallel booking path / use the existing system") and, more importantly, cannot be end-to-end verified here (Supabase/Google Calendar/Twilio need OAuth absent in this session). The reliable seam (I-6 link handoff through the existing flow) is live; recommend I-4 as a carefully-staged follow-up only if you want the agent itself to book.

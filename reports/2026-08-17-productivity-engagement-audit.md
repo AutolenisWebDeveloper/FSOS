@@ -206,7 +206,18 @@ Each item ran the fix → review → regression → validate loop. Baseline and 
 | **I-7** | `ai/responder.ts` retrieval `clientSafeOnly:true` to match its client-safe contract. | Conversation suites pass. | ✅ done + pushed |
 | **I-6** | `ai/responder.ts` given Markist's REAL booking link + instructed to share it verbatim; connects reply→agent→booking through the ONE existing booking path (no invented URLs, no parallel entry point). | Type-check + conversation suites pass. | ✅ done + pushed |
 
-**Full re-verification after the batch:** `tsc --noEmit` clean · `next lint` clean · **181/181 unit files pass** · **14/14 RLS files pass**. No regressions; every Bucket-2 control's tests (gate, firewall, consent/STOP, message-of-record, template approval, audit) still green.
+**Second batch (after the checkpoint decisions):**
+
+| Item | Change | Proof | Status |
+|---|---|---|---|
+| **B3-1** | `gate.ts` step 5 relaxed ONLY for a supervisor-approved, human-authored template (new `approvedHumanTemplate` signal, defaults false); the two save-time recommendation blocks dropped. AI + un-templated sends keep the full red-line; securities firewall + consent untouched. | `tests/comms-human-template-redline.mjs` (6/6) — relaxed only for approved human template; AI + untemplated still blocked; securities + consent never bypassed. | ✅ done + pushed |
+| **B-5** | `appointments/service.ts` fires the client-facing notice on a terminal transition — no-show → `no_show_followup`, completed → `recap` (were dead legs). Best-effort, fire-once, through the gate + B-3 fallback. | Appointment/booking suites pass. | ✅ done + pushed |
+| **B-1** | Migration `119` adds the null-host (practice-wide) double-book guards — a partial unique index + GiST range-overlap exclusion WHERE `host_user_id IS NULL` — the missing analogs of the host-scoped guards (069/091). | Applies cleanly in the ephemeral-Postgres RLS harness (exit 0). **Not yet applied to the live DB** — operator action `npm run migrate`; pre-apply collision checks are in the migration header. | ✅ done + pushed (migration unapplied) |
+| **Design** | Securities guardrail marker in the inbox list + thread banner switched from red `blocked` to purple `security` (matches `ConversationReply` + DESIGN.md); inbox list got `TableCaption srOnly` + `scope="col"` + a named action column; the AI-auto-reply badge moved off the green `won` variant. | Type-check + lint clean. | ✅ done + pushed |
+
+**Full re-verification after both batches:** `tsc --noEmit` clean · `next lint` clean · **182/182 unit files pass** · **14/14 RLS files pass** (incl. migration 119) · `next build` **compiled successfully (exit 0)**. No regressions; every Bucket-2 control's tests (gate, firewall, consent/STOP, message-of-record, template approval, audit) still green. 5 new regression proofs added (P1-A, P1-B, B-3 content, B3-1, + booking fallback).
+
+**Deferred (your decision at the checkpoint — NOT done):** I-4 full AI auto-booking (link handoff kept instead), I-2 cross-sell intent auto-advance, I-3 proactive-outreach cron, P2-D/P2-E resume-orphan fixes, the dead gate step-7 tidy, and the heavier design polish (Compliance Intelligence tablist→Segmented refactor, native selects, JSON dumps, metric-tile + campaigns-list a11y). These are catalogued above for a focused follow-up.
 
 ### Awaiting your decision (not applied)
 - **B3-1** (template red-line) — precise diff below; needs sign-off (touches gate step 5).

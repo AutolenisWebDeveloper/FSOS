@@ -71,7 +71,7 @@ export default async function ThreadPage(props: { params: Promise<{ id: string }
       }
     >
       <div className="space-y-4">
-        {conv?.is_security ? <Badge variant="blocked">Securities-flagged — excluded from automation</Badge> : null}
+        {conv?.is_security ? <Badge variant="security">Securities-flagged — excluded from automation</Badge> : null}
 
         <div className="space-y-2">
           {msgs.ok && msgs.data.length > 0 ? (

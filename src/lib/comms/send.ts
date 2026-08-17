@@ -1055,6 +1055,10 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
       suppressionResolved,
       suppressionReason,
       usesApprovedTemplateOrPolicy: approved,
+      // 5 — B3-1: relax the recommendation red-line ONLY for a supervisor-approved, human-authored
+      // template (a real approved template id on a NON-AI send). AI-generated content — even when it
+      // rides an approved AI policy — never qualifies, so the firewall on the agent is untouched.
+      approvedHumanTemplate: approved === true && !!ctx.templateId && ctx.aiGenerated !== true,
       // 4b — fail-closed personalization: a required merge token that did not resolve blocks +
       // escalates (never ship an empty appointment time / opt-out link / advisor identity).
       personalizationResolved: unresolvedTokens.length === 0,

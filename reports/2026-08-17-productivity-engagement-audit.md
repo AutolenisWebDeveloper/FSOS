@@ -219,6 +219,18 @@ Each item ran the fix → review → regression → validate loop. Baseline and 
 
 **Deferred (your decision at the checkpoint — NOT done):** I-4 full AI auto-booking (link handoff kept instead), I-2 cross-sell intent auto-advance, I-3 proactive-outreach cron, P2-D/P2-E resume-orphan fixes, the dead gate step-7 tidy, and the heavier design polish (Compliance Intelligence tablist→Segmented refactor, native selects, JSON dumps, metric-tile + campaigns-list a11y). These are catalogued above for a focused follow-up.
 
+---
+
+## 8. PHASE 7 — Live production DB verification (Supabase authorized)
+
+Supabase MCP access to the production project (`supabase-FSOS`, ref `ynxaqeejjmeilpwmuuie`) was available, so the runtime items flagged UNVERIFIABLE in Phase 0 were checked directly (read-only, plus two authorized DDL applies).
+
+- **Migration 119 (B-1) is already applied to prod** — `uq_appointments_nullhost_slot` + `excl_appointments_nullhost_overlap` present and byte-identical to the repo SQL. The null-host double-book guard is live.
+- **Schema-drift finding — migration 091 was MISSING from prod.** `excl_appointments_host_overlap` (the host overlap-booking guard) was the only overlap constraint absent, so overlapping (different-start) double-books for a real host rested only on the app-layer buffer math. Pre-apply check returned **0 conflicts**; **applied to prod** (authorized) — the guard is now live.
+- **`schema_migrations` ledger does not exist in prod** — migrations here were applied by hand, not via `npm run migrate`, which is how 091 was missed. Future-drift risk; recommend adopting the ledger or a schema-diff check in CI.
+- **Full repo-vs-live schema drift audit (read-only):** tables **0 missing**, named constraints **0 missing** (after 091), indexes **2 trivial gaps** only — `idx_form_submissions_pending` and `idx_opra_uncontacted`, both performance-only indexes from `001_initial_schema` on legacy/low-volume tables (`form_submissions`, `opra_cases`). Three other "missing" indexes (`idx_msg_member_channel_sent`, `uq_consents_member_channel_nopurpose`, `uq_consents_member_channel_purpose`) are correctly absent — migration `055` intentionally dropped them. Column-, RLS-policy-, and function/trigger-level drift were **not** exhaustively audited (a deeper pass is available if wanted).
+- **Live-send smoke tests (P1-A / B-3) were NOT run** — those fixes are on this PR, not yet merged/deployed, and the app's Twilio/Resend send path can't be driven from this session. Run them post-deploy in the app; the P1-A audit-log verification query is in the PR description.
+
 ### Awaiting your decision (not applied)
 - **B3-1** (template red-line) — precise diff below; needs sign-off (touches gate step 5).
 - **I-4 full AI auto-booking** — the agent parsing a free-text time and WRITING the calendar itself. Deliberately NOT shipped autonomously: it adds a second booking entry point (vs the hard invariant "no parallel booking path / use the existing system") and, more importantly, cannot be end-to-end verified here (Supabase/Google Calendar/Twilio need OAuth absent in this session). The reliable seam (I-6 link handoff through the existing flow) is live; recommend I-4 as a carefully-staged follow-up only if you want the agent itself to book.

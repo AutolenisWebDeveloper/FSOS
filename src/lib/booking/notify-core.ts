@@ -99,6 +99,81 @@ export function buildBookingContext(input: {
   }
 }
 
+/** The transactional-fallback email content for a lifecycle event (B-3). PURE + fail-closed by
+ *  construction: every branch returns a non-empty subject/heading/lede AND rows that always state
+ *  WHAT (appointment) and WHEN (time) + HOW (meeting details), so a fallback can never ship empty. */
+export interface BookingFallbackContent {
+  subject: string
+  heading: string
+  lede: string
+  rows: { label: string; value: string }[]
+  note: string
+}
+
+export function buildBookingFallbackContent(
+  event: string,
+  inp: {
+    agent: string
+    typeName: string
+    name: string
+    appointmentTime: string
+    meetingDetails: string
+    rescheduleUrl?: string | null
+    cancelUrl?: string | null
+    scheduleUrl: string
+  },
+): BookingFallbackContent {
+  const typeName = inp.typeName || 'your appointment'
+  const name = inp.name || 'there'
+  const changeNote = inp.rescheduleUrl
+    ? `Need to make a change? Reschedule: ${inp.rescheduleUrl} — Cancel: ${inp.cancelUrl ?? inp.rescheduleUrl}`
+    : "Need to make a change? Reply to this email and we'll take care of it."
+  const rows = [
+    { label: 'Appointment', value: typeName },
+    { label: 'When', value: inp.appointmentTime },
+    { label: 'How', value: inp.meetingDetails },
+  ]
+  let subject: string, heading: string, lede: string, note: string
+  switch (event) {
+    case 'rescheduled':
+      subject = `Appointment rescheduled — ${typeName}`
+      heading = `Your appointment has been rescheduled, ${name}.`
+      lede = `Your appointment with ${inp.agent} has a new time. The updated details are below.`
+      note = changeNote
+      break
+    case 'cancellation':
+      subject = `Appointment cancelled — ${typeName}`
+      heading = `Your appointment has been cancelled, ${name}.`
+      lede = `Your appointment with ${inp.agent} has been cancelled. If this was a mistake or you'd like to rebook, we're happy to help.`
+      note = `Rebook any time at ${inp.scheduleUrl}`
+      break
+    case 'reminder':
+      subject = `Reminder — ${typeName}`
+      heading = `A reminder about your upcoming appointment, ${name}.`
+      lede = `This is a friendly reminder of your appointment with ${inp.agent}. The details are below.`
+      note = changeNote
+      break
+    case 'no_show_followup':
+      subject = `We missed you — ${typeName}`
+      heading = `Sorry we missed you, ${name}.`
+      lede = `It looks like we weren't able to connect for your appointment with ${inp.agent}. We'd love to find a time that works better for you.`
+      note = `Rebook any time at ${inp.scheduleUrl}`
+      break
+    case 'recap':
+      subject = `Thank you for meeting — ${typeName}`
+      heading = `Thank you for your time, ${name}.`
+      lede = `Thanks for meeting with ${inp.agent}. If any follow-up would help, just reply to this email.`
+      note = ''
+      break
+    default:
+      subject = `Appointment update — ${typeName}`
+      heading = `An update about your appointment, ${name}.`
+      lede = `Here are the latest details for your appointment with ${inp.agent}.`
+      note = changeNote
+  }
+  return { subject, heading, lede, rows, note }
+}
+
 /** A row (subset) the reminder sweep reasons over. */
 export interface ReminderCandidate {
   status: string

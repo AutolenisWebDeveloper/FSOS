@@ -66,6 +66,7 @@ export function AvailabilityRulesManager({ initialRules }: { initialRules: Avail
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
+    if (saving) return // guard against a re-entrant submit while a save is already in flight
     setErrors({})
     const payload = {
       weekday: Number(form.weekday),

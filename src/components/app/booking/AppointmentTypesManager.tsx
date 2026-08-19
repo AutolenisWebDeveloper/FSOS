@@ -102,6 +102,7 @@ export function AppointmentTypesManager({ initialTypes }: { initialTypes: Appoin
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
+    if (saving) return // guard against a re-entrant submit while a save is already in flight
     setErrors({})
     // Empty optionals are sent as null (not undefined) so an edit can CLEAR them; both are nullish
     // in the schema, so this is also correct for create.

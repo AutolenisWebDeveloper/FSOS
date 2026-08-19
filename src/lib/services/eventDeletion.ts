@@ -44,7 +44,7 @@ export async function deleteComplianceEvent(actor: string, id: string): Promise<
   if (error) return { ok: false, kind: 'error', message: error.message }
   if (!del) return { ok: false, kind: 'not_found', message: 'Alert not found.' }
 
-  await writeAudit({
+  const audit = await writeAudit({
     actor,
     action: 'entity.deleted',
     entity: 'compliance_event',
@@ -58,6 +58,12 @@ export async function deleteComplianceEvent(actor: string, id: string): Promise<
       created_at: (row as { created_at?: string }).created_at ?? null,
     },
   })
+  // writeAudit is best-effort (never reverses the delete), but an UN-AUDITED permanent deletion of a
+  // compliance row must be observable — surface it for monitoring (audit/log.ts DoD note).
+  if (!audit.ok) {
+    // eslint-disable-next-line no-console
+    console.error(`[eventDeletion] audit write failed for deleted compliance_event ${id}:`, audit.error)
+  }
   return { ok: true, id }
 }
 
@@ -83,7 +89,7 @@ export async function deleteEscalation(actor: string, id: string): Promise<Delet
   if (error) return { ok: false, kind: 'error', message: error.message }
   if (!del) return { ok: false, kind: 'not_found', message: 'Escalation not found.' }
 
-  await writeAudit({
+  const audit = await writeAudit({
     actor,
     action: 'entity.deleted',
     entity: 'agent_action',
@@ -97,5 +103,9 @@ export async function deleteEscalation(actor: string, id: string): Promise<Delet
       reason: (row as { reason?: string | null }).reason ?? null,
     },
   })
+  if (!audit.ok) {
+    // eslint-disable-next-line no-console
+    console.error(`[eventDeletion] audit write failed for deleted escalation ${id}:`, audit.error)
+  }
   return { ok: true, id }
 }

@@ -145,4 +145,25 @@ t('freeBusy mapper skips malformed / inverted / missing rows and never throws', 
   assert.deepEqual(busy[0], { startsAt: '2026-08-10T12:00:00.000Z', endsAt: '2026-08-10T12:30:00.000Z' })
 })
 
+console.log('appBaseUrl redirect-origin resolution (redirect_uri_mismatch guard)')
+t('honors NEXT_PUBLIC_URL when it is the only origin set (regression: was previously ignored)', () => {
+  // Deployments that set only NEXT_PUBLIC_URL (as .env.local.example does) must still build the
+  // redirect_uri from the custom domain — not fall back to the request origin (the vercel.app host).
+  assert.equal(m.appBaseUrl({ NEXT_PUBLIC_URL: 'https://www.markistfsa.com' }), 'https://www.markistfsa.com')
+  assert.equal(m.appBaseUrl({ NEXT_PUBLIC_SITE_URL: 'https://www.markistfsa.com/' }), 'https://www.markistfsa.com')
+})
+t('precedence mirrors siteUrl: SITE_URL > APP_URL > NEXT_PUBLIC_URL > APP_URL > VERCEL_URL', () => {
+  assert.equal(
+    m.appBaseUrl({ NEXT_PUBLIC_SITE_URL: 'https://site', NEXT_PUBLIC_APP_URL: 'https://app', NEXT_PUBLIC_URL: 'https://pub' }),
+    'https://site',
+  )
+  assert.equal(m.appBaseUrl({ NEXT_PUBLIC_APP_URL: 'https://app', NEXT_PUBLIC_URL: 'https://pub' }), 'https://app')
+  assert.equal(m.appBaseUrl({ VERCEL_URL: 'preview.vercel.app' }), 'https://preview.vercel.app')
+  assert.equal(m.appBaseUrl({}), '')
+})
+t('the redirect_uri is built on that origin and matches on both legs', () => {
+  const origin = m.appBaseUrl({ NEXT_PUBLIC_URL: 'https://www.markistfsa.com' })
+  assert.equal(m.calendarRedirectUri(origin), 'https://www.markistfsa.com/api/app/booking/calendar/oauth/callback')
+})
+
 console.log(`\nAll ${passed} assertions passed.`)

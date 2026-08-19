@@ -76,7 +76,9 @@ export function GoogleCalendarConnect({
   }
 
   const isConnected = connection?.status === 'connected'
-  const isError = connection?.status === 'error'
+  // 'error' (transient freeBusy/network failure) and 'revoked' (grant no longer valid — refresh
+  // failed or Google returned 401/403) both mean "was set up, now needs a reconnect".
+  const needsAttention = connection?.status === 'error' || connection?.status === 'revoked'
 
   if (!configured) {
     return (
@@ -100,7 +102,7 @@ export function GoogleCalendarConnect({
         <div className="flex items-center gap-2">
           {isConnected ? (
             <Badge variant="active">Connected</Badge>
-          ) : isError ? (
+          ) : needsAttention ? (
             <Badge variant="blocked">Needs attention</Badge>
           ) : (
             <Badge variant="outline">Not connected</Badge>
@@ -142,7 +144,7 @@ export function GoogleCalendarConnect({
         </dl>
       ) : null}
 
-      {isError ? (
+      {needsAttention ? (
         <p className="mt-3 text-sm text-destructive">
           The connection needs to be refreshed — please reconnect to keep blocking busy times.
         </p>

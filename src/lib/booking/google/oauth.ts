@@ -213,10 +213,22 @@ export function expiryFromExpiresIn(expiresIn: number | undefined, nowMs: number
   return new Date(nowMs + expiresIn * 1000).toISOString()
 }
 
-/** Absolute app base URL (env-configurable) for building the OAuth redirect_uri. */
+/** Absolute app base URL (env-configurable) for building the OAuth redirect_uri.
+ *
+ *  The precedence MIRRORS lib/site.ts `siteUrl()` (NEXT_PUBLIC_SITE_URL → NEXT_PUBLIC_APP_URL →
+ *  NEXT_PUBLIC_URL) so the redirect_uri is built from the SAME canonical origin the rest of the app
+ *  uses. Previously this read only NEXT_PUBLIC_APP_URL/APP_URL/VERCEL_URL, so a deployment that set
+ *  only NEXT_PUBLIC_URL (as .env.local.example does) fell back to the request origin — often the
+ *  *.vercel.app host rather than the custom domain registered in Google Cloud Console — producing a
+ *  redirect_uri_mismatch at Google. VERCEL_URL stays last as a deployment fallback. */
 export function appBaseUrl(env: Env = process.env as Env): string {
   const raw =
-    env.NEXT_PUBLIC_APP_URL || env.APP_URL || (env.VERCEL_URL ? `https://${env.VERCEL_URL}` : '') || ''
+    env.NEXT_PUBLIC_SITE_URL ||
+    env.NEXT_PUBLIC_APP_URL ||
+    env.NEXT_PUBLIC_URL ||
+    env.APP_URL ||
+    (env.VERCEL_URL ? `https://${env.VERCEL_URL}` : '') ||
+    ''
   return raw.replace(/\/$/, '')
 }
 

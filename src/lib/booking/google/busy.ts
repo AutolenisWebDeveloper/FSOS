@@ -14,7 +14,7 @@ import {
   type BusyInterval,
 } from './oauth'
 import {
-  getConnectionRef,
+  resolveBusyConnectionRef,
   readConnectionCredential,
   storeConnectionSecret,
   markConnectionStatus,
@@ -45,7 +45,7 @@ export async function loadGoogleBusy(args: {
   try {
     if (!googleCalendarConfigured()) return SKIP('not_configured')
 
-    const ref = await getConnectionRef(args.hostUserId)
+    const ref = await resolveBusyConnectionRef(args.hostUserId)
     if (!ref.ok) return SKIP('lookup_failed')
     if (!ref.data || ref.data.status === 'revoked') return SKIP('not_connected')
 
@@ -59,7 +59,10 @@ export async function loadGoogleBusy(args: {
     if (credentialNeedsRefresh(cred, Number.isFinite(nowMs) ? nowMs : Date.now())) {
       const refreshed = await refreshCalendarCredential(cred)
       if (!refreshed) {
-        await markConnectionStatus(ref.data.id, 'error', { lastError: 'token_refresh_failed' })
+        // Refresh failed — no refresh_token, or the grant was revoked (invalid_grant). Either way it
+        // cannot recover without a fresh consent, so mark it 'revoked' (not the transient 'error')
+        // so the settings surface prompts the FSA to reconnect instead of looking merely degraded.
+        await markConnectionStatus(ref.data.id, 'revoked', { lastError: 'token_refresh_failed' })
         return SKIP('token_refresh_failed')
       }
       await storeConnectionSecret(ref.data.id, serializeCredential(refreshed))
@@ -74,8 +77,10 @@ export async function loadGoogleBusy(args: {
       timeMaxIso: args.timeMaxIso,
     })
     if (!res.ok) {
-      // 401/403 → the token/grant is no longer valid; surface as error for the FSA to reconnect.
-      const status = res.status === 401 || res.status === 403 ? 'error' : 'error'
+      // 401/403 → the token/grant is no longer valid (revoked access / insufficient scope): mark
+      // 'revoked' so the FSA is prompted to reconnect. Any other status (5xx, network, rate limit)
+      // is transient → 'error', which self-heals on the next read without a manual reconnect.
+      const status = res.status === 401 || res.status === 403 ? 'revoked' : 'error'
       await markConnectionStatus(ref.data.id, status, { lastError: `freebusy_${res.status}` })
       return SKIP(`freebusy_${res.status}`)
     }

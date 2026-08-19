@@ -1,5 +1,6 @@
 import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { load } from '@/lib/data/query'
+import { getServerSession } from '@/lib/auth/session'
 import { EscalationList, type EscalationRow, type ComplianceEventRow } from '@/components/app/EscalationList'
 
 export const dynamic = 'force-dynamic'
@@ -7,6 +8,9 @@ export const dynamic = 'force-dynamic'
 // AI Escalations Queue (A2) — the human-handoff surface. Every hard-blocked or
 // judgment-required agent item lands here; it is the only path from blocked→resolved.
 export default async function EscalationsPage() {
+  const session = await getServerSession()
+  // Permanent deletion is owner-only (matches the DELETE routes' requirePermission).
+  const canDelete = !!session && (session.roles.includes('fsa') || session.roles.includes('super_admin'))
   const [escalations, complianceEvents] = await Promise.all([
     load<EscalationRow[]>(
       (db) =>
@@ -37,7 +41,7 @@ export default async function EscalationsPage() {
         <ErrorState description={escalations.message} />
       )
   } else {
-    body = <EscalationList rows={escalations.data} complianceEvents={complianceEvents.ok ? complianceEvents.data : []} />
+    body = <EscalationList rows={escalations.data} complianceEvents={complianceEvents.ok ? complianceEvents.data : []} canDelete={canDelete} />
   }
 
   return (

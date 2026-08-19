@@ -71,9 +71,12 @@ function fmt(s: string | null) {
 export function EscalationList({
   rows,
   complianceEvents,
+  canDelete = false,
 }: {
   rows: EscalationRow[]
   complianceEvents: ComplianceEventRow[]
+  /** Owner-only: show the permanent-delete controls (matches the DELETE routes' authorization). */
+  canDelete?: boolean
 }) {
   const router = useRouter()
   const [filter, setFilter] = React.useState<'open' | 'handled' | 'dismissed' | 'all'>('open')
@@ -118,7 +121,7 @@ export function EscalationList({
                 <TableHead>Blocked step</TableHead>
                 <TableHead>Raised</TableHead>
                 <TableHead>Outcome</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                {canDelete ? <TableHead className="text-right">Actions</TableHead> : null}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -161,15 +164,17 @@ export function EscalationList({
                         {r.outcome && RESOLVED.has(r.outcome) ? r.outcome : 'escalated'}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                      <DeleteEventButton
-                        endpoint={`/api/ai/escalations/${r.id}`}
-                        title="Delete this escalation?"
-                        consequence="This permanently removes the escalation from the system (not the same as resolving or dismissing it). It won't reappear after refresh and can't be undone."
-                        confirmLabel="Delete escalation"
-                        successMessage="Escalation deleted."
-                      />
-                    </TableCell>
+                    {canDelete ? (
+                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                        <DeleteEventButton
+                          endpoint={`/api/ai/escalations/${r.id}`}
+                          title="Delete this escalation?"
+                          consequence="This permanently removes the escalation from the system (not the same as resolving or dismissing it). It won't reappear after refresh and can't be undone."
+                          confirmLabel="Delete escalation"
+                          successMessage="Escalation deleted."
+                        />
+                      </TableCell>
+                    ) : null}
                   </TableRow>
                 )
               })}
@@ -208,7 +213,7 @@ export function EscalationList({
                     <TableHead>Blocked step</TableHead>
                     <TableHead>Reason</TableHead>
                     <TableHead>When</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    {canDelete ? <TableHead className="text-right">Actions</TableHead> : null}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -219,15 +224,17 @@ export function EscalationList({
                       <TableCell className="text-muted-foreground">{c.blocked_step ?? '—'}</TableCell>
                       <TableCell className="text-muted-foreground">{c.reason ?? '—'}</TableCell>
                       <TableCell className="text-muted-foreground"><Numeric>{fmt(c.created_at)}</Numeric></TableCell>
-                      <TableCell className="text-right">
-                        <DeleteEventButton
-                          endpoint={`/api/compliance/events/${c.id}`}
-                          title="Delete this compliance event?"
-                          consequence="This permanently removes the compliance event from the system. It won't reappear after refresh and can't be undone."
-                          confirmLabel="Delete event"
-                          successMessage="Compliance event deleted."
-                        />
-                      </TableCell>
+                      {canDelete ? (
+                        <TableCell className="text-right">
+                          <DeleteEventButton
+                            endpoint={`/api/compliance/events/${c.id}`}
+                            title="Delete this compliance event?"
+                            consequence="This permanently removes the compliance event from the system. It won't reappear after refresh and can't be undone."
+                            confirmLabel="Delete event"
+                            successMessage="Compliance event deleted."
+                          />
+                        </TableCell>
+                      ) : null}
                     </TableRow>
                   ))}
                 </TableBody>

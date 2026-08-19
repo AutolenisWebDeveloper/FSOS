@@ -20,6 +20,7 @@ import { buildContactIndex, resolveContact, type CandidateContact } from '@/lib/
 import { createZoomMeeting, zoomEnabled } from '@/lib/zoom/client'
 import { sendBookingConfirmation } from './notify'
 import { appointmentReasonLabel } from './config-schemas'
+import { isSlotCollision, isMissingReasonColumnError } from './insert-errors'
 import { computeSlotsForType } from './slots'
 import { notifyFsa, sendVisitorAck } from '@/lib/notifications/transactional'
 import { BUSINESS, SMS_CONSENT, siteUrl } from '@/lib/site'
@@ -69,7 +70,6 @@ export type BookResult =
   | { ok: true; confirmation: BookingConfirmation }
   | { ok: false; kind: 'not_found' | 'unavailable' | 'taken' | 'error'; message: string }
 
-const UNIQUE_VIOLATION = '23505'
 const CONSENT_DISCLOSURE_VERSION = 'booking-email-2026-07'
 
 /** Human-readable local time for the notification body (best-effort; falls back to UTC). */
@@ -128,31 +128,47 @@ export async function bookAppointment(input: BookInput, now: string): Promise<Bo
   const cancelToken = generateFormToken()
   const rescheduleToken = generateFormToken()
   const bookingToken = generateFormToken()
-  const ins = await db
-    .from('appointments')
-    .insert({
-      appointment_type_id: type.id,
-      contact_id: contactId,
-      host_user_id: type.host_user_id,
-      duration_minutes: type.duration_minutes,
-      booker_timezone: input.bookerTimezone,
-      starts_at: slot.startsAt,
-      ends_at: slot.endsAt,
-      scheduled_at: slot.startsAt, // keep in lock-step for legacy surfaces
-      status: 'scheduled',
-      booked_via: 'native',
-      booked_at: now,
-      meeting_mode: type.meeting_mode,
-      reason: input.reason ?? null,
-      booking_token: bookingToken,
-      cancel_token: cancelToken,
-      reschedule_token: rescheduleToken,
-    })
-    .select('id')
-    .maybeSingle()
+  // Row without the optional `reason` column. `reason` is added separately below so we can
+  // degrade to this exact row if the column isn't present yet (deploy ahead of migration 121).
+  const baseRow = {
+    appointment_type_id: type.id,
+    contact_id: contactId,
+    host_user_id: type.host_user_id,
+    duration_minutes: type.duration_minutes,
+    booker_timezone: input.bookerTimezone,
+    starts_at: slot.startsAt,
+    ends_at: slot.endsAt,
+    scheduled_at: slot.startsAt, // keep in lock-step for legacy surfaces
+    status: 'scheduled',
+    booked_via: 'native',
+    booked_at: now,
+    meeting_mode: type.meeting_mode,
+    booking_token: bookingToken,
+    cancel_token: cancelToken,
+    reschedule_token: rescheduleToken,
+  }
+  const insertAppointment = (row: Record<string, unknown>) =>
+    db.from('appointments').insert(row).select('id').maybeSingle()
+
+  let ins = await insertAppointment({ ...baseRow, reason: input.reason ?? null })
+  // Deploy-order resilience (ADR-039): code and DB migrations ship independently, so this build
+  // can reach production before migration 121 adds `appointments.reason`. `reason` is optional
+  // green-zone metadata and must NEVER take down booking — if (and only if) the failure is the
+  // missing `reason` column, retry once without it. The first insert failed atomically (no row
+  // was written), so the retry can't double-book; log loudly so the un-applied migration is
+  // visible in ops.
+  if (ins.error && isMissingReasonColumnError(ins.error)) {
+    console.error(
+      '[booking] appointments.reason column not found — completing booking WITHOUT reason. ' +
+        'Apply migration 121_appointments_reason.sql to persist the appointment reason.',
+    )
+    ins = await insertAppointment(baseRow)
+  }
 
   if (ins.error) {
-    if (ins.error.code === UNIQUE_VIOLATION) {
+    // A concurrent booking of the same/overlapping slot trips a unique OR exclusion guard
+    // (mig 069 / 091 / 119) — both mean "just taken", never a 500.
+    if (isSlotCollision(ins.error)) {
       return { ok: false, kind: 'taken', message: 'That time was just booked. Please pick another.' }
     }
     return { ok: false, kind: 'error', message: ins.error.message }

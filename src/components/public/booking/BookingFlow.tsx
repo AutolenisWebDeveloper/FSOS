@@ -11,7 +11,7 @@ import { Field } from '@/components/forms/Field'
 import { PublicCard, PublicAlert } from '@/components/public/PublicShell'
 import { postJson } from '@/lib/client/api'
 import type { ApiError } from '@/lib/client/api'
-import { PublicBookingInput, isValidIanaZone } from '@/lib/booking/config-schemas'
+import { PublicBookingInput, isValidIanaZone, APPOINTMENT_REASONS } from '@/lib/booking/config-schemas'
 import type { PublicBookingInputType } from '@/lib/booking/config-schemas'
 import { COMMON_TIMEZONES, meetingModeLabel } from '@/lib/booking/display'
 import { SlotTimeList } from './SlotTimeList'
@@ -58,7 +58,7 @@ interface Confirmation {
   joinUrl: string | null
   meetingStatus: 'none' | 'provisioned' | 'pending'
 }
-type FormState = { name: string; email: string; phone: string; notes: string; company: string }
+type FormState = { name: string; email: string; phone: string; reason: string; notes: string; company: string }
 
 // The visible month grid is 6 weeks. Fetching 42 days from the first of the month covers the
 // in-month + trailing-week cells (leading filler belongs to the previous month) and stays within
@@ -66,7 +66,7 @@ type FormState = { name: string; email: string; phone: string; notes: string; co
 const FETCH_DAYS = 42
 
 // Fields the intake form renders inline; anything else that fails validation is surfaced generically.
-const KNOWN_FIELDS = new Set(['name', 'email', 'phone', 'notes'])
+const KNOWN_FIELDS = new Set(['name', 'email', 'phone', 'reason', 'notes'])
 
 function detectTimezone(): string {
   try {
@@ -127,7 +127,7 @@ export function BookingFlow({ type, backHref }: { type: PublicType; backHref?: s
   const [chosen, setChosen] = React.useState<Slot | null>(null)
 
   // Details form state is lifted here so it survives details → review → edit round-trips.
-  const [form, setForm] = React.useState<FormState>({ name: '', email: '', phone: '', notes: '', company: '' })
+  const [form, setForm] = React.useState<FormState>({ name: '', email: '', phone: '', reason: '', notes: '', company: '' })
   // Separate, affirmative, default-UNCHECKED SMS opt-in (P5.3). Never inferred; independent of
   // the email opt-in; kept in its own state (a boolean, not a FormState string field).
   const [smsOptIn, setSmsOptIn] = React.useState(false)
@@ -226,6 +226,7 @@ export function BookingFlow({ type, backHref }: { type: PublicType; backHref?: s
       name: form.name.trim(),
       email: form.email.trim(),
       phone: form.phone.trim() || null,
+      reason: form.reason, // required; empty string fails the enum → inline "reason" error
       notes: form.notes.trim() || null,
       sms_opt_in: smsOptIn, // separate affirmative SMS consent (default false)
       company: form.company, // honeypot — passed through unmodified
@@ -297,7 +298,7 @@ export function BookingFlow({ type, backHref }: { type: PublicType; backHref?: s
     setChosen(null)
     setReviewing(false)
     setPayload(null)
-    setForm({ name: '', email: '', phone: '', notes: '', company: '' })
+    setForm({ name: '', email: '', phone: '', reason: '', notes: '', company: '' })
     setSmsOptIn(false)
     setErrors({})
     setFormError(null)
@@ -331,6 +332,7 @@ export function BookingFlow({ type, backHref }: { type: PublicType; backHref?: s
           name={form.name.trim()}
           email={form.email.trim()}
           phone={form.phone.trim() || null}
+          reason={form.reason || null}
           onEdit={handleEdit}
           onConfirm={handleConfirm}
           submitting={submitting}
@@ -592,6 +594,29 @@ function DetailsForm({
             />
           </Field>
         </div>
+        <Field
+          id="bk-reason"
+          label="Reason for appointment"
+          required
+          error={errors.reason}
+          hint="Helps us prepare for your meeting"
+        >
+          <Select
+            name="reason"
+            value={values.reason}
+            error={!!errors.reason}
+            onChange={(e) => onChange('reason', e.target.value)}
+          >
+            <option value="" disabled>
+              Select a reason…
+            </option>
+            {APPOINTMENT_REASONS.map((r) => (
+              <option key={r.value} value={r.value}>
+                {r.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
         <Field id="bk-notes" label="Anything we should know?" error={errors.notes} hint="Optional">
           <Textarea name="notes" rows={3} value={values.notes} onChange={(e) => onChange('notes', e.target.value)} />
         </Field>

@@ -89,6 +89,45 @@ export async function getConnectionRef(
   return { ok: true, data: { id: row.id, calendarId: row.calendar_id || 'primary', status: row.status } }
 }
 
+/**
+ * Resolve the connection whose busy times apply to an appointment type with host `hostUserId` — the
+ * READ path used by availability (busy.ts). Distinct from getConnectionRef (exact match), which the
+ * connect/disconnect flows use to act on the FSA's OWN row.
+ *
+ * WHY a fallback is needed (root cause of "Google says connected but events don't block slots"): a
+ * connection is stored under the connecting FSA's NON-NULL user id, but many appointment types are
+ * PRACTICE-WIDE with `host_user_id IS NULL` ("default practice host", mig 069). An exact `IS NULL`
+ * lookup never matches the FSA's non-null connection, so getConnectionRef(null) returns nothing and
+ * Google busy is silently dropped. (The availability-rules loader already ORs null — config.ts — so
+ * this read path was the asymmetric gap.)
+ *
+ * Resolution (single-FSA practice): try the exact host first; if none, fall back to the practice's
+ * ONE active connection. The fallback engages only when exactly one active connection exists, so a
+ * hypothetical multi-host deployment can never leak one host's calendar into another's slots
+ * (ambiguous → no external busy → availability degrades to native, which is the safe default).
+ */
+export async function resolveBusyConnectionRef(
+  hostUserId: string | null,
+): Promise<ConnResult<{ id: string; calendarId: string; status: ConnectionStatus } | null>> {
+  // 1. Exact host match — covers the case where the same FSA created the type AND connected.
+  const exact = await getConnectionRef(hostUserId)
+  if (!exact.ok) return exact
+  if (exact.data) return exact
+
+  // 2. Fall back to the practice's single active connection (the default host's calendar).
+  const { data, error } = await getDb()
+    .from('booking_calendar_connections')
+    .select('id, calendar_id, status')
+    .is('deleted_at', null)
+    .neq('status', 'revoked')
+    .limit(2)
+  if (error) return { ok: false, kind: 'error', message: error.message }
+  const rows = (data ?? []) as { id: string; calendar_id: string; status: ConnectionStatus }[]
+  if (rows.length !== 1) return { ok: true, data: null } // none, or ambiguous (multi-host) → no fallback
+  const row = rows[0]
+  return { ok: true, data: { id: row.id, calendarId: row.calendar_id || 'primary', status: row.status } }
+}
+
 /** Create-or-update the host's connection row (identity/status/scopes), returning its id.
  *  The encrypted credential is stored separately via storeConnectionSecret. */
 export async function upsertConnection(

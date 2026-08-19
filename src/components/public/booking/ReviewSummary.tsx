@@ -8,6 +8,7 @@
 import { Button } from '@/components/ui/button'
 import { PublicCard, PublicAlert } from '@/components/public/PublicShell'
 import { meetingModeLabel } from '@/lib/booking/display'
+import { appointmentReasonLabel } from '@/lib/booking/config-schemas'
 
 /** Full date + time in the booker's chosen zone. */
 function fullWhen(iso: string, tz: string): string {
@@ -51,6 +52,8 @@ export interface ReviewSummaryProps {
   name: string
   email: string
   phone?: string | null
+  /** Stored reason slug (APPOINTMENT_REASONS); rendered as its human label. */
+  reason?: string | null
   onEdit: (step: 'slot' | 'details') => void
   onConfirm: () => void
   submitting: boolean
@@ -67,6 +70,7 @@ export function ReviewSummary({
   name,
   email,
   phone,
+  reason,
   onEdit,
   onConfirm,
   submitting,
@@ -97,6 +101,7 @@ export function ReviewSummary({
             <Row label="Name" value={name} />
             <Row label="Email" value={email} />
             {phone ? <Row label="Phone" value={phone} /> : null}
+            {appointmentReasonLabel(reason) ? <Row label="Reason" value={appointmentReasonLabel(reason)!} /> : null}
           </dl>
         </section>
       </div>

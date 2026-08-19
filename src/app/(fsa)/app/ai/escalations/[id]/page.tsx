@@ -5,7 +5,9 @@ import { DetailShell, ErrorState, StatusBadge } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { load } from '@/lib/data/query'
+import { getServerSession } from '@/lib/auth/session'
 import { EscalationActions } from '@/components/app/EscalationActions'
+import { DeleteEventButton } from '@/components/app/DeleteEventButton'
 import { Numeric } from '@/components/ui/typography'
 
 export const dynamic = 'force-dynamic'
@@ -59,6 +61,9 @@ export default async function EscalationDetailPage(props: { params: Promise<{ id
   const e = res.data
   if (!e) notFound()
 
+  const session = await getServerSession()
+  const canDelete = !!session && (session.roles.includes('fsa') || session.roles.includes('super_admin'))
+
   const resolved = Boolean(e.outcome && RESOLVED.has(e.outcome))
   const securities = isSecurities(e.reason, e.blocked_step)
   const targetBase = e.target_type ? TARGET_PATH[e.target_type] : undefined
@@ -92,7 +97,25 @@ export default async function EscalationDetailPage(props: { params: Promise<{ id
         { label: e.reason ?? 'Escalation' },
       ]}
       status={<StatusBadge status={resolved ? 'won' : 'escalated'} label={resolved ? e.outcome ?? 'resolved' : 'escalated'} />}
-      actions={securities ? undefined : <EscalationActions id={params.id} resolved={resolved} />}
+      actions={
+        securities && !canDelete ? undefined : (
+          <div className="flex flex-wrap items-center gap-2">
+            {securities ? null : <EscalationActions id={params.id} resolved={resolved} />}
+            {canDelete ? (
+              <DeleteEventButton
+                endpoint={`/api/ai/escalations/${params.id}`}
+                title="Delete this escalation?"
+                consequence="This permanently removes the escalation from the system (not the same as resolving or dismissing it). It won't reappear after refresh and can't be undone."
+                confirmLabel="Delete escalation"
+                successMessage="Escalation deleted."
+                redirectTo="/app/ai/escalations"
+                buttonLabel="Delete"
+                variant="outline"
+              />
+            ) : null}
+          </div>
+        )
+      }
       rail={rail}
     >
       {securities ? (

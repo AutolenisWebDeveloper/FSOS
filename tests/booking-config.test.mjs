@@ -26,9 +26,12 @@ try {
     AvailabilityRuleCreate,
     AvailabilityRuleUpdate,
     BlackoutCreate,
+    PublicBookingInput,
     isValidIanaZone,
     availabilityRuleIssues,
     MEETING_MODES,
+    APPOINTMENT_REASONS,
+    appointmentReasonLabel,
   } = require(join(out, 'config-schemas.js'))
 
   let passed = 0
@@ -130,6 +133,43 @@ try {
       false,
     )
     assert.equal(BlackoutCreate.safeParse({ starts_at: 'not-a-date', ends_at: '2026-08-03T15:00:00Z' }).success, false)
+  })
+
+  console.log('Appointment reason (public booking topic)')
+  const validBooking = {
+    typeSlug: 'intro-call',
+    startsAt: '2026-08-10T14:00:00Z',
+    bookerTimezone: 'America/Chicago',
+    name: 'Dana Rivers',
+    email: 'dana@example.com',
+  }
+  t('the reason list has all 8 topics with stable slug values', () => {
+    assert.equal(APPOINTMENT_REASONS.length, 8)
+    const values = APPOINTMENT_REASONS.map((r) => r.value)
+    for (const v of ['life_insurance', 'financial_planning', 'retirement_planning', 'investments',
+      'annuities', 'long_term_care', 'existing_client_review', 'general_consultation']) {
+      assert.ok(values.includes(v), `expected reason value ${v}`)
+    }
+  })
+  t('a booking REQUIRES a reason — missing/empty/unknown are rejected', () => {
+    assert.equal(PublicBookingInput.safeParse({ ...validBooking }).success, false) // absent
+    assert.equal(PublicBookingInput.safeParse({ ...validBooking, reason: '' }).success, false) // empty
+    assert.equal(PublicBookingInput.safeParse({ ...validBooking, reason: 'crypto' }).success, false) // off-list
+    const missing = PublicBookingInput.safeParse({ ...validBooking })
+    assert.ok(missing.error.flatten().fieldErrors.reason, 'expected a reason field error')
+  })
+  t('each valid reason slug is accepted and preserved', () => {
+    for (const r of APPOINTMENT_REASONS) {
+      const parsed = PublicBookingInput.safeParse({ ...validBooking, reason: r.value })
+      assert.ok(parsed.success, `expected ${r.value} to parse`)
+      assert.equal(parsed.data.reason, r.value)
+    }
+  })
+  t('appointmentReasonLabel maps slug→label and is null-safe', () => {
+    assert.equal(appointmentReasonLabel('annuities'), 'Annuities')
+    assert.equal(appointmentReasonLabel('existing_client_review'), 'Existing Client Review')
+    assert.equal(appointmentReasonLabel(null), null)
+    assert.equal(appointmentReasonLabel('legacy_unknown'), 'legacy_unknown') // graceful fallback
   })
 
   console.log(`\nAll ${passed} assertions passed.`)

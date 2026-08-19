@@ -9,15 +9,25 @@
 // marketing-site BrandLogo lives in the `.msite` scope (marketing.css, not loaded here), so
 // this renders the same approved asset directly rather than reaching across design systems.
 
-import { BrandMark } from '@/components/portal/BrandMark'
-import { BUSINESS } from '@/lib/site'
+import { BUSINESS, HEADSHOT_PATH } from '@/lib/site'
 
 export function PublicBrandHeader({ className }: { className?: string }) {
   return (
     <header className={['mb-8 flex items-center justify-between gap-4', className].filter(Boolean).join(' ')}>
-      {/* Primary: the FSA's own identity. */}
+      {/* Primary: the FSA's own identity, led by the approved professional headshot (HEADSHOT_PATH,
+          the same square portrait used on the email signature — §17.1 approved asset). A real face on
+          the booking page builds the trust a financial-services consultation needs. Plain <img> (like
+          the Farmers mark below) keeps it crisp and sidesteps next/image's local-optimizer caveats
+          noted in middleware.ts; fixed square dims + object-cover → never stretched. */}
       <div className="flex items-center gap-3">
-        <BrandMark size="md" />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={HEADSHOT_PATH}
+          alt={`${BUSINESS.agent}, ${BUSINESS.title}`}
+          width={96}
+          height={96}
+          className="h-11 w-11 shrink-0 rounded-full object-cover object-top shadow-elev-sm ring-1 ring-border"
+        />
         <div className="leading-tight">
           <div className="text-sm font-semibold tracking-tight text-foreground">{BUSINESS.agent}</div>
           <div className="mono-label text-muted-foreground">{BUSINESS.title}</div>

@@ -17,7 +17,7 @@ import {
   CALENDAR_OAUTH_NONCE_COOKIE,
 } from '@/lib/booking/google/oauth'
 import { completeCalendarOAuth } from '@/lib/booking/google/exchange'
-import { upsertConnection, storeConnectionSecret } from '@/lib/booking/google/connection'
+import { upsertConnection, storeConnectionSecret, markConnectionStatus } from '@/lib/booking/google/connection'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -59,10 +59,22 @@ export async function GET(req: NextRequest) {
       scopes: conn.scopes,
       tokenExpiresAt: conn.envelope.expiresAt ?? null,
     })
-    if (!up.ok) return bookingRedirect(origin, { calendar: 'error' })
+    if (!up.ok) {
+      // eslint-disable-next-line no-console
+      console.error('[booking/calendar/oauth/callback] upsertConnection failed:', up.message)
+      return bookingRedirect(origin, { calendar: 'error' })
+    }
 
     const stored = await storeConnectionSecret(up.data.id, serializeCredential(conn.envelope))
-    if (!stored.ok) return bookingRedirect(origin, { calendar: 'error' })
+    if (!stored.ok) {
+      // upsertConnection already marked the row 'connected'; a failed secret write would leave it
+      // connected-with-no-credential. Roll the status back to 'error' so busy-sync and the settings
+      // surface reflect that a reconnect is needed rather than showing a false "connected".
+      // eslint-disable-next-line no-console
+      console.error('[booking/calendar/oauth/callback] storeConnectionSecret failed:', stored.message)
+      await markConnectionStatus(up.data.id, 'error', { lastError: 'secret_store_failed' })
+      return bookingRedirect(origin, { calendar: 'error' })
+    }
 
     await writeAudit({
       actor,
@@ -73,8 +85,12 @@ export async function GET(req: NextRequest) {
     })
 
     return bookingRedirect(origin, { calendar: 'connected' })
-  } catch {
-    // Never surface provider internals to the browser (§16.1).
+  } catch (e) {
+    // Never surface provider internals to the browser (§16.1) — but DO log the real reason
+    // server-side so a failed connect is diagnosable (e.g. redirect_uri_mismatch, invalid_grant)
+    // instead of an opaque generic redirect. No token material is included.
+    // eslint-disable-next-line no-console
+    console.error('[booking/calendar/oauth/callback] connect failed:', e instanceof Error ? e.message : e)
     return bookingRedirect(origin, { calendar: 'error' })
   }
 }

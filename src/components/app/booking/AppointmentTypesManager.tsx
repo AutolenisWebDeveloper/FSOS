@@ -54,9 +54,28 @@ function slugify(name: string): string {
     .slice(0, 80)
 }
 
+/** Row → the form's string-valued shape, for prefilling the edit form. */
+function formFromRow(t: AppointmentTypeRow) {
+  return {
+    name: t.name,
+    slug: t.slug,
+    description: t.description ?? '',
+    duration_minutes: String(t.duration_minutes),
+    buffer_before_minutes: String(t.buffer_before_minutes),
+    buffer_after_minutes: String(t.buffer_after_minutes),
+    min_notice_minutes: String(t.min_notice_minutes),
+    max_lead_days: String(t.max_lead_days),
+    max_per_day: t.max_per_day == null ? '' : String(t.max_per_day),
+    slot_interval_minutes: String(t.slot_interval_minutes),
+    meeting_mode: t.meeting_mode,
+  }
+}
+
 export function AppointmentTypesManager({ initialTypes }: { initialTypes: AppointmentTypeRow[] }) {
   const router = useRouter()
   const [adding, setAdding] = React.useState(false)
+  // The id of the type currently being edited; null when the form is in "create" mode.
+  const [editingId, setEditingId] = React.useState<string | null>(null)
   const [form, setForm] = React.useState({ ...EMPTY })
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [saving, setSaving] = React.useState(false)
@@ -65,22 +84,44 @@ export function AppointmentTypesManager({ initialTypes }: { initialTypes: Appoin
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }))
 
+  function resetForm() {
+    setForm({ ...EMPTY })
+    setSlugTouched(false)
+    setErrors({})
+    setEditingId(null)
+    setAdding(false)
+  }
+
+  function startEdit(t: AppointmentTypeRow) {
+    setForm(formFromRow(t))
+    setSlugTouched(true) // an existing slug must not be silently rewritten from the name
+    setErrors({})
+    setEditingId(t.id)
+    setAdding(true)
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setErrors({})
+    // Empty optionals are sent as null (not undefined) so an edit can CLEAR them; both are nullish
+    // in the schema, so this is also correct for create.
     const payload = {
       name: form.name.trim(),
       slug: (slugTouched ? form.slug : slugify(form.name)).trim(),
-      description: form.description.trim() || undefined,
+      description: form.description.trim() || null,
       duration_minutes: Number(form.duration_minutes),
       buffer_before_minutes: Number(form.buffer_before_minutes),
       buffer_after_minutes: Number(form.buffer_after_minutes),
       min_notice_minutes: Number(form.min_notice_minutes),
       max_lead_days: Number(form.max_lead_days),
-      max_per_day: form.max_per_day.trim() ? Number(form.max_per_day) : undefined,
+      max_per_day: form.max_per_day.trim() ? Number(form.max_per_day) : null,
       slot_interval_minutes: Number(form.slot_interval_minutes),
       meeting_mode: form.meeting_mode,
     }
+    // AppointmentTypeCreate validates the full shape; the PATCH route re-validates with the partial
+    // AppointmentTypeUpdate. Editing duration/mode is safe for HISTORY: book.ts snapshots
+    // duration_minutes + meeting_mode onto each appointment at booking time, so past appointments
+    // keep their own values; only FUTURE bookings use the new config.
     const parsed = AppointmentTypeCreate.safeParse(payload)
     if (!parsed.success) {
       const fe = parsed.error.flatten().fieldErrors
@@ -90,7 +131,9 @@ export function AppointmentTypesManager({ initialTypes }: { initialTypes: Appoin
       return
     }
     setSaving(true)
-    const res = await postJson('/api/app/booking/types', parsed.data)
+    const res = editingId
+      ? await patchJson(`/api/app/booking/types/${editingId}`, parsed.data)
+      : await postJson('/api/app/booking/types', parsed.data)
     setSaving(false)
     if (!res.ok) {
       const fe = firstFieldError(res.error)
@@ -98,10 +141,8 @@ export function AppointmentTypesManager({ initialTypes }: { initialTypes: Appoin
       toast.error(fe.message)
       return
     }
-    toast.success(`Added “${payload.name}”.`)
-    setForm({ ...EMPTY })
-    setSlugTouched(false)
-    setAdding(false)
+    toast.success(editingId ? `Saved “${payload.name}”.` : `Added “${payload.name}”.`)
+    resetForm()
     router.refresh()
   }
 
@@ -161,6 +202,9 @@ export function AppointmentTypesManager({ initialTypes }: { initialTypes: Appoin
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
+                      <Button variant="outline" size="sm" disabled={busyId !== null || saving} onClick={() => startEdit(t)}>
+                        Edit
+                      </Button>
                       <Button variant="outline" size="sm" loading={busyId === t.id} onClick={() => toggleActive(t)}>
                         {t.active ? 'Hide' : 'Activate'}
                       </Button>
@@ -178,6 +222,17 @@ export function AppointmentTypesManager({ initialTypes }: { initialTypes: Appoin
 
       {adding ? (
         <form onSubmit={submit} className="space-y-4 rounded-lg border p-4">
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">
+              {editingId ? `Edit “${form.name || 'appointment type'}”` : 'New appointment type'}
+            </h3>
+            {editingId ? (
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Changes apply to future bookings only. Existing appointments keep the duration and
+                format they were booked with.
+              </p>
+            ) : null}
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field id="at-name" label="Name" required error={errors.name} hint="e.g. Intro call, Policy review">
               <Input
@@ -247,15 +302,15 @@ export function AppointmentTypesManager({ initialTypes }: { initialTypes: Appoin
           </Field>
           <div className="flex items-center gap-2">
             <Button type="submit" loading={saving}>
-              {saving ? 'Adding…' : 'Add appointment type'}
+              {saving ? 'Saving…' : editingId ? 'Save changes' : 'Add appointment type'}
             </Button>
-            <Button type="button" variant="outline" onClick={() => { setAdding(false); setErrors({}) }} disabled={saving}>
+            <Button type="button" variant="outline" onClick={resetForm} disabled={saving}>
               Cancel
             </Button>
           </div>
         </form>
       ) : (
-        <Button variant="outline" onClick={() => setAdding(true)}>
+        <Button variant="outline" onClick={() => { resetForm(); setAdding(true) }}>
           Add appointment type
         </Button>
       )}

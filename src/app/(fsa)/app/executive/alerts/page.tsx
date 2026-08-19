@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Numeric } from '@/components/ui/typography'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
+import { DeleteEventButton } from '@/components/app/DeleteEventButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,7 +23,7 @@ export default async function AlertsPage() {
       ) : (
         <div className="rounded-lg border">
           <Table>
-            <TableHeader><TableRow><TableHead>When</TableHead><TableHead>Kind</TableHead><TableHead>Entity</TableHead><TableHead>Reason</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>When</TableHead><TableHead>Kind</TableHead><TableHead>Entity</TableHead><TableHead>Reason</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
             <TableBody>
               {events.data.map((e) => (
                 <TableRow key={e.id}>
@@ -30,6 +31,15 @@ export default async function AlertsPage() {
                   <TableCell><Badge variant={e.kind === 'firewall' ? 'blocked' : e.kind === 'comms_blocked' ? 'lost' : 'pending'}>{e.kind.replace(/_/g, ' ')}</Badge></TableCell>
                   <TableCell className="text-muted-foreground">{e.entity_type ?? '—'}</TableCell>
                   <TableCell className="text-muted-foreground">{e.reason ?? e.blocked_step ?? '—'}</TableCell>
+                  <TableCell className="text-right">
+                    <DeleteEventButton
+                      endpoint={`/api/compliance/events/${e.id}`}
+                      title="Delete this alert?"
+                      consequence="This permanently removes the alert from the system. It won't reappear after refresh. This can't be undone."
+                      confirmLabel="Delete alert"
+                      successMessage="Alert deleted."
+                    />
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

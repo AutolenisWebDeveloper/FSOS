@@ -4,6 +4,7 @@ import { getDb } from '@/lib/supabase/client'
 import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { writeAudit } from '@/lib/audit/log'
+import { deleteEscalation } from '@/lib/services/eventDeletion'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -80,5 +81,28 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     return NextResponse.json({ escalation: data })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed' }, { status: 500 })
+  }
+}
+
+// DELETE — permanently remove an escalation from the system. This is distinct from PATCH's
+// resolve/dismiss/reassign (which only set outcome): the agent_actions row is hard-deleted and does
+// not return on refresh; the deletion is recorded in the append-only audit_log. Owner-gated (fsa /
+// super_admin). No orphans — nothing references agent_actions.id.
+export async function DELETE(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params
+  const auth = await requireApiRole('fsa')
+  if (!auth.ok) return auth.response
+  const denied = requirePermission(auth.session, ['fsa', 'super_admin'])
+  if (denied) return denied
+
+  try {
+    const res = await deleteEscalation(actorOf(auth.session), params.id)
+    if (!res.ok) {
+      if (res.kind === 'not_found') return NextResponse.json({ error: res.message }, { status: 404 })
+      return NextResponse.json({ error: 'Failed to delete escalation' }, { status: 500 })
+    }
+    return NextResponse.json({ id: res.id })
+  } catch (e) {
+    return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed to delete escalation' }, { status: 500 })
   }
 }

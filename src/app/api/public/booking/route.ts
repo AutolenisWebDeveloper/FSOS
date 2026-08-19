@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
         name: v.data.name,
         email: v.data.email,
         phone: v.data.phone ?? null,
+        reason: v.data.reason,
         notes: v.data.notes ?? null,
         // Separate, affirmative SMS opt-in + server-derived TCPA/A2P evidence context (P5.3).
         smsOptIn: v.data.sms_opt_in === true,

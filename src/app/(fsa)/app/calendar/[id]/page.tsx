@@ -11,6 +11,7 @@ import { AppointmentActions } from '@/components/app/AppointmentActions'
 import { RescheduleControl } from '@/components/app/RescheduleControl'
 import { STATUS_MAP } from '@/components/app/CalendarView'
 import { meetingModeLabel } from '@/lib/booking/display'
+import { appointmentReasonLabel } from '@/lib/booking/config-schemas'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -31,6 +32,7 @@ interface ApptDetail {
   external_ref: string | null
   booked_via: string | null
   meeting_mode: string | null
+  reason: string | null
   cancellation_reason: string | null
   reminder_sent_at: string | null
   join_url: string | null
@@ -58,7 +60,7 @@ export default async function AppointmentDetailPage(props: { params: Promise<{ i
       db
         .from('appointments')
         .select(
-          'id, status, scheduled_at, starts_at, ends_at, external_ref, booked_via, meeting_mode, ' +
+          'id, status, scheduled_at, starts_at, ends_at, external_ref, booked_via, meeting_mode, reason, ' +
             'cancellation_reason, reminder_sent_at, join_url, duration_minutes, household_id, contact_id, ' +
             'review_id, opportunity_id, appointment_types:appointment_type_id(name), ' +
             'contacts:contact_id(full_name, email, phone), households:household_id(primary_name)',
@@ -91,6 +93,7 @@ export default async function AppointmentDetailPage(props: { params: Promise<{ i
         <Row label="Ends" value={fmt(a.ends_at)} />
         {a.duration_minutes ? <Row label="Duration" value={`${a.duration_minutes} min`} /> : null}
         <Row label="Type" value={typeName} />
+        <Row label="Reason" value={appointmentReasonLabel(a.reason)} />
         <Row label="Format" value={a.meeting_mode ? meetingModeLabel(a.meeting_mode) : null} />
         <Row label="Booked via" value={a.booked_via} />
         <Row label="Reminder sent" value={a.reminder_sent_at ? fmt(a.reminder_sent_at) : 'Not yet'} />

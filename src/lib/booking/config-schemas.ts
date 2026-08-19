@@ -9,6 +9,37 @@ import { z } from 'zod'
 export const MEETING_MODES = ['video', 'phone', 'in_person'] as const
 export type MeetingMode = (typeof MEETING_MODES)[number]
 
+/**
+ * The attendee-selectable "reason for appointment" — the meeting TOPIC, captured for the FSA's
+ * internal preparation and routing. This is green-zone scheduling metadata (CLAUDE.md §9): it
+ * records what the prospect wants to talk about, NOT a securities account, order, holding, or
+ * suitability/best-interest determination. Selecting "Investments"/"Annuities"/"Retirement" here
+ * is a conversation topic, so it does NOT set `is_security` on the contact and never routes into a
+ * securities workflow — it is display/prep context only. Values are stable slugs (stored); labels
+ * are display-only. Kept here (the pure, offline-testable schema module) so the public form and the
+ * booking service read the SAME canonical list and can never drift.
+ */
+export const APPOINTMENT_REASONS = [
+  { value: 'life_insurance', label: 'Life Insurance' },
+  { value: 'financial_planning', label: 'Financial Planning' },
+  { value: 'retirement_planning', label: 'Retirement Planning' },
+  { value: 'investments', label: 'Investments' },
+  { value: 'annuities', label: 'Annuities' },
+  { value: 'long_term_care', label: 'Long-Term Care Planning' },
+  { value: 'existing_client_review', label: 'Existing Client Review' },
+  { value: 'general_consultation', label: 'Other / General Consultation' },
+] as const
+
+export type AppointmentReasonValue = (typeof APPOINTMENT_REASONS)[number]['value']
+
+const REASON_VALUES = APPOINTMENT_REASONS.map((r) => r.value) as [AppointmentReasonValue, ...AppointmentReasonValue[]]
+
+/** Human label for a stored reason value; falls back to the raw value for legacy/unknown data. */
+export function appointmentReasonLabel(value: string | null | undefined): string | null {
+  if (!value) return null
+  return APPOINTMENT_REASONS.find((r) => r.value === value)?.label ?? value
+}
+
 /** True iff `tz` is a timezone the runtime's Intl database recognizes. */
 export function isValidIanaZone(tz: unknown): boolean {
   if (typeof tz !== 'string' || !tz.trim()) return false
@@ -133,6 +164,10 @@ export const PublicBookingInput = z.object({
     .optional()
     .nullable()
     .transform((v) => (v ? v : null)),
+  /** The meeting topic the attendee picked (green-zone scheduling metadata; see APPOINTMENT_REASONS). */
+  reason: z.enum(REASON_VALUES, {
+    errorMap: () => ({ message: 'Please select a reason for your appointment.' }),
+  }),
   notes: z.string().trim().max(1000).optional().nullable(),
   /**
    * Separate, affirmative, default-UNCHECKED SMS opt-in (TCPA prior express written consent,

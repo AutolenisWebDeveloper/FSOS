@@ -98,6 +98,7 @@ const baseBooking = {
   bookerTimezone: 'America/Chicago',
   name: 'Dana Rivers',
   email: 'dana@example.com',
+  reason: 'general_consultation', // required meeting-topic field (APPOINTMENT_REASONS)
 }
 t('default is UNCHECKED — a booking without the field opts into no SMS', () => {
   const r = PublicBookingInput.safeParse({ ...baseBooking })

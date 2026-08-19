@@ -19,6 +19,7 @@ import { emailLc, phoneDigits, deriveFullName } from '@/lib/contacts/normalize'
 import { buildContactIndex, resolveContact, type CandidateContact } from '@/lib/import/resolution'
 import { createZoomMeeting, zoomEnabled } from '@/lib/zoom/client'
 import { sendBookingConfirmation } from './notify'
+import { appointmentReasonLabel } from './config-schemas'
 import { computeSlotsForType } from './slots'
 import { notifyFsa, sendVisitorAck } from '@/lib/notifications/transactional'
 import { BUSINESS, SMS_CONSENT, siteUrl } from '@/lib/site'
@@ -33,6 +34,8 @@ export interface BookInput {
   name: string
   email: string
   phone?: string | null
+  /** Attendee-selected meeting topic (stable slug from APPOINTMENT_REASONS). Green-zone metadata. */
+  reason?: string | null
   notes?: string | null
   /**
    * Separate, affirmative SMS opt-in captured at booking (P5.3). NEVER inferred. When true (and
@@ -140,6 +143,7 @@ export async function bookAppointment(input: BookInput, now: string): Promise<Bo
       booked_via: 'native',
       booked_at: now,
       meeting_mode: type.meeting_mode,
+      reason: input.reason ?? null,
       booking_token: bookingToken,
       cancel_token: cancelToken,
       reschedule_token: rescheduleToken,
@@ -194,7 +198,7 @@ export async function bookAppointment(input: BookInput, now: string): Promise<Bo
       entity_type: 'appointment',
       entity_id: appointmentId,
       kind: 'appointment_booked',
-      note: `Booked “${type.name}” via the public scheduler${input.notes ? ` — note: ${input.notes.slice(0, 500)}` : ''}`,
+      note: `Booked “${type.name}” via the public scheduler${appointmentReasonLabel(input.reason) ? ` — reason: ${appointmentReasonLabel(input.reason)}` : ''}${input.notes ? ` — note: ${input.notes.slice(0, 500)}` : ''}`,
       actor: 'public',
     }),
     // Booking through our own funnel is an email opt-in for booking-related mail only. We do
@@ -352,6 +356,7 @@ export async function bookAppointment(input: BookInput, now: string): Promise<Bo
           { label: 'Email', value: input.email },
           { label: 'Phone', value: input.phone ?? null },
           { label: 'Appointment', value: type.name },
+          { label: 'Reason', value: appointmentReasonLabel(input.reason) },
           { label: 'When', value: whenLocal },
           { label: 'How', value: meetingLine },
           { label: 'Reference', value: reference },

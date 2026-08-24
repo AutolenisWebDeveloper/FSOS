@@ -1,5 +1,6 @@
-// Standalone test harness (no test-runner dep) for the CSV → GHL mapping layer.
-// Run: node tests/ghlUpload.test.mjs
+// Standalone test harness (no test-runner dep) for the CSV → contact mapping layer
+// (src/lib/import/csv-mapping.ts, provider-neutral after the GHL excision).
+// Run: node tests/csv-mapping.test.mjs
 import assert from 'node:assert/strict'
 import { execSync } from 'node:child_process'
 import { mkdtempSync } from 'node:fs'
@@ -9,15 +10,14 @@ import { createRequire } from 'node:module'
 
 const out = mkdtempSync(join(tmpdir(), 'fsos-test-'))
 execSync(
-  `npx tsc src/lib/csv.ts src/lib/ghlContacts.ts src/lib/ghl.ts --outDir ${out} ` +
+  `npx tsc src/lib/csv.ts src/lib/import/csv-mapping.ts --outDir ${out} ` +
     `--module commonjs --target es2020 --moduleResolution node --skipLibCheck --esModuleInterop`,
   { stdio: 'inherit' },
 )
 const require = createRequire(import.meta.url)
 const { parseCsv, parseCsvRecords } = require(join(out, 'csv.js'))
 const { detectColumnMap, mapAndValidateRow, normalizeEmail, normalizePhone, inferColumnMap, resolveColumns } =
-  require(join(out, 'ghlContacts.js'))
-const { withGhlRetry } = require(join(out, 'ghl.js'))
+  require(join(out, 'import/csv-mapping.js'))
 
 let passed = 0
 const t = async (name, fn) => { await fn(); passed++; console.log('  ✓', name) }
@@ -82,7 +82,7 @@ await t('splits a full-name column when no first/last', () => {
   assert.equal(contact.firstName, 'John')
   assert.equal(contact.lastName, 'Q Public')
 })
-await t('maps an Agency Owner column into the referring_agency_owner custom field', () => {
+await t('maps an Agency Owner column into the referring_agency_owner field', () => {
   const map = detectColumnMap(['name', 'email', 'Agency Owner'])
   assert.equal(map['Agency Owner'], 'agency_owner')
   const { contact } = mapAndValidateRow({ name: 'Jane Doe', email: 'a@b.co', 'Agency Owner': 'Markist Athelus' }, map, {})
@@ -150,29 +150,6 @@ await t('resolveColumns: never maps two headers to the same field', () => {
   const { map } = resolveColumns(headers, rows, null)
   const emailCols = Object.entries(map).filter(([, f]) => f === 'email')
   assert.equal(emailCols.length, 1)
-})
-
-console.log('Retry helper')
-await t('retries transient failures then succeeds', async () => {
-  let n = 0
-  const res = await withGhlRetry(async () => {
-    n++
-    return n < 3 ? { ok: false, status: 500, error: 'boom' } : { ok: true, status: 200, data: { contact: { id: 'c1' } } }
-  }, { sleep: async () => {} })
-  assert.equal(res.ok, true)
-  assert.equal(res.attempts, 3)
-})
-await t('does not retry 4xx client errors', async () => {
-  let n = 0
-  const res = await withGhlRetry(async () => { n++; return { ok: false, status: 422, error: 'invalid' } }, { sleep: async () => {} })
-  assert.equal(res.ok, false)
-  assert.equal(n, 1)
-})
-await t('stops after max attempts on persistent failure', async () => {
-  let n = 0
-  const res = await withGhlRetry(async () => { n++; return { ok: false, status: 503, error: 'down' } }, { attempts: 4, sleep: async () => {} })
-  assert.equal(res.attempts, 4)
-  assert.equal(n, 4)
 })
 
 console.log(`\nAll ${passed} assertions passed.`)

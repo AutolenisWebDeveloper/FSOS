@@ -1,13 +1,27 @@
-// src/lib/ghlContacts.ts
+// src/lib/import/csv-mapping.ts
 // ─────────────────────────────────────────────────────────────────────────
-// Field mapping + validation for the GoHighLevel CSV contact-upload workflow.
+// Field mapping + validation for tabular contact imports (CSV / TSV / XLSX).
 //
-// Turns a loose CSV record (arbitrary header casing / aliases) into a clean,
-// validated GHL contact payload. Every ambiguity is resolved here so the route
-// handler stays a thin orchestrator: parse → map → validate → dedupe → upsert.
+// Turns a loose record (arbitrary header casing / aliases, or a headerless
+// export) into a clean, validated contact shape. Every ambiguity is resolved
+// here so import route handlers stay thin: parse → map → validate → dedupe.
+//
+// Provider-neutral (GHL excised — Pre-Phase-2): this is FSOS-native import
+// logic. It was formerly coupled to the GoHighLevel custom-field key map; those
+// keys are inlined below as plain contact-attribute keys with no external
+// dependency. The Contact Center import (system of record: App B) consumes the
+// declared type / product-interest / life-stage signals directly.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { GHL_CUSTOM_FIELDS } from './ghl'
+// Contact custom-attribute keys emitted on MappedContact.customFields. These are
+// plain FSOS attribute names (previously the GHL custom-field keys) kept stable so
+// the mapped shape is unchanged for consumers.
+const CONTACT_FIELD_KEYS = {
+  product_interest: 'product_interest',
+  life_stage: 'life_stage',
+  referring_owner: 'referring_agency_owner',
+  lead_source: 'lead_source',
+} as const
 
 // Canonical field → accepted header aliases (all compared lower-cased, with
 // spaces/underscores/hyphens collapsed). First match wins.
@@ -130,7 +144,7 @@ export interface MapResult {
 }
 
 /**
- * Map + validate a single CSV record. `defaults` supplies batch-wide tags /
+ * Map + validate a single record. `defaults` supplies batch-wide tags /
  * source applied on top of per-row values. Returns errors when the row can't
  * become a valid contact (no name, or neither a valid email nor phone).
  */
@@ -173,10 +187,10 @@ export function mapAndValidateRow(
   const agencyOwner = pick(record, colMap, 'agency_owner') || defaults.agencyOwner || ''
   const leadSource = pick(record, colMap, 'source') || defaults.source || ''
   const declaredType = pick(record, colMap, 'contact_type') || null
-  if (productInterest) customFields[GHL_CUSTOM_FIELDS.product_interest] = productInterest
-  if (lifeStage) customFields[GHL_CUSTOM_FIELDS.life_stage] = lifeStage
-  if (agencyOwner) customFields[GHL_CUSTOM_FIELDS.referring_owner] = agencyOwner
-  if (leadSource) customFields[GHL_CUSTOM_FIELDS.lead_source] = leadSource
+  if (productInterest) customFields[CONTACT_FIELD_KEYS.product_interest] = productInterest
+  if (lifeStage) customFields[CONTACT_FIELD_KEYS.life_stage] = lifeStage
+  if (agencyOwner) customFields[CONTACT_FIELD_KEYS.referring_owner] = agencyOwner
+  if (leadSource) customFields[CONTACT_FIELD_KEYS.lead_source] = leadSource
 
   const dedupeKey = email || (phone as string)
   const label = `${first} ${last}`.trim() || email || phone || 'contact'

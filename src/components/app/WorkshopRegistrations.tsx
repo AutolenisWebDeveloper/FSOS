@@ -24,7 +24,7 @@ export interface Registration {
   chosen_delivery: string | null
   is_walk_in: boolean | null
   attendance_status: AttendanceStatus
-  ghl_opportunity_id: string | null
+  lead_converted_at: string | null
   lead_source: string | null
 }
 
@@ -185,7 +185,7 @@ export function WorkshopRegistrations({
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
-                      {r.ghl_opportunity_id || r.referral_id ? (
+                      {r.lead_converted_at || r.referral_id ? (
                         <span className="text-xs text-status-won">Lead created</span>
                       ) : (
                         <Button size="sm" variant="outline" disabled={busy} onClick={() => convert(r.reg_id)}>

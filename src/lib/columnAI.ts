@@ -12,7 +12,7 @@
 
 import { z } from 'zod'
 import { runGateway } from './ai/gateway'
-import { CANONICAL_FIELDS, type CanonicalField } from './ghlContacts'
+import { CANONICAL_FIELDS, type CanonicalField } from './import/csv-mapping'
 
 // A fast, cheap model is plenty for a bounded classification task.
 const COLUMN_MODEL = 'claude-sonnet-5'

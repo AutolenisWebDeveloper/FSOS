@@ -40,7 +40,7 @@ export interface RegLite {
   is_walk_in?: boolean | null
   lead_source?: string | null
   referral_id?: string | null
-  ghl_opportunity_id?: string | null
+  lead_converted_at?: string | null
   appointment_booked?: boolean | null
 }
 
@@ -139,15 +139,16 @@ export interface ConsultConversion {
 }
 
 /**
- * A registration is "converted to a consult/lead" when the manual convert produced a
- * referral or a GHL opportunity. "Showed" reuses the existing appointment_booked flag on
- * the registration (the consult was actually booked/kept). Both are conservative counts.
+ * A registration is "converted to a consult/lead" when the convert produced an internal
+ * referral or marked the native conversion (lead_converted_at). "Showed" reuses the existing
+ * appointment_booked flag on the registration (the consult was actually booked/kept). Both
+ * are conservative counts.
  */
 export function computeConsultConversion(regs: RegLite[]): ConsultConversion {
   let booked = 0
   let showed = 0
   for (const r of regs) {
-    const converted = !!r.referral_id || !!r.ghl_opportunity_id
+    const converted = !!r.referral_id || !!r.lead_converted_at
     if (converted) booked++
     if (converted && r.appointment_booked) showed++
   }
@@ -179,7 +180,7 @@ export function attributeLeadSource(regs: RegLite[], attendance: AttLite[]): Lea
     row.registrations++
     const status = byReg.get(r.reg_id)
     if (status === 'attended' || status === 'left_early') row.attended++
-    if (r.referral_id || r.ghl_opportunity_id) row.converted++
+    if (r.referral_id || r.lead_converted_at) row.converted++
     map.set(source, row)
   }
   return [...map.values()].sort((a, b) => b.registrations - a.registrations)

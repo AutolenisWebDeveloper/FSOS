@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
     // Resolve the registration by its personal join_token (never by name/email).
     const { data: reg } = await db
       .from('workshop_registrations')
-      .select('reg_id, name, email, phone, session_id, workshop_id, ghl_opportunity_id')
+      .select('reg_id, name, email, phone, session_id, workshop_id, lead_converted_at')
       .eq('join_token', v.data.join_token)
       .maybeSingle()
     if (!reg) return NextResponse.json({ error: 'We could not find your registration.' }, { status: 404 })
@@ -77,19 +77,15 @@ export async function POST(req: NextRequest) {
         .maybeSingle()
       const outcome = await convertRegistrationToLead(
         db,
-        { reg_id: reg.reg_id, name: reg.name, email: reg.email, phone: reg.phone, ghl_opportunity_id: reg.ghl_opportunity_id },
+        { reg_id: reg.reg_id, name: reg.name, email: reg.email, phone: reg.phone, lead_converted_at: reg.lead_converted_at },
         { is_security: w?.is_security ?? false, slug: w?.slug ?? null, title: w?.title ?? null },
         'public',
         ['wshop-consult-requested', 'wshop-replay-feedback'],
       )
       if (outcome.ok) {
+        // convertRegistrationToLead marks the native conversion (lead_converted_at) itself
+        // for the non-securities path; securities routes to FFS. Nothing further to persist.
         consult = { routed: outcome.routed }
-        if (outcome.routed === 'ghl' && 'ghl_opportunity_id' in outcome && outcome.ghl_opportunity_id) {
-          await db
-            .from('workshop_registrations')
-            .update({ ghl_opportunity_id: outcome.ghl_opportunity_id, lead_converted_at: new Date().toISOString() })
-            .eq('reg_id', reg.reg_id)
-        }
       }
       await writeAudit({
         actor: 'public',

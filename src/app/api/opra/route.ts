@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
 import { requireInternalAuth, readJson, parseLimit, dbErrorResponse } from '@/lib/http'
-import { ghlSummary } from '@/lib/ghl'
+import { pipelineSummary } from '@/lib/pipelines'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    for (const c of (cases || []) as any[]) c.ghl = ghlSummary(c.customers)
+    for (const c of (cases || []) as any[]) c.ghl = pipelineSummary(c.customers)
 
     // Compute counts across the full table (independent of the contacted filter)
     const { data: allCases } = await db
@@ -138,7 +138,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(data as any).ghl = ghlSummary((data as any).customers)
+    ;(data as any).ghl = pipelineSummary((data as any).customers)
     return NextResponse.json({ case: data })
   } catch (err) {
     console.error('[opra] unexpected error:', err)

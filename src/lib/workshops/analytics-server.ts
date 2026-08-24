@@ -75,7 +75,7 @@ interface RegRow {
   is_walk_in: boolean | null
   lead_source: string | null
   referral_id: string | null
-  ghl_opportunity_id: string | null
+  lead_converted_at: string | null
   appointment_booked: boolean | null
 }
 
@@ -92,7 +92,7 @@ export async function buildWorkshopAnalytics(db: Db, workshops: WorkshopRecord[]
   // Registrations for all workshops.
   const { data: regData } = await db
     .from('workshop_registrations')
-    .select('reg_id, workshop_id, chosen_delivery, is_walk_in, lead_source, referral_id, ghl_opportunity_id, appointment_booked')
+    .select('reg_id, workshop_id, chosen_delivery, is_walk_in, lead_source, referral_id, lead_converted_at, appointment_booked')
     .in('workshop_id', ids)
   const regs = (regData as RegRow[]) ?? []
 
@@ -142,7 +142,7 @@ export async function buildWorkshopAnalytics(db: Db, workshops: WorkshopRecord[]
       is_walk_in: r.is_walk_in,
       lead_source: r.lead_source,
       referral_id: r.referral_id,
-      ghl_opportunity_id: r.ghl_opportunity_id,
+      lead_converted_at: r.lead_converted_at,
       appointment_booked: r.appointment_booked,
     }
     const list = regsByWorkshop.get(r.workshop_id) ?? []

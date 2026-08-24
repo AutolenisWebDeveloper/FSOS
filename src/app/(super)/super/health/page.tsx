@@ -38,7 +38,6 @@ export default async function SuperHealthPage() {
   const ai = !!process.env.ANTHROPIC_API_KEY
   const email = !!process.env.RESEND_API_KEY
   const twilio = !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER)
-  const ghl = !!process.env.GHL_API_KEY
 
   const supaStatus: 'connected' | 'disconnected' | 'degraded' | 'error' = !supa.reachable
     ? 'error'
@@ -70,13 +69,6 @@ export default async function SuperHealthPage() {
       <SettingsSection title="AI & external">
         <IntegrationShell name="AI gateway (Claude-first)" status={statusOf(ai)}>
           {ai ? 'Configured. All AI routes through the model-agnostic gateway.' : 'ANTHROPIC_API_KEY unset — FNA and the assistant are unavailable.'}
-        </IntegrationShell>
-        <IntegrationShell
-          name="GoHighLevel (GHL)"
-          status={statusOf(ghl)}
-          fallbackNote={ghl ? undefined : 'Not configured — contact import uses the CSV fallback.'}
-        >
-          Contact sync / import.
         </IntegrationShell>
         <IntegrationShell
           name="Farmers / FFS payout API"

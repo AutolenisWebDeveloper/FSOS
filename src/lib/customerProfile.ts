@@ -3,7 +3,7 @@
 // place, so the detail API and the AI next-best-action share identical data.
 
 import { getDb } from '@/lib/supabase/client'
-import { ghlSummary, type GhlSummary } from '@/lib/ghl'
+import { pipelineSummary, type PipelineSummary } from '@/lib/pipelines'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>
@@ -16,7 +16,7 @@ export interface CustomerProfile {
   cases: Row[]
   opra: Row[]
   forms: Row[]
-  ghl: GhlSummary
+  ghl: PipelineSummary
 }
 
 /** Load a customer and all related records. Returns null when the id is unknown. */
@@ -61,6 +61,6 @@ export async function loadCustomerProfile(customerId: string): Promise<CustomerP
     cases: cases.data || [],
     opra: opra.data || [],
     forms: forms.data || [],
-    ghl: ghlSummary(customer),
+    ghl: pipelineSummary(customer),
   }
 }

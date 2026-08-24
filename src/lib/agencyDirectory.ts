@@ -6,7 +6,7 @@
 // and prospecting flags) into a clean, validated agency-partnership + owner
 // payload for the aggregate-root spine.
 //
-// Kept as pure functions (mirrors src/lib/ghlContacts.ts) so the route handler
+// Kept as pure functions (like the CSV contact-mapping layer) so the route handler
 // stays a thin orchestrator: parse → map → validate → dedupe → insert, and so
 // the mapping is unit-testable without a live Supabase. The normalized row is
 // re-validated with Zod (AgencyImportRowSchema) before any write — Zod at the

@@ -230,7 +230,7 @@ try {
   installFetchStub()
   freezeClock(IN_HOURS)
   const require = createRequire(import.meta.url)
-  const { processInbound, sendThroughGate, exitWinback, exitLife, exitXsell } = require(bundlePath)
+  const { processInbound, sendThroughGate, exitWinback, exitLife, exitXsell, resumePausedEnrollments } = require(bundlePath)
 
   // ── SCENARIO 1: threading, association, inbound row, and the auto-reply attempt ──
   section('1. Inbound message → thread, association, history, auto-reply attempt')
@@ -706,6 +706,91 @@ try {
     })
     check('the consent revoke is written to the append-only audit_log', () => {
       assert.ok(Number(q(db, `select count(*) from audit_log where action like 'consent%' or diff::text ilike '%inbound_stop%'`)) >= 1)
+    })
+  }
+
+  // ── SCENARIO 3c: FSOS-020 — a NATURAL-LANGUAGE stop TERMINATES + is absorbing ───
+  section('3c. Natural-language stop terminates automation; resume-paused never resurrects it')
+  {
+    // Link the member to a Contact Center row so the individual (business) suppression the
+    // reply-stop writes is keyed on contacts.id — the same key the send gate reads back.
+    const db = freshDb({ armed: true })
+    const CONTACT_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
+    const TAIL = PHONE.replace(/[^\d]/g, '').slice(-10)
+    q(db, `insert into contacts (id, full_name, contact_type, agency_partnership_id, phone, phone_digits)
+           values ('${CONTACT_ID}','Alex Rivera','client','${IDS.agency}','${PHONE}','${TAIL}')`)
+    q(db, `update household_members set source_contact_id='${CONTACT_ID}' where id='${IDS.member}'`)
+    aiCalls.length = 0; twilioCalls.length = 0
+
+    const r = await processInbound({ channel: 'sms', from: PHONE, body: 'Please stop texting me', provider: 'twilio', providerId: 'SM_nlstop' })
+
+    check('a natural-language stop is a CAMPAIGN TERMINATION, not the carrier global opt-out', () => {
+      assert.equal(r.optedOut, false, 'reply-stop must not flip the global carrier opt-out')
+      assert.equal(r.campaignTerminated, true)
+      assert.equal(r.escalated, true, 'a stop request hands off to the FSA')
+    })
+    check('the enrollment is TERMINATED (opted_out), never left paused for the resume job', () => {
+      assert.equal(q(db, `select status from comm_campaign_enrollments where id='${IDS.enrollment}'`), 'opted_out')
+      assert.equal(q(db, `select count(*) from comm_campaign_enrollments where status='paused_for_conversation'`), '0',
+        'a reply-stop left a row the quiet-window resume job would pick up')
+    })
+    check('termination writes NO DNC and does NOT revoke consent (separated from carrier STOP)', () => {
+      assert.equal(q(db, `select count(*) from dnc_entries where contact='${PHONE}'`), '0', 'reply-stop wrote a DNC entry')
+      assert.equal(q(db, `select status from consents where member_id='${IDS.member}' and channel='sms'`), 'granted',
+        'reply-stop revoked channel consent (should be campaign-only)')
+    })
+    check('BUSINESS suppression is written for the contact (the send-gate absorbing signal)', () => {
+      assert.equal(q(db, `select status from comm_client_suppressions where contact_id='${CONTACT_ID}'`), 'blocked')
+    })
+    check('the termination is audited with the reply_stop_request reason', () => {
+      assert.ok(Number(q(db, `select count(*) from audit_log where diff::text like '%reply_stop_request%'`)) >= 1)
+    })
+    check('no AI reply is placed to a stop request', () => {
+      assert.equal(aiCalls.length, 0, 'the model was called on a stop request')
+      assert.equal(twilioCalls.length, 0, 'an SMS was placed on a stop request')
+    })
+
+    // CORE FSOS-020 PROOF: run the ACTUAL resume-paused job — it must NOT resurrect it.
+    await resumePausedEnrollments()
+    check('resume-paused does NOT resurrect a reply-terminated enrollment', () => {
+      assert.equal(q(db, `select status from comm_campaign_enrollments where id='${IDS.enrollment}'`), 'opted_out',
+        'the resume job resurrected a reply-terminated enrollment')
+    })
+
+    // Idempotency — a duplicate provider delivery of the same stop is a no-op.
+    await processInbound({ channel: 'sms', from: PHONE, body: 'Please stop texting me', provider: 'twilio', providerId: 'SM_nlstop' })
+    check('a duplicate inbound (same provider id) is idempotent', () => {
+      assert.equal(q(db, `select count(*) from comm_messages where provider_id='SM_nlstop' and direction='inbound'`), '1')
+    })
+
+    // The canonical send gate must WITHHOLD an automated marketing send to the suppressed contact —
+    // this is what makes retries / the AI workforce / any re-enrollment unable to reach them.
+    const gated = await sendThroughGate({
+      channel: 'sms', to: PHONE, body: 'A quick note about your review.', actor: 'agent:test',
+      memberId: IDS.member, householdId: IDS.household, entity: { type: 'contact', id: CONTACT_ID },
+      purpose: 'MARKETING', aiGenerated: false, templateId: null,
+    })
+    check('the canonical send gate withholds automated outreach to a reply-terminated contact', () => {
+      assert.equal(gated.sent, false)
+      assert.equal(gated.gate.blockedStep, 'suppression', `blocked step was "${gated.gate.blockedStep}"`)
+    })
+  }
+
+  // ── SCENARIO 3d: FSOS-020 anti-over-correction — a benign pause STILL resumes ────
+  section('3d. A benign conversational pause still resumes (not over-corrected)')
+  {
+    const db = freshDb({ armed: true })
+    await processInbound({ channel: 'sms', from: PHONE, body: 'Sounds good, what times work?', provider: 'twilio', providerId: 'SM_benign' })
+    check('a benign reply PAUSES the enrollment (unchanged behavior)', () => {
+      assert.equal(q(db, `select status from comm_campaign_enrollments where id='${IDS.enrollment}'`), 'paused_for_conversation')
+    })
+    // Closing the conversation lets evaluateResume permit resume without clock manipulation —
+    // proving the resume path is fully intact for a benign pause (the anti-over-correction tell).
+    q(db, `update comm_conversations set status='closed' where contact='${PHONE}'`)
+    await resumePausedEnrollments()
+    check('resume-paused DOES resume a benign, resolved conversation pause', () => {
+      assert.equal(q(db, `select status from comm_campaign_enrollments where id='${IDS.enrollment}'`), 'enrolled',
+        'the resume job failed to resume a benign pause — the fix over-corrected')
     })
   }
 

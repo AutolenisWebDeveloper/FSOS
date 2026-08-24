@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
 import { requireInternalAuth, parseLimit, dbErrorResponse } from '@/lib/http'
-import { ghlSummary } from '@/lib/ghl'
+import { pipelineSummary } from '@/lib/pipelines'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
     // contact sits in the GHL workflow without a second round-trip.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     for (const o of (opportunities || []) as any[]) {
-      o.ghl = ghlSummary(o.customers)
+      o.ghl = pipelineSummary(o.customers)
     }
 
     // Pipeline counts across the full scores table

@@ -37,7 +37,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     const db = getDb()
     const { data: reg, error: rErr } = await db
       .from('workshop_registrations')
-      .select('reg_id, workshop_id, name, email, phone, consent_channels, referral_id, status, attended, ghl_opportunity_id')
+      .select('reg_id, workshop_id, name, email, phone, consent_channels, referral_id, status, attended, lead_converted_at')
       .eq('reg_id', params.id)
       .maybeSingle()
     if (rErr) return dbErrorResponse('workshops/registrations/[id]', rErr)
@@ -49,7 +49,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     const wantLead = v.data.convert_to_lead === true
     const wantReferral = v.data.convert_to_referral === true
 
-    // Load the workshop for the securities firewall + GHL attribution (slug/title).
+    // Load the workshop for the securities firewall + lead attribution (slug/title).
     type WorkshopLeadRow = { is_security: boolean | null; slug: string | null; title: string | null }
     let workshop: WorkshopLeadRow | null = null
     if (wantLead || wantReferral) {
@@ -62,11 +62,11 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     }
 
     // ── Securities firewall: a securities workshop's convert routes to FFS (no referral,
-    //    no GHL, no automated comms). Handle first so we never seed the spine for it. ──
+    //    no automated comms). Handle first so we never seed the spine for it. ──
     if (wantLead && workshop?.is_security === true) {
       const outcome = await convertRegistrationToLead(
         db,
-        { reg_id: reg.reg_id, name: reg.name, email: reg.email, phone: reg.phone, ghl_opportunity_id: reg.ghl_opportunity_id },
+        { reg_id: reg.reg_id, name: reg.name, email: reg.email, phone: reg.phone, lead_converted_at: reg.lead_converted_at },
         { is_security: true, slug: workshop.slug, title: workshop.title },
         actor,
       )
@@ -121,32 +121,16 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       await writeAudit({ actor, action: 'entity.created', entity: 'referral', entityId: referralId, diff: { source: 'workshop', registration_id: reg.reg_id } })
     }
 
-    // ── convert_to_lead: push into the GHL consult spine (non-securities). ──
+    // ── convert_to_lead (non-securities): mark the native conversion. The internal
+    //    referral seeded above is the FSOS-native lead artifact; convertRegistrationToLead
+    //    stamps lead_converted_at on the registration (GHL push removed in the excision). ──
     if (wantLead) {
-      const outcome = await convertRegistrationToLead(
+      await convertRegistrationToLead(
         db,
-        { reg_id: reg.reg_id, name: reg.name, email: reg.email, phone: reg.phone, ghl_opportunity_id: reg.ghl_opportunity_id },
+        { reg_id: reg.reg_id, name: reg.name, email: reg.email, phone: reg.phone, lead_converted_at: reg.lead_converted_at },
         { is_security: false, slug: workshop?.slug ?? null, title: workshop?.title ?? null },
         actor,
       )
-      if (!outcome.ok) {
-        // GHL failed after retries — leave the registration converted internally but flag
-        // the lead as un-pushed so staff can retry (no data loss).
-        if (Object.keys(update).length > 0) await db.from('workshop_registrations').update(update).eq('reg_id', reg.reg_id)
-        return NextResponse.json({ error: outcome.error, reason: 'ghl_push_failed', referral_id: referralId }, { status: outcome.status })
-      }
-      if (outcome.routed === 'ghl' && !outcome.skipped) {
-        if (outcome.ghl_contact_id) update.ghl_contact_id = outcome.ghl_contact_id
-        if (outcome.ghl_opportunity_id) update.ghl_opportunity_id = outcome.ghl_opportunity_id
-        update.lead_converted_at = new Date().toISOString()
-        await writeAudit({
-          actor,
-          action: 'entity.created',
-          entity: 'ghl_opportunity',
-          entityId: outcome.ghl_opportunity_id ?? reg.reg_id,
-          diff: { source: 'workshop', pipeline: 'prospect_client', lead_source: 'Event', registration_id: reg.reg_id },
-        })
-      }
     }
 
     if (Object.keys(update).length > 0) {
@@ -155,7 +139,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       await writeAudit({ actor, action: 'entity.updated', entity: 'workshop_registration', entityId: reg.reg_id, diff: update })
     }
 
-    return NextResponse.json({ ok: true, referral_id: referralId, routed: wantLead ? 'ghl' : undefined })
+    return NextResponse.json({ ok: true, referral_id: referralId, routed: wantLead ? 'native' : undefined })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed to update registration' }, { status: 500 })
   }

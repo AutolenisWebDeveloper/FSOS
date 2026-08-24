@@ -1029,7 +1029,7 @@ export type WorkshopRegister = z.infer<typeof WorkshopRegisterSchema>
 
 // Internal registration update: mark attendance and/or convert to a lead/referral.
 // convert_to_referral keeps the legacy internal-only path; convert_to_lead (P1) routes
-// the attendee into the existing consult spine (referral + GHL Pipeline-A opportunity),
+// the attendee into the existing consult spine (internal referral + native lead conversion),
 // firewall-gated for is_security workshops (routed to FFS, never the automated engine).
 export const RegistrationPatchSchema = z
   .object({
@@ -1088,8 +1088,8 @@ export type AttendanceReconcile = z.infer<typeof AttendanceReconcileSchema>
 // ─── Workshop feedback survey (P3, spec §D) ────────────────────────────────────
 // Public post-event survey reached from the replay page via the registrant's join_token
 // (personalized link — never a name/email lookup). consult_requested=true routes into the
-// EXISTING consult spine (GHL Pipeline-A for non-securities; the FFS-supervised path for
-// is_security workshops — never the automated sequence). Honeypot handled before Zod.
+// EXISTING consult spine (native lead conversion for non-securities; the FFS-supervised path
+// for is_security workshops — never the automated sequence). Honeypot handled before Zod.
 export const WorkshopFeedbackSchema = z.object({
   join_token: z.string().trim().min(1, 'Missing your personal link token').max(200),
   rating: z.coerce.number().int().min(1).max(5).optional(),
@@ -1128,21 +1128,6 @@ export const OpraStatusSchema = z
   .refine((v) => Object.keys(v).length > 0, { message: 'No changes provided' })
 export type OpraStatus = z.infer<typeof OpraStatusSchema>
 
-// ─── Native GoHighLevel sync (App A → App B parity) ────────────────────────────
-// Push an App B record into GoHighLevel (idempotent; returned GHL ids stored back
-// on the record). Two entity modes map to the two legacy sync modes:
-//   household → prospect_client pipeline · agency → agency_owner pipeline.
-export const GHL_SYNC_ENTITY = ['household', 'agency'] as const
-export const GHL_PIPELINE_KEY = ['prospect_client', 'agency_owner', 'term_conversions'] as const
-
-export const GhlSyncSchema = z.object({
-  entity_type: z.enum(GHL_SYNC_ENTITY),
-  entity_id: uuid,
-  pipeline: z.enum(GHL_PIPELINE_KEY).optional(),
-  stage: z.number().int().min(1).max(20).optional(),
-  tags: z.array(z.string().trim().min(1).max(60)).max(20).optional(),
-})
-export type GhlSync = z.infer<typeof GhlSyncSchema>
 
 // ─── Contact Center (native App B contact store) ───────────────────────────────
 export const CONTACT_TYPE = ['agency_owner', 'client', 'prospect', 'term_conversion', 'cross_sell', 'business', 'unknown'] as const

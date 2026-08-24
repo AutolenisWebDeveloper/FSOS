@@ -10,7 +10,7 @@
 // Pure; no I/O, no clock, no randomness.
 // ─────────────────────────────────────────────────────────────────────────
 
-import type { CanonicalField } from '@/lib/ghlContacts'
+import type { CanonicalField } from '@/lib/import/csv-mapping'
 import type { HeaderDecision } from './plan'
 import { squashHeader, type FieldEntity, type FieldType } from './fields'
 import { splitComposite } from './composite'

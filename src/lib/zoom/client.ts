@@ -3,7 +3,7 @@
 // (account_credentials) → create a meeting/webinar registrant → return the per-registrant
 // join_url + Zoom registrant id (stored for webhook correlation).
 //
-// CREDENTIAL-GATED, GRACEFUL DEGRADATION — mirrors ghlEnabled() (src/lib/ghl.ts). With no
+// CREDENTIAL-GATED, GRACEFUL DEGRADATION — the standard FSOS integration pattern. With no
 // ZOOM_* env vars set the whole integration is a clean no-op: zoomEnabled() is false,
 // provisioning is skipped, registration still succeeds, and the join_url is provisioned
 // later on retry (never lost). No provider SDK is used; only fetch. No securities data is

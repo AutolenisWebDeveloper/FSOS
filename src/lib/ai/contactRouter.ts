@@ -10,9 +10,9 @@
 // output is validated against a fixed enum; anything else is dropped to 'unknown'.
 
 import { z } from 'zod'
-import type { MappedContact } from '@/lib/ghlContacts'
+import type { MappedContact } from '@/lib/import/csv-mapping'
 import { runGateway, DEFAULT_MODEL } from '@/lib/ai/gateway'
-import type { GhlPipeline } from '@/lib/ghl'
+import type { PipelineKey } from '@/lib/pipelines'
 
 export const CONTACT_TYPES = ['agency_owner', 'client', 'prospect', 'term_conversion', 'cross_sell', 'business', 'unknown'] as const
 export type ContactType = (typeof CONTACT_TYPES)[number]
@@ -20,8 +20,8 @@ export type ContactType = (typeof CONTACT_TYPES)[number]
 export interface RouteTarget {
   /** AGENT_ROSTER key the contact is routed to. */
   agent: string
-  /** GHL pipeline the contact is placed on (null = contacts-only, no opportunity). */
-  pipeline: GhlPipeline['key'] | null
+  /** Pipeline the contact is placed on (null = contacts-only, no opportunity). */
+  pipeline: PipelineKey | null
   /** Tags applied automatically for this type. */
   tags: string[]
   /** Human label for the UI. */

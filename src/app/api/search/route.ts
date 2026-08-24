@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
 import { requireInternalAuth, parseLimit } from '@/lib/http'
-import { ghlSummary } from '@/lib/ghl'
+import { pipelineSummary } from '@/lib/pipelines'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
 
   if (!customersRes.error && customersRes.data) {
     for (const c of customersRes.data) {
-      const g = ghlSummary(c)
+      const g = pipelineSummary(c)
       results.push({
         type: 'customer',
         id: c.customer_id,

@@ -8,13 +8,6 @@ import { deriveIsSecurity, decideSessionMeetingProvision } from './logic'
 import { resolveCheckIn, type AttendanceStatus } from './attendance'
 import { deriveWebhookAttendance, type ParsedParticipantEvent } from './delivery'
 import { addZoomRegistrant, createZoomMeeting, deleteZoomMeeting, zoomEnabled } from '@/lib/zoom/client'
-import {
-  upsertContactWithRetry,
-  createOpportunity,
-  addContactTags,
-  GHL_CUSTOM_FIELDS,
-  ghlEnabled,
-} from '@/lib/ghl'
 
 // Minimal structural type for the Supabase client we use (avoids importing the SDK type).
 type Db = ReturnType<typeof import('@/lib/supabase/client')['getDb']>
@@ -417,10 +410,15 @@ export async function addWalkIn(
 }
 
 // ─── Convert an attendee to a lead (P1, manual) ─────────────────────────────────
-// Non-securities: push into the EXISTING consult spine via GHL — upsert the contact with
-// lead_source="Event" + tags (src-event, wshop-<slug>) and create a Pipeline-A
-// prospect_client opportunity. is_security workshops are FIREWALLED: their attendees route
-// to the FFS-supervised path (compliance escalation), NEVER the automated comms engine.
+// Non-securities: mark the registration as a converted FSOS lead (lead_converted_at).
+// is_security workshops are FIREWALLED: their attendees route to the FFS-supervised path
+// (compliance escalation), NEVER the automated comms engine.
+//
+// GHL excision (Pre-Phase-2): the former GoHighLevel contact/opportunity push was removed.
+// The FSOS-native lead artifacts are unaffected — the internal referral is created by the
+// nurture caller (routeSegmentToSpine → `referrals`), and the conversion is marked natively
+// here on the registration. No external pipeline placement is performed (there is no native
+// opportunity spine wired for workshop/referral leads; see the excision completion report).
 
 export interface WorkshopLeadContext {
   is_security: boolean | null
@@ -433,28 +431,28 @@ export interface RegForConvert {
   name: string | null
   email: string | null
   phone: string | null
-  ghl_opportunity_id: string | null
+  /** Native conversion marker — set → already converted (idempotent). */
+  lead_converted_at: string | null
 }
 
 export type ConvertLeadOutcome =
-  | { ok: true; routed: 'ghl'; ghl_contact_id: string | null; ghl_opportunity_id: string | null; skipped: boolean }
+  | { ok: true; routed: 'native'; converted: boolean; skipped: boolean }
   | { ok: true; routed: 'ffs'; reason: string }
   | { ok: false; error: string; status: number }
 
 /**
  * Route a workshop attendee into the consult spine. Returns the routing decision so the
  * caller can audit it. Does NOT create the internal referral (the caller owns the existing
- * referral-spine step); this handles the GHL push + the securities firewall branch.
+ * referral-spine step); this marks the native conversion + handles the securities firewall.
  */
 export async function convertRegistrationToLead(
   db: Db,
   reg: RegForConvert,
   ctx: WorkshopLeadContext,
   actor: string,
-  // Additive: extra GHL tags to attach alongside the base src-event / wshop-<slug> tags.
-  // Used by the P2 post-event nurture pass to add a per-segment tag (wshop-attended /
-  // wshop-noshow / wshop-registered) so the manual GHL workflows pick the contact up.
-  extraTags: string[] = [],
+  // Retained for signature compatibility with the nurture caller (per-segment context tag).
+  // No longer used to drive an external push; segment tagging/scoring stays with the caller.
+  _extraTags: string[] = [],
 ): Promise<ConvertLeadOutcome> {
   // ── Securities firewall: route to FFS, never the automated engine. ──
   if (ctx.is_security === true) {
@@ -473,54 +471,21 @@ export async function convertRegistrationToLead(
       target_type: 'workshop_registration',
       target_id: reg.reg_id,
       reason: 'is_security workshop',
-      note: 'Convert-to-lead on a securities workshop routes to FFS. No GHL push, no automated comms.',
+      note: 'Convert-to-lead on a securities workshop routes to FFS. No automated comms.',
     })
     return { ok: true, routed: 'ffs', reason: 'securities_ffs' }
   }
 
-  // ── Non-securities: GHL Pipeline-A push (green-zone). No-ops cleanly when GHL is off. ──
-  if (reg.ghl_opportunity_id) {
-    // Idempotent: already converted to a GHL lead.
-    return { ok: true, routed: 'ghl', ghl_contact_id: null, ghl_opportunity_id: reg.ghl_opportunity_id, skipped: true }
+  // ── Non-securities: mark the native conversion (idempotent). ──
+  if (reg.lead_converted_at) {
+    // Idempotent: already converted.
+    return { ok: true, routed: 'native', converted: true, skipped: true }
   }
-  if (!ghlEnabled()) {
-    return { ok: true, routed: 'ghl', ghl_contact_id: null, ghl_opportunity_id: null, skipped: true }
-  }
-
-  const [firstName, ...restName] = (reg.name ?? 'Workshop attendee').trim().split(/\s+/)
-  const lastName = restName.join(' ') || undefined
-  const slug = (ctx.slug ?? 'workshop').slice(0, 60)
-  const baseTags = ['src-event', `wshop-${slug}`]
-  // De-dupe + drop empties so a repeated/blank extra tag never double-writes.
-  const tags = [...new Set([...baseTags, ...extraTags.filter((t) => t && t.trim())])]
-
-  const contactRes = await upsertContactWithRetry({
-    firstName,
-    lastName,
-    email: reg.email,
-    phone: reg.phone,
-    tags,
-    source: 'Event',
-    customFields: { [GHL_CUSTOM_FIELDS.lead_source]: 'Event' },
-  })
-  const contactId = contactRes.data?.contact?.id ?? null
-  if (!contactId) {
-    // GHL failed transiently after retries — surface so the caller can leave the
-    // registration unconverted and let staff retry (no data loss).
-    return { ok: false, error: contactRes.error ?? 'GHL contact upsert failed', status: 502 }
-  }
-  await addContactTags(contactId, tags)
-
-  const oppRes = await createOpportunity({
-    contactId,
-    pipelineKey: 'prospect_client',
-    stagePosition: 1,
-    name: `Workshop lead — ${reg.name ?? 'attendee'}${ctx.title ? ` (${ctx.title})` : ''}`.slice(0, 200),
-    status: 'open',
-  })
-  const opportunityId = oppRes.data?.opportunity?.id ?? null
-
-  return { ok: true, routed: 'ghl', ghl_contact_id: contactId, ghl_opportunity_id: opportunityId, skipped: false }
+  await db
+    .from('workshop_registrations')
+    .update({ lead_converted_at: new Date().toISOString() })
+    .eq('reg_id', reg.reg_id)
+  return { ok: true, routed: 'native', converted: true, skipped: false }
 }
 
 // ─── Virtual delivery: Zoom attendance webhook + provisioning (P3) ──────────────

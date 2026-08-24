@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
 import { requireInternalAuth, configErrorResponse } from '@/lib/http'
 import { getTier } from '@/lib/compliance'
-import { ghlSummary } from '@/lib/ghl'
+import { pipelineSummary } from '@/lib/pipelines'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -134,7 +134,7 @@ async function dashboardScope() {
   const conversions = (urgentConversions.data || []).map((c: any) => ({
     ...c,
     days_to_deadline: daysBetween(c.conversion_deadline),
-    ghl: ghlSummary(c.customers),
+    ghl: pipelineSummary(c.customers),
   }))
 
   // Rolling 12-month GDC drives the tier.

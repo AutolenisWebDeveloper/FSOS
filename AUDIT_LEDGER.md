@@ -43,7 +43,11 @@ gone" assumption in downstream subsystems is false. See **FSOS-001**.
 - [x] Message-of-record FK reconciliation — PARTIALLY PROVEN → FSOS-030 (model sound; orphan-on-null-provider_id; cannot corrupt campaign state)
 
 ## GHL REMOVAL VERIFICATION
-**FAILED — excision not performed.** GHL is present and active. See FSOS-001 (High).
+**RESOLVED (GHL EXCISION: PASS)** as of 2026-08-24 — GHL removed as an FSOS runtime dependency
+(0 imports / 0 API calls / 0 webhook+import routes / 0 ghl_* writes / 0 dependent reads); native
+taxonomy + CSV mapping relocated provider-neutral; native referral/workshop behavior preserved;
+all five gates green. Legacy ghl_* columns retained as dormant schema (cleanup deferred). See
+FSOS-001 RESOLUTION. (Original FSOS-001 High finding preserved above for history.)
 
 ## TOP FINDINGS (severity × blast radius × launch relevance)
 1. FSOS-001 (High) — GHL not excised; present + active. **Precondition blocker.**
@@ -172,6 +176,94 @@ NOT repair here.
 Verification needed: after excision — zero `@/lib/ghl(Contacts)?` imports in src/; files
 deleted; routes 404; no `ghl_*` read on an active path; taxonomy resolved from the internal
 module; unit + type-check green.
+
+---
+
+### FSOS-001 — RESOLUTION (Pre-Phase-2 GHL excision) — RESOLVED
+Status: RESOLVED (GHL EXCISION: PASS) · verified 2026-08-24
+Baseline SHA: 204c5a278da20e360a0139f5285821e0580e1a5b · Implementation on branch
+claude/fsos-phase-1-audit-sgn0z0.
+
+The original finding above is preserved. GoHighLevel has been excised as an FSOS runtime
+dependency. Evidence:
+
+REMOVED (integration):
+- Libraries: src/lib/ghl.ts, src/lib/ghlContacts.ts (deleted).
+- Routes: src/app/api/ghl/{sync,sync-record,contacts/upload}, src/app/api/webhooks/ghl,
+  src/app/api/admin/imports/ghl, src/app/api/app/contacts/upload (GHL-only outbound sync).
+- UI: (fsa)/app/contacts/upload/page.tsx, ContactUploadForm, (admin)/.../imports/ghl/page.tsx,
+  GhlImportWizard, GhlSyncButton; admin "Import GHL contacts" link; super/health GHL card;
+  health route `ghl_key`; GhlSyncSchema/GHL_SYNC_ENTITY/GHL_PIPELINE_KEY.
+- Feature flag: `ghlEnabled()`/`GHL_API_KEY` gate removed (no code reads it).
+
+RELOCATED (FSOS-native, provider-neutral):
+- src/lib/pipelines.ts ← taxonomy from ghl.ts: Pipeline/PipelineStage/PipelineKey/InternalPipeline,
+  PIPELINES, findStageById, findPipelineById, stageAt, isApplicationSubmittedStage/isIssuedStage,
+  APPLICATION_SUBMITTED_STAGE_IDS/ISSUED_STAGE_IDS, and pipelineSummary (was ghlSummary).
+- src/lib/import/csv-mapping.ts ← ghlContacts.ts (GHL_CUSTOM_FIELDS coupling inlined as plain keys).
+- Consumers repointed: dashboard, search, scores, opra, agencies/list, customerProfile,
+  ai/contactRouter, import/mapping/commit, columnAI, app/contacts/import.
+
+WORKFLOW PRESERVATION:
+- agencies/referral: native customer + agency_referrals + activity + questionnaire all intact;
+  only the best-effort GHL contact/opportunity MIRROR (+ ghl_* writes) removed. No native loss.
+- workshops convertRegistrationToLead: securities firewall → FFS preserved (compliance_event +
+  escalation); non-securities now marks the native conversion (lead_converted_at) idempotently,
+  routed:'native'. Native internal referral still created by routeSegmentToSpine/registrations
+  route (`referrals` insert). lead_score/segment unchanged.
+- feedback + registrations/[id] routes updated to the native path; no ghl_* writes.
+- Workshop conversion ANALYTICS migrated from a dependent read on ghl_opportunity_id to the
+  native lead_converted_at marker (attendance.ts, analytics-server.ts) so counts stay correct.
+
+DATABASE (dormant schema/history retained; CODE EXCISION NOW / SCHEMA CLEANUP LATER):
+- ghl_* WRITES: 0. ghl_* DEPENDENT READS: 0.
+- Retained DORMANT READs (display-only, no behavior branch): pipelineSummary reads historical
+  ghl_stage_id/ghl_contact_id/ghl_opportunity_id (documented in src/lib/pipelines.ts);
+  scores/route.ts:28, opra/route.ts:43,129 SELECT those columns to feed the summary;
+  customers/next-action ghl_stage/ghl_pipeline output fields; audit/route.ts:29 lists historical
+  ghl_upload_batches. types/database.ts retains the ghl_* column types (mirror of live schema).
+- Legacy ghl_* columns + ghl_upload_batches/ghl_upload_rows tables LEFT as dormant schema
+  (physical column/table removal deferred to a separate authorized migration).
+
+ZERO-RUNTIME-DEPENDENCY VERIFICATION (grep, post-change):
+- @/lib/ghl imports: 0 · @/lib/ghlContacts imports: 0 · GHL API calls (leadconnectorhq/
+  upsertContact/createOpportunity/ghlEnabled): 0 · GHL webhook routes: 0 · GHL import routes: 0 ·
+  ghl_* writes: 0 · ghl_* dependent reads: 0 · GHL-required app env references: 0 ·
+  GHL feature-flag deps: 0. Remaining textual refs are: dormant reads (above), the retained
+  MIGRATION/HISTORY module src/lib/comms/migration/ghl-optout.ts (+ its 2 tests), types/database.ts
+  dormant columns, provider-neutral module docs, and stale-comment cleanups.
+
+TESTS:
+- New: tests/pipelines-taxonomy.test.mjs (11 assertions — taxonomy + summary parity),
+  tests/csv-mapping.test.mjs (20 assertions — mapping/inference parity). Both prove PRESERVED
+  behavior. Removed tests/ghlUpload.test.mjs (compiled the deleted ghl.ts/withGhlRetry).
+- Updated tests/workshop-ops.test.mjs: replaced the assertion for the removed GHL push with one
+  asserting the native conversion (lead_converted_at, routed:'native', no GHL_CUSTOM_FIELDS);
+  updated a conversion-count fixture to the native marker. No assertion weakened.
+
+VALIDATION (all green): type-check exit 0 · `npm test` 184/184 unit files · `npm run test:rls`
+14/14 rls files (ephemeral Postgres) · lint exit 0 (no ESLint warnings/errors) · build exit 0.
+
+WORKFLOW-GAP NOTE (not a §5A blocker): the former GHL-side OPPORTUNITY / pipeline PLACEMENT for
+referral + workshop leads had NO pre-existing native equivalent (FSOS created only a GHL
+opportunity, never a native `opportunities` row, for these). It is intentionally dropped — the
+FSOS-native lead artifacts (customer/contact, agency_referrals or referrals row with SLA,
+activity, lead_converted_at) remain complete and actionable, so no workflow is silently
+incomplete. Building a native opportunity/pipeline-placement mechanism for these leads is a
+product decision explicitly OUT OF SCOPE for this excision run; flagged here for triage.
+
+INDEPENDENT REVIEW: an independent adversarial review of the diff was commissioned (surviving
+runtime deps, native-loss, consumer migration, dependent reads, authz, workflow gap, test
+quality). Result appended on completion; any material in-scope finding will be fixed before the
+verdict stands.
+
+NOT VERIFIED — LIVE/ADMIN REQUIRED (out of repo scope):
+- Remove GHL_API_KEY / GHL_LOCATION_ID from Vercel/production env (names for admin cleanup:
+  GHL_API_KEY, GHL_LOCATION_ID, GHL_WEBHOOK_SECRET).
+- Disable provider-side GHL webhooks/workflows; GHL account contacts/opportunities; deployment
+  of this branch; physical drop of legacy ghl_* columns + ghl_upload_* tables (separate migration).
+  For each: Required access (Vercel/GHL admin, Supabase migration) → action → expected evidence
+  (env absent / webhook 404 at GHL / columns dropped) → pass condition.
 
 ---
 

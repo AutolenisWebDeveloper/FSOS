@@ -29,12 +29,6 @@ import {
   type WorkshopLeadContext,
 } from './server'
 import {
-  upsertContactWithRetry,
-  addContactTags,
-  GHL_CUSTOM_FIELDS,
-  ghlEnabled,
-} from '@/lib/ghl'
-import {
   dueReminderKinds,
   segmentFor,
   nurtureKindForSegment,
@@ -126,7 +120,7 @@ interface RegRow {
   status: string | null
   workshop_id: string
   session_id: string | null
-  ghl_opportunity_id: string | null
+  lead_converted_at: string | null
   referral_id: string | null
 }
 
@@ -422,7 +416,7 @@ export async function runReminderPass(db: Db = getDb()): Promise<PassResult> {
 
     const { data: regs } = await db
       .from('workshop_registrations')
-      .select('reg_id, name, email, phone, consent_channels, join_url, created_at, status, workshop_id, session_id, ghl_opportunity_id, referral_id')
+      .select('reg_id, name, email, phone, consent_channels, join_url, created_at, status, workshop_id, session_id, lead_converted_at, referral_id')
       .eq('session_id', s.id)
       .not('status', 'in', '("cancelled","ffs_referred")')
     const regList = (regs ?? []) as RegRow[]
@@ -501,7 +495,7 @@ export async function runNurturePass(db: Db = getDb()): Promise<PassResult> {
 
     const { data: regs } = await db
       .from('workshop_registrations')
-      .select('reg_id, name, email, phone, consent_channels, join_url, created_at, status, workshop_id, session_id, ghl_opportunity_id, referral_id')
+      .select('reg_id, name, email, phone, consent_channels, join_url, created_at, status, workshop_id, session_id, lead_converted_at, referral_id')
       .eq('session_id', s.id)
       .is('nurtured_at', null)
       .not('status', 'in', '("cancelled","ffs_referred")')
@@ -564,7 +558,7 @@ async function routeSecuritiesToFfs(db: Db, reg: RegRow, workshop: WorkshopRow):
   const ctx: WorkshopLeadContext = { is_security: true, slug: workshop.slug, title: workshop.title }
   await convertRegistrationToLead(
     db,
-    { reg_id: reg.reg_id, name: reg.name, email: reg.email, phone: reg.phone, ghl_opportunity_id: reg.ghl_opportunity_id },
+    { reg_id: reg.reg_id, name: reg.name, email: reg.email, phone: reg.phone, lead_converted_at: reg.lead_converted_at },
     ctx,
     ACTOR,
   )
@@ -572,23 +566,18 @@ async function routeSecuritiesToFfs(db: Db, reg: RegRow, workshop: WorkshopRow):
 }
 
 // Segments that seed the internal referral + a Pipeline-A opportunity (the qualified
-// consult candidates). No-show / registered-never-attended get the tag + score only (the
-// GHL recapture workflow + replay re-entry create the opportunity when they re-engage).
+// consult candidates). No-show / registered-never-attended get the segment tag + score only.
 function segmentIsQualified(segment: Segment): boolean {
   return segment === 'attended' || segment === 'left_early'
 }
 
 /**
- * Route a nurture segment into the existing consult spine:
- *   • qualified (attended/left_early): reuse convertRegistrationToLead → GHL contact
- *     (lead_source="Event") + src-event/wshop-<slug>/<segment> tags + Pipeline-A
- *     opportunity; PLUS seed the internal referral (same shape as the P1 convert route).
- *   • recapture (no_show/registered): GHL contact upsert with the segment tag + lead_source
- *     only (no opportunity) so the manual GHL recapture workflow picks it up.
- * The lead-score delta is stored on the registration (auditable) and applied to GHL
- * lead_score by the segment-tag GHL workflow (see docs/ghl_workshop_workflows.md) — FSOS
- * supplies the config-default delta + the trigger tag; it does not clobber the absolute
- * GHL score. GHL-off → no-op cleanly.
+ * Route a nurture segment into the existing consult spine (GHL excised — Pre-Phase-2):
+ *   • qualified (attended/left_early): seed the internal referral (same shape as the manual
+ *     convert route), then mark the native lead conversion via convertRegistrationToLead.
+ *   • recapture (no_show/registered): the segment tag + lead-score delta are recorded on the
+ *     registration by the nurture caller; there is no external push, so this is a native no-op.
+ * The lead-score delta is stored on the registration (auditable). No external pipeline push.
  */
 async function routeSegmentToSpine(db: Db, reg: RegRow, workshop: WorkshopRow, segment: Segment, _delta: number): Promise<void> {
   const tag = segmentTag(segment)
@@ -616,41 +605,22 @@ async function routeSegmentToSpine(db: Db, reg: RegRow, workshop: WorkshopRow, s
         await writeAudit({ actor: ACTOR, action: 'entity.created', entity: 'referral', entityId: ref.id, diff: { source: 'workshop_nurture', segment, registration_id: reg.reg_id } })
       }
     }
-    // GHL push (contact + tags + Pipeline-A opportunity), reusing the canonical convert.
+    // Mark the native conversion (securities-firewalled inside convert). The internal
+    // referral above is the FSOS-native lead artifact; no external pipeline push (GHL excised).
     const outcome = await convertRegistrationToLead(
       db,
-      { reg_id: reg.reg_id, name: reg.name, email: reg.email, phone: reg.phone, ghl_opportunity_id: reg.ghl_opportunity_id },
+      { reg_id: reg.reg_id, name: reg.name, email: reg.email, phone: reg.phone, lead_converted_at: reg.lead_converted_at },
       { is_security: workshop.is_security === true, slug: workshop.slug, title: workshop.title },
       ACTOR,
       [tag],
     )
-    if (outcome.ok && outcome.routed === 'ghl' && !outcome.skipped) {
-      const patch: Record<string, unknown> = { lead_converted_at: new Date().toISOString() }
-      if (outcome.ghl_contact_id) patch.ghl_contact_id = outcome.ghl_contact_id
-      if (outcome.ghl_opportunity_id) patch.ghl_opportunity_id = outcome.ghl_opportunity_id
-      await db.from('workshop_registrations').update(patch).eq('reg_id', reg.reg_id)
-      await writeAudit({ actor: ACTOR, action: 'entity.created', entity: 'ghl_opportunity', entityId: outcome.ghl_opportunity_id ?? reg.reg_id, diff: { source: 'workshop_nurture', segment, lead_source: 'Event' } })
+    if (outcome.ok && outcome.routed === 'native' && !outcome.skipped) {
+      await writeAudit({ actor: ACTOR, action: 'entity.updated', entity: 'workshop_registration', entityId: reg.reg_id, diff: { source: 'workshop_nurture', segment, converted: true } })
     }
     return
   }
 
-  // Recapture segments: tag + lead_source only, no opportunity. No-op cleanly if GHL off.
-  if (!ghlEnabled()) return
-  const [firstName, ...rest] = (reg.name ?? 'Workshop attendee').trim().split(/\s+/)
-  const tags = ['src-event', `wshop-${(workshop.slug ?? 'workshop').slice(0, 60)}`, tag]
-  const contactRes = await upsertContactWithRetry({
-    firstName,
-    lastName: rest.join(' ') || undefined,
-    email: reg.email,
-    phone: reg.phone,
-    tags,
-    source: 'Event',
-    customFields: { [GHL_CUSTOM_FIELDS.lead_source]: 'Event' },
-  })
-  const contactId = contactRes.data?.contact?.id ?? null
-  if (contactId) {
-    await addContactTags(contactId, tags)
-    await db.from('workshop_registrations').update({ ghl_contact_id: contactId }).eq('reg_id', reg.reg_id)
-    await writeAudit({ actor: ACTOR, action: 'entity.updated', entity: 'workshop_registration', entityId: reg.reg_id, diff: { source: 'workshop_nurture', segment, tags } })
-  }
+  // Recapture segments (no_show / registered): the segment tag + lead-score delta are
+  // recorded natively on the registration by the nurture caller. The former GHL contact
+  // recapture push was removed in the excision; nothing native remains to do here.
 }

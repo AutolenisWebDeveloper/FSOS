@@ -3,7 +3,6 @@ import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
 import { requireInternalAuth, readJson, parseLimit, dbErrorResponse } from '@/lib/http'
 import { sendForm } from '@/lib/forms'
-import { ghlEnabled, upsertContact, createOpportunity, GHL_CUSTOM_FIELDS } from '@/lib/ghl'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -106,47 +105,10 @@ export async function POST(req: NextRequest) {
       notes: `Referred by ${agency.owner} · Type: ${referral_type || 'general'}`,
     })
 
-    // Push the referral into GoHighLevel so the GHL workflows run against it:
-    // upsert the contact and open an opportunity at Prospect / Client → New
-    // Opportunity (position 1), tagged src-referral. Best-effort and fully
-    // guarded — a GHL outage never fails the referral submission.
-    if (ghlEnabled()) {
-      try {
-        const nameParts = (client_name || '').trim().split(' ')
-        const up = await upsertContact({
-          firstName: nameParts[0] || 'Unknown',
-          lastName: nameParts.slice(1).join(' ') || '',
-          email: client_email || null,
-          phone: client_phone || null,
-          source: 'agency_referral',
-          tags: ['src-referral', 'type-prospect', 'nurture-active'],
-          customFields: {
-            [GHL_CUSTOM_FIELDS.lead_source]: 'Agency Referral',
-            [GHL_CUSTOM_FIELDS.contact_type]: 'prospect',
-            [GHL_CUSTOM_FIELDS.referring_owner]: agency.owner,
-            [GHL_CUSTOM_FIELDS.owner_agency]: agency.name,
-          },
-        })
-        const ghlContactId = up.data?.contact?.id
-        if (ghlContactId) {
-          const opp = await createOpportunity({
-            contactId: ghlContactId,
-            pipelineKey: 'prospect_client',
-            stagePosition: 1,
-            name: client_name,
-          })
-          await supabase
-            .from('customers')
-            .update({
-              ghl_contact_id: ghlContactId,
-              ghl_opportunity_id: opp.data?.opportunity?.id || null,
-            })
-            .eq('customer_id', customer_id)
-        }
-      } catch (err) {
-        console.error('Referral GHL sync error:', err)
-      }
-    }
+    // The referral's FSOS-native system of record is complete above: the customer
+    // record, the agency_referrals row, and the activity note are all persisted in
+    // Supabase. (The former best-effort GoHighLevel contact/opportunity mirror was
+    // removed in the GHL excision; no native behavior depended on it.)
 
     // Actually send the questionnaire (email) rather than leaving a phantom
     // "sent" record the client never receives. Best-effort; failure is logged.

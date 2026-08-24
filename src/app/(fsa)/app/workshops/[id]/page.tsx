@@ -59,7 +59,7 @@ export default async function WorkshopDetailPage(props: { params: Promise<{ id: 
     if (workshop) {
       const { data: regs } = await db
         .from('workshop_registrations')
-        .select('reg_id, name, email, phone, status, attended, referral_id, consent_channels, chosen_delivery, is_walk_in, ghl_opportunity_id, lead_source')
+        .select('reg_id, name, email, phone, status, attended, referral_id, consent_channels, chosen_delivery, is_walk_in, lead_converted_at, lead_source')
         .eq('workshop_id', params.id)
         .order('registered_at', { ascending: false, nullsFirst: false })
       const rows = (regs as Omit<Registration, 'attendance_status'>[]) ?? []

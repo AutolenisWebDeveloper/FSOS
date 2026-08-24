@@ -125,12 +125,22 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     //    referral seeded above is the FSOS-native lead artifact; convertRegistrationToLead
     //    stamps lead_converted_at on the registration (GHL push removed in the excision). ──
     if (wantLead) {
-      await convertRegistrationToLead(
+      const outcome = await convertRegistrationToLead(
         db,
         { reg_id: reg.reg_id, name: reg.name, email: reg.email, phone: reg.phone, lead_converted_at: reg.lead_converted_at },
         { is_security: false, slug: workshop?.slug ?? null, title: workshop?.title ?? null },
         actor,
       )
+      if (!outcome.ok) {
+        // Native conversion write failed — persist any referral seeding, surface for retry.
+        if (Object.keys(update).length > 0) await db.from('workshop_registrations').update(update).eq('reg_id', reg.reg_id)
+        return NextResponse.json({ error: outcome.error, reason: 'convert_failed', referral_id: referralId }, { status: outcome.status })
+      }
+      // Audit the conversion state change explicitly (covers the case where `update` is empty
+      // because the referral already existed — otherwise no audit would fire for the convert).
+      if (outcome.routed === 'native' && !outcome.skipped) {
+        await writeAudit({ actor, action: 'entity.updated', entity: 'workshop_registration', entityId: reg.reg_id, diff: { converted: true, source: 'workshop_manual', registration_id: reg.reg_id } })
+      }
     }
 
     if (Object.keys(update).length > 0) {

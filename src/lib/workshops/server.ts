@@ -481,10 +481,15 @@ export async function convertRegistrationToLead(
     // Idempotent: already converted.
     return { ok: true, routed: 'native', converted: true, skipped: true }
   }
-  await db
+  const { error } = await db
     .from('workshop_registrations')
     .update({ lead_converted_at: new Date().toISOString() })
     .eq('reg_id', reg.reg_id)
+  if (error) {
+    // Fail closed: a transient write failure leaves the registration unconverted so the
+    // caller can retry, rather than reporting a phantom conversion (no silent success).
+    return { ok: false, error: error.message, status: 500 }
+  }
   return { ok: true, routed: 'native', converted: true, skipped: false }
 }
 

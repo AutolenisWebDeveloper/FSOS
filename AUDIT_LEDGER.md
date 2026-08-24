@@ -252,10 +252,19 @@ activity, lead_converted_at) remain complete and actionable, so no workflow is s
 incomplete. Building a native opportunity/pipeline-placement mechanism for these leads is a
 product decision explicitly OUT OF SCOPE for this excision run; flagged here for triage.
 
-INDEPENDENT REVIEW: an independent adversarial review of the diff was commissioned (surviving
-runtime deps, native-loss, consumer migration, dependent reads, authz, workflow gap, test
-quality). Result appended on completion; any material in-scope finding will be fixed before the
-verdict stands.
+INDEPENDENT REVIEW (completed): an independent adversarial review of the diff confirmed
+**zero surviving GHL runtime dependency, no confirmed native loss, securities firewall intact
+in all three paths, byte-faithful taxonomy relocation, complete consumer migration, dormant
+(not dependent) ghl_* reads, and tests that prove preserved behavior (none weakened).** Three
+Low findings were raised and all fixed within excision scope:
+- (Low) Manual convert-to-lead emitted no audit when the referral already existed →
+  FIXED: registrations/[id] route now writes an explicit `entity.updated {converted:true}`
+  audit on a newly-marked native conversion.
+- (Low) Native conversion DB write was unchecked (silent-success on a transient failure) →
+  FIXED: convertRegistrationToLead now returns `{ok:false,status:500}` on the update error and
+  the manual route surfaces it for retry (fail-closed, matching the prior GHL-push semantics).
+- (Low, nit) Stale comments referencing removed GHL → FIXED (agencyDirectory.ts, scores/route.ts).
+Re-validated after the fixes: type-check + workshop suites green (full gate re-run below).
 
 NOT VERIFIED — LIVE/ADMIN REQUIRED (out of repo scope):
 - Remove GHL_API_KEY / GHL_LOCATION_ID from Vercel/production env (names for admin cleanup:

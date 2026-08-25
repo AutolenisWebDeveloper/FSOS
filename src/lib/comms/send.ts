@@ -1024,6 +1024,10 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
     to,
     subject: resolvedSubject,
     body: sendBody,
+    // FSOS-030: echo the pre-inserted message id so a provider status callback correlates
+    // deterministically (Twilio ?mid=, Resend X-FSOS-Message-Id) even before provider_id is
+    // patched onto the row after dispatch.
+    correlationId: messageId,
     // Final provider-boundary re-check subject (non-transactional sends only). Absent for
     // transactional/servicing sends so they are never business-suppressed.
     suppressionSubject,

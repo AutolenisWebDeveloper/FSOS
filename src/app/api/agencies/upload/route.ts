@@ -1,20 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/supabase/client'
+import { rateLimit, clientIp } from '@/lib/http/rate-limit'
+import { writeAudit } from '@/lib/audit/log'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-// POST /api/agencies/upload — public (agency partners upload client documents
-// at /upload/[slug]). Files go to a PRIVATE bucket; only signed URLs are handed
-// back, never public URLs.
+// POST /api/agencies/upload — PUBLIC, UNAUTHENTICATED (agency partners upload client documents
+// at /upload/[slug]). Files go to a PRIVATE bucket; only signed URLs are handed back, never
+// public URLs. Because this is a public service-role write, it carries the same abuse controls
+// as the other public intake endpoints (parity with /api/public/refer): a per-IP rate limit, a
+// honeypot, and an audit trail on every attempt (FSOS-062).
 const MAX_FILE_BYTES = 10 * 1024 * 1024 // 10 MB
 const ALLOWED_EXT = new Set(['pdf', 'png', 'jpg', 'jpeg', 'webp', 'csv', 'xlsx', 'xls', 'doc', 'docx'])
 const SIGNED_URL_TTL = 60 * 60 * 24 * 7 // 7 days
 
 export async function POST(req: NextRequest) {
+  // Blunt submission floods on this unauthenticated service-role write (pairs with the honeypot
+  // + the size/ext caps below). Best-effort in-memory limiter — same primitive the other public
+  // POSTs use.
+  if (!rateLimit(`agency-upload:${clientIp(req)}`)) {
+    return NextResponse.json({ error: 'Too many requests. Please try again shortly.' }, { status: 429 })
+  }
   try {
     const supabase = getDb()
     const formData = await req.formData()
+
+    // Honeypot: bots fill the hidden `company` field. Silently accept without writing anything.
+    const honeypot = formData.get('company')
+    if (typeof honeypot === 'string' && honeypot.trim() !== '') {
+      return NextResponse.json({ success: true })
+    }
 
     const agency_slug = formData.get('agency_slug') as string
     const customer_name = formData.get('customer_name') as string
@@ -115,6 +131,16 @@ export async function POST(req: NextRequest) {
       record_count: file ? 1 : 0,
       status: 'complete',
       processed_at: new Date().toISOString(),
+    })
+
+    // Audit every public upload (parity with the other public intake endpoints — FSOS-062).
+    // Never logs file bytes or PII beyond the document type + filename.
+    await writeAudit({
+      actor: 'public',
+      action: 'entity.created',
+      entity: 'agency_upload',
+      entityId: agency.agency_id,
+      diff: { source: 'public', agency_slug, document_type, has_file: !!file_name },
     })
 
     if (customer_id) {

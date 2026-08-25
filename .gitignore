@@ -63,3 +63,4 @@ data/rule_fetch_log.json
 # Python analysis tooling
 __pycache__/
 *.pyc
+.phase2/

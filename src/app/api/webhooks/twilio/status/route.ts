@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyTwilioSignature, requestUrl } from '@/lib/comms/twilio'
-import { findMessageByProviderId, recordMessageEvent, normalizeProviderEvent } from '@/lib/comms/events'
+import { findMessageById, findMessageByProviderId, recordMessageEvent, normalizeProviderEvent } from '@/lib/comms/events'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -26,9 +26,19 @@ export async function POST(req: NextRequest) {
   const status = params.MessageStatus || params.SmsStatus || ''
   const event = normalizeProviderEvent(status)
 
-  if (providerId && event) {
+  // FSOS-030: correlate deterministically on the echoed message id first (StatusCallback ?mid=,
+  // written before the provider could ever call back), then fall back to provider_id for older
+  // in-flight sends. `mid` is part of the signed StatusCallback URL, so it is covered by the
+  // signature verified above.
+  const mid = req.nextUrl.searchParams.get('mid') || ''
+  if (event) {
     try {
-      const msg = await findMessageByProviderId(providerId)
+      const msg = (mid && (await findMessageById(mid))) || (providerId && (await findMessageByProviderId(providerId))) || null
+      if (!msg) {
+        // Ambiguous correlation → FAIL CLOSED (do not guess a row) but make it OBSERVABLE rather
+        // than a silent permanent orphan. The event is still appended (messageId null) below.
+        console.error('[twilio:status] uncorrelated callback', { mid: mid || null, providerId: providerId || null, status })
+      }
       await recordMessageEvent({
         messageId: msg?.id ?? null,
         conversationId: msg?.conversation_id ?? null,
@@ -36,7 +46,7 @@ export async function POST(req: NextRequest) {
         event,
         channel: 'sms',
         detail: params.ErrorCode ? `error ${params.ErrorCode}` : null,
-        providerId,
+        providerId: providerId || null,
       })
     } catch (err) {
       console.error('[twilio:status] handler error:', err)

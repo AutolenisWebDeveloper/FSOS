@@ -17,6 +17,7 @@ import { setAppointmentStatus } from '@/lib/appointments/service'
 import { deleteZoomMeeting, updateZoomMeeting } from '@/lib/zoom/client'
 import { verifyManageToken, manageTokenKey, type ManagePurpose } from './manage-tokens'
 import { computeSlotsForType } from './slots'
+import { isSlotCollision } from './insert-errors'
 import { sendAppointmentNotice } from './notify'
 
 export interface ManagedAppointment {
@@ -119,8 +120,6 @@ export type RescheduleResult =
   | { ok: true; startsAt: string; endsAt: string }
   | { ok: false; kind: 'not_reschedulable' | 'unavailable' | 'taken' | 'error'; message: string }
 
-const UNIQUE_VIOLATION = '23505'
-
 /**
  * Reschedule to a new slot. Re-validates the requested slot against LIVE availability, then
  * atomically moves the appointment (the unique index guards against a racing claim of the new
@@ -148,6 +147,8 @@ export async function rescheduleAppointment(
     rangeEnd: newStartsAt,
     bookerTimezone: appt.booker_timezone || 'America/Chicago',
     now,
+    // FSOS-042: don't let this appointment's current slot block its own reschedule.
+    excludeAppointmentId: appt.id,
   })
   if (!check.ok) return { ok: false, kind: 'error', message: 'Could not check availability.' }
   const slot = check.slots.find((s) => s.startsAt === newStartsAt)
@@ -176,7 +177,11 @@ export async function rescheduleAppointment(
     .select('id')
     .maybeSingle()
   if (upd.error) {
-    if (upd.error.code === UNIQUE_VIOLATION) {
+    // Both race guards mean "the slot was just taken": 23505 (identical start, unique index) AND
+    // 23P01 (overlapping range, GiST exclusion mig 091/119). The INSERT path already classifies
+    // both via isSlotCollision; reschedule now reuses it so an OVERLAP collision returns a clean
+    // 'taken' (→ 409) instead of an opaque 500 (FSOS-041). A non-collision error still → 'error'.
+    if (isSlotCollision(upd.error)) {
       return { ok: false, kind: 'taken', message: 'That time was just booked. Please pick another.' }
     }
     return { ok: false, kind: 'error', message: 'Could not reschedule.' }

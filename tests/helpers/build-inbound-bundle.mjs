@@ -52,7 +52,11 @@ export async function buildInboundBundle() {
       // business-suppressed (reply-terminated) recipient is EXCLUDED from the outreach queue at
       // build AND skipped at dispatch (the agent-agnostic backstop that does not rely on the send
       // gate's purpose-scoped suppression step), and that re-building is idempotent.
-      `export { buildQueue, runOutreachAgent } from '@/lib/ai/workforce'\n`,
+      `export { buildQueue, runOutreachAgent } from '@/lib/ai/workforce'\n` +
+      // The message-event recorder + correlation resolvers, so the e2e suite can prove
+      // FSOS-030 (correlate a status callback by the echoed message id even when provider_id is
+      // null) and FSOS-032 (a duplicate correlated callback does not append a duplicate row).
+      `export { recordMessageEvent, findMessageById, findMessageByProviderId } from '@/lib/comms/events'\n`,
   )
 
   const out = join(dir, 'bundle.cjs')

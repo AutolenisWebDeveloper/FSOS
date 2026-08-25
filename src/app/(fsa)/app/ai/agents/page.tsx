@@ -3,7 +3,7 @@ import { ListShell, ErrorState, EmptyState } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
-import { AGENT_ROSTER } from '@/lib/ai/roster'
+import { AGENT_ROSTER, agentSurface, agentSurfaceLabel } from '@/lib/ai/roster'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,15 +23,22 @@ export default async function AgentsPage() {
       ) : (
         <div className="rounded-lg border">
           <Table>
-            <TableHeader><TableRow><TableHead>Agent</TableHead><TableHead>Mission</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>Agent</TableHead><TableHead>Mission</TableHead><TableHead>Surface</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
             <TableBody>
-              {agents.data.map((a) => (
+              {agents.data.map((a) => {
+                const surface = agentSurface(a.key)
+                return (
                 <TableRow key={a.id}>
                   <TableCell><Link href={`/app/ai/agents/${a.key}`} className="font-medium text-primary hover:underline">{a.name}</Link>{a.is_guardrail ? <Badge variant="blocked" className="ml-2">guardrail</Badge> : null}</TableCell>
                   <TableCell className="max-w-md truncate text-muted-foreground">{AGENT_ROSTER[a.key]?.mission ?? '—'}</TableCell>
+                  {/* Runtime surface (FSOS-050): distinguishes a live autonomous agent from a
+                      detection job / routing label / roadmap entry, so the roster never overstates
+                      what actually executes. */}
+                  <TableCell><Badge variant={surface === 'active' ? 'won' : 'default'}>{agentSurfaceLabel(surface)}</Badge></TableCell>
                   <TableCell><Badge variant={a.enabled ? 'won' : 'lost'}>{a.enabled ? 'enabled' : 'disabled'}</Badge></TableCell>
                 </TableRow>
-              ))}
+                )
+              })}
             </TableBody>
           </Table>
         </div>

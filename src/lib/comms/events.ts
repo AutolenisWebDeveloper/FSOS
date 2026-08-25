@@ -125,15 +125,26 @@ export async function recordMessageEvent(input: RecordEventInput): Promise<void>
   const db = getDb()
   const at = new Date().toISOString()
   try {
-    await db.from('comm_message_events').insert({
-      message_id: input.messageId ?? null,
-      conversation_id: input.conversationId ?? null,
-      campaign_id: input.campaignId ?? null,
-      event: input.event,
-      channel: input.channel ?? null,
-      detail: input.detail ?? null,
-      provider_id: input.providerId ?? null,
-    })
+    // FSOS-032: providers deliver callbacks AT LEAST ONCE. Upsert on the natural fingerprint
+    // (message_id, event, provider_id) with ignoreDuplicates so a redelivered identical callback
+    // is a no-op instead of a duplicate ledger row. The unique index (mig 122) is a PLAIN index —
+    // NOT partial — precisely so onConflict can infer it (a partial index cannot be inferred by
+    // supabase-js's onConflict). It still leaves uncorrelated events unconstrained because SQL
+    // treats a tuple containing any NULL as DISTINCT: an event with a null message_id (the
+    // FSOS-030 orphan window) or a null provider_id (an internal marker) never conflicts and is
+    // still appended, never dropped. Do NOT convert this to a partial index — that breaks onConflict.
+    await db.from('comm_message_events').upsert(
+      {
+        message_id: input.messageId ?? null,
+        conversation_id: input.conversationId ?? null,
+        campaign_id: input.campaignId ?? null,
+        event: input.event,
+        channel: input.channel ?? null,
+        detail: input.detail ?? null,
+        provider_id: input.providerId ?? null,
+      },
+      { onConflict: 'message_id,event,provider_id', ignoreDuplicates: true },
+    )
   } catch {
     /* ledger insert best-effort */
   }
@@ -156,6 +167,33 @@ export async function recordMessageEvent(input: RecordEventInput): Promise<void>
         /* best-effort */
       }
     }
+  }
+}
+
+/**
+ * Resolve a comm_messages row by its OWN id — the deterministic correlation key echoed to the
+ * provider (Twilio StatusCallback `?mid=`, Resend `X-FSOS-Message-Id`) so a status callback
+ * correlates even if it arrives BEFORE the post-dispatch provider_id patch, or if provider_id was
+ * never captured (FSOS-030). This key exists before the provider can ever call back, so it closes
+ * the orphan window that keying on provider_id alone left open.
+ */
+export async function findMessageById(id: string): Promise<{
+  id: string
+  conversation_id: string | null
+  campaign_id: string | null
+  channel: string
+  recipient: string | null
+} | null> {
+  if (!id) return null
+  try {
+    const { data } = await getDb()
+      .from('comm_messages')
+      .select('id, conversation_id, campaign_id, channel, recipient')
+      .eq('id', id)
+      .maybeSingle()
+    return data ?? null
+  } catch {
+    return null
   }
 }
 

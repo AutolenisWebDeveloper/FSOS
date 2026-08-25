@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
 import { requireInternalAuth, readJson, parseLimit, dbErrorResponse } from '@/lib/http'
+import { rateLimit, clientIp } from '@/lib/http/rate-limit'
+import { writeAudit } from '@/lib/audit/log'
 import { sendForm } from '@/lib/forms'
 
 export const dynamic = 'force-dynamic'
@@ -19,12 +21,22 @@ const ReferralSchema = z.object({
   notes: z.string().trim().max(5000).optional(),
 })
 
-// POST /api/agencies/referral — public (agency partner submits a referral).
+// POST /api/agencies/referral — PUBLIC, UNAUTHENTICATED (agency partner submits a referral).
+// Public service-role write → carries the same abuse controls as /api/public/refer: a per-IP
+// rate limit, a honeypot, and an audit trail (FSOS-062).
 export async function POST(req: NextRequest) {
+  if (!rateLimit(`agency-referral:${clientIp(req)}`)) {
+    return NextResponse.json({ error: 'Too many requests. Please try again shortly.' }, { status: 429 })
+  }
   try {
     const supabase = getDb()
     const parsed = await readJson(req)
     if ('error' in parsed) return parsed.error
+    // Honeypot: bots fill the hidden `company` field. Silently accept without writing.
+    if (typeof (parsed.data as Record<string, unknown>).company === 'string' &&
+        ((parsed.data as Record<string, unknown>).company as string).trim() !== '') {
+      return NextResponse.json({ success: true, message: 'Thank you!' })
+    }
     const v = ReferralSchema.safeParse(parsed.data)
     if (!v.success) {
       return NextResponse.json({ error: 'Invalid referral', details: v.error.flatten() }, { status: 400 })
@@ -96,6 +108,15 @@ export async function POST(req: NextRequest) {
       console.error('Create referral error:', refErr)
       return NextResponse.json({ error: 'Failed to create referral' }, { status: 500 })
     }
+
+    // Audit every public referral submission (parity with the other public intake — FSOS-062).
+    await writeAudit({
+      actor: 'public',
+      action: 'entity.created',
+      entity: 'agency_referral',
+      entityId: referral.referral_id,
+      diff: { source: 'public', agency_slug, referral_type: referral_type || 'general' },
+    })
 
     await supabase.from('activity').insert({
       customer_id,

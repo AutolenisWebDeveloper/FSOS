@@ -34,7 +34,8 @@ const { JOBS, isJob } = require(join(out, 'index.js'))
 let passed = 0
 const t = (name, fn) => { fn(); passed++; console.log('  ✓', name) }
 
-// The jobs activated THIS batch (FSOS-070 + the referral-INDEPENDENT subset of FSOS-071).
+// Dispatcher-routed jobs that MUST be scheduled (FSOS-070 + FSOS-071 subset from Batch 1b,
+// plus backup-verify FSOS-073 activated in the final repair batch).
 const ACTIVATED = [
   'workforce-orchestrator', // FSOS-070 (AI workforce)
   'conversion-watch',
@@ -42,13 +43,16 @@ const ACTIVATED = [
   'agency-dormancy',
   'cross-sell-scan',
   'commission-reconcile',
+  'referral-sla',           // FSOS-071 — native lifecycle verified complete; hourly SLA-breach escalation
+  'backup-verify',          // FSOS-073 — DR heartbeat (no send, no enrollment)
 ]
-// Deferred (referral-dependent) or belonging to a different, out-of-scope finding.
-const NOT_SCHEDULED_THIS_BATCH = [
-  'referral-sla',        // FSOS-071 — REFERRAL-DEPENDENT → deferred (referral-lifecycle decision)
-  'workshop-reminders',  // FSOS-072 — different finding (dedicated route), out of scope here
-  'backup-verify',       // FSOS-073 — different finding, out of scope here
+// Dedicated static routes (not [job]-dispatched) that must nonetheless have a cron entry.
+const DEDICATED_SCHEDULED = [
+  'workshop-reminders',     // FSOS-072 — event-driven reminders; own auth; sends via the gate
 ]
+// Nothing remains deferred: the native referral lifecycle (v_referrals_awaiting_action +
+// idempotent agent_actions escalation) supports referral-sla, so it is now scheduled above.
+const NOT_SCHEDULED_THIS_BATCH = []
 
 console.log('dispatcher recognizes every activated key (unknown fails closed)')
 for (const k of [...ACTIVATED, 'agent-runner']) {
@@ -85,6 +89,14 @@ console.log('\nactivated jobs (FSOS-070 + FSOS-071 subset) ARE scheduled')
 for (const k of ACTIVATED) {
   t(`"${k}" scheduled`, () => {
     assert.ok(scheduledKeys.includes(k), `${k} must be scheduled in vercel.json`)
+  })
+}
+
+console.log('\ndedicated static-route jobs have a cron entry')
+const allCronPaths = crons.map((c) => (c.path || '').replace('/api/cron/', ''))
+for (const k of DEDICATED_SCHEDULED) {
+  t(`"${k}" (dedicated route) scheduled`, () => {
+    assert.ok(allCronPaths.includes(k), `${k} must have a cron entry in vercel.json`)
   })
 }
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyResendSignature } from '@/lib/comms/resend'
-import { findMessageByProviderId, recordMessageEvent, normalizeProviderEvent } from '@/lib/comms/events'
+import { findMessageById, findMessageByProviderId, recordMessageEvent, normalizeProviderEvent } from '@/lib/comms/events'
 import { applyDeliverabilitySuppression } from '@/lib/comms/deliverability'
 
 export const dynamic = 'force-dynamic'
@@ -30,7 +30,23 @@ interface ResendEvent {
     email?: string
     click?: { link?: string }
     bounce?: { message?: string; type?: string; subType?: string; classification?: string }
+    // FSOS-030: Resend echoes custom send headers on email.* events. Shape varies (object map
+    // or [{name,value}] array), so we read it defensively.
+    headers?: Record<string, string> | Array<{ name?: string; value?: string }>
   }
+}
+
+/** Extract the echoed X-FSOS-Message-Id (case-insensitive) from a Resend event, if present. */
+function correlationIdFrom(data: ResendEvent['data']): string | null {
+  const h = data?.headers
+  if (!h) return null
+  const KEY = 'x-fsos-message-id'
+  if (Array.isArray(h)) {
+    const row = h.find((r) => (r?.name ?? '').toLowerCase() === KEY)
+    return row?.value ?? null
+  }
+  for (const [k, v] of Object.entries(h)) if (k.toLowerCase() === KEY) return typeof v === 'string' ? v : null
+  return null
 }
 
 /** The recipient address from a Resend event payload (fallback when no stored row). */
@@ -57,10 +73,18 @@ export async function POST(req: NextRequest) {
 
   const event = normalizeProviderEvent(evt.type || '')
   const providerId = evt.data?.email_id || ''
+  // FSOS-030: prefer the echoed message id (written before the provider could call back), then
+  // fall back to email_id (== stored provider_id). email_id is returned synchronously at send so
+  // the email orphan window is narrow, but the echoed key removes it entirely.
+  const mid = correlationIdFrom(evt.data)
 
-  if (event && providerId) {
+  if (event) {
     try {
-      const msg = await findMessageByProviderId(providerId)
+      const msg = (mid && (await findMessageById(mid))) || (providerId && (await findMessageByProviderId(providerId))) || null
+      if (!msg) {
+        // Ambiguous correlation → FAIL CLOSED (no guess) but OBSERVABLE, not a silent orphan.
+        console.error('[resend] uncorrelated event', { mid: mid || null, providerId: providerId || null, type: evt.type })
+      }
       const detail = evt.data?.click?.link || evt.data?.bounce?.message || null
       await recordMessageEvent({
         messageId: msg?.id ?? null,
@@ -69,7 +93,7 @@ export async function POST(req: NextRequest) {
         event,
         channel: 'email',
         detail,
-        providerId,
+        providerId: providerId || null,
       })
 
       // Deliverability suppression: a hard bounce or spam complaint suppresses the

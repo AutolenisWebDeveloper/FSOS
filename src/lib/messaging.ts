@@ -79,7 +79,7 @@ function appBaseUrl(): string {
   return raw.replace(/\/$/, '')
 }
 
-export async function sendSms(to: string, body: string): Promise<SendResult> {
+export async function sendSms(to: string, body: string, correlationId?: string): Promise<SendResult> {
   // A2P 10DLC backstop (§12): never place an SMS to a real contact before the A2P
   // campaign is approved. The pure gate (step `sms_live`) is the primary enforcement;
   // this is defense-in-depth so no code path — even one that bypasses the gate — can
@@ -107,8 +107,15 @@ export async function sendSms(to: string, body: string): Promise<SendResult> {
     if (messagingServiceSid) params.MessagingServiceSid = messagingServiceSid
     else if (from) params.From = from
     // Ask Twilio to POST delivery-status updates to our webhook (sent/delivered/failed).
+    // FSOS-030: echo the message id as `?mid=` so the callback correlates deterministically even
+    // before provider_id is persisted. Twilio preserves StatusCallback query params and includes
+    // them (and signs the full URL) on every callback POST.
     const base = appBaseUrl()
-    if (base) params.StatusCallback = `${base}/api/webhooks/twilio/status`
+    if (base) {
+      params.StatusCallback = correlationId
+        ? `${base}/api/webhooks/twilio/status?mid=${encodeURIComponent(correlationId)}`
+        : `${base}/api/webhooks/twilio/status`
+    }
     const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
       method: 'POST',
       headers: {

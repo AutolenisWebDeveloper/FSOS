@@ -1,51 +1,48 @@
-# Vercel crons — Hobby stopgap & Pro restore
+# Vercel crons — source of truth & plan requirements
 
-## Why this exists
+## Single source of truth
 
-Vercel's **Hobby** plan allows only **2 cron jobs, daily**. The FSOS background-jobs
-spine (CLAUDE.md §6) needs **12** crons, several sub-daily. When the project is on
-Hobby, a deploy with the full cron set is **rejected at config validation before the
-build** — an instant failure with an empty preview URL and no build logs.
+`vercel.json` is the **authoritative, complete** cron set. Do NOT hand-maintain a
+second list in this doc — an out-of-date copy here is how a "restore" can silently
+**drop** live jobs. To see exactly what is scheduled, read `vercel.json`; to change
+the schedule, edit `vercel.json` and redeploy. This file only explains the plan
+constraints and how to verify execution.
 
-As a stopgap (owner-approved), `vercel.json` is trimmed to 2 daily crons so deploys
-succeed on Hobby. **This disables 10 of the 12 scheduled jobs** — those API routes
-still exist and can be triggered manually or by an external scheduler, but Vercel no
-longer runs them automatically.
+As of the Phase-2 scheduler work, **all** background jobs are scheduled in
+`vercel.json` — the detection jobs (FSOS-071), the AI workforce (FSOS-070), the
+referral-SLA escalator (FSOS-071), the campaign-engine ticks/retries, and the
+dedicated routes (`social-publish`, `booking-reminders`, `workshop-reminders`).
+Every `/api/cron/<job>` path resolves through the dynamic dispatcher
+(`src/app/api/cron/[job]/route.ts` → `JOBS` in `src/jobs/index.ts`) except the three
+dedicated static routes, which have their own handlers; an unknown `[job]` key
+fails closed with a 404. Cadence evidence for each job lives next to its schedule
+here and in the job's handler comment.
 
-## Restore ALL 12 crons (do this after moving the project back to Pro)
+## Plan requirement (LIVE — must be verified on the Vercel project)
 
-On **Pro**, paste this `"crons"` array back into `vercel.json` (replacing the trimmed
-one) and redeploy:
+Vercel's **Hobby** plan allows only **2 cron jobs, daily**; a deploy carrying more is
+**rejected at config validation before the build** (instant failure, empty preview
+URL, no build logs). The current `vercel.json` carries well beyond 2 sub-daily crons,
+so the project **must be on Pro** (or a plan whose cron quota/cadence covers the full
+set) for a deploy to succeed and for Vercel to actually invoke each schedule.
 
-```json
-"crons": [
-  { "path": "/api/cron/renewal-watch", "schedule": "0 9 * * *" },
-  { "path": "/api/cron/conversion-watch", "schedule": "0 9 * * *" },
-  { "path": "/api/cron/xdate-watch", "schedule": "0 9 * * *" },
-  { "path": "/api/cron/referral-sla", "schedule": "0 * * * *" },
-  { "path": "/api/cron/agency-dormancy", "schedule": "0 10 * * *" },
-  { "path": "/api/cron/cross-sell-scan", "schedule": "30 9 * * *" },
-  { "path": "/api/cron/commission-reconcile", "schedule": "0 11 * * *" },
-  { "path": "/api/cron/campaign-dispatch", "schedule": "*/30 * * * *" },
-  { "path": "/api/cron/workforce-orchestrator", "schedule": "0 15 * * *" },
-  { "path": "/api/cron/data-quality", "schedule": "0 6 * * *" },
-  { "path": "/api/cron/backup-verify", "schedule": "0 3 * * *" },
-  { "path": "/api/cron/workshop-reminders", "schedule": "*/15 * * * *" }
-]
-```
+**This repository config is CONFIG-VERIFIED, not execution-verified.** Confirm on the
+live project:
 
-## Currently active on Hobby (the 2 kept)
+1. The project is on a plan whose cron quota ≥ the number of entries in `vercel.json`
+   and whose minimum cadence permits the sub-daily entries (`*/5`, `*/15`, `30 * * * *`).
+2. After deploy, the Vercel dashboard → **Cron Jobs** lists every entry.
+3. Each job fires on schedule and its handler runs (observe the job's persisted
+   evidence — tasks/activities/escalations, `outreach_queue` rows, audit rows, or the
+   backup-verify heartbeat — and the `job_runs` idempotency ledger).
 
-- `/api/cron/renewal-watch` — daily 09:00 UTC (time-critical policy renewals)
-- `/api/cron/campaign-dispatch` — daily 12:00 UTC (was every 30 min; now once/day)
+If a deploy still fails after confirming the plan, the next suspect is
+build-minutes/billing, not the cron config. The per-route `maxDuration = 60` segment
+exports (colocated in each long-running route, not a `vercel.json` `functions` block)
+are within plan limits.
 
-## Disabled by the stopgap (10)
+## Auth
 
-conversion-watch, xdate-watch, referral-sla, agency-dormancy, cross-sell-scan,
-commission-reconcile, workforce-orchestrator, data-quality, backup-verify,
-workshop-reminders.
-
-> Preferred fix: restore the project to **Pro** and re-add all 12 crons above. The
-> per-route `maxDuration = 60` segment exports (colocated in each long-running route,
-> not a `vercel.json` `functions` block) are within Hobby's limit; if a deploy still
-> fails after this trim, the next suspect is build-minutes/billing, not the cron config.
+Every `/api/cron/*` route authorizes on the Vercel Cron header (`x-vercel-cron`) OR a
+`Bearer ${CRON_SECRET}` for manual/other triggers. Manual invocation therefore
+requires `CRON_SECRET`.

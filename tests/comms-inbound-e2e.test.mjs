@@ -230,7 +230,7 @@ try {
   installFetchStub()
   freezeClock(IN_HOURS)
   const require = createRequire(import.meta.url)
-  const { processInbound, sendThroughGate, exitWinback, exitLife, exitXsell, resumePausedEnrollments, buildQueue, runOutreachAgent } = require(bundlePath)
+  const { processInbound, sendThroughGate, exitWinback, exitLife, exitXsell, resumePausedEnrollments, buildQueue, runOutreachAgent, recordMessageEvent, findMessageById } = require(bundlePath)
 
   // ── SCENARIO 1: threading, association, inbound row, and the auto-reply attempt ──
   section('1. Inbound message → thread, association, history, auto-reply attempt')
@@ -1275,6 +1275,42 @@ try {
       assert.equal(aiCalls.length, 0, 'the gateway was called for a suppressed contact (guard runs before drafting)')
       assert.equal(q(db, `select count(*) from comm_messages where direction='outbound' and member_id='${MB}'`), '0',
         'an outbound message was created for a suppressed contact')
+    })
+  }
+  // ── SCENARIO 10: FSOS-030/032 — deterministic callback correlation + event dedupe ─
+  section('10. Status callback correlates by message id (provider_id null) + is idempotent')
+  {
+    const db = freshDb({ armed: false })
+    const MID = 'dddddddd-3030-3030-3030-303030303030'
+    // A sent SMS whose provider_id is STILL NULL (the FSOS-030 window: callback can arrive
+    // before the post-dispatch provider_id patch, or provider_id was never captured).
+    q(db, `insert into comm_messages (id, channel, direction, recipient, body, delivery_status, member_id, household_id, agency_id, provider_id)
+           values ('${MID}','sms','outbound','${PHONE}','hi','sent','${IDS.member}','${IDS.household}','${IDS.agency}', null)`)
+
+    const correlated = await findMessageById(MID)
+    check('findMessageById correlates a provider_id-null row (FSOS-030 key exists pre-dispatch)', () => {
+      assert.ok(correlated && correlated.id === MID, 'the message must correlate by its own id even with null provider_id')
+    })
+
+    // A delivered callback correlated by mid advances the parent lifecycle despite null provider_id.
+    await recordMessageEvent({ messageId: MID, event: 'delivered', channel: 'sms', providerId: 'SM_late_1' })
+    check('a mid-correlated callback advances the parent lifecycle (no orphan)', () => {
+      assert.equal(q(db, `select delivery_status from comm_messages where id='${MID}'`), 'delivered')
+      assert.equal(q(db, `select count(*) from comm_message_events where message_id='${MID}' and event='delivered'`), '1')
+    })
+
+    // FSOS-032: a REDELIVERED identical callback (same message_id, event, provider_id) is a no-op.
+    await recordMessageEvent({ messageId: MID, event: 'delivered', channel: 'sms', providerId: 'SM_late_1' })
+    check('a duplicate correlated callback does NOT append a duplicate event row (FSOS-032)', () => {
+      assert.equal(q(db, `select count(*) from comm_message_events where message_id='${MID}' and event='delivered'`), '1',
+        'the idempotency index must collapse the duplicate')
+    })
+
+    // An UNCORRELATED event (null message_id) is still appended, never dropped (fail-open on the
+    // ledger row so a correlation gap is never silently lost).
+    await recordMessageEvent({ messageId: null, event: 'delivered', channel: 'sms', providerId: 'SM_orphan_1' })
+    check('an uncorrelated event is still recorded (not silently dropped)', () => {
+      assert.ok(Number(q(db, `select count(*) from comm_message_events where provider_id='SM_orphan_1'`)) >= 1)
     })
   }
 } catch (err) {

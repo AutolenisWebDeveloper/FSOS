@@ -249,8 +249,47 @@ export function makeShim({ host, port, db, user = 'postgres', asRole = null }) {
     }
   }
 
+  /**
+   * supabase-js `.rpc(fn, params)` → calls a SQL function with NAMED args and returns its
+   * result as { data, error } (data = the function's return value). Scalars are serialized via
+   * lit(); an array arg is emitted as a Postgres ARRAY[...] cast (uuid[] when every element is a
+   * uuid, else text[]) — the jsonb serialization lit() uses for objects is wrong for a uuid[]
+   * function parameter. Used by the comms suppression path (comm_suppression_apply) in the e2e.
+   */
+  function rpc(fn, params = {}) {
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(fn)) throw new HarnessError(`unsafe rpc function ${fn}`)
+    const args = Object.entries(params).map(([k, v]) => {
+      if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(k)) throw new HarnessError(`unsafe rpc arg ${k}`)
+      let sqlVal
+      if (Array.isArray(v)) {
+        if (v.length === 0) sqlVal = "'{}'::text[]"
+        else {
+          const uuidish = v.every((x) => typeof x === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(x))
+          sqlVal = `array[${v.map(lit).join(',')}]::${uuidish ? 'uuid[]' : 'text[]'}`
+        }
+      } else {
+        sqlVal = lit(v)
+      }
+      return `${k} := ${sqlVal}`
+    })
+    return new Promise((resolve, reject) => {
+      try {
+        // The function may be SECURITY DEFINER and data-modifying; rows() runs it inside a
+        // begin/commit and json_agg's its single-row result → [{ r: <jsonb> }].
+        const out = rows(`select ${fn}(${args.join(', ')}) as r`)
+        resolve({ data: out.length ? out[0].r : null, error: null })
+      } catch (err) {
+        // A shim defect must crash (never be disguised as a DB error the code swallows);
+        // a genuine Postgres error is surfaced the supabase-js way ({ data:null, error }).
+        if (err instanceof HarnessError) return reject(err)
+        resolve({ data: null, error: { message: err.message } })
+      }
+    })
+  }
+
   return {
     from: (table) => new Builder(table),
+    rpc,
     /** Escape hatch for assertions — raw SQL straight to the database. */
     sql: (s) => rows(s),
     exec: (s) => exec(s),

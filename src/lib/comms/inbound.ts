@@ -27,6 +27,8 @@ import { classifyReply } from './reply-classification'
 import { checkTurnLimit, type TurnLimitDecision } from './turn-limit'
 import { shouldPauseOnReply } from './conversation-mode'
 import { recordConsentChange } from './consent-events'
+import { detectStopAutomation } from './stop-intent'
+import { applySuppression } from './suppression-admin'
 
 export type { Intent } from './keywords'
 export { classifyKeyword } from './keywords'
@@ -46,6 +48,13 @@ export interface InboundResult {
   intent: Intent
   optedOut: boolean
   optedIn: boolean
+  /**
+   * FSOS-020 — a natural-language request to stop automated outreach ("please stop texting me",
+   * "not interested") TERMINATED the member's automated campaign continuation (distinct from the
+   * carrier global opt-out `optedOut`: no DNC/consent-revoke). Absorbing: no cron/tick/retry/agent
+   * re-selects it, and the send gate withholds future automated sends via business suppression.
+   */
+  campaignTerminated: boolean
   autoReplied: boolean
   escalated: boolean
 }
@@ -133,19 +142,24 @@ async function pauseActiveEnrollments(memberId: string, reason: string): Promise
 }
 
 /**
- * A STOP TERMINATES the member's live enrollments — it does not pause them (§12, TCPA).
+ * TERMINATE the member's live enrollments across every campaign table — an ABSORBING state, not
+ * a pause. Used by BOTH the carrier STOP path (§12, TCPA) and the natural-language stop-automation
+ * path (FSOS-020).
  *
  * Pausing would be wrong in a way that matters: `resumePausedEnrollments` returns a
- * `paused_for_conversation` row to `enrolled` once the customer has been quiet for
- * `resume_quiet_days`, so an opt-out would silently re-enter the sending population. Every
- * subsequent attempt would then be blocked at the gate on consent/DNC and escalated, turning
- * one opt-out into a recurring stream of escalations for a contact who has already left.
+ * `paused_for_conversation` row to `enrolled`/live once the customer has been quiet for
+ * `resume_quiet_days`, so a stop would silently re-enter the sending population. The terminal
+ * states here (`opted_out` for the native drips; `exited`/`suppressed` for the three campaign
+ * timelines) are NEVER selected by the resume job (it only selects `paused_for_conversation`) nor
+ * by the tick engines (they only select the live status), and the `unique (campaign_id, member_id)`
+ * constraint blocks re-enrollment of the same pair — so no cron, tick, retry, or eligibility pass
+ * can silently resurrect it.
  *
- * The terminal state per table follows each table's own vocabulary: `opted_out` for the
- * native drips, and an `exited`/terminal status carrying `exit_reason='opted_out'` for the
- * three campaign timelines. Returns how many enrollments were closed.
+ * `exitReason` distinguishes the cause on the campaign-timeline rows (and the native-drip
+ * `suppressed_reason` carries `reason`) so a global carrier opt-out is auditable distinctly from a
+ * campaign-only reply-stop. Returns how many enrollments were closed.
  */
-async function optOutActiveEnrollments(memberId: string, reason: string): Promise<number> {
+async function terminateActiveEnrollments(memberId: string, reason: string, exitReason: string): Promise<number> {
   const db = getDb()
   const nowISO = new Date().toISOString()
   let closed = 0
@@ -176,7 +190,7 @@ async function optOutActiveEnrollments(memberId: string, reason: string): Promis
     try {
       const { data } = await db
         .from(table)
-        .update({ status: terminal, exit_reason: 'opted_out', completed_at: nowISO, updated_at: nowISO })
+        .update({ status: terminal, exit_reason: exitReason, completed_at: nowISO, updated_at: nowISO })
         .in('status', live as unknown as string[])
         .eq('member_id', memberId)
         .select('id')
@@ -186,6 +200,57 @@ async function optOutActiveEnrollments(memberId: string, reason: string): Promis
     }
   }
   return closed
+}
+
+/**
+ * CAMPAIGN-TERMINATION suppression (FSOS-020): block the contact from all automated
+ * NON-transactional outreach via BUSINESS suppression (comm_client_suppressions), so the
+ * canonical send gate withholds every future automated campaign/AI send even if some path
+ * re-enrolls or re-queues them (retry sweeps, the AI workforce, a new campaign version). This is
+ * DISTINCT from the carrier global opt-out (`applyOptOut`): it writes NO DNC and revokes NO
+ * consent, so transactional/servicing messages and a human 1:1 reply remain possible. Every state
+ * change goes through the audited `comm_suppression_apply` RPC. Best-effort + OBSERVABLE — any
+ * failure is logged (never a silent catch); the enrollment termination + FSA escalation still
+ * stand. Returns whether the suppression was applied.
+ */
+async function applyClientSuppression(conv: Conversation, contact: string, reason: string): Promise<boolean> {
+  try {
+    const db = getDb()
+    // comm_client_suppressions is keyed on contacts.id — resolve it the same way the send-time
+    // reader does (member → source_contact_id, else tolerant address match).
+    let contactId: string | null = null
+    if (conv.member_id) {
+      const { data } = await db.from('household_members').select('source_contact_id').eq('id', conv.member_id).maybeSingle()
+      contactId = (data?.source_contact_id as string | null) ?? null
+    }
+    if (!contactId) {
+      if (conv.channel === 'sms') {
+        const tail = contact.replace(/[^\d]/g, '').slice(-10)
+        if (tail.length >= 10) {
+          const { data } = await db.from('contacts').select('id').eq('phone_digits', tail).is('deleted_at', null).limit(1)
+          contactId = Array.isArray(data) && data.length > 0 ? (data[0].id as string) : null
+        }
+      } else {
+        const { data } = await db.from('contacts').select('id').eq('email_lc', contact.toLowerCase()).is('deleted_at', null).limit(1)
+        contactId = Array.isArray(data) && data.length > 0 ? (data[0].id as string) : null
+      }
+    }
+    if (!contactId) {
+      // No Contact Center identity to key the individual suppression on. The enrollment
+      // termination above still stands; surface the gap rather than swallow it.
+      console.warn('[inbound] reply-stop: no contact id resolved — business suppression skipped', { conversation: conv.id })
+      return false
+    }
+    const res = await applySuppression({ scope: 'client', status: 'blocked', actor: 'system', reason, contactIds: [contactId] })
+    if (!res.ok) {
+      console.error('[inbound] reply-stop: business suppression failed', { conversation: conv.id, error: res.error })
+      return false
+    }
+    return true
+  } catch (err) {
+    console.error('[inbound] reply-stop: business suppression threw', { conversation: conv.id, error: err instanceof Error ? err.message : String(err) })
+    return false
+  }
 }
 
 /** Clear internal DNC + re-grant consent (START handling). */
@@ -232,6 +297,7 @@ export async function processInbound(input: InboundInput): Promise<InboundResult
     intent: classifyKeyword(input.body),
     optedOut: false,
     optedIn: false,
+    campaignTerminated: false,
     autoReplied: false,
     escalated: false,
   }
@@ -306,7 +372,7 @@ export async function processInbound(input: InboundInput): Promise<InboundResult
     // runner kept selecting them and each attempt escalated — an opt-out generating ongoing
     // work. Terminal, never paused: a paused row would be resumed by the quiet-window job.
     if (conv.member_id) {
-      const closed = await optOutActiveEnrollments(conv.member_id, `inbound STOP (conversation ${conv.id})`)
+      const closed = await terminateActiveEnrollments(conv.member_id, `inbound STOP (conversation ${conv.id})`, 'opted_out')
       if (closed > 0) {
         await writeAudit({
           actor: 'system',
@@ -323,6 +389,47 @@ export async function processInbound(input: InboundInput): Promise<InboundResult
   if (result.intent === 'start') {
     await applyOptIn(conv, contact)
     result.optedIn = true
+    return result
+  }
+
+  // FSOS-020 — a NATURAL-LANGUAGE request to stop automated outreach ("please stop texting me",
+  // "remove me from your list", "not interested") is NOT a first-word carrier keyword (handled
+  // above), but it MUST still terminate automated campaign continuation. This is CAMPAIGN
+  // TERMINATION + HUMAN HANDOFF, distinct from the carrier global opt-out (it does NOT write DNC
+  // or revoke consent, so transactional/servicing messages and a human 1:1 reply remain possible).
+  //
+  // Two layers, with different guarantees:
+  //   1. PRIMARY, always applied when the reply is tied to a member — the member's enrollments are
+  //      moved to an absorbing terminal state that the resume-paused job + ticks never re-select.
+  //      This is the durable guarantee against silent resurrection of THIS member's enrollments.
+  //   2. DEFENSE-IN-DEPTH — BUSINESS suppression at the canonical send gate, which additionally
+  //      withholds future automated sends across re-enrollment, retries, and the AI workforce.
+  //      This layer is CONDITIONAL on resolving a contact identity (member.source_contact_id, else
+  //      a phone/email match); if none resolves, applyClientSuppression is a no-op and only layer 1
+  //      protects. In practice a member reachable by SMS/email resolves an identity, but the code
+  //      does not assume it — the terminal enrollment state, not suppression, is the invariant.
+  // Benign conversational replies (below) still pause/resume as designed.
+  const stopReq = detectStopAutomation(input.body)
+  if (stopReq.matched) {
+    let terminated = 0
+    if (conv.member_id) {
+      terminated = await terminateActiveEnrollments(conv.member_id, `reply ${stopReq.kind} (conversation ${conv.id})`, 'reply_stop_request')
+    }
+    const suppressed = await applyClientSuppression(conv, contact, `reply ${stopReq.kind}: ${stopReq.phrase ?? ''}`.trim())
+    result.campaignTerminated = true
+    await writeAudit({
+      actor: 'system',
+      action: 'entity.updated',
+      entity: 'comm_campaign_enrollment',
+      entityId: conv.member_id ?? conv.id,
+      diff: { campaign_terminated: terminated, business_suppressed: suppressed, conversation: conv.id, kind: stopReq.kind, reason: 'reply_stop_request' },
+    })
+    // Structured observability — never logs the full message body (only the matched phrase).
+    console.info('[inbound] reply-stop → campaign termination', { conversation: conv.id, kind: stopReq.kind, phrase: stopReq.phrase, enrollmentsTerminated: terminated, businessSuppressed: suppressed })
+    await recordMessageEvent({ messageId, conversationId: conv.id, event: 'unsubscribed', channel: input.channel, detail: `campaign_stop:${stopReq.kind}` })
+    // Human handoff — surface to the FSA queue; never auto-reply to a stop request.
+    await escalateToFsa(conv, messageId, `reply_${stopReq.kind}`, stopReq.phrase ?? undefined)
+    result.escalated = true
     return result
   }
 

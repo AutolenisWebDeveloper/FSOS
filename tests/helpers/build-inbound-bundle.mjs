@@ -44,7 +44,10 @@ export async function buildInboundBundle() {
       // identically against real rows rather than only that book.ts calls them.
       `export { exitOnAppointment as exitWinback } from '@/lib/pipeline-winback/inbound'\n` +
       `export { exitOnAppointment as exitLife } from '@/lib/life-campaign/inbound'\n` +
-      `export { exitOnAppointment as exitXsell } from '@/lib/cross-sell-life/inbound'\n`,
+      `export { exitOnAppointment as exitXsell } from '@/lib/cross-sell-life/inbound'\n` +
+      // The resume-paused job, so the e2e suite can prove reply-terminated enrollments are NOT
+      // resurrected by it while a benign conversational pause still resumes (FSOS-020).
+      `export { resumePausedEnrollments } from '@/jobs/handlers'\n`,
   )
 
   const out = join(dir, 'bundle.cjs')

@@ -18,13 +18,15 @@
 --
 -- BACKFILL FIRST: this table already contains the duplicate rows the bug produced, so a bare
 -- CREATE UNIQUE INDEX would ABORT on existing data. Collapse each correlated duplicate group to a
--- single row (keep the newest by ctid) BEFORE building the index. Only fully-correlated rows are
--- touched: the equality joins skip NULL message_id / provider_id (NULL = NULL is false), and the
--- explicit NOT NULL guards make that intent unmistakable — so orphaned/internal rows are never
--- deleted. This runs once; on a table with no duplicates (e.g. a fresh DB) it is a no-op.
+-- single surviving row BEFORE building the index. The tiebreak is the STABLE primary key `id`
+-- (keep the greatest id per group) — deterministic and identity-stable, unlike ctid, which shifts
+-- on VACUUM/UPDATE. Only fully-correlated rows are touched: the equality joins skip NULL
+-- message_id / provider_id (NULL = NULL is false), and the explicit NOT NULL guards make that
+-- intent unmistakable — so orphaned/internal rows are never deleted. This runs once; on a table
+-- with no duplicates (e.g. a fresh DB) it is a no-op.
 delete from comm_message_events a
   using comm_message_events b
- where a.ctid < b.ctid
+ where a.id < b.id
    and a.message_id = b.message_id
    and a.event = b.event
    and a.provider_id = b.provider_id

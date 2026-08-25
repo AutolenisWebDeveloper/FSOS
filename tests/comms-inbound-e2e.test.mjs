@@ -230,7 +230,7 @@ try {
   installFetchStub()
   freezeClock(IN_HOURS)
   const require = createRequire(import.meta.url)
-  const { processInbound, sendThroughGate, exitWinback, exitLife, exitXsell, resumePausedEnrollments } = require(bundlePath)
+  const { processInbound, sendThroughGate, exitWinback, exitLife, exitXsell, resumePausedEnrollments, buildQueue, runOutreachAgent } = require(bundlePath)
 
   // ── SCENARIO 1: threading, association, inbound row, and the auto-reply attempt ──
   section('1. Inbound message → thread, association, history, auto-reply attempt')
@@ -1200,6 +1200,82 @@ try {
     })
 
     freezeClock(IN_HOURS)
+  }
+
+  // ── SCENARIO 9: FSOS-070 — the AI workforce EXCLUDES a reply-terminated (business-
+  // suppressed) recipient from the outreach queue, and the build is idempotent ──────
+  section('9. AI workforce queue excludes a business-suppressed (reply-terminated) recipient')
+  {
+    const db = freshDb({ armed: false })
+    // Enable ONLY the life_winback agent so the build is deterministic (buildQueue skips any
+    // disabled agent without reading its view). life_winback's candidate source is the
+    // `contacts` win-back book, which is the simplest to seed end-to-end.
+    q(db, `update agent_daily_targets set enabled=false`)
+    q(db, `update agent_daily_targets set enabled=true, channel='email', daily_target=5, is_assumption=false where agent_key='life_winback'`)
+
+    // Two former-life households, each with an email-consented member and a win-back contact.
+    // Household B's contact is BUSINESS-SUPPRESSED — exactly what a reply-driven campaign
+    // termination (FSOS-020) writes — so the workforce must NOT queue B.
+    const HA = 'a0000000-0000-0000-0000-0000000000a1', MA = 'a0000000-0000-0000-0000-0000000000a2', CA = 'a0000000-0000-0000-0000-0000000000a3'
+    const HB = 'b0000000-0000-0000-0000-0000000000b1', MB = 'b0000000-0000-0000-0000-0000000000b2', CB = 'b0000000-0000-0000-0000-0000000000b3'
+    // Insert order respects FKs: households → contacts → members (source_contact_id → contacts)
+    // → consents → suppression (contact_id → contacts).
+    q(db, `
+      insert into households (id, primary_name) values ('${HA}','Winback A'), ('${HB}','Winback B');
+      insert into contacts (id, full_name, first_name, contact_type, email, email_lc, source, status, household_id) values
+        ('${CA}','Casey Clean','Casey','client','casey.clean@example.com','casey.clean@example.com','winback_life','active','${HA}'),
+        ('${CB}','Blake Blocked','Blake','client','blake.blocked@example.com','blake.blocked@example.com','winback_life','active','${HB}');
+      insert into household_members (id, household_id, full_name, email, source_contact_id) values
+        ('${MA}','${HA}','Casey Clean','casey.clean@example.com','${CA}'),
+        ('${MB}','${HB}','Blake Blocked','blake.blocked@example.com','${CB}');
+      insert into consents (member_id, household_id, channel, status, source) values
+        ('${MA}','${HA}','email','granted','test_seed'),
+        ('${MB}','${HB}','email','granted','test_seed');
+      insert into comm_client_suppressions (contact_id, status, reason) values ('${CB}','blocked','reply_stop_request');
+    `)
+
+    await buildQueue()
+
+    check('the CLEAN winback recipient is queued for the workforce', () => {
+      assert.equal(q(db, `select count(*) from outreach_queue where agent_key='life_winback' and household_id='${HA}'`), '1',
+        'the consented, non-suppressed winback recipient should be queued')
+    })
+    check('the BUSINESS-SUPPRESSED (reply-terminated) recipient is EXCLUDED from the queue', () => {
+      assert.equal(q(db, `select count(*) from outreach_queue where agent_key='life_winback' and household_id='${HB}'`), '0',
+        'a reply-terminated / business-suppressed contact was queued for autonomous outreach')
+      assert.equal(q(db, `select count(*) from outreach_queue where entity_id='${CB}'`), '0',
+        'the suppressed contact entity must never enter the queue')
+    })
+    await buildQueue() // second run — must not double-queue
+    check('re-running buildQueue is idempotent (no duplicate queue rows)', () => {
+      assert.equal(q(db, `select count(*) from outreach_queue where agent_key='life_winback'`), '1',
+        'a second build double-queued — the unique(queue_date,agent,entity) idempotency failed')
+    })
+
+    // DISPATCH-TIME BACKSTOP: prove that even if a suppressed contact's row reaches the queue
+    // (e.g. a reply-termination lands AFTER the build, or a row is inserted by another path), the
+    // dispatch loop skips it BEFORE any draft/send — independent of the gate's purpose-scoped
+    // suppression step (which is skipped for transactional purposes like term_conversion's
+    // POLICY_DEADLINE). Force ONLY a suppressed row for the agent and run the real dispatcher.
+    q(db, `update ai_agents set enabled=true where key='life_winback'`) // lift the per-agent kill switch for this run
+    q(db, `delete from outreach_queue where agent_key='life_winback'`)
+    // queue_date is pinned to the FROZEN clock's date (runOutreachAgent filters by today =
+    // new Date()…, which the harness freezes to IN_HOURS) so the dispatcher actually sees the row —
+    // in production new Date() and current_date agree; the pin only compensates for the frozen clock.
+    const frozenDay = IN_HOURS.slice(0, 10)
+    q(db, `insert into outreach_queue (queue_date, agent_key, source, entity_type, entity_id, household_id, member_id, channel, priority, reason, is_security, status)
+           values ('${frozenDay}','life_winback','win_back','contact','${CB}','${HB}','${MB}','email',10,'forced post-build suppression',false,'queued')`)
+    aiCalls.length = 0; twilioCalls.length = 0
+    await runOutreachAgent('life_winback')
+    check('dispatch SKIPS a suppressed queue row before any draft/send (agent-agnostic backstop)', () => {
+      assert.equal(q(db, `select status||'|'||coalesce(block_reason,'-') from outreach_queue where entity_id='${CB}'`),
+        'skipped|business_suppressed', 'the dispatch loop did not skip a business-suppressed contact')
+    })
+    check('no model draft and no send occurred for the suppressed contact', () => {
+      assert.equal(aiCalls.length, 0, 'the gateway was called for a suppressed contact (guard runs before drafting)')
+      assert.equal(q(db, `select count(*) from comm_messages where direction='outbound' and member_id='${MB}'`), '0',
+        'an outbound message was created for a suppressed contact')
+    })
   }
 } catch (err) {
   console.error('\nHARNESS ERROR:', err && err.stack ? err.stack : err)

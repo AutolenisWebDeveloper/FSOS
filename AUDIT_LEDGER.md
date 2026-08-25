@@ -644,6 +644,58 @@ scheduled fire.
 
 Verification needed: LIVE — confirm Vercel invokes the path and runWorkforce builds a queue.
 
+RESOLUTION (Phase 2 · Batch 1b) — RESOLVED — CODE/CONFIG VERIFIED (Vercel execution NOT VERIFIED — LIVE REQUIRED)
+Base: branched from the Batch 1a branch HEAD (84f70d2 — Batch 1a not yet merged) so this work
+inherits the FSOS-020 termination invariant; BATCH_1B_BASE_SHA = origin/main 512b163 (is-ancestor of HEAD).
+Fix: scheduled `workforce-orchestrator` in vercel.json at `0 15 * * *`
+(docs/vercel-crons-restore.md:30). It routes through the dynamic /api/cron/[job] dispatcher, which
+recognizes the key (isJob) and 404s an unknown key (fail closed), wraps the run in
+runIdempotent(job:hour-bucket), and requires the cron secret / x-vercel-cron header.
+
+1a-INVARIANT (mandatory, separately tested): the workforce builds outreach_queue from detection
+signals and dispatches ONLY through sendThroughGate. A reply-driven campaign termination (FSOS-020)
+writes an individual BUSINESS suppression; that contact is now EXCLUDED at queue-BUILD time —
+resolveRecipient() (src/lib/ai/workforce.ts) calls resolveEffectiveSuppression() (the SAME signal
+the gate reads, fail-closed) and selectForQuota() drops it with reason 'business_suppressed'
+(src/lib/ai/outreach.ts). The send gate remains the fail-closed authority at send time (blockedStep
+'suppression'). Two independent layers → a reply-terminated contact can never be auto-contacted by
+the workforce.
+
+Idempotency/concurrency: buildQueue is idempotent by unique(queue_date,agent,entity);
+runOutreachAgent atomically claims queued→drafted (single-winner); the route's hour-bucket
+runIdempotent dedupes a same-window re-fire. Securities excluded at build + guarded again at dispatch.
+
+Scope note: the workforce's referral_followup agent READS the `referrals` table as an outreach
+signal (first-touch invitation) but does NOT read/write referral pipeline/SLA lifecycle state, so it
+is not the deferred referral-lifecycle work; per-agent enablement is operator config
+(agent_daily_targets, ships disabled until verified).
+
+Files: vercel.json; src/lib/ai/workforce.ts; src/lib/ai/outreach.ts.
+Tests: tests/cron-activation.test.mjs (dispatcher resolves the key + schedule present);
+tests/workforce-suppression.test.mjs (selector drops a suppressed candidate); Scenario 9 in
+tests/comms-inbound-e2e.test.mjs (real Postgres: a business-suppressed winback recipient is EXCLUDED
+from outreach_queue; a clean recipient is queued; re-build is idempotent).
+Independent review disposition: an adversarial review confirmed the detection set is clean, the
+dispatcher fails closed, cadences are evidence-based, idempotency/concurrency hold, every send stays
+behind sendThroughGate, and the deferral + out-of-scope boundaries are honored — and raised ONE
+material finding (Medium): the `term_conversion` agent sends with purpose POLICY_DEADLINE, which is
+TRANSACTIONAL, so the send gate's business-suppression step is SKIPPED for it — meaning the gate was
+NOT a suppression backstop for that (enabled-by-default) agent, and the dispatch loop ignored
+`rec.suppressed`. Fixed: added an agent-AGNOSTIC dispatch-time `rec.suppressed` guard in
+runOutreachAgent (src/lib/ai/workforce.ts) that skips a suppressed row (block_reason
+'business_suppressed') BEFORE drafting/sending, independent of the gate's purpose classification;
+proven by the Scenario 9 dispatch assertion (a forced suppressed queue row is skipped with no draft
+and no send). Two lower findings were informational/comment-accuracy: (LOW) scheduling the workforce
+also activates referral first-touch OUTREACH via the referral_followup agent — accepted (signal read
+only, no referral pipeline/SLA write; per-agent enablement is operator config, ships disabled) and
+distinct from the deferred referral-lifecycle work; (LOW) overstated "gate re-checks regardless"
+comments were corrected in workforce.ts/outreach.ts to describe the three real layers (build
+exclusion + dispatch re-check + gate for non-transactional purposes).
+
+NOT VERIFIED — LIVE REQUIRED: Vercel actually invoking the schedule; the Vercel plan permitting the
+cron count/cadence; runWorkforce building a queue + dispatching against production data.
+Status: RESOLVED — CODE/CONFIG VERIFIED.
+
 ---
 
 ### FSOS-071 — Six lifecycle-detection cron jobs registered but never scheduled (CRM automation dormant)
@@ -671,6 +723,31 @@ docs/vercel-crons-restore.md:24-28.
 
 Suggested fix direction (DO NOT IMPLEMENT): restore the detection crons to vercel.json.
 Verification: LIVE — observe each job creating its tasks/escalations on schedule.
+
+RESOLUTION (Phase 2 · Batch 1b) — PARTIAL: 5 of 6 ACTIVATED (CODE/CONFIG VERIFIED); referral-SLA DEFERRED
+Activated (referral-INDEPENDENT) in vercel.json, cadences from docs/vercel-crons-restore.md:24-30:
+- conversion-watch      `0 9 * * *`   — activities: conversion_identify; securities excluded; NO send
+- xdate-watch           `0 9 * * *`   — work_tasks; NO send
+- cross-sell-scan       `30 9 * * *`  — activities: crosssell_identify; invitation-only; NO send
+- agency-dormancy       `0 10 * * *`  — agency_partnerships status + reactivation work_task; NO send
+- commission-reconcile  `0 11 * * *`  — commission reconciliation_status transition; NO send
+Each resolves via the [job] dispatcher (isJob → an unknown key 404s), is wrapped in
+runIdempotent(job:hour-bucket), and is additionally idempotent by its own existence/state guard
+(work_task/activity 'exists' check; status-transition-only). NONE reads or writes any campaign
+enrollment table and NONE sends a client-facing message — so none can re-select, advance, or
+re-enroll a reply-terminated enrollment (no enrollment touch at all; verified: no DB trigger
+auto-enrolls from `activities`). The 1a invariant holds trivially for the detection set.
+
+DEFERRED — REFERRAL-LIFECYCLE DECISION PENDING: `referral-sla` (handlers.ts:82) reads
+v_referrals_awaiting_action (referral pipeline/SLA lifecycle state) → REFERRAL-DEPENDENT → NOT
+scheduled this batch (asserted in tests/cron-activation.test.mjs). It becomes a later batch once the
+referral pipeline-stage-placement vs. human-worked-artifact product decision is made.
+
+Files: vercel.json. Tests: tests/cron-activation.test.mjs (all 5 scheduled + dispatcher-resolved;
+referral-sla asserted NOT scheduled).
+NOT VERIFIED — LIVE REQUIRED: Vercel invoking each schedule; each job creating its
+tasks/activities/escalations on cadence against production data.
+Status: PARTIAL — 5 ACTIVATED (CODE/CONFIG VERIFIED) · referral-SLA DEFERRED.
 
 ---
 

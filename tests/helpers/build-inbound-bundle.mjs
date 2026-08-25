@@ -47,7 +47,12 @@ export async function buildInboundBundle() {
       `export { exitOnAppointment as exitXsell } from '@/lib/cross-sell-life/inbound'\n` +
       // The resume-paused job, so the e2e suite can prove reply-terminated enrollments are NOT
       // resurrected by it while a benign conversational pause still resumes (FSOS-020).
-      `export { resumePausedEnrollments } from '@/jobs/handlers'\n`,
+      `export { resumePausedEnrollments } from '@/jobs/handlers'\n` +
+      // The AI-workforce queue builder + dispatcher (FSOS-070), so the e2e suite can prove a
+      // business-suppressed (reply-terminated) recipient is EXCLUDED from the outreach queue at
+      // build AND skipped at dispatch (the agent-agnostic backstop that does not rely on the send
+      // gate's purpose-scoped suppression step), and that re-building is idempotent.
+      `export { buildQueue, runOutreachAgent } from '@/lib/ai/workforce'\n`,
   )
 
   const out = join(dir, 'bundle.cjs')

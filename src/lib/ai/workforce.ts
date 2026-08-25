@@ -24,6 +24,7 @@
 import { getDb } from '@/lib/supabase/client'
 import { runAgent } from '@/jobs/agent-runner'
 import { sendThroughGate } from '@/lib/comms/send'
+import { resolveEffectiveSuppression } from '@/lib/comms/suppression'
 import { isWithinOperatingHours } from '@/lib/comms/hours'
 import { searchKnowledge, renderKnowledgeContext } from '@/lib/knowledge/library'
 import { containsRecommendationLanguage } from '@/lib/compliance/guardrail'
@@ -66,6 +67,16 @@ interface Recipient {
   hasConsent: boolean
   onDNC: boolean
   contactable: boolean
+  /**
+   * BUSINESS suppression (comm_client_suppressions / agency book). True → this recipient has
+   * been excluded from non-transactional outreach — including by a reply-driven campaign
+   * termination (FSOS-020). Enforced in THREE places: (1) queue build drops them here, (2) the
+   * dispatch loop re-checks this flag before sending (agent-agnostic backstop), and (3) the send
+   * gate's suppression step — which, note, is SKIPPED for TRANSACTIONAL purposes such as
+   * term_conversion's POLICY_DEADLINE, which is exactly why (2) exists and the gate alone is not
+   * a sufficient suppression backstop for every agent. resolveEffectiveSuppression fails closed.
+   */
+  suppressed: boolean
 }
 
 /**
@@ -78,7 +89,7 @@ async function resolveRecipient(
   channel: 'sms' | 'email',
   fallbackName?: string | null,
 ): Promise<Recipient> {
-  const empty: Recipient = { memberId: null, name: fallbackName ?? null, contact: null, hasConsent: false, onDNC: false, contactable: false }
+  const empty: Recipient = { memberId: null, name: fallbackName ?? null, contact: null, hasConsent: false, onDNC: false, contactable: false, suppressed: false }
   if (!householdId) return empty
   const db = getDb()
 
@@ -103,6 +114,16 @@ async function resolveRecipient(
     db.from('dnc_entries').select('id').eq('contact', contact).in('channel', [channel, 'all']).limit(1),
   ])
 
+  // BUSINESS suppression (individual + agency-book). A reply-driven campaign termination
+  // (FSOS-020) writes an individual client suppression, so a reply-terminated contact resolves
+  // suppressed here and is dropped by selectForQuota — never queued for autonomous outreach.
+  // resolveEffectiveSuppression FAILS CLOSED (suppressed on a lookup error), matching the gate.
+  const supp = await resolveEffectiveSuppression({
+    memberId: member.id,
+    phone: channel === 'sms' ? contact : null,
+    email: channel === 'email' ? contact : null,
+  })
+
   return {
     memberId: member.id,
     name: firstName,
@@ -110,6 +131,7 @@ async function resolveRecipient(
     hasConsent: consent?.status === 'granted',
     onDNC: householdDNC || (Array.isArray(dnc) && dnc.length > 0),
     contactable: true,
+    suppressed: supp.suppressed,
   }
 }
 
@@ -128,7 +150,7 @@ async function crossSellCandidates(channel: 'sms' | 'email'): Promise<OutreachCa
     out.push({
       source: 'cross_sell', agentKey: 'cross_sell', entityType: 'household', entityId: r.household_id,
       householdId: r.household_id, memberId: rec.memberId, channel,
-      contactable: rec.contactable, hasConsent: rec.hasConsent, onDNC: rec.onDNC, isSecurity: false,
+      contactable: rec.contactable, hasConsent: rec.hasConsent, onDNC: rec.onDNC, suppressed: rec.suppressed, isSecurity: false,
       signal: { gapScore: Number(r.score ?? 0) },
       reason: `Coverage-gap review invitation${r.next_best_line ? ` (open line: ${r.next_best_line})` : ''}`,
       recipientName: rec.name,
@@ -152,7 +174,7 @@ async function termConversionCandidates(channel: 'sms' | 'email'): Promise<Outre
       out.push({
         source: 'term_conversion', agentKey: 'term_conversion', entityType: 'policy', entityId: r.policy_id,
         householdId: r.household_id, memberId: null, channel,
-        contactable: false, hasConsent: false, onDNC: false, isSecurity: true,
+        contactable: false, hasConsent: false, onDNC: false, suppressed: false, isSecurity: true,
         signal: { daysRemaining: Number(r.days_remaining ?? 999) },
         reason: 'Securities-flagged — routed to human/FFS (firewall)', recipientName: r.primary_name,
       })
@@ -162,7 +184,7 @@ async function termConversionCandidates(channel: 'sms' | 'email'): Promise<Outre
     out.push({
       source: 'term_conversion', agentKey: 'term_conversion', entityType: 'policy', entityId: r.policy_id,
       householdId: r.household_id, memberId: rec.memberId, channel,
-      contactable: rec.contactable, hasConsent: rec.hasConsent, onDNC: rec.onDNC, isSecurity: false,
+      contactable: rec.contactable, hasConsent: rec.hasConsent, onDNC: rec.onDNC, suppressed: rec.suppressed, isSecurity: false,
       signal: { daysRemaining: Number(r.days_remaining ?? 999) },
       reason: `Term-conversion window opening (${r.urgency_tier}d tier) — educational review invitation`,
       recipientName: rec.name,
@@ -201,7 +223,7 @@ async function lifeWinbackCandidates(channel: 'sms' | 'email'): Promise<Outreach
     out.push({
       source: 'win_back', agentKey: 'life_winback', entityType: 'contact', entityId: r.id,
       householdId: r.household_id, memberId: rec.memberId, channel,
-      contactable: rec.contactable, hasConsent: rec.hasConsent, onDNC: rec.onDNC, isSecurity: false,
+      contactable: rec.contactable, hasConsent: rec.hasConsent, onDNC: rec.onDNC, suppressed: rec.suppressed, isSecurity: false,
       signal: { lapsedMonths },
       reason: 'Former life household — educational reconnect invitation',
       recipientName: rec.name,
@@ -229,7 +251,7 @@ async function referralFollowupCandidates(channel: 'sms' | 'email'): Promise<Out
     out.push({
       source: 'referral_followup', agentKey: 'referral_followup', entityType: 'referral', entityId: r.id,
       householdId: r.household_id, memberId: rec.memberId, channel,
-      contactable: rec.contactable, hasConsent: rec.hasConsent, onDNC: rec.onDNC, isSecurity: false,
+      contactable: rec.contactable, hasConsent: rec.hasConsent, onDNC: rec.onDNC, suppressed: rec.suppressed, isSecurity: false,
       signal: { ageHours, slaBreached },
       reason: slaBreached ? 'Untouched referral past SLA — first-touch invitation' : 'New referral — first-touch invitation',
       recipientName: rec.name,
@@ -404,6 +426,19 @@ export async function runOutreachAgent(agentKey: OutreachAgentKey): Promise<{ se
         const rec = await resolveRecipient(item.household_id, item.channel, null)
         if (!rec.contact || !rec.memberId) {
           await db.from('outreach_queue').update({ status: 'skipped', block_reason: 'no_contact_method', updated_at: new Date().toISOString() }).eq('id', item.id)
+          stats.skipped++
+          continue
+        }
+
+        // DISPATCH-TIME business-suppression backstop (FSOS-020 / FSOS-070). buildQueue already
+        // excludes a suppressed contact, but this re-check closes the window where a suppression
+        // is written AFTER the build (e.g. a reply-driven termination arriving between build and
+        // dispatch) or a queue row is inserted by another path. It is agent-AGNOSTIC and does not
+        // depend on the send gate's suppression step — which is intentionally skipped for
+        // TRANSACTIONAL purposes (term_conversion sends as POLICY_DEADLINE), so the gate alone is
+        // NOT a suppression backstop for every agent. resolveEffectiveSuppression fails closed.
+        if (rec.suppressed) {
+          await db.from('outreach_queue').update({ status: 'skipped', block_reason: 'business_suppressed', updated_at: new Date().toISOString() }).eq('id', item.id)
           stats.skipped++
           continue
         }

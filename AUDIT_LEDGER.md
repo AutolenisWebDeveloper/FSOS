@@ -514,13 +514,13 @@ Absorbing (durability) — traced + tested:
   signal is read by the EXISTING gate.
 
 Files changed: src/lib/comms/stop-intent.ts (new), src/lib/comms/inbound.ts;
-tests/comms-stop-intent.test.mjs (new, 52 assertions), tests/comms-inbound-e2e.test.mjs (+scenarios
+tests/comms-stop-intent.test.mjs (new, 64 assertions), tests/comms-inbound-e2e.test.mjs (+scenarios
 3c/3d), tests/helpers/build-inbound-bundle.mjs (export resumePausedEnrollments),
 tests/helpers/postgrest-shim.mjs (add .rpc()).
 
 Tests (RED→GREEN): the pure battery failed before stop-intent.ts existed; the e2e 3c assertions
 (terminal, not paused) fail against pre-fix code (reply → paused_for_conversation). Post-fix:
-- Unit: comms-stop-intent 52/52 (B/C positive, benign/negation negative).
+- Unit: comms-stop-intent 64/64 (B/C positive, benign/negation/coverage negative).
 - e2e (real Postgres): NL-stop → opted_out (not paused); NO DNC / consent still granted; business
   suppression 'blocked' written; resume-paused does NOT resurrect; duplicate inbound idempotent;
   send gate withholds automated outreach (blockedStep 'suppression'); benign pause STILL resumes.
@@ -531,8 +531,34 @@ extended inbound e2e, 138 checks) · lint 0 · build 0.
 Regression protection confirmed: GHL runtime deps still 0; carrier STOP unchanged; quiet-hours,
 fail-closed templates, dedup, and the canonical gate untouched; no direct provider calls added.
 
-Independent review: commissioned (11-point FSOS-020 checklist). Disposition appended on completion;
-any verified material in-scope finding fixed before the verdict stands.
+Independent review disposition: an adversarial review confirmed the CORE mechanism is sound
+(terminal enrollment states + business suppression at the canonical gate) and raised 7 findings —
+all in the natural-language detector's precision/coverage, none in the termination mechanism. Fixed
+and re-proven by the expanded battery (64/64):
+- F1 negation adjacency — "please don't ever stop texting me" / "I never want you to stop sending
+  updates" false-terminated. Fixed: negation guard rewritten to a filler-whitelist NEGATED_INTENT
+  (tolerates a small closed set of filler words between negator and cease verb) so a negated cease
+  is suppressed while a genuine cease in a later clause is not.
+- F3 disinterest over-match — "not interested in the premium option, but tell me about the basic
+  plan" (sub-topic, still engaged) and "not interested in stopping" (meaning-flip) terminated. Fixed:
+  `(?!\s+in\b)` lookahead on both interested patterns.
+- F4 opt-out/unsubscribe bypassed negation — "I don't want to opt out" / "not interested in
+  unsubscribing" terminated. Fixed: opt-out/unsubscribe/leave/cancel added to NEGATED_INTENT, plus an
+  "interested in <ceasing>" guard for the object-of-interest case.
+- F5 contact correction — "don't email me at that address, use my gmail" (a fix, not a cease)
+  terminated. Fixed: `(?!\s+(?:at|on)\b)` lookahead on the "don't <verb> me" pattern.
+- F6 missed stops — "I want to unsubscribe", "please stop", "please remove me", "remove me", "lose
+  my number" auto-resumed. Fixed: broadened STOP patterns (`(please|pls|kindly) stop` w/ "stop by"
+  exclusion; `unsubscrib\w*`; `(take|remove|delete) me`; `(remove|delete|lose) (my) number|info…`).
+- F7 test-battery gaps — added all the above as explicit positive/negative cases (52 → 64).
+- F2 (PLAUSIBLE, not a defect) absorbing guarantee — the send-gate suppression LAYER is conditional
+  on resolving a contact identity (member.source_contact_id, else phone/email). Documented, not
+  "fixed": the PRIMARY invariant is the terminal enrollment state (always applied for a member and
+  never re-selected by resume/ticks); business suppression is defense-in-depth for
+  re-enrollment/retries/AI-workforce. The inbound header comment now states this precisely rather
+  than claiming suppression covers every case unconditionally.
+No finding touched the termination mechanism, the gate, carrier STOP, or benign pause/resume; all
+fixes are contained to stop-intent.ts (detector) + one clarifying comment in inbound.ts.
 
 NOT VERIFIED — LIVE REQUIRED: real inbound SMS/email (Twilio/Resend) exercising the path in
 production; the resume-paused Vercel cron actually firing against production data; confirming

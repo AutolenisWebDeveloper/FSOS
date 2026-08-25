@@ -46,6 +46,12 @@ const STOP_REQUESTS = [
   "I don't want any more texts",
   'we do not want to be contacted',
   'What is this about? Also please stop texting me.', // stop anywhere in the body
+  // ── independent-review coverage additions (Finding 6): plain requests that were missed ──
+  'I want to unsubscribe',
+  'please stop',
+  'please remove me',
+  'remove me',
+  'lose my number',
 ]
 
 console.log('category B — explicit stop-automation requests TERMINATE')
@@ -101,6 +107,14 @@ const BENIGN = [
   'no thanks',                             // intentionally benign (too ambiguous to terminate)
   'is this a good time to talk?',
   'how do I stop by the review?',          // "stop by" again
+  // ── independent-review false-positive additions ──────────────────────────────────
+  "please don't ever stop texting me",     // Finding 1: negated cease w/ filler → keep contacting
+  'I never want you to stop sending updates', // Finding 1: negated cease w/ filler
+  "I don't want to opt out",               // Finding 4: negated opt-out → wants to stay
+  'not interested in unsubscribing',       // Finding 4/3: negated unsubscribe via disinterest lookahead
+  "don't email me at that address, use my gmail", // Finding 5: contact CORRECTION, not a cease
+  'not interested in the premium option, but tell me about the basic plan', // Finding 3: sub-topic, still engaged
+  'not interested in stopping',            // Finding 3: meaning-flipped ("in" lookahead)
 ]
 console.log('\ncategory D — benign / ambiguous / negation homographs do NOT terminate')
 for (const body of BENIGN) {

@@ -395,12 +395,20 @@ export async function processInbound(input: InboundInput): Promise<InboundResult
   // FSOS-020 — a NATURAL-LANGUAGE request to stop automated outreach ("please stop texting me",
   // "remove me from your list", "not interested") is NOT a first-word carrier keyword (handled
   // above), but it MUST still terminate automated campaign continuation. This is CAMPAIGN
-  // TERMINATION + HUMAN HANDOFF, distinct from the carrier global opt-out: it TERMINATES the
-  // member's enrollments (an absorbing terminal state the resume-paused job + ticks never
-  // re-select) AND writes BUSINESS suppression (the canonical send gate then withholds every
-  // future automated send — covering retries, the AI workforce, and any re-enrollment) — WITHOUT
-  // writing DNC or revoking consent, so transactional/servicing messages and a human 1:1 reply
-  // remain possible. Benign conversational replies (below) still pause/resume as designed.
+  // TERMINATION + HUMAN HANDOFF, distinct from the carrier global opt-out (it does NOT write DNC
+  // or revoke consent, so transactional/servicing messages and a human 1:1 reply remain possible).
+  //
+  // Two layers, with different guarantees:
+  //   1. PRIMARY, always applied when the reply is tied to a member — the member's enrollments are
+  //      moved to an absorbing terminal state that the resume-paused job + ticks never re-select.
+  //      This is the durable guarantee against silent resurrection of THIS member's enrollments.
+  //   2. DEFENSE-IN-DEPTH — BUSINESS suppression at the canonical send gate, which additionally
+  //      withholds future automated sends across re-enrollment, retries, and the AI workforce.
+  //      This layer is CONDITIONAL on resolving a contact identity (member.source_contact_id, else
+  //      a phone/email match); if none resolves, applyClientSuppression is a no-op and only layer 1
+  //      protects. In practice a member reachable by SMS/email resolves an identity, but the code
+  //      does not assume it — the terminal enrollment state, not suppression, is the invariant.
+  // Benign conversational replies (below) still pause/resume as designed.
   const stopReq = detectStopAutomation(input.body)
   if (stopReq.matched) {
     let terminated = 0

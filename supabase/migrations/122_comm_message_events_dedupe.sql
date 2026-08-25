@@ -24,6 +24,17 @@
 -- message_id / provider_id (NULL = NULL is false), and the explicit NOT NULL guards make that
 -- intent unmistakable — so orphaned/internal rows are never deleted. This runs once; on a table
 -- with no duplicates (e.g. a fresh DB) it is a no-op.
+--
+-- CONCURRENCY: the backfill and the index build run in ONE transaction that first takes a SHARE
+-- lock on the table. SHARE conflicts with the ROW EXCLUSIVE lock INSERT/UPDATE/DELETE take, so a
+-- concurrent provider callback cannot insert a NEW duplicate in the window between the DELETE and
+-- the CREATE UNIQUE INDEX (which would otherwise abort the build); readers are unaffected. The
+-- lock is held until COMMIT, covering the index creation too. (Explicit begin/commit follows the
+-- convention in migration 115 — the runner applies migration files without wrapping them.)
+begin;
+
+lock table comm_message_events in share mode;
+
 delete from comm_message_events a
   using comm_message_events b
  where a.id < b.id
@@ -38,3 +49,5 @@ create unique index if not exists uq_comm_message_events_dedupe
 
 comment on index uq_comm_message_events_dedupe is
   'FSOS-032: idempotency key for provider status callbacks — one row per (message, event, provider message). Plain unique index: NULL tuples are distinct, so orphaned (null message_id) and internal (null provider_id) events are unconstrained, and onConflict can infer it.';
+
+commit;

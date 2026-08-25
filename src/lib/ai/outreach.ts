@@ -43,6 +43,16 @@ export interface OutreachCandidate {
   contactable: boolean
   hasConsent: boolean
   onDNC: boolean
+  /**
+   * BUSINESS suppression (comm_client_suppressions / agency book). A reply-driven campaign
+   * termination (FSOS-020) writes an individual client suppression, so this is how a
+   * reply-terminated contact is kept OUT of the workforce queue — never re-selected for
+   * autonomous outreach. This selector excludes them at build (like `isSecurity`); the workforce
+   * dispatch loop re-checks the same signal before sending. (The send gate's suppression step is
+   * an additional layer for NON-transactional purposes, but it is skipped for transactional
+   * purposes like POLICY_DEADLINE, so it is not a sufficient backstop on its own.)
+   */
+  suppressed: boolean
   /** Firewall: a securities-flagged target must never be selected for auto-outreach. */
   isSecurity: boolean
   /** Raw source signal used to rank (e.g. cross-sell gap score, days remaining). */
@@ -115,6 +125,7 @@ export function isSelectable(c: OutreachCandidate): boolean {
     c.contactable &&      // we resolved a phone/email
     c.hasConsent &&       // TCPA — no consent, no proactive contact
     !c.onDNC &&           // internal/external DNC
+    !c.suppressed &&      // business suppression (incl. FSOS-020 reply-termination)
     c.memberId !== null
   )
 }
@@ -147,6 +158,7 @@ export function selectForQuota(candidates: OutreachCandidate[], dailyTarget: num
     if (c.isSecurity) { skipped.push({ candidate: c, reason: 'securities_firewall' }); continue }
     if (!c.contactable || c.memberId === null) { skipped.push({ candidate: c, reason: 'no_contact_method' }); continue }
     if (c.onDNC) { skipped.push({ candidate: c, reason: 'on_dnc' }); continue }
+    if (c.suppressed) { skipped.push({ candidate: c, reason: 'business_suppressed' }); continue }
     if (!c.hasConsent) { skipped.push({ candidate: c, reason: 'no_consent' }); continue }
     if (selected.length >= Math.max(0, dailyTarget)) { skipped.push({ candidate: c, reason: 'over_daily_quota' }); continue }
     selected.push(c)

@@ -68,6 +68,65 @@ export const AGENT_ROSTER: Record<string, AgentDef> = {
   engagement_triager: { key: 'engagement_triager', mission: 'Classify inbound social engagement and route it to the right CRM action (never a product rec).', tools: ['identify', 'assemble_data', 'escalate', 'log'], triggers: 'New social engagement', confidenceThreshold: 0.7 },
 }
 
+// ─── Runtime SURFACE classification (FSOS-050) ───────────────────────────────────
+// The roster is metadata for MANY keys; not every key is a live autonomous agent. To stop the
+// AI Operations UI from overstating the live surface, each key is classified by how it actually
+// executes (verified against runtime callers — runAgent in workforce.ts and runGateway callers):
+//   • active              — a real runtime caller executes it (workforce runAgent, a runGateway
+//                           route, the campaign dispatcher, the inbound responder, or the gate).
+//   • disabled_by_default — a wired agent shipped OFF (kill switch) pending operator verification.
+//   • detection_job       — a scheduled SQL/detection cron carries the work; the "agent" is a
+//                           label over that job, not a gateway/runAgent execution.
+//   • routing_label       — a contactRouter classification label / UI grouping only; never run.
+//   • roadmap             — defined metadata with NO runtime path yet (not wired).
+// This corrects the Phase-1 FSOS-050 census, which mis-listed executive_intelligence and pipeline
+// as non-executing: both ARE live (executive_intelligence via the FSA assistant + household
+// next-action runGateway routes; pipeline as the Pipeline Win-Back campaign's AI-author key).
+export type AgentSurface = 'active' | 'disabled_by_default' | 'detection_job' | 'routing_label' | 'roadmap'
+
+export const AGENT_SURFACE: Record<string, AgentSurface> = {
+  // Live autonomous / user-triggered / gate execution
+  executive_intelligence: 'active', // runGateway: /api/app/assistant + households/[id]/next-action
+  pipeline: 'active',               // aiAuthorAgentKey of the scheduled pipeline-winback tick
+  cross_sell: 'active',             // workforce runAgent (workforce-orchestrator)
+  term_conversion: 'active',        // workforce runAgent
+  referral_followup: 'active',      // workforce runAgent
+  marketing_automation: 'active',   // campaign-dispatch actor
+  compliance_guardrail: 'active',   // the hard-block validator on every outbound
+  conversation: 'active',           // inbound SMS/email responder
+  contact_router: 'active',         // runGateway on contact upload
+  content_drafter: 'active',        // runGateway on FSA draft request
+  engagement_triager: 'active',     // runGateway on social engagement
+  // Wired but shipped OFF pending operator verification
+  life_winback: 'disabled_by_default', // seed enabled=false (consent mapping pending)
+  // Scheduled detection/SQL jobs (the "agent" is a label over the job)
+  data_quality: 'detection_job',    // data-quality cron
+  commission_reconciliation: 'detection_job', // commission-reconcile cron (SQL status transition)
+  // Routing/UI taxonomy only — never executed as an agent
+  agency_activation: 'routing_label',
+  referral_triage: 'routing_label',
+  // Defined metadata, no runtime path yet
+  agency_growth: 'roadmap',
+  case_management: 'roadmap',
+  document_intelligence: 'roadmap',
+}
+
+/** The runtime surface for an agent key (defaults to 'roadmap' for an unknown/unwired key). */
+export function agentSurface(key: string): AgentSurface {
+  return AGENT_SURFACE[key] ?? 'roadmap'
+}
+
+/** Human-readable label for the surface (for the AI Operations UI). */
+export function agentSurfaceLabel(s: AgentSurface): string {
+  switch (s) {
+    case 'active': return 'Active'
+    case 'disabled_by_default': return 'Disabled (default)'
+    case 'detection_job': return 'Detection job'
+    case 'routing_label': return 'Routing only'
+    case 'roadmap': return 'Roadmap'
+  }
+}
+
 /** Assert an agent holds no forbidden tool (unit-testable green-zone proof). */
 export function assertGreenZoneOnly(def: AgentDef): void {
   const allowed = new Set<string>(GREEN_ZONE_TOOLS)

@@ -644,6 +644,58 @@ scheduled fire.
 
 Verification needed: LIVE — confirm Vercel invokes the path and runWorkforce builds a queue.
 
+RESOLUTION (Phase 2 · Batch 1b) — RESOLVED — CODE/CONFIG VERIFIED (Vercel execution NOT VERIFIED — LIVE REQUIRED)
+Base: branched from the Batch 1a branch HEAD (84f70d2 — Batch 1a not yet merged) so this work
+inherits the FSOS-020 termination invariant; BATCH_1B_BASE_SHA = origin/main 512b163 (is-ancestor of HEAD).
+Fix: scheduled `workforce-orchestrator` in vercel.json at `0 15 * * *`
+(docs/vercel-crons-restore.md:30). It routes through the dynamic /api/cron/[job] dispatcher, which
+recognizes the key (isJob) and 404s an unknown key (fail closed), wraps the run in
+runIdempotent(job:hour-bucket), and requires the cron secret / x-vercel-cron header.
+
+1a-INVARIANT (mandatory, separately tested): the workforce builds outreach_queue from detection
+signals and dispatches ONLY through sendThroughGate. A reply-driven campaign termination (FSOS-020)
+writes an individual BUSINESS suppression; that contact is now EXCLUDED at queue-BUILD time —
+resolveRecipient() (src/lib/ai/workforce.ts) calls resolveEffectiveSuppression() (the SAME signal
+the gate reads, fail-closed) and selectForQuota() drops it with reason 'business_suppressed'
+(src/lib/ai/outreach.ts). The send gate remains the fail-closed authority at send time (blockedStep
+'suppression'). Two independent layers → a reply-terminated contact can never be auto-contacted by
+the workforce.
+
+Idempotency/concurrency: buildQueue is idempotent by unique(queue_date,agent,entity);
+runOutreachAgent atomically claims queued→drafted (single-winner); the route's hour-bucket
+runIdempotent dedupes a same-window re-fire. Securities excluded at build + guarded again at dispatch.
+
+Scope note: the workforce's referral_followup agent READS the `referrals` table as an outreach
+signal (first-touch invitation) but does NOT read/write referral pipeline/SLA lifecycle state, so it
+is not the deferred referral-lifecycle work; per-agent enablement is operator config
+(agent_daily_targets, ships disabled until verified).
+
+Files: vercel.json; src/lib/ai/workforce.ts; src/lib/ai/outreach.ts.
+Tests: tests/cron-activation.test.mjs (dispatcher resolves the key + schedule present);
+tests/workforce-suppression.test.mjs (selector drops a suppressed candidate); Scenario 9 in
+tests/comms-inbound-e2e.test.mjs (real Postgres: a business-suppressed winback recipient is EXCLUDED
+from outreach_queue; a clean recipient is queued; re-build is idempotent).
+Independent review disposition: an adversarial review confirmed the detection set is clean, the
+dispatcher fails closed, cadences are evidence-based, idempotency/concurrency hold, every send stays
+behind sendThroughGate, and the deferral + out-of-scope boundaries are honored — and raised ONE
+material finding (Medium): the `term_conversion` agent sends with purpose POLICY_DEADLINE, which is
+TRANSACTIONAL, so the send gate's business-suppression step is SKIPPED for it — meaning the gate was
+NOT a suppression backstop for that (enabled-by-default) agent, and the dispatch loop ignored
+`rec.suppressed`. Fixed: added an agent-AGNOSTIC dispatch-time `rec.suppressed` guard in
+runOutreachAgent (src/lib/ai/workforce.ts) that skips a suppressed row (block_reason
+'business_suppressed') BEFORE drafting/sending, independent of the gate's purpose classification;
+proven by the Scenario 9 dispatch assertion (a forced suppressed queue row is skipped with no draft
+and no send). Two lower findings were informational/comment-accuracy: (LOW) scheduling the workforce
+also activates referral first-touch OUTREACH via the referral_followup agent — accepted (signal read
+only, no referral pipeline/SLA write; per-agent enablement is operator config, ships disabled) and
+distinct from the deferred referral-lifecycle work; (LOW) overstated "gate re-checks regardless"
+comments were corrected in workforce.ts/outreach.ts to describe the three real layers (build
+exclusion + dispatch re-check + gate for non-transactional purposes).
+
+NOT VERIFIED — LIVE REQUIRED: Vercel actually invoking the schedule; the Vercel plan permitting the
+cron count/cadence; runWorkforce building a queue + dispatching against production data.
+Status: RESOLVED — CODE/CONFIG VERIFIED.
+
 ---
 
 ### FSOS-071 — Six lifecycle-detection cron jobs registered but never scheduled (CRM automation dormant)
@@ -671,6 +723,31 @@ docs/vercel-crons-restore.md:24-28.
 
 Suggested fix direction (DO NOT IMPLEMENT): restore the detection crons to vercel.json.
 Verification: LIVE — observe each job creating its tasks/escalations on schedule.
+
+RESOLUTION (Phase 2 · Batch 1b) — PARTIAL: 5 of 6 ACTIVATED (CODE/CONFIG VERIFIED); referral-SLA DEFERRED
+Activated (referral-INDEPENDENT) in vercel.json, cadences from docs/vercel-crons-restore.md:24-30:
+- conversion-watch      `0 9 * * *`   — activities: conversion_identify; securities excluded; NO send
+- xdate-watch           `0 9 * * *`   — work_tasks; NO send
+- cross-sell-scan       `30 9 * * *`  — activities: crosssell_identify; invitation-only; NO send
+- agency-dormancy       `0 10 * * *`  — agency_partnerships status + reactivation work_task; NO send
+- commission-reconcile  `0 11 * * *`  — commission reconciliation_status transition; NO send
+Each resolves via the [job] dispatcher (isJob → an unknown key 404s), is wrapped in
+runIdempotent(job:hour-bucket), and is additionally idempotent by its own existence/state guard
+(work_task/activity 'exists' check; status-transition-only). NONE reads or writes any campaign
+enrollment table and NONE sends a client-facing message — so none can re-select, advance, or
+re-enroll a reply-terminated enrollment (no enrollment touch at all; verified: no DB trigger
+auto-enrolls from `activities`). The 1a invariant holds trivially for the detection set.
+
+DEFERRED — REFERRAL-LIFECYCLE DECISION PENDING: `referral-sla` (handlers.ts:82) reads
+v_referrals_awaiting_action (referral pipeline/SLA lifecycle state) → REFERRAL-DEPENDENT → NOT
+scheduled this batch (asserted in tests/cron-activation.test.mjs). It becomes a later batch once the
+referral pipeline-stage-placement vs. human-worked-artifact product decision is made.
+
+Files: vercel.json. Tests: tests/cron-activation.test.mjs (all 5 scheduled + dispatcher-resolved;
+referral-sla asserted NOT scheduled).
+NOT VERIFIED — LIVE REQUIRED: Vercel invoking each schedule; each job creating its
+tasks/activities/escalations on cadence against production data.
+Status: PARTIAL — 5 ACTIVATED (CODE/CONFIG VERIFIED) · referral-SLA DEFERRED.
 
 ---
 
@@ -1252,3 +1329,180 @@ Evidence: src/lib/ai/workforce.ts:329-478; src/lib/ai/roster.ts:14-76; src/lib/c
 
 Note: this governance is correct but LARGELY DORMANT at HEAD (FSOS-070/071) — the engine is
 sound; it just is not being triggered on a schedule.
+
+---
+---
+
+# PHASE 2 — FINAL REPAIR & PRODUCTION-HARDENING BATCH
+
+Base: cc08177 (Batch 1b) · branch: claude/fsos-phase-2-final · ancestors verified:
+84f70d2 (Batch 1a), 512b163 (origin/main). This section APPENDS resolution evidence for every
+still-open Phase-1 finding; it does not rewrite Phase-1 history above. Each finding is reconciled
+to exactly one of: RESOLVED — CODE VERIFIED · VERIFIED — NO REPAIR REQUIRED · PARTIALLY RESOLVED ·
+DEFERRED — BUSINESS DECISION REQUIRED · NOT VERIFIED — LIVE REQUIRED.
+
+## FSOS-030 — Message-of-record reconciliation — RESOLVED — CODE VERIFIED
+Root cause (proven): the correlation key (provider_id) was written to comm_messages AFTER the
+irreversible provider send returned (send.ts, post-dispatch patch), so a status callback arriving
+before that patch — or a send that never captured a provider_id — orphaned the lifecycle update.
+Wrong-message correlation was already impossible (uq_comm_messages_provider_id, mig 079) and
+campaign state does not advance off delivery callbacks; the gap was purely the orphan window.
+Fix: echo the comm_messages id (which exists BEFORE dispatch) to the provider as a deterministic
+callback key — Twilio `StatusCallback ?mid=`, Resend `X-FSOS-Message-Id` header — and correlate on
+it FIRST (findMessageById), falling back to provider_id; when neither resolves, FAIL CLOSED without
+guessing but log it OBSERVABLE (console.error) and still append the event orphaned (never dropped).
+Invariants held: no wrong-message update; duplicate callback idempotent (see FSOS-032); pre-patch
+callback now recoverable; campaign state unaffected; ambiguous correlation fails closed + visible.
+Files: src/lib/comms/send.ts, dispatcher.ts, messaging.ts, events.ts (findMessageById),
+app/api/webhooks/twilio/status/route.ts, app/api/webhooks/resend/route.ts.
+Tests: tests/comms-inbound-e2e.test.mjs Scenario 10 (real Postgres) — correlate a provider_id-null
+row by mid + advance lifecycle; uncorrelated event still recorded.
+NOT VERIFIED — LIVE: real Twilio StatusCallback / Resend webhook echoing the key in production.
+
+## FSOS-032 — Event ledger idempotency — RESOLVED — CODE VERIFIED
+Root cause (proven): comm_message_events had no idempotency key; at-least-once provider redelivery
+appended duplicate rows (aggregate rates were safe — read off the reconciled parent columns — but
+the per-message timeline dup'd).
+Fix: migration 122 adds a plain unique index (message_id, event, provider_id) — NULL tuples are
+distinct so orphan/internal rows are unconstrained AND onConflict can infer it — and
+recordMessageEvent upserts with ignoreDuplicates so a redelivered identical callback is a no-op; an
+uncorrelated event is still appended (fail-open on the row, never dropped).
+Files: supabase/migrations/122_comm_message_events_dedupe.sql, src/lib/comms/events.ts.
+Tests: comms-inbound-e2e Scenario 10 — a duplicate correlated callback keeps the row count at 1.
+NOT VERIFIED — LIVE: migration 122 applied to production Supabase (prod migration deferred).
+
+## FSOS-041 — Reschedule overlap → opaque 500 — RESOLVED — CODE VERIFIED
+Root cause: manage.ts classified only 23505 (unique) → a range-overlap collision (23P01, GiST
+exclusion mig 091/119) fell through to a generic 500 instead of a 409/taken.
+Fix: reuse the shared isSlotCollision() (insert-errors.ts) which recognizes BOTH 23505 and 23P01;
+routes already map kind:'taken' → 409. Non-collision errors still surface as error.
+Files: src/lib/booking/manage.ts. Tests: tests/booking-insert-errors.test.mjs (classifier contract).
+
+## FSOS-042 — Reschedule self-collision — RESOLVED — CODE VERIFIED
+Root cause: computeSlotsForType re-validated the new slot while the appointment being moved was
+still status='scheduled' and the busy query had no id-exclusion → the moving row counted against
+its own capacity/buffer, blocking its replacement time (capped types / non-zero buffers).
+Fix: computeSlotsForType gains excludeAppointmentId; the busy query applies `.neq('id', …)`;
+rescheduleAppointment passes appt.id. Every OTHER appointment still counts; the unique/GiST commit
+guards are untouched.
+Files: src/lib/booking/slots.ts, manage.ts. Tests: tests/booking-reschedule-self-exclude.test.mjs
+(RLS, real Postgres) — RED→GREEN: self-exclusion frees the day; excluding a different id does not
+(capacity still enforced); own slot re-offered.
+
+## FSOS-050 — AI roster overstates live surface — RESOLVED — CODE VERIFIED (ledger corrected)
+Root cause: the roster is metadata for many keys; not all are live agents, and the Phase-1 census
+MIS-CLASSIFIED executive_intelligence and pipeline as non-executing — both ARE live
+(executive_intelligence via the FSA-assistant + household next-action runGateway routes; pipeline as
+the Pipeline Win-Back campaign's AI-author key). Genuinely non-executing: agency_growth,
+case_management, document_intelligence (roadmap); routing/taxonomy-only: agency_activation,
+referral_triage; detection-job labels: data_quality, commission_reconciliation; life_winback is
+wired but disabled-by-default.
+Fix: added a runtime SURFACE classification (roster.ts: AGENT_SURFACE + agentSurface) verified
+against actual callers, and rendered it as a column in the AI Operations agents page so the roster
+never overstates what executes. No agent behavior was invented.
+Files: src/lib/ai/roster.ts, app/(fsa)/app/ai/agents/page.tsx. Tests: tests/ai-roster-surface.test.mjs.
+
+## FSOS-060 — API mutations lacked MFA/step-up — RESOLVED — CODE VERIFIED (bounded)
+Root cause: the Next middleware matcher excludes /api/*, so API mutation routes were not subject to
+the MFA/step-up gate page navigation enforces (e.g. /api/super/users mints admin/super_admin).
+Fix: requireApiRole now applies the SAME mfaLevel(portal) decision as the page guard — aal1 refused
+on required/mandatory_stepup portals, stale step-up refused on /super — at the shared primitive, so
+every gated route inherits it. Authenticated callers already hold aal2 via the page guard, so no
+legitimate flow regresses.
+Files: src/lib/auth/api.ts. Tests: tests/api-auth-stepup.test.mjs (401/403 matrix incl. mfa_required
++ stepup_required + authorized happy paths).
+
+## FSOS-062 — Public unauthenticated service-role intake — RESOLVED — CODE VERIFIED
+Root cause: /api/agencies/upload and /api/agencies/referral are public, unauthenticated,
+service-role writes with NO rate limit, honeypot, or audit (the hardened public template is
+/api/public/refer). Public is BY DESIGN (the upload/referral partner forms), so the fix is abuse
+controls, not an auth wall.
+Fix: both routes now rate-limit per IP (429 on flood), honeypot the hidden `company` field (writes
+NOTHING when filled), and writeAudit every attempt. Existing size/ext and validation checks kept.
+Files: src/app/api/agencies/upload/route.ts, src/app/api/agencies/referral/route.ts.
+Tests: tests/agency-intake-hardening.test.mjs — RED→GREEN honeypot-no-write, 429 flood, audited
+happy path.
+
+## FSOS-061 / FSOS-063 / FSOS-064 / FSOS-065 — PARTIALLY RESOLVED — structural remainder
+These are systemic and cannot be fully corrected by a bounded change without an architecture
+migration; the highest-risk bounded protections (FSOS-060 step-up, FSOS-062 abuse controls) are
+implemented above. Remaining, documented precisely:
+- FSOS-061 (service-role everywhere; RLS not an API backstop): the API data path uses the
+  service-role client on ~all routes, so RLS is not a backstop. A true RLS-scoped API path is an
+  architecture migration across the route surface. NOT attempted here. Interim: authorization is
+  enforced explicitly by requireApiRole + requirePermission (+ now step-up); every public write is
+  gated by abuse controls. NOT VERIFIED — LIVE / STRUCTURAL.
+- FSOS-063 (26 requireInternalAuth shared-secret routes): retiring the legacy twins needs LIVE
+  confirmation no browser path invokes them. STRUCTURAL — DEFERRED (no safe bounded change).
+- FSOS-064 (no per-record ownership on [id] routes; shared-book IDOR risk): safe under the current
+  single-practice shared-book model; the unused assert* ownership helpers (session.ts) must be
+  wired BEFORE any multi-tenant expansion. STRUCTURAL — DEFERRED.
+- FSOS-065 (RLS suite proves only the `authenticated` role the API never uses): needs
+  service-role-path authz tests + CI setting CI_REQUIRE_INFRA=1. NOT VERIFIED — LIVE.
+
+## FSOS-070 / FSOS-071 — RESOLVED — CODE/CONFIG VERIFIED
+FSOS-070 workforce scheduling: done in Batch 1b (see above). FSOS-071: the 5 referral-INDEPENDENT
+detection jobs were scheduled in Batch 1b; the previously-deferred referral-sla is now ACTIVATED
+this batch — the native referral lifecycle is complete (v_referrals_awaiting_action exposes
+sla_breached; all intake paths set sla_due_at; "touched" = the first-touch PATCH; terminal states
+drop from the view; referralSla escalation is idempotent via an agent_actions dedupe + the
+hour-bucket runIdempotent, writes no client message and touches no enrollment). No business
+decision remained. Scheduled `0 * * * *` (docs cadence). Files: vercel.json. Tests:
+tests/cron-activation.test.mjs. Edge (non-blocking, noted): an archived_at-but-received referral
+still counts as breached (view filters deleted_at + status, not archived_at).
+
+## FSOS-072 — workshop-reminders unscheduled — RESOLVED — CONFIG VERIFIED
+Scheduled `*/15 * * * *` (dedicated static route; own Vercel-header/CRON_SECRET auth; every send via
+sendThroughGate; per-(reg,channel,kind) idempotency via workshop_message_log; is_security firewall).
+Files: vercel.json. Test: tests/cron-activation.test.mjs. NOT VERIFIED — LIVE: Vercel firing it.
+
+## FSOS-073 — backup-verify unscheduled — RESOLVED — CONFIG VERIFIED
+Scheduled `0 3 * * *` ([job] dispatcher; writes an audit + activities heartbeat only — no send, no
+enrollment). Files: vercel.json. Test: tests/cron-activation.test.mjs. NOT VERIFIED — LIVE: the
+external pg_dump the heartbeat attests to actually running.
+
+## FSOS-074 — Stale/destructive cron runbook — RESOLVED — CODE VERIFIED
+docs/vercel-crons-restore.md rewritten: vercel.json is the single source of truth (no hand-kept
+second list that could drop live jobs); the false "trimmed to 2 crons" claim and the partial
+12-cron restore list are removed; plan-quota/cadence and execution checks are recorded as LIVE.
+Files: docs/vercel-crons-restore.md.
+
+## Findings VERIFIED — NO REPAIR REQUIRED (controls confirmed sound at cc08177)
+- FSOS-010 (fail-closed template fetch): CONTROL CORRECT across canonical path + all 4 tick engines
+  (Phase-1 update). No code change; still correct at HEAD.
+- FSOS-011 (quiet-hours single-sourced): single source of truth retained; the one scoped timezone
+  caveat is a LIVE per-recipient-offset data concern, not a code defect.
+- FSOS-012 (transactional email bypasses marketing gate): BY DESIGN — transactional/servicing is
+  intentionally not business-suppressed; recorded, no repair.
+- FSOS-021 (enrollment dedup & duplicate-send prevention): SOUND (unique(campaign_id,member_id) +
+  per-touch idempotency). No repair.
+- FSOS-031 (webhook signature verification & STOP propagation): SOLID. No repair.
+- FSOS-040 (booking double-booking/timezone/cancellation/reminders): SOLID (the reschedule
+  self-block + opaque-500 corners are FSOS-042/041, fixed above). No repair to the core.
+- FSOS-051 (AI governance & escalation where the engine runs): SOLID; now less dormant after
+  FSOS-070/071 activation. No repair.
+- FSOS-076 (cron idempotency & concurrency): SOUND (runIdempotent hour-bucket + per-row guards).
+  Every job activated this phase was checked against it. No repair.
+
+## Findings — informational / structural, no bounded repair
+- FSOS-075 (legacy pg_cron nightly scoring on legacy customers/scores tables): a second, ungoverned
+  DB-side scheduler outside the Node JOBS registry. Removing/retiring it is coupled to the legacy
+  customers/scores model's lifecycle and requires a production DB change — STRUCTURAL / NOT VERIFIED
+  — LIVE. Left intact this batch (no safe bounded change; not reachable by the governed path).
+
+## Independent adversarial review — disposition
+An independent reviewer audited the full diff for authorization bypass, service-role misuse,
+campaign resurrection, provider bypass, unsafe callback reconciliation, cron races, referral dead
+ends, roster mis-representation, false-passing tests, and scope regression. Verdict: APPROVE — no
+Critical/High. Confirmed: the `?mid=` / X-FSOS-Message-Id key is inside the SIGNED payload
+(requestUrl includes u.search) so it is NOT spoofable/IDOR; the plain (not partial) dedupe index is
+the correct onConflict-inferable construction; excludeAppointmentId is only ever appt.id and cannot
+bypass capacity; FSOS-060 does not break optional-MFA portals or create a lockout loop; FSOS-062
+guards run before any write; no GHL reintroduction; tests fail on revert (real-Postgres + real-handler
+bundles). Low findings applied: (1) corrected the misleading "PARTIAL" comment in events.ts to
+"plain index — do not convert to partial"; (3) added tests/comms-twilio-requesturl.test.mjs locking
+the signature-covers-query property. Accepted/noted (no code change): (2) roster-surface test asserts
+by fiat (callers manually re-confirmed live); (4) backup-verify is a liveness heartbeat, not a
+restore test (honest in-code); (5) rate limiter is per-instance best-effort (documented); (6) added a
+PRE-DEPLOY check to the live runbook to confirm all fsa/admin/compliance/super users are aal2 before
+the FSOS-060 API step-up enforcement goes live.

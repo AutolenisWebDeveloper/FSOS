@@ -61,6 +61,13 @@ export async function computeSlotsForType(args: {
   rangeEnd: string
   bookerTimezone: string
   now: string
+  /**
+   * FSOS-042: when RE-validating a slot for an appointment being rescheduled, exclude that
+   * appointment from the busy/capacity set so it does not block its own replacement time (its
+   * current slot is freed by the same move). Every OTHER appointment still counts, and the DB
+   * unique/exclusion guards still reject a genuine collision at commit.
+   */
+  excludeAppointmentId?: string
 }): Promise<SlotsResult> {
   const loaded = await loadActiveType(args.slug)
   if (!loaded.ok) return loaded
@@ -74,13 +81,17 @@ export async function computeSlotsForType(args: {
     .eq('active', true)
   const blackoutsQ = db.from('availability_blackouts').select('starts_at, ends_at')
   // Busy = this host's still-scheduled appointments overlapping a padded window.
-  const busyQ = db
+  let busyQ = db
     .from('appointments')
     .select('starts_at, ends_at')
     .eq('status', 'scheduled')
     .not('starts_at', 'is', null)
     .gte('starts_at', isoMinusDays(args.rangeStart, 1))
     .lte('starts_at', isoPlusDays(args.rangeEnd, 1))
+  // FSOS-042: exclude the appointment being rescheduled from its own busy/capacity computation.
+  // Server-side filter (id need not be selected). Only THIS appointment is dropped; all others
+  // still count for collision + per-day capacity + buffers.
+  if (args.excludeAppointmentId) busyQ = busyQ.neq('id', args.excludeAppointmentId)
 
   // Google busy-sync (Slice 7): one-way, read-only. Loaded over the same padded window as
   // existing appointments. This NEVER throws and NEVER blocks availability — when Google is

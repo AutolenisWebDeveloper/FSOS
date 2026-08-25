@@ -10,6 +10,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from './session'
 import {
   allowedRoles,
+  mfaLevel,
   rolesIntersect,
   type Portal,
   type Role,
@@ -18,7 +19,17 @@ import {
 
 export type ApiAuth = { ok: true; session: SessionClaims } | { ok: false; response: NextResponse }
 
-/** 401 if unauthenticated, 403 if the role is wrong for the portal, else the session. */
+/**
+ * 401 if unauthenticated, 403 if the role is wrong for the portal, 403 if the portal's MFA /
+ * step-up requirement is unmet, else the session.
+ *
+ * FSOS-060: the Next middleware matcher excludes /api/*, so API mutations were NOT subject to
+ * the MFA / step-up gate that page navigation enforces. requireApiRole now applies the SAME
+ * mfaLevel(portal) decision the page guard uses (rbac.ts evaluateAccess): an `aal1` session is
+ * refused on `required`/`mandatory_stepup` portals, and a stale step-up is refused on the
+ * step-up portal (/super, which mints admin/super_admin users). This closes the API-layer
+ * step-up bypass at the shared primitive, so every gated route inherits it.
+ */
 export async function requireApiRole(portal: Portal): Promise<ApiAuth> {
   const session = await getServerSession()
   if (!session) {
@@ -26,6 +37,13 @@ export async function requireApiRole(portal: Portal): Promise<ApiAuth> {
   }
   if (!rolesIntersect(session.roles, allowedRoles(portal))) {
     return { ok: false, response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) }
+  }
+  const mfa = mfaLevel(portal)
+  if ((mfa === 'required' || mfa === 'mandatory_stepup') && !session.mfaSatisfied) {
+    return { ok: false, response: NextResponse.json({ error: 'MFA required', reason: 'mfa_required' }, { status: 403 }) }
+  }
+  if (mfa === 'mandatory_stepup' && !session.stepUpFresh) {
+    return { ok: false, response: NextResponse.json({ error: 'Step-up required', reason: 'stepup_required' }, { status: 403 }) }
   }
   return { ok: true, session }
 }

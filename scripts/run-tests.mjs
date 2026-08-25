@@ -27,6 +27,7 @@ const RLS = new Set([
   'comm-template-version-history.test.mjs',
   'district-nurture-rls.test.mjs',
   'suppression-rpc.test.mjs',
+  'booking-reschedule-self-exclude.test.mjs',
 ])
 
 const mode = process.argv[2] === 'rls' ? 'rls' : 'unit'

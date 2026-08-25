@@ -48,6 +48,14 @@ export interface DispatchRequest {
    * unaffected).
    */
   suppressionSubject?: SuppressionSubject
+  /**
+   * FSOS-030: the comm_messages row id, echoed to the provider as a deterministic callback
+   * correlation key (Twilio StatusCallback `?mid=`, Resend `X-FSOS-Message-Id`). It exists
+   * BEFORE the irreversible provider call, so a status callback correlates even if it arrives
+   * before the post-dispatch provider_id patch (or if provider_id is never captured). Absent →
+   * providers fall back to provider_id correlation (existing behavior).
+   */
+  correlationId?: string
 }
 
 export interface DispatchResult {
@@ -83,6 +91,7 @@ export interface DispatchDeps {
     subject?: string,
     bodyText?: string,
     messageClass?: EmailStream,
+    correlationId?: string,
   ): Promise<SendResult>
 }
 
@@ -140,9 +149,10 @@ export const defaultDeps: DispatchDeps = {
     const { resolveEffectiveSuppression } = await import('./suppression')
     return resolveEffectiveSuppression(subject)
   },
-  async send(channel, to, body, subject, bodyText, messageClass) {
+  async send(channel, to, body, subject, bodyText, messageClass, correlationId) {
     const { sendSms, sendEmail } = await import('../messaging')
-    if (channel === 'sms') return sendSms(to, body)
+    // FSOS-030: echo the message id so the provider returns it on every status callback.
+    if (channel === 'sms') return sendSms(to, body, correlationId)
     // Email deliverability: route replies to the monitored inbox and attach the RFC 8058
     // List-Unsubscribe one-click headers (Gmail/Yahoo bulk-sender requirement). The
     // per-recipient in-body unsubscribe link is already substituted via {{unsubscribe_url}}.
@@ -156,7 +166,11 @@ export const defaultDeps: DispatchDeps = {
     return sendEmail(to, subject ?? '', body, bodyText, {
       from: sender.from || undefined,
       replyTo: sender.replyTo || replyToAddress(),
-      headers: emailListUnsubscribeHeaders(to),
+      headers: {
+        ...emailListUnsubscribeHeaders(to),
+        // FSOS-030: deterministic callback correlation key echoed on Resend email.* events.
+        ...(correlationId ? { 'X-FSOS-Message-Id': correlationId } : {}),
+      },
     })
   },
 }
@@ -236,6 +250,7 @@ export async function dispatch(req: DispatchRequest, deps: DispatchDeps = defaul
     req.subject,
     req.channel === 'email' ? req.bodyText : undefined,
     req.messageClass,
+    req.correlationId,
   )
 
   await deps.writeAudit({

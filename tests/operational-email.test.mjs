@@ -16,7 +16,7 @@
 // Mocks Resend — never sends a live email. Run: node tests/operational-email.test.mjs
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -240,18 +240,13 @@ t('briefing/send routes through lib/messaging sendEmail (no direct new Resend)',
   assert.ok(/RESEND_API_KEY is not set|RESEND_FROM_EMAIL is not a verified/.test(src), 'config guard kept')
 })
 
-t('workshops/register confirmation goes through the shared sender and logs failures', () => {
-  const src = read('src/app/api/workshops/register/route.ts')
-  assert.ok(/from '@\/lib\/messaging'/.test(src), 'imports the shared sender')
-  assert.ok(/const sent = await sendEmail\(/.test(src), 'captures the send result')
-  assert.ok(/if \(!sent\.ok\)/.test(src), 'branches on failure')
-  assert.ok(/console\.(error|warn)\(/.test(src), 'logs on failure instead of dropping silently')
+t('legacy /api/workshops/register stays deleted (WS-002 — the gated public route is the only door)', () => {
+  assert.ok(!existsSync(join(root, 'src/app/api/workshops/register')), 'legacy unauthenticated register route must not return')
 })
 
 t('no operational send gates on the marketing consent table', () => {
   for (const rel of [
     'src/lib/forms.ts',
-    'src/app/api/workshops/register/route.ts',
     'src/app/api/briefing/send/route.ts',
   ]) {
     const src = read(rel)

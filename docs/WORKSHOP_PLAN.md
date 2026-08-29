@@ -534,3 +534,77 @@ thresholds, duplicate-idempotence, reconnect, replay gate, CRC, HMAC incl. fail-
 - **Batch 8 note:** WS-052 re-graded (structure PROVEN / trigger HYPOTHESIS) — fix
   unchanged; funnel `<a href>` → `next/link`; hub timestamp rendered server-side in venue
   TZ (WS-051 hydration refinement).
+
+---
+
+## AMENDMENT 4 (2026-08-29): GATE 1 APPROVAL — decisions of record
+
+**APPROVED — BATCHES 0,1,2,3,4,5.** Batches 7–8 HELD for a mid-point checkpoint after
+Batch 5 (re-scope against runtime evidence from the Batch 0 harness + Batch 1
+resurrection; several Batch-7 findings are HYPOTHESIS pending that evidence). Batch 6
+collapses (D-4). Report per batch: commit SHA, tests run with output, manifest state,
+findings closed. No merge. No deploy. No live send.
+
+**CONSENT MODEL — SETTLED (do not re-open).** Consent is captured ONE TIME, on the signup
+page. Registering IS consent for that workshop's reminders (no checkbox). ONE unchecked
+box on the same form covers post-event marketing only. Both write to the registration row
+at submit. Every downstream send reads the stored value and proceeds — no consent logic
+in the engine, cron, templates, admin surface, or any batch after 3. STOP/DNC suppression
+and quiet hours are NOT consent: they act on the phone number at DISPATCH time (standing
+invariant). A STOP reply is a person withdrawing, not the signup being re-litigated.
+— Consequence for WS-062: the workshop consent store remains grant-only BY DESIGN;
+withdrawal is suppression's job. Resolved as documented-by-design, no writer added.
+
+**PRE-BATCH-0:** WS-002 handled first as its own commit — reference sweep ran (no
+template, page, QR, ad, or dynamic caller references the legacy route; only its own test
+assertions and historical docs) → DELETE, plus the test blocks updated in the same commit.
+
+**BATCH 0 EXIT GATE — VISIBLE RED, PINNED (not env-flagged).** An EXPECTED-FAILURE
+MANIFEST: each guarantee test pinned with its WS-ID and the batch that turns it green.
+The runner asserts the EXACT set — an unpinned failure hard-fails, and a PINNED TEST THAT
+PASSES also fails (stale pin or vacuous assertion). The manifest IS the WS-077 assertion
+contract (merged). WS-019 is named Batch 0 scope.
+
+**REASSIGNMENTS.** Into Batch 1 (engine must not be send-capable until all five green;
+sends structurally disabled until they pass): WS-005 (quiet hours → RECIPIENT-local TZ
+via NPA/ZIP→IANA; never venue TZ, never a hardcoded default; unresolved → fail closed),
+WS-068 (kill switch fail closed), WS-032 (restore fail-closed personalization), WS-047
+(approval-gate integrity per D-5), WS-065 (quiet-hours deferral auditing).
+Into Batch 2: WS-010 (CTA removal per D-4). Into Batch 3: WS-020 (soft delete — keep the
+registration record), WS-036 (console waiver). Into Batch 4: WS-023 + WS-044 (per D-2),
+WS-040 (moves up from Batch 7 — prerequisite for attendance-triggered placement).
+Into Batch 5: WS-069 (duplicated STOP footer). DEFERRED, not dropped: WS-050, WS-063,
+WS-B13.
+
+**D-1 · (b), MODE-AWARE:** 7d email · 3d email+SMS · 1d email+SMS · day-of-AM SMS ·
+starting SMS. Drop T-2h. `reminder_starting` (WS-071) enabled for VIRTUAL/HYBRID only.
+**D-2 · (b), NATIVE STAGES:** opportunity created at ATTENDANCE, stage "Contacted",
+native `opportunities.stage` CHECK (mig 009). `pipelines.ts` stage taxonomy is dead code
+— do not revive; WS-044 resolves as documenting/removing it. Pre-event visibility is a
+REPORTING need (roster, Batch 8 — held).
+**D-3 · (a):** registration is consent for that workshop's reminders. Batch 3 ships
+exactly: (1) one FFS-approved disclosure line at the phone field ("We'll text you
+reminders about this workshop. Msg & data rates may apply. Reply STOP to opt out."),
+(2) one unchecked box governing POST-EVENT marketing only, (3) consent timestamp + form
+version stored on the registration row. Plus an enum allowlist naming the reminder kinds
+so nurture cannot route through the reminder class.
+**D-4 · REMOVE the waitlist CTAs** (Batch 2); capacity-reached state links the next
+session. Waitlist build deferred until a session demonstrably fills twice under correct
+per-session capacity.
+**D-5 · CONFIRMED + gate integrity:** all kinds ship as DRAFTS; activation is a data
+change requiring FFS principal pre-approval; no live send in any batch. WS-047 (Batch 1):
+the approval record captures approver, timestamp, and the exact rendered copy version
+(FINRA 2210 recordkeeping).
+**D-6 · schema NOW:** `senior_focused` flag + disclosure slot added unconditionally in
+Batch 3, default false; business answer separate (affects copy/activation lead times, not
+code).
+**D-7 · PER-SESSION, PER-MODE, PLUS GUESTS:** fix WS-060 first; enforce per-mode columns
+(in-person = room constraint; virtual nullable/unbounded); guest/plus-one count consumes
+IN-PERSON capacity only.
+**D-8 · KEEP THE INSTANT ACK** as the confirmation of record; DELETE the engine
+confirmation kind (resolves WS-014/WS-041). The .ics (WS-022) attaches to the instant
+ack. Batch 5 routes the instant ack through `sendThroughGate` — exactly one send path per
+channel is non-negotiable.
+**D-9 · (b) REBUILD, ADD-THEN-DELETE:** Commit A adds the rebuilt delivery test file
+(behavioral + DDL assertions ported, PASSING) alongside the old; Commit B deletes the
+regex tail and the old file — a porting regression must show as a diff.

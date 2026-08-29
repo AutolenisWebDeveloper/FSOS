@@ -112,6 +112,34 @@ console.log('\nsendWorkshopMessage — the gate invocation IS the guarantee (rem
     !!finalize && finalize.payload.status === 'sent' && finalize.payload.comm_message_id === 'cm-1')
 }
 
+console.log('\nWS-025 — placeholder physical address ⇒ COMMERCIAL email defers; receipts unaffected')
+{
+  const cfgPlaceholder = { ...CONFIG, sender_physical_address: '[PLACEHOLDER - set the FSA business mailing address]' }
+  globalThis.__gateCalls = []
+  const db = fakeDb({
+    workshop_message_log: [null, { id: 'log-p1' }, null],
+    workshop_message_templates: [TPL],
+  })
+  const status = await engine.sendWorkshopMessage(db, {
+    reg: { ...REG, marketing_opt_in: true }, workshop: WORKSHOP, session: session(venueZone()), kind: 'nurture_attended', channel: 'email', config: cfgPlaceholder,
+  })
+  ok('a MARKETING email with the placeholder address DEFERS (CAN-SPAM: no commercial mail without the real address)',
+    status === 'deferred' && globalThis.__gateCalls.length === 0)
+  const fin = db.calls.filter((c) => c.table === 'workshop_message_log' && c.method === 'update').pop()
+  ok('…with the sender_address_placeholder reason on the claim', !!fin && fin.payload.reason === 'sender_address_placeholder')
+
+  globalThis.__gateCalls = []
+  const db2 = fakeDb({
+    workshop_message_log: [null, { id: 'log-p2' }, null],
+    workshop_message_templates: [TPL],
+  })
+  const status2 = await engine.sendWorkshopMessage(db2, {
+    reg: REG, workshop: WORKSHOP, session: session(venueZone()), kind: 'reminder_1h', channel: 'email', config: cfgPlaceholder,
+  })
+  ok('a TRANSACTIONAL reminder receipt is NOT held hostage to the marketing config item (gate reached)',
+    status2 === 'sent' && globalThis.__gateCalls.length === 1)
+}
+
 console.log('\nWS-034 — no app URL ⇒ email DEFERS before the gate (broken unsubscribe never ships)')
 {
   const saved = process.env.NEXT_PUBLIC_APP_URL

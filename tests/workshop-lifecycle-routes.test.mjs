@@ -369,12 +369,155 @@ console.log('WS-069 — the dispatcher appends the STOP footer exactly once')
   const gate = { hasConsent: true, recipientLocalHour: 12, withinBusinessHours: true, usesApprovedTemplateOrPolicy: true }
   await dispatcherMod.dispatch({ channel: 'sms', to: '+12145550100', body: 'See you at 6 PM.', gate, actor: 'test' }, deps)
   await dispatcherMod.dispatch({ channel: 'sms', to: '+12145550100', body: 'Rebook anytime: link Reply STOP to opt out.', gate, actor: 'test' }, deps)
-  ok('a body WITHOUT opt-out language gets the footer appended (workshop templates unchanged)',
-    sent.length === 2 && /Reply STOP to opt out\.$/.test(sent[0].body) && sent[0].body.startsWith('See you at 6 PM.'),
+  ok('a body WITHOUT opt-out language gets the footer appended (WS-033: STOP + HELP)',
+    sent.length === 2 && /Reply STOP to opt out, HELP for help\.$/.test(sent[0].body) && sent[0].body.startsWith('See you at 6 PM.'),
     JSON.stringify(sent[0]))
   const stopCount = (sent[1].body.match(/reply\s+stop/gi) ?? []).length
   ok('a body ALREADY carrying "Reply STOP" (the booking templates) is NOT double-footered',
     stopCount === 1, JSON.stringify(sent[1]))
+}
+
+console.log('WS-030 — the cron trigger authorizes on Bearer CRON_SECRET ONLY')
+{
+  const cronRoute = await bundle('src/app/api/cron/workshop-reminders/route.ts')
+  const cronReq = (headers) => makeReq('/api/cron/workshop-reminders', { method: 'GET', headers })
+  const savedSecret = process.env.CRON_SECRET
+
+  delete process.env.CRON_SECRET
+  installDb(fakeDb({}))
+  const noSecret = await cronRoute.GET(cronReq({ 'x-vercel-cron': '1' }))
+  ok('with NO secret configured the route refuses everything — the header alone is never trusted (fail closed)',
+    noSecret.status === 401)
+
+  process.env.CRON_SECRET = 'test-cron-secret'
+  const headerOnly = await cronRoute.GET(cronReq({ 'x-vercel-cron': '1' }))
+  ok('a forged x-vercel-cron header WITHOUT the Bearer secret is refused (the live-send trigger is authenticated)',
+    headerOnly.status === 401)
+  const wrongBearer = await cronRoute.GET(cronReq({ authorization: 'Bearer wrong' }))
+  ok('a wrong Bearer is refused', wrongBearer.status === 401)
+  const right = await cronRoute.GET(cronReq({ authorization: 'Bearer test-cron-secret' }))
+  installDb(null)
+  ok('the correct Bearer authorizes and the passes run', right.status === 200)
+  if (savedSecret === undefined) delete process.env.CRON_SECRET
+  else process.env.CRON_SECRET = savedSecret
+}
+
+console.log('WS-047 residue — material edits after approval invalidate the standing approval')
+{
+  const db = installDb(fakeDb({
+    workshops: [
+      { workshop_id: W, status: 'published', compliance_approval_ref: 'appr-1', disclosure_config_id: 'd1' },
+      null, // syncPresenters' own workshops update (is_security recompute)
+      [{ workshop_id: W, status: 'pending_review' }],
+    ],
+    workshop_presenters: [null, null],
+    presenters: [[]],
+  }))
+  const res = await patchRoute.PATCH(req({ presenter_ids: ['aaaa9999-9999-9999-9999-999999999999'] }), props)
+  installDb(null)
+  const body = await res.json()
+  ok('a presenter edit on a PUBLISHED workshop succeeds but reports the invalidation',
+    res.status === 200 && body.approval_invalidated === true, JSON.stringify(body))
+  const wUpd = db.calls.filter((c) => c.table === 'workshops' && c.method === 'update').pop()
+  ok('…demoting it to pending_review with the approval pointer VOIDED (fresh approval required)',
+    !!wUpd && wUpd.payload.status === 'pending_review' && wUpd.payload.compliance_approval_ref === null,
+    JSON.stringify(wUpd?.payload))
+  ok('…and the invalidation is an auditable approval decision',
+    auditCalls().some((a) => a.action === 'approval.decided' && a.diff?.decision === 'invalidated' && a.diff?.reason === 'material_edit_after_approval'))
+}
+{
+  const db = installDb(fakeDb({
+    workshops: [{ workshop_id: W, status: 'compliance_approved', compliance_approval_ref: 'appr-1', disclosure_config_id: 'd1' }],
+  }))
+  const res = await patchRoute.PATCH(req({ status: 'published', presenter_ids: ['aaaa9999-9999-9999-9999-999999999999'] }), props)
+  installDb(null)
+  ok('publish + material change in ONE request is rejected up front (never publishable as approved content)',
+    res.status === 422 && !db.calls.some((c) => c.method !== 'select'))
+}
+
+console.log('WS-042 — the recording writer (replay finally has a data source)')
+{
+  const db = installDb(fakeDb({
+    workshops: [{ workshop_id: W, status: 'completed', compliance_approval_ref: 'a', disclosure_config_id: 'd' }, [{ workshop_id: W, status: 'completed' }]],
+    workshop_sessions: [{ ...TARGET, status: 'completed' }, null],
+  }))
+  const res = await patchRoute.PATCH(req({ recording_url: 'https://vimeo.example/w-101', recording_expires_at: '2026-10-01T00:00:00Z' }), props)
+  installDb(null)
+  const sUpd = db.calls.find((c) => c.table === 'workshop_sessions' && c.method === 'update')
+  ok('a recording-only change lands on the COMPLETED session (recordings exist after the event)',
+    res.status === 200 && !!sUpd && sUpd.payload.recording_url === 'https://vimeo.example/w-101' && !!sUpd.payload.recording_expires_at)
+  ok('…and is NEVER material: no generation bump, no change notice queued',
+    !('cadence_generation' in sUpd.payload) && !('change_kind' in sUpd.payload))
+}
+
+console.log('WS-043 — a consult request alerts the FSA')
+{
+  globalThis.__fsaNotifies = []
+  const notifyStub = join(stubDir, 'notify-stub.mjs')
+  writeFileSync(notifyStub, `
+export async function notifyFsa(opts) { globalThis.__fsaNotifies.push(opts); return { ok: true } }
+export async function sendVisitorAck() { return { ok: true } }
+export function renderHtml() { return '<p>x</p>' }
+export function renderText() { return 'x' }
+export function fsaNotificationInbox() { return 'fsa@test.example' }
+`)
+  const feedbackRoute = await bundle('src/app/api/public/workshops/feedback/route.ts', { aliases: { '@/lib/notifications/transactional': notifyStub } })
+  installDb(fakeDb({
+    workshop_registrations: [
+      { reg_id: 'reg-fb-1', name: 'Fiona', email: 'f@x.com', phone: null, session_id: S1, workshop_id: W, lead_converted_at: null },
+      null, // convertRegistrationToLead's update
+    ],
+    workshop_feedback: [null],
+    workshops: [{ is_security: false, slug: 'w', title: 'Retirement Readiness' }],
+  }))
+  const res = await feedbackRoute.POST(post({ join_token: 'tok-feedback-123', consult_requested: true, rating: 5 }, '198.51.100.40'))
+  installDb(null)
+  ok('the feedback submit succeeds', res.status === 200)
+  const alert = globalThis.__fsaNotifies[0]
+  ok('notifyFsa fired with the requester + workshop (live buying signal reaches the FSA)',
+    globalThis.__fsaNotifies.length === 1 && /consult/i.test(alert.subject) &&
+      alert.rows?.some((r) => r.value === 'f@x.com'), JSON.stringify(alert ?? null))
+}
+
+console.log('WS-033 — HELP keyword: carrier-required TwiML auto-response')
+{
+  const twilioMod = await bundle('src/lib/comms/twilio.ts')
+  ok('messageTwiml escapes XML and wraps a <Message>',
+    twilioMod.messageTwiml('a & b <c>') === '<?xml version="1.0" encoding="UTF-8"?><Response><Message>a &amp; b &lt;c&gt;</Message></Response>')
+
+  const inboundStub = join(stubDir, 'inbound-stub.mjs')
+  writeFileSync(inboundStub, `
+export async function processInbound(input) {
+  globalThis.__inboundCalls = globalThis.__inboundCalls ?? []
+  globalThis.__inboundCalls.push(input)
+  const first = (input.body || '').trim().toLowerCase().split(/\s+/)[0]
+  return first === 'help' ? { helpResponse: 'Test Brand: for help call 555. Reply STOP to opt out.' } : {}
+}
+`)
+  const savedToken = process.env.TWILIO_AUTH_TOKEN
+  delete process.env.TWILIO_AUTH_TOKEN // non-production fail-open verify (documented)
+  const webhook = await bundle('src/app/api/webhooks/twilio/inbound/route.ts', { aliases: { '@/lib/comms/inbound': inboundStub } })
+  const form = (body) => makeReq('/api/webhooks/twilio/inbound', {
+    method: 'POST',
+    body: new URLSearchParams({ From: '+12145550188', Body: body, MessageSid: 'SM1' }).toString(),
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+  })
+  const helpRes = await webhook.POST(form('HELP'))
+  const helpXml = await helpRes.text()
+  ok('a bare HELP gets the identification reply as the webhook TwiML (delivered regardless of opt-out state)',
+    helpRes.status === 200 && helpRes.headers.get('content-type') === 'text/xml' &&
+      /<Message>Test Brand: for help call 555\. Reply STOP to opt out\.<\/Message>/.test(helpXml), helpXml)
+  const otherRes = await webhook.POST(form('What time does it start?'))
+  const otherXml = await otherRes.text()
+  ok('a normal message still gets the empty TwiML ack (replies stay asynchronous through the gate)',
+    otherRes.status === 200 && /<Response><\/Response>/.test(otherXml))
+  if (savedToken !== undefined) process.env.TWILIO_AUTH_TOKEN = savedToken
+
+  const inboundMod = await bundle('src/lib/comms/inbound.ts')
+  const help = inboundMod.helpResponseBody()
+  ok('the REAL help response identifies the business, gives a live contact, rates note, and the STOP instruction',
+    /Markist Athelus/.test(help) && /361-717-4215/.test(help) && /mathelus@farmersagent\.com/.test(help) &&
+      /Msg&data rates may apply/.test(help) && /Reply STOP to opt out/.test(help), help)
 }
 
 console.log(`\n${passed} checks passed.`)

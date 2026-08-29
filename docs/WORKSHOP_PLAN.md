@@ -1037,3 +1037,107 @@ Playwright E2E (captured-transport, no real sends) over the owner's scenario lis
 waitlist; final full-gates run.
 
 Deferred-not-dropped (unchanged): WS-050, WS-063, WS-B13.
+
+---
+
+## BATCH 7 — EXECUTION RECORD (2026-08-29)
+
+Owner-approved shrunk scope + the three re-graded items + the two checkpoint rulings.
+
+**WS-030 FIRST (owner: highest-severity item left).** The cron route triggers a LIVE
+SEND ENGINE, and `x-vercel-cron` is client-supplied. Header-trust is GONE: authorization
+is the Bearer `CRON_SECRET`, full stop; with no secret configured the route refuses
+everything (fail closed). Platform stripping behavior stays NOT VERIFIED and is not
+relied on. (The catch-all `/api/cron/[job]` route keeps its own auth — out of this
+subsystem's scope, recorded here as adjacent.)
+
+**WS-063 — REFUTED, not built.** `workshop_sessions.ics_uid text unique` (mig 038:144);
+the live constraint `workshop_sessions_ics_uid_key` is verified on the applied chain and
+now PINNED in the RLS suite, so two sessions cannot share a calendar UID and .ics files
+cannot overwrite each other in an attendee's calendar. One line of verification, nothing
+larger. Closed as refuted.
+
+**WALK-IN CONSENT DEFAULT — reported, then made structural.** What Batch 3's walk-in
+path writes TODAY (server.ts addWalkIn): `marketing_opt_in: input.marketing_opt_in ===
+true` — FALSE unless the kiosk box is ticked — plus `consent_captured_at` and
+`consent_form_version` ('signup-v2-2026-08 · walk-in') stamped in the same insert, with
+evidence rows carrying the shown disclosure. So the default was already correct and the
+capture record was already written. The HOLE was that nothing ENFORCED it: any other
+path could set the flag true with no capture. Migration 132 adds
+`wreg_marketing_capture_chk` — `marketing_opt_in = false OR (consent_captured_at is not
+null AND consent_form_version is not null)` — making "no path sets it true without a
+capture record" a database fact. The claim RPC (public form) leaves the column at its
+FALSE default; the route stamps all three together after the claim. No tier added.
+(The constraint immediately caught two TEST FIXTURES seeding an opted-in row with no
+capture — they were corrected to model a real capture.)
+
+**RULING — D-2 stage.** 'prospect' retained. Added per the ruling: `opportunities.source`
+(mig 132, partial index) set to `'workshop_attendance'` on every attendance-time
+placement, so district reporting segments these from conversion and cross-sell
+opportunities in the same stage. **The `opportunities.stage` CHECK is the taxonomy of
+record (migration 009:250-252), enumerated:** `prospect` → `fact_find` →
+`quoted_proposed` → `application` → `underwriting_suitability` → `placed_issued` |
+`lost`. `pipelines.ts` stays dead (do-not-revive notice, Batch 4).
+
+**RULING — instant-ack gate handle: seeded approval REVERSED.** Migration 132 moves the
+handle to `approval_status='submitted'` with an explicit PROVENANCE body (pre-existing
+production receipt copy brought under the gate by D-8 — NOT principal-approved) and
+names it as the FIRST item in the FFS queue. No approver is recorded on any template.
+Until a firm principal approves it, gate step 4 blocks the registration receipt: a
+DEPLOY BLOCKER, carried on the go-live checklist (Batch 8) for exactly that reason.
+The 132 update is guarded on the provenance marker, so a later principal approval
+survives a chain re-run (proven).
+
+**Remaining scope, all shipped:**
+- **WS-025** — commercial email DEFERS (`sender_address_placeholder`, audited) while the
+  config holds the placeholder mailing address; transactional reminder-class receipts are
+  NOT held hostage to a marketing config item (both halves proven, unit + PG).
+- **WS-033** — `SMS_OPT_OUT_FOOTER` becomes 'Reply STOP to opt out, HELP for help.'; a
+  bare HELP/INFO keyword gets the carrier-required identification reply as the webhook's
+  own TwiML response (business identity + live contact + rates note + STOP) — a direct
+  answer to the inbound message, delivered regardless of opt-out state, and NOT a second
+  send path. Recorded in conversation history + audited. Carrier-level Advanced Opt-Out
+  stays a go-live checklist item, NOT VERIFIED here.
+- **WS-028** — the nurture pass CLAIMS `nurtured_at` (guarded null→set update) BEFORE any
+  side effect, so concurrent passes cannot double-seed the spine; the securities-routing
+  branch claims the same way.
+- **WS-031** — every per-tick selection is bounded and ordered (200 sessions/tick, 1000
+  registrations/session); ONE batched send-log read per session replaces the per-slot
+  lookups, consumed as a HINT (the atomic claim is untouched — a stale hint just loses
+  its race and skips).
+- **WS-039** — an ended session with no attendance capture now gets a durable
+  `no_show` row (`capture_method='derived'`, added to the CHECK in 132) so reports and the
+  no_show segment work without staff reconcile; shipped segmentation is unchanged
+  (proven: the same registrant still nurtures as registered_no_show with delta −2).
+- **WS-042** — the replay surface's data source finally has a writer: `recording_url` +
+  `recording_expires_at` via the workshops PATCH, targeting the most recent non-cancelled
+  session (recordings land AFTER the event), never material (no generation bump, no
+  change notice).
+- **WS-043** — a consult request fires the `notifyFsa` ops alert (best-effort; the spine
+  routing remains the durable record).
+- **WS-047 residue** — material edits under a standing approval now INVALIDATE it:
+  publish + material change in one request is rejected up front (zero writes), and a
+  presenter/material edit on an approved/published workshop demotes to `pending_review`
+  with the approval pointer voided, audited as `approval.decided / invalidated`. This
+  takes a published workshop off the air — changed materials are unapproved materials.
+- **WS-020 residue** — CLOSED as nothing-to-refuse: there is NO workshop hard-delete path
+  anywhere (no DELETE route, no delete button, no `.delete()` on workshops); the mig-129
+  `ON DELETE RESTRICT` remains the backstop.
+
+**Proofs:** migration 132 applied on a fresh chain (133 files) with 6 probe groups green
+— handle submitted+provenance and idempotent under re-run after a simulated principal
+approval; `source` column + index; `derived` accepted / bogus rejected; marketing-true
+without capture rejected, compliant shapes accepted, RPC default false; the WS-063
+constraint. `workshop-lifecycle.test.mjs` → **40 checks** (adds derived no-show + segment
+unchanged, ONE opportunity across two passes with `source='workshop_attendance'` and ONE
+referral, the three standing 132 guards, and the WS-025 email-defers/SMS-sends pair).
+`workshop-lifecycle-routes.test.mjs` → **59 checks** (adds WS-030 four ways, WS-047
+residue three ways, WS-042 recording write, WS-043 notify, WS-033 TwiML + the real
+`helpResponseBody`). `workshop-engine-invocation` → **43** (WS-025 both tiers).
+Harness: the `NextResponse` stub became a real Response subclass (the webhook route
+constructs one). Full gates: **196 unit files, 21 RLS files, type-check, lint, build** —
+all green. Manifest: EMPTY.
+
+Findings closed: WS-020 (residue), WS-025, WS-028, WS-030, WS-031, WS-033 (code side),
+WS-039, WS-042, WS-043, WS-047 (residue), WS-063 (refuted). Deferred-not-dropped:
+WS-050, WS-B13.

@@ -56,10 +56,12 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     if (!current) return NextResponse.json({ error: 'Workshop not found' }, { status: 404 })
 
     // Session-change fields are NOT workshops columns — split them off up front.
-    const { presenter_ids, hero_image_ref, session_id, starts_at, ends_at, timezone, venue_name, venue_address, ...rest } = v.data
-    const wantsSessionChange =
+    const { presenter_ids, hero_image_ref, session_id, starts_at, ends_at, timezone, venue_name, venue_address, recording_url, recording_expires_at, ...rest } = v.data
+    const wantsScheduleChange =
       starts_at !== undefined || ends_at !== undefined || timezone !== undefined ||
       venue_name !== undefined || venue_address !== undefined
+    const wantsRecordingChange = recording_url !== undefined || recording_expires_at !== undefined
+    const wantsSessionChange = wantsScheduleChange || wantsRecordingChange
 
     // ── VALIDATION FIRST (WS-076): every rejection below must leave zero writes. ──
 
@@ -84,6 +86,16 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     ) {
       return NextResponse.json(
         { error: `This workshop is ${current.status}. Reopen it to draft first — republishing requires fresh compliance approval.` },
+        { status: 422 },
+      )
+    }
+
+    // WS-047 residue: presenter/material edits change what the standing approval
+    // snapshot covered. Combining them with a publish in one request can never be
+    // approved content — reject up front (validation phase, zero writes).
+    if (rest.status === 'published' && (presenter_ids || hero_image_ref)) {
+      return NextResponse.json(
+        { error: 'Presenter or material changes require fresh compliance approval before publishing. Apply the changes first, then re-run review.' },
         { status: 422 },
       )
     }
@@ -130,7 +142,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
           return NextResponse.json({ error: 'Session not found on this workshop' }, { status: 422 })
         }
         targetSession = s as SessionTarget
-      } else {
+      } else if (wantsScheduleChange) {
         const { data: s, error: sErr } = await db
           .from('workshop_sessions')
           .select('id, workshop_id, starts_at, ends_at, timezone, venue_name, venue_address, status, cadence_generation')
@@ -142,19 +154,51 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
           .maybeSingle()
         if (sErr) return dbErrorResponse('workshops/[id]', sErr)
         targetSession = (s as SessionTarget | null) ?? null
+      } else {
+        // WS-042: a recording-only change targets the most RECENT non-cancelled
+        // session — recordings land AFTER the event, when nothing is 'upcoming'.
+        const { data: s, error: sErr } = await db
+          .from('workshop_sessions')
+          .select('id, workshop_id, starts_at, ends_at, timezone, venue_name, venue_address, status, cadence_generation')
+          .eq('workshop_id', params.id)
+          .neq('status', 'cancelled')
+          .order('starts_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (sErr) return dbErrorResponse('workshops/[id]', sErr)
+        targetSession = (s as SessionTarget | null) ?? null
       }
       if (!targetSession) {
-        return NextResponse.json({ error: 'No upcoming session to change. Pass session_id to target a specific session.' }, { status: 422 })
+        return NextResponse.json({ error: 'No session to change. Pass session_id to target a specific session.' }, { status: 422 })
       }
-      if (targetSession.status !== 'scheduled') {
+      // Schedule/venue changes require a still-scheduled session; a RECORDING-only
+      // change is legitimate on a live/completed one (that is when recordings exist).
+      if (wantsScheduleChange && targetSession.status !== 'scheduled') {
         return NextResponse.json({ error: `This session is ${targetSession.status} and can no longer be changed.` }, { status: 422 })
+      }
+      if (!wantsScheduleChange && targetSession.status === 'cancelled') {
+        return NextResponse.json({ error: 'A cancelled session cannot carry a recording.' }, { status: 422 })
       }
     }
 
     // ── WRITES (validation passed). Session first, then presenters, then the row. ──
 
     let sessionChange: { kind: string | null; generation: number } | null = null
-    if (targetSession) {
+    if (targetSession && !wantsScheduleChange) {
+      // WS-042: recording-only write — no schedule fields touched, never material.
+      const recUpdate: Record<string, unknown> = { updated_at: new Date().toISOString() }
+      if (recording_url !== undefined) recUpdate.recording_url = recording_url
+      if (recording_expires_at !== undefined) recUpdate.recording_expires_at = recording_expires_at
+      const { error: recErr } = await db.from('workshop_sessions').update(recUpdate).eq('id', targetSession.id)
+      if (recErr) return dbErrorResponse('workshops/[id]', recErr)
+      await writeAudit({
+        actor,
+        action: 'entity.updated',
+        entity: 'workshop_session',
+        entityId: targetSession.id,
+        diff: { recording_url: recording_url ?? undefined, recording_expires_at: recording_expires_at ?? undefined },
+      })
+    } else if (targetSession) {
       const nextStartsAt = starts_at ?? targetSession.starts_at
       const nextEndsAt = ends_at === undefined ? targetSession.ends_at : ends_at
       const nextTimezone = timezone ?? targetSession.timezone
@@ -178,6 +222,9 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
         venue_address: nextVenueAddress,
         updated_at: new Date().toISOString(),
       }
+      // WS-042: recording link + replay window — written when provided, never material.
+      if (recording_url !== undefined) sessionUpdate.recording_url = recording_url
+      if (recording_expires_at !== undefined) sessionUpdate.recording_expires_at = recording_expires_at
       const generation = Math.max(1, targetSession.cadence_generation ?? 1) + (changeKind ? 1 : 0)
       if (changeKind) {
         // Material change: bump the re-arm generation and record the pending notice for
@@ -218,6 +265,27 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     const update: Record<string, unknown> = { ...rest, updated_at: new Date().toISOString() }
     if (hero_image_ref) update.hero_image_ref = hero_image_ref
 
+    // WS-047 residue (FINRA 2210 posture): materials changed under a standing approval
+    // mean the approval snapshot no longer covers what would run. The workshop falls
+    // back to pending_review with the approval pointer VOIDED — republishing requires a
+    // fresh principal approval of the new bundle. This also takes a PUBLISHED workshop
+    // off the air (public loaders + registration are published-only): that is the
+    // point — changed materials are unapproved materials.
+    const materialEdit = Boolean(presenter_ids || hero_image_ref)
+    const approvalInvalidated =
+      materialEdit && (current.status === 'compliance_approved' || current.status === 'published')
+    if (approvalInvalidated) {
+      update.status = 'pending_review'
+      update.compliance_approval_ref = null
+      await writeAudit({
+        actor,
+        action: 'approval.decided',
+        entity: 'workshop',
+        entityId: params.id,
+        diff: { decision: 'invalidated', reason: 'material_edit_after_approval', previous_status: current.status },
+      })
+    }
+
     const { data, error } = await db
       .from('workshops')
       .update(update)
@@ -252,6 +320,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     return NextResponse.json({
       ok: true,
       status: data[0].status,
+      ...(approvalInvalidated ? { approval_invalidated: true, note: 'Materials changed after approval — the workshop moved to pending_review and needs fresh compliance approval.' } : {}),
       ...(sessionChange ? { session_change: sessionChange } : {}),
       // WS-070b: reopening voided the approval (DB trigger); republish needs a fresh
       // approval and Zoom re-provisioning (meetings were deleted at cancellation).

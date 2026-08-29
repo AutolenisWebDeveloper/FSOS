@@ -4,6 +4,7 @@ import { readJson, configErrorResponse } from '@/lib/http'
 import { rateLimit, clientIp } from '@/lib/http/rate-limit'
 import { WorkshopFeedbackSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
+import { notifyFsa } from '@/lib/notifications/transactional'
 import { convertRegistrationToLead } from '@/lib/workshops/server'
 
 export const dynamic = 'force-dynamic'
@@ -82,6 +83,25 @@ export async function POST(req: NextRequest) {
         'public',
         ['wshop-consult-requested', 'wshop-replay-feedback'],
       )
+      // WS-043: a consult request is a LIVE buying signal — the FSA hears about it now
+      // (internal ops alert, best-effort; the spine routing above is the durable record).
+      try {
+        await notifyFsa({
+          subject: `Consult requested — ${w?.title ?? 'workshop'}`,
+          heading: 'Workshop attendee requested a consult',
+          lede: `${reg.name ?? 'A registrant'} asked for a consultation from the ${w?.title ?? 'workshop'} feedback form.`,
+          rows: [
+            { label: 'Name', value: reg.name },
+            { label: 'Email', value: reg.email },
+            { label: 'Phone', value: reg.phone },
+            { label: 'Workshop', value: w?.title ?? null },
+            { label: 'Routing', value: outcome.ok ? outcome.routed : 'error' },
+          ],
+          replyTo: reg.email,
+        })
+      } catch (nErr) {
+        console.error('[workshop-feedback] consult notify (non-fatal):', nErr)
+      }
       if (outcome.ok) {
         // convertRegistrationToLead marks the native conversion (lead_converted_at) itself
         // for the non-securities path; securities routes to FFS. Nothing further to persist.

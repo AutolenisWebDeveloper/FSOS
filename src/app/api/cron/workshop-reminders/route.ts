@@ -19,8 +19,13 @@ import { runReminderPass, runChangePass, runNurturePass } from '@/lib/workshops/
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
+// WS-030 (owner-directed severity): this route triggers a LIVE SEND ENGINE, and the
+// `x-vercel-cron` header is client-supplied — whether the platform strips a forged one
+// at the edge is NOT VERIFIED and is not relied on. Authorization is the Bearer
+// CRON_SECRET, full stop (Vercel sends `Authorization: Bearer <CRON_SECRET>` on cron
+// invocations when the env var is provisioned — a go-live checklist item). No secret
+// configured → the route refuses everything (fail closed), never header-trust.
 function authorized(req: NextRequest): boolean {
-  if (req.headers.get('x-vercel-cron')) return true
   const secret = process.env.CRON_SECRET
   if (!secret) return false
   return (req.headers.get('authorization') || '') === `Bearer ${secret}`

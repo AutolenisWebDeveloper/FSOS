@@ -231,6 +231,8 @@ try {
   // ── 11. Batch 5 — the T+2/3d follow-up: once-ever, marketing-gated. ──
   console.log('D-1 pairing — nurture follow-up')
   const REGC = 'bbbb5555-6666-7777-8888-999999999999'
+  const REGD = 'bbbb6666-7777-8888-9999-aaaaaaaaaaaa'
+  const REGE = 'bbbb7777-8888-9999-aaaa-bbbbbbbbbbbb'
   const C = freshWorkshopDb({
     startsAtIso: '2026-08-03T17:00:00Z',
     endsAtIso: '2026-08-03T18:00:00Z', // anchor + 2d = Aug 5 18:00Z < frozen now ⇒ due
@@ -239,10 +241,25 @@ try {
     registeredIso: '2026-08-01T12:00:00Z',
     kinds: ['nurture_followup'],
     extraSql: `
-      update workshop_registrations set nurture_segment='attended', nurtured_at='2026-08-03T21:00:00Z', marketing_opt_in=true
+      -- WS-025: commercial email needs the real physical address (fixture E proves the
+      -- placeholder DEFERS; this fixture supplies the address so marketing mail flows).
+      insert into workshop_comms_config (id, sender_physical_address)
+        values ('global', '123 Main St Suite 5, McKinney TX 75070')
+        on conflict (id) do update set sender_physical_address = excluded.sender_physical_address;
+      update workshop_registrations
+        set nurture_segment='attended', nurtured_at='2026-08-03T21:00:00Z', marketing_opt_in=true,
+            consent_captured_at='2026-08-01T12:00:00Z', consent_form_version='signup-v2-2026-08'
         where reg_id='${IDS.reg}';
       insert into workshop_registrations (reg_id, workshop_id, session_id, name, email, phone, consent_channels, status, registered_at, nurture_segment, nurtured_at, marketing_opt_in)
-        values ('${REGC}', '${IDS.workshop}', '${IDS.session}', 'No Marketing Nia', 'nia@example.com', '+12145550177', '{email}', 'registered', '2026-08-01T12:00:00Z', 'attended', '2026-08-03T21:00:00Z', false);`,
+        values ('${REGC}', '${IDS.workshop}', '${IDS.session}', 'No Marketing Nia', 'nia@example.com', '+12145550177', '{email}', 'registered', '2026-08-01T12:00:00Z', 'attended', '2026-08-03T21:00:00Z', false);
+      -- REG-D: ended session, NO attendance capture at all (WS-039 derives the no-show).
+      insert into workshop_registrations (reg_id, workshop_id, session_id, name, email, phone, consent_channels, status, registered_at)
+        values ('${REGD}', '${IDS.workshop}', '${IDS.session}', 'Absent Abe', 'abe@example.com', null, '{email}', 'registered', '2026-08-01T12:00:00Z');
+      -- REG-E: ATTENDED + un-nurtured (the D-2 spine placement runs for real).
+      insert into workshop_registrations (reg_id, workshop_id, session_id, name, email, phone, consent_channels, status, registered_at, marketing_opt_in, consent_captured_at, consent_form_version)
+        values ('${REGE}', '${IDS.workshop}', '${IDS.session}', 'Present Pam', 'pam@example.com', '+12145550155', '{email,sms}', 'registered', '2026-08-01T12:00:00Z', true, '2026-08-01T12:00:00Z', 'signup-v2-2026-08');
+      insert into workshop_attendance (registration_id, session_id, status, capture_method, checked_in_at)
+        values ('${REGE}', '${IDS.session}', 'attended', 'checkin', '2026-08-03T17:05:00Z');`,
   })
   await engine.runNurturePass()
   await engine.runNurturePass()
@@ -252,6 +269,62 @@ try {
     JSON.stringify(fup))
   ok('the NON-opted registrant gets no follow-up at all (marketing basis is the ROW — no claim minted)',
     rowsFor(C.name, REGC, 'nurture_followup').length === 0)
+
+  // ── WS-039 + WS-028: the un-captured registrant across TWO passes ──
+  const derived = JSON.parse(q(C.name,
+    `select coalesce(jsonb_agg(to_jsonb(a)), '[]')::text from workshop_attendance a where registration_id='${REGD}'`))
+  ok('WS-039: the ended session DERIVED a durable no_show attendance row (capture_method derived), exactly one',
+    derived.length === 1 && derived[0].status === 'no_show' && derived[0].capture_method === 'derived',
+    JSON.stringify(derived))
+  ok('…while the shipped segmentation is unchanged: the un-captured registrant still nurtures as registered_no_show',
+    q(C.name, `select nurture_segment || '|' || coalesce(lead_score_delta::text,'-') from workshop_registrations where reg_id='${REGD}'`) === 'registered_no_show|-2')
+
+  // ── D-2 (checkpoint ruling) + WS-028: attendance-time spine placement, once. ──
+  const opp = JSON.parse(q(C.name,
+    `select coalesce(jsonb_agg(to_jsonb(o)), '[]')::text
+       from opportunities o
+       join workshop_registrations r on r.referral_id = o.referral_id
+      where r.reg_id = '${REGE}'`))
+  ok('the ATTENDED registrant placed exactly ONE native-stage opportunity across two passes (claim-first, WS-028)',
+    opp.length === 1 && opp[0].stage === 'prospect' && opp[0].engagement === 'direct',
+    JSON.stringify(opp))
+  ok("…carrying the queryable origin marker source='workshop_attendance' (district reporting segments it)",
+    opp[0].source === 'workshop_attendance')
+  ok('…and exactly one referral was seeded for them (guarded nurtured_at claim owns the side effects)',
+    q(C.name, `select count(*)::int::text from referrals where lower(referred_email)='pam@example.com'`) === '1')
+
+  // ── Migration 132 standing guards (pinned here so they stay proven) ──
+  ok('the instant-ack gate handle sits in the FFS queue (submitted + provenance), NOT principal-approved',
+    q(C.name, `select approval_status || '|' || (body like 'PROVENANCE:%')::text from comm_templates where id='eeee0000-0000-4000-8000-00000000ac01'`) === 'submitted|true')
+  ok('marketing_opt_in=true WITHOUT a capture record is impossible (wreg_marketing_capture_chk)',
+    /wreg_marketing_capture_chk/.test(mustRaise(C.name,
+      `insert into workshop_registrations (workshop_id, name, email, marketing_opt_in) values ('${IDS.workshop}','X','x-check@example.com', true)`) ?? ''))
+  ok('WS-063 REFUTED and pinned: workshop_sessions.ics_uid carries a UNIQUE constraint',
+    q(C.name, `select count(*)::int::text from pg_constraint where conrelid='workshop_sessions'::regclass and contype='u' and pg_get_constraintdef(oid) like '%ics_uid%'`) === '1')
+
+  // ── WS-025 (fixture E): placeholder address ⇒ commercial email DEFERS at PG level ──
+  console.log('WS-025 — placeholder sender address holds commercial email')
+  const E = freshWorkshopDb({
+    startsAtIso: '2026-08-03T17:00:00Z',
+    endsAtIso: '2026-08-03T18:00:00Z',
+    timezone: 'America/Chicago',
+    phone: '+12145550188',
+    registeredIso: '2026-08-01T12:00:00Z',
+    kinds: ['nurture_followup'],
+    extraSql: `
+      update workshop_registrations
+        set nurture_segment='attended', nurtured_at='2026-08-03T21:00:00Z', marketing_opt_in=true,
+            consent_captured_at='2026-08-01T12:00:00Z', consent_form_version='signup-v2-2026-08'
+        where reg_id='${IDS.reg}';`,
+  })
+  await engine.runNurturePass()
+  const eRows = rowsFor(E.name, IDS.reg, 'nurture_followup')
+  const eEmail = eRows.find((r) => r.channel === 'email')
+  const eSms = eRows.find((r) => r.channel === 'sms')
+  ok('with the config still on the PLACEHOLDER address, the marketing EMAIL defers (CAN-SPAM fail-closed)',
+    !!eEmail && eEmail.status === 'deferred' && eEmail.reason === 'sender_address_placeholder',
+    JSON.stringify(eRows))
+  ok('…while the SMS (no postal-address requirement) still goes out', !!eSms && eSms.status === 'sent')
 
   console.log(`\n${passed} checks passed.`)
 } catch (err) {

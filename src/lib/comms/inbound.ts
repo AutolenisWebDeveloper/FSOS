@@ -27,6 +27,12 @@ import { classifyReply } from './reply-classification'
 import { checkTurnLimit, type TurnLimitDecision } from './turn-limit'
 import { shouldPauseOnReply } from './conversation-mode'
 import { recordConsentChange } from './consent-events'
+import { BUSINESS, CONTACT } from '@/lib/site'
+
+/** The HELP keyword auto-response (WS-033): identity, contact, opt-out — nothing else. */
+export function helpResponseBody(): string {
+  return `${BUSINESS.brand}: for help call ${CONTACT.phoneDisplay} or email ${CONTACT.email}. Msg&data rates may apply. Reply STOP to opt out.`
+}
 import { detectStopAutomation } from './stop-intent'
 import { applySuppression } from './suppression-admin'
 
@@ -57,6 +63,11 @@ export interface InboundResult {
   campaignTerminated: boolean
   autoReplied: boolean
   escalated: boolean
+  /** WS-033 — set for a bare HELP/INFO keyword: the carrier-required auto-response
+   *  body. The webhook route returns it as the TwiML reply (a direct response to the
+   *  inbound message — delivered regardless of opt-out state, and not an outbound API
+   *  send). Recorded in the conversation history here. */
+  helpResponse?: string
 }
 
 /** Revoke consent on this channel + add to internal DNC (STOP handling). */
@@ -389,6 +400,29 @@ export async function processInbound(input: InboundInput): Promise<InboundResult
   if (result.intent === 'start') {
     await applyOptIn(conv, contact)
     result.optedIn = true
+    return result
+  }
+  if (result.intent === 'help' && input.channel === 'sms') {
+    // WS-033: the carrier-required HELP auto-response — business identity + a real
+    // contact + the opt-out instruction. Factual identification only (no marketing
+    // copy, so it is not a D-5 template); delivered as the webhook's TwiML reply.
+    result.helpResponse = helpResponseBody()
+    try {
+      await db.from('comm_messages').insert({
+        channel: 'sms',
+        direction: 'outbound',
+        recipient: contact,
+        sender: null,
+        body: result.helpResponse,
+        conversation_id: conv.id,
+        delivery_status: 'sent',
+        provider_id: null,
+      })
+      await recordMessageEvent({ messageId: null, conversationId: conv.id, event: 'replied', channel: 'sms', detail: 'help_auto_response' })
+      await writeAudit({ actor: 'system', action: 'comms.sent', entity: 'conversation', entityId: conv.id, diff: { kind: 'help_auto_response', channel: 'sms' } })
+    } catch {
+      /* history is best-effort; the TwiML reply itself is what the carrier requires */
+    }
     return result
   }
 

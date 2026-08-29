@@ -995,6 +995,11 @@ export const WorkshopPatchSchema = z
       .optional(),
     venue_name: z.string().trim().max(300).nullable().optional(),
     venue_address: z.string().trim().max(500).nullable().optional(),
+    // WS-042: the replay surface's data source finally has a writer — the recording
+    // link + finite replay window land on the SESSION via the same PATCH plumbing.
+    // NOT a material change (adding a replay link is not a reschedule).
+    recording_url: z.string().trim().url().max(1000).nullable().optional(),
+    recording_expires_at: z.string().datetime({ offset: true }).nullable().optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'No changes provided' })
   .refine((v) => !(v.session_id && !v.starts_at && v.ends_at === undefined && !v.timezone && v.venue_name === undefined && v.venue_address === undefined), {

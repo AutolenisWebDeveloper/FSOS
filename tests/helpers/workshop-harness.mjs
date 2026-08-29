@@ -56,13 +56,16 @@ const nextServerStub = join(out, 'next-server-stub.mjs')
 writeFileSync(
   nextServerStub,
   `export class NextRequest extends Request {}
-   export const NextResponse = {
-     json: (body, init) =>
-       new Response(JSON.stringify(body), {
+   export class NextResponse extends Response {
+     static json(body, init) {
+       return new Response(JSON.stringify(body), {
          status: init?.status ?? 200,
          headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
-       }),
-     redirect: (url, status) => new Response(null, { status: status ?? 307, headers: { location: String(url) } }),
+       })
+     }
+     static redirect(url, status) {
+       return new Response(null, { status: status ?? 307, headers: { location: String(url) } })
+     }
    }`,
 )
 

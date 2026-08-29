@@ -32,6 +32,7 @@ import { sendThroughGate } from '@/lib/comms/send'
 import { ianaZoneForPhone, utcOffsetHoursForZone } from '@/lib/comms/recipient-timezone'
 import {
   convertRegistrationToLead,
+  PLACEHOLDER_MARKER,
   type WorkshopLeadContext,
 } from './server'
 import {
@@ -70,6 +71,12 @@ const ACTOR = 'agent:workshop-reminders'
 // scope for the reminder pass. Post-event nurture looks back a bounded window.
 const REMINDER_LOOKAHEAD_MS = 8 * 24 * 60 * 60 * 1000
 const NURTURE_LOOKBACK_MS = 14 * 24 * 60 * 60 * 1000
+
+// WS-031: per-tick work is BOUNDED and deterministic (order starts_at / registered_at).
+// A tick that hits a bound simply leaves the remainder for the next tick — claims make
+// that safe; nothing is skipped forever.
+const SESSIONS_PER_TICK = 200
+const REGS_PER_SESSION = 1000
 
 export interface EngineConfig {
   enabled: boolean
@@ -273,6 +280,16 @@ export interface SendArgs {
   kind: MessageKind
   channel: Channel
   config: EngineConfig
+  /** WS-031: a per-session prefetch of existing send-log rows (key: logKey()). When
+   *  provided, the existing-row read uses it instead of a per-slot select. The CLAIM
+   *  itself stays atomic (insert / guarded update) — a stale hint just loses the race
+   *  and skips, exactly like the un-hinted path. */
+  prefetch?: Map<string, { id: string; status: string; attempts: number | null }>
+}
+
+/** The prefetch key for one send slot. */
+export function logKey(regId: string, channel: string, kind: string, generation: number): string {
+  return `${regId}|${channel}|${kind}|${generation}`
 }
 
 /**
@@ -290,19 +307,27 @@ export async function sendWorkshopMessage(db: Db, args: SendArgs): Promise<LogSt
   // to generation 0 forever so a reschedule can never replay them.
   const generation = claimGeneration(kind, session?.cadence_generation)
 
-  // Existing log → claim decision. WS-064: a read error must not claim blind — skip
-  // this tick (audited) rather than risking a duplicate insert race on unknown state.
-  const { data: existing, error: existingErr } = await db
-    .from('workshop_message_log')
-    .select('id, status, attempts')
-    .eq('registration_id', reg.reg_id)
-    .eq('channel', channel)
-    .eq('kind', kind)
-    .eq('cadence_generation', generation)
-    .maybeSingle()
-  if (existingErr) {
-    await writeAudit({ actor: ACTOR, action: 'comms.error', entity: 'workshop_registration', entityId: reg.reg_id, diff: { kind, channel, query: 'message_log', error: existingErr.message } })
-    return 'skipped'
+  // Existing log → claim decision. WS-031: with a per-session prefetch, this is a map
+  // lookup instead of a per-slot select. WS-064 (un-hinted path): a read error must not
+  // claim blind — skip this tick (audited) rather than risking a duplicate insert race
+  // on unknown state.
+  let existing: { id: string; status: string; attempts: number | null } | null
+  if (args.prefetch) {
+    existing = args.prefetch.get(logKey(reg.reg_id, channel, kind, generation)) ?? null
+  } else {
+    const { data, error: existingErr } = await db
+      .from('workshop_message_log')
+      .select('id, status, attempts')
+      .eq('registration_id', reg.reg_id)
+      .eq('channel', channel)
+      .eq('kind', kind)
+      .eq('cadence_generation', generation)
+      .maybeSingle()
+    if (existingErr) {
+      await writeAudit({ actor: ACTOR, action: 'comms.error', entity: 'workshop_registration', entityId: reg.reg_id, diff: { kind, channel, query: 'message_log', error: existingErr.message } })
+      return 'skipped'
+    }
+    existing = (data ?? null) as { id: string; status: string; attempts: number | null } | null
   }
   const decision = decideClaim((existing?.status as LogStatus | undefined) ?? null)
   if (decision === 'skip') return (existing?.status as LogStatus) ?? 'skipped'
@@ -395,6 +420,15 @@ export async function sendWorkshopMessage(db: Db, args: SendArgs): Promise<LogSt
     await writeAudit({ actor: ACTOR, action: 'comms.deferred', entity: 'workshop_registration', entityId: reg.reg_id, diff: { kind, channel, reason: 'app_url_unconfigured' } })
     return finalize('deferred', { reason: 'app_url_unconfigured' })
   }
+  // WS-025 (fail closed): COMMERCIAL email must carry the sender's real physical
+  // mailing address (CAN-SPAM). While the config still holds the placeholder, the
+  // marketing tier DEFERS — retryable the moment the FSA supplies the address (a
+  // go-live checklist item). Transactional reminder-class receipts are not commercial
+  // mail and are not held hostage to a marketing config item.
+  if (channel === 'email' && !isReminderClass(kind) && config.sender_physical_address.includes(PLACEHOLDER_MARKER)) {
+    await writeAudit({ actor: ACTOR, action: 'comms.deferred', entity: 'workshop_registration', entityId: reg.reg_id, diff: { kind, channel, reason: 'sender_address_placeholder' } })
+    return finalize('deferred', { reason: 'sender_address_placeholder' })
+  }
   const tokens: Record<string, string> = {
     name: (reg.name ?? '').trim().split(/\s+/)[0] || 'there',
     workshop_title: workshop.title ?? 'the workshop',
@@ -486,6 +520,8 @@ export async function runReminderPass(db: Db = getDb()): Promise<PassResult> {
     .gte('starts_at', windowStart)
     .lte('starts_at', windowEnd)
     .neq('status', 'cancelled')
+    .order('starts_at', { ascending: true })
+    .limit(SESSIONS_PER_TICK)
   if (sessionsErr) {
     await writeAudit({ actor: ACTOR, action: 'comms.error', entity: 'workshop_session', entityId: 'reminder_pass', diff: { query: 'sessions', error: sessionsErr.message } })
     return { ok: false, errors: [`sessions: ${sessionsErr.message}`], handled: 0, sends: 0, deferred: 0, blocked: 0 }
@@ -506,12 +542,36 @@ export async function runReminderPass(db: Db = getDb()): Promise<PassResult> {
       .select(REG_COLS)
       .eq('session_id', s.id)
       .not('status', 'in', '("cancelled","ffs_referred")')
+      .order('registered_at', { ascending: true })
+      .limit(REGS_PER_SESSION)
     if (regsErr) {
       await writeAudit({ actor: ACTOR, action: 'comms.error', entity: 'workshop_session', entityId: s.id, diff: { query: 'registrations', error: regsErr.message } })
       errors.push(`registrations(${s.id}): ${regsErr.message}`)
       continue
     }
     const regList = (regs ?? []) as RegRow[]
+
+    // WS-031: ONE batched send-log read per session replaces the per-slot lookups
+    // (kinds × channels × registrants selects). The atomic claim below is untouched —
+    // a stale prefetch entry just loses its race and skips.
+    let prefetch: Map<string, { id: string; status: string; attempts: number | null }> | undefined
+    if (regList.length > 0) {
+      const { data: logRows, error: logErr } = await db
+        .from('workshop_message_log')
+        .select('id, status, attempts, registration_id, channel, kind, cadence_generation')
+        .in('registration_id', regList.map((r) => r.reg_id))
+      if (logErr) {
+        // WS-064: an unreadable log must not claim blind for a whole session — skip it
+        // this tick (audited); the next tick retries.
+        await writeAudit({ actor: ACTOR, action: 'comms.error', entity: 'workshop_session', entityId: s.id, diff: { query: 'message_log_prefetch', error: logErr.message } })
+        errors.push(`message_log_prefetch(${s.id}): ${logErr.message}`)
+        continue
+      }
+      prefetch = new Map()
+      for (const row of (logRows ?? []) as { id: string; status: string; attempts: number | null; registration_id: string; channel: string; kind: string; cadence_generation: number | null }[]) {
+        prefetch.set(logKey(row.registration_id, row.channel, row.kind, row.cadence_generation ?? 0), { id: row.id, status: row.status, attempts: row.attempts })
+      }
+    }
 
     for (const reg of regList) {
       const startMs = Date.parse(s.starts_at)
@@ -530,7 +590,7 @@ export async function runReminderPass(db: Db = getDb()): Promise<PassResult> {
           // WS-027: one send's exception must not abort the whole pass (and must not
           // strand its claim in 'sending' — release it to a retryable deferral).
           try {
-            const status = await sendWorkshopMessage(db, { reg, workshop, session: s, kind, channel, config })
+            const status = await sendWorkshopMessage(db, { reg, workshop, session: s, kind, channel, config, prefetch })
             if (status === 'sent') sends++
             else if (status === 'deferred') deferred++
             else if (status === 'blocked') blocked++
@@ -635,6 +695,8 @@ export async function runChangePass(db: Db = getDb()): Promise<PassResult> {
     .select('id, workshop_id, starts_at, ends_at, timezone, delivery_mode, venue_name, venue_address, status, cadence_generation, change_kind, change_recorded_at, workshop:workshops!inner(workshop_id, title, slug, is_security, status)')
     .gte('starts_at', horizon)
     .or('status.eq.cancelled,change_kind.not.is.null')
+    .order('starts_at', { ascending: true })
+    .limit(SESSIONS_PER_TICK)
   if (sessionsErr) {
     await writeAudit({ actor: ACTOR, action: 'comms.error', entity: 'workshop_session', entityId: 'change_pass', diff: { query: 'sessions', error: sessionsErr.message } })
     return { ok: false, errors: [`sessions: ${sessionsErr.message}`], handled: 0, sends: 0, deferred: 0, blocked: 0 }
@@ -665,6 +727,8 @@ export async function runChangePass(db: Db = getDb()): Promise<PassResult> {
       .select(REG_COLS)
       .eq('session_id', s.id)
       .not('status', 'in', '("cancelled","ffs_referred")')
+      .order('registered_at', { ascending: true })
+      .limit(REGS_PER_SESSION)
     if (regsErr) {
       await writeAudit({ actor: ACTOR, action: 'comms.error', entity: 'workshop_session', entityId: s.id, diff: { query: 'change_registrations', error: regsErr.message } })
       errors.push(`change_registrations(${s.id}): ${regsErr.message}`)
@@ -720,6 +784,8 @@ export async function runNurturePass(db: Db = getDb()): Promise<PassResult> {
     .gte('starts_at', lookbackStart)
     .lte('starts_at', nurtureCutoff)
     .neq('status', 'cancelled')
+    .order('starts_at', { ascending: true })
+    .limit(SESSIONS_PER_TICK)
   if (sessionsErr) {
     await writeAudit({ actor: ACTOR, action: 'comms.error', entity: 'workshop_session', entityId: 'nurture_pass', diff: { query: 'sessions', error: sessionsErr.message } })
     return { ok: false, errors: [`sessions: ${sessionsErr.message}`], handled: 0, sends: 0, deferred: 0, blocked: 0 }
@@ -748,6 +814,8 @@ export async function runNurturePass(db: Db = getDb()): Promise<PassResult> {
       .eq('session_id', s.id)
       .is('nurtured_at', null)
       .not('status', 'in', '("cancelled","ffs_referred")')
+      .order('registered_at', { ascending: true })
+      .limit(REGS_PER_SESSION)
     if (regsErr) {
       await writeAudit({ actor: ACTOR, action: 'comms.error', entity: 'workshop_session', entityId: s.id, diff: { query: 'nurture_registrations', error: regsErr.message } })
       errors.push(`nurture_registrations(${s.id}): ${regsErr.message}`)
@@ -760,9 +828,19 @@ export async function runNurturePass(db: Db = getDb()): Promise<PassResult> {
       // WS-027: one registrant's failure must not abort the nurture pass.
       try {
         // ── is_security firewall: never enter automated segments; route to FFS. ──
+        // WS-028: the nurtured_at CLAIM comes FIRST (guarded update — only one
+        // concurrent pass wins the null→set transition), so the FFS routing side
+        // effects can never double-run.
         if (workshop.is_security === true) {
+          const { data: won } = await db
+            .from('workshop_registrations')
+            .update({ nurture_segment: 'ffs', nurtured_at: new Date().toISOString() })
+            .eq('reg_id', reg.reg_id)
+            .is('nurtured_at', null)
+            .select('reg_id')
+            .maybeSingle()
+          if (!won) continue // another pass owns this registrant
           await routeSecuritiesToFfs(db, reg, workshop)
-          await db.from('workshop_registrations').update({ nurture_segment: 'ffs', nurtured_at: new Date().toISOString() }).eq('reg_id', reg.reg_id)
           continue
         }
 
@@ -782,6 +860,30 @@ export async function runNurturePass(db: Db = getDb()): Promise<PassResult> {
         const segment = segmentFor((att?.status as 'registered' | 'attended' | 'no_show' | 'left_early' | undefined) ?? null)
         const kind = nurtureKindForSegment(segment)
 
+        // WS-028: CLAIM the segment routing BEFORE any side effect — a guarded update
+        // that only one concurrent pass can win (nurtured_at null → set). The per-send
+        // claims below still make each MESSAGE once-only; this claim makes the spine
+        // seeding (referral/opportunity/score) once-only too.
+        const { data: won } = await db
+          .from('workshop_registrations')
+          .update({ nurture_segment: segment, nurtured_at: new Date().toISOString() })
+          .eq('reg_id', reg.reg_id)
+          .is('nurtured_at', null)
+          .select('reg_id')
+          .maybeSingle()
+        if (!won) continue // lost the race to a concurrent pass — it owns the side effects
+
+        // WS-039: derive the DURABLE no-show attendance row for an ended session with
+        // no capture at all — reporting truth without staff reconcile. Written AFTER
+        // the claim (deterministic: the segment above was computed from the original
+        // state, so the shipped registered_no_show recapture behavior is unchanged).
+        if (!att) {
+          await db.from('workshop_attendance').upsert(
+            { registration_id: reg.reg_id, session_id: s.id, status: 'no_show', capture_method: 'derived', checked_in_at: null },
+            { onConflict: 'registration_id,session_id' },
+          )
+        }
+
         // 1) Segment nurture message (gated per consented channel).
         for (const channel of channelsForNurture(segment, reg)) {
           const status = await sendWorkshopMessage(db, { reg, workshop, session: s, kind, channel, config })
@@ -794,10 +896,10 @@ export async function runNurturePass(db: Db = getDb()): Promise<PassResult> {
         const delta = scoreDeltaForSegment(segment, config.scores)
         await routeSegmentToSpine(db, reg, workshop, segment, delta)
 
-        // 3) Mark nurtured (idempotency at the segment level).
+        // 3) Record the score delta (the claim above already stamped segment + time).
         await db
           .from('workshop_registrations')
-          .update({ nurture_segment: segment, nurtured_at: new Date().toISOString(), lead_score_delta: delta })
+          .update({ lead_score_delta: delta })
           .eq('reg_id', reg.reg_id)
         await writeAudit({ actor: ACTOR, action: 'entity.updated', entity: 'workshop_registration', entityId: reg.reg_id, diff: { nurture_segment: segment, lead_score_delta: delta } })
       } catch (err) {
@@ -820,6 +922,8 @@ export async function runNurturePass(db: Db = getDb()): Promise<PassResult> {
         .eq('session_id', s.id)
         .not('nurtured_at', 'is', null)
         .not('status', 'in', '("cancelled","ffs_referred")')
+        .order('registered_at', { ascending: true })
+        .limit(REGS_PER_SESSION)
       if (fupErr) {
         await writeAudit({ actor: ACTOR, action: 'comms.error', entity: 'workshop_session', entityId: s.id, diff: { query: 'followup_registrations', error: fupErr.message } })
         errors.push(`followup_registrations(${s.id}): ${fupErr.message}`)
@@ -971,6 +1075,10 @@ async function routeSegmentToSpine(db: Db, reg: RegRow, workshop: WorkshopRow, s
           engagement: 'direct',
           stage,
           is_security: workshop.is_security === true,
+          // D-2 (checkpoint ruling): the queryable origin marker — district reporting
+          // segments workshop-attendance placements from conversion/cross-sell
+          // opportunities sitting in the same native stage.
+          source: 'workshop_attendance',
           stage_history: [{ stage, at: new Date().toISOString(), actor: ACTOR, source: 'workshop_attendance', segment }],
           owner_scope: null,
         })

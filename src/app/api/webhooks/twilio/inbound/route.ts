@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyTwilioSignature, requestUrl, emptyTwiml } from '@/lib/comms/twilio'
+import { verifyTwilioSignature, requestUrl, emptyTwiml, messageTwiml } from '@/lib/comms/twilio'
 import { processInbound } from '@/lib/comms/inbound'
 
 export const dynamic = 'force-dynamic'
@@ -33,12 +33,18 @@ export async function POST(req: NextRequest) {
     return new NextResponse(emptyTwiml(), { status: 200, headers: { 'Content-Type': 'text/xml' } })
   }
 
+  let helpResponse: string | undefined
   try {
-    await processInbound({ channel: 'sms', from, body, provider: 'twilio', providerId })
+    const result = await processInbound({ channel: 'sms', from, body, provider: 'twilio', providerId })
+    helpResponse = result.helpResponse
   } catch (err) {
     console.error('[twilio:inbound] handler error:', err)
   }
 
-  // Always 200 with empty TwiML; the (optional) reply goes out through the gate.
-  return new NextResponse(emptyTwiml(), { status: 200, headers: { 'Content-Type': 'text/xml' } })
+  // WS-033: a bare HELP/INFO keyword gets the carrier-required identification reply as
+  // the webhook's own TwiML response — a direct answer to the inbound message (delivered
+  // regardless of opt-out state), never an outbound API send. Everything else stays an
+  // empty TwiML ack; any conversational reply goes out asynchronously through the gate.
+  const twiml = helpResponse ? messageTwiml(helpResponse) : emptyTwiml()
+  return new NextResponse(twiml, { status: 200, headers: { 'Content-Type': 'text/xml' } })
 }

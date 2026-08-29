@@ -32,6 +32,24 @@ export type NurtureKind =
 export type MessageKind = ReminderKind | NurtureKind
 export type Channel = 'sms' | 'email'
 
+// ── The reminder-class allowlist (SETTLED consent model, D-3) ──────────────────
+// Registering IS consent for these kinds — and ONLY these. Everything else (all
+// nurture/marketing) requires the registration row's marketing_opt_in. The closed enum
+// is what keeps a marketing kind from ever routing through the registration basis
+// (the POLICY_DEADLINE-leak class, kept closed).
+export const REMINDER_CLASS: ReadonlySet<string> = new Set([
+  'confirmation',
+  'reminder_7d',
+  'reminder_3d',
+  'reminder_1d',
+  'reminder_day_of',
+  'reminder_1h',
+  'reminder_starting',
+])
+export function isReminderClass(kind: string): boolean {
+  return REMINDER_CLASS.has(kind)
+}
+
 // Quiet-hours floor — mirrors src/lib/compliance/guardrail.ts withinQuietHours (9–20
 // recipient-local). Duplicated as a constant ONLY so this module stays import-free; the
 // dispatcher gate is still the authority that blocks an out-of-hours send at dispatch.

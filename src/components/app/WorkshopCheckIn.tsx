@@ -225,8 +225,7 @@ function WalkInForm({
   const [name, setName] = React.useState('')
   const [email, setEmail] = React.useState('')
   const [phone, setPhone] = React.useState('')
-  const [consentEmail, setConsentEmail] = React.useState(false)
-  const [consentSms, setConsentSms] = React.useState(false)
+  const [marketingOptIn, setMarketingOptIn] = React.useState(false)
   const [busy, setBusy] = React.useState(false)
 
   async function submit(e: React.FormEvent) {
@@ -242,8 +241,7 @@ function WalkInForm({
         email: email.trim() || undefined,
         phone: phone.trim() || undefined,
         chosen_delivery: deliveryMode === 'virtual' ? 'virtual' : 'in_person',
-        consent_email: consentEmail,
-        consent_sms: consentSms,
+        marketing_opt_in: marketingOptIn,
       },
     })
     setBusy(false)
@@ -265,8 +263,7 @@ function WalkInForm({
     setName('')
     setEmail('')
     setPhone('')
-    setConsentEmail(false)
-    setConsentSms(false)
+    setMarketingOptIn(false)
   }
 
   return (
@@ -290,16 +287,12 @@ function WalkInForm({
               <Input value={phone} onChange={(e) => setPhone(e.target.value)} className="h-11" aria-label="Walk-in phone" />
             </label>
           </div>
-          <div className="flex flex-wrap gap-4 text-sm">
-            <label className="flex items-center gap-2">
-              <input type="checkbox" checked={consentEmail} onChange={(e) => setConsentEmail(e.target.checked)} className="h-4 w-4" />
-              Email consent
-            </label>
-            <label className="flex items-center gap-2">
-              <input type="checkbox" checked={consentSms} onChange={(e) => setConsentSms(e.target.checked)} className="h-4 w-4" />
-              SMS consent (phone required)
-            </label>
-          </div>
+          {/* SETTLED model: signing in IS this workshop's comms basis; the ONE box is
+              post-event marketing only. */}
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={marketingOptIn} onChange={(e) => setMarketingOptIn(e.target.checked)} className="h-4 w-4" />
+            Future workshops &amp; resources (optional)
+          </label>
           <div className="flex justify-end">
             <Button type="submit" disabled={busy} className="h-11">
               {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <UserPlus className="h-4 w-4" aria-hidden />} Add &amp; check in

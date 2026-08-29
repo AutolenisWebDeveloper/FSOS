@@ -8,6 +8,12 @@ import { writeAudit } from '@/lib/audit/log'
 import { provisionZoomForRegistration } from '@/lib/workshops/server'
 import { notifyFsa, sendVisitorAck } from '@/lib/notifications/transactional'
 import { BUSINESS } from '@/lib/site'
+import {
+  SIGNUP_FORM_VERSION,
+  SMS_REMINDER_DISCLOSURE,
+  MARKETING_OPT_IN_LABEL,
+  EMAIL_REMINDER_BASIS,
+} from '@/lib/workshops/consent-copy'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -97,9 +103,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const channels = [v.data.consent_email ? 'email' : null, v.data.consent_sms ? 'sms' : null].filter(
-      Boolean,
-    ) as ('email' | 'sms')[]
+    // SETTLED model: registering IS reminder consent — the reachable channels are simply
+    // the contact details provided. consent_channels stays as the capture-time staging
+    // record; the MARKETING fact is the single opt-in box, stored on the row below.
+    const channels = ['email', ...(v.data.phone ? ['sms'] : [])] as ('email' | 'sms')[]
     const joinToken = randomUUID()
 
     // Atomic seat claim (migration 128): session-locked per-mode capacity count + insert
@@ -145,20 +152,43 @@ export async function POST(req: NextRequest) {
     }
     const reg = { reg_id: outcome.reg_id as string }
 
-    // Durable TCPA/A2P consent evidence — one row per consented channel.
-    if (channels.length > 0) {
-      await db.from('workshop_consent_events').insert(
-        channels.map((channel) => ({
-          registration_id: reg.reg_id,
-          channel,
-          action: 'granted',
-          disclosure_text: disclosureText,
-          disclosure_version: disclosureVersion,
-          ip_address: ip,
-          user_agent: userAgent,
-        })),
-      )
-    }
+    // D-3.3: the consent facts live ON THE REGISTRATION ROW — the marketing opt-in, the
+    // capture timestamp, and the exact form version the registrant was shown.
+    await db
+      .from('workshop_registrations')
+      .update({
+        marketing_opt_in: v.data.marketing_opt_in === true,
+        consent_captured_at: new Date().toISOString(),
+        consent_form_version: SIGNUP_FORM_VERSION,
+      })
+      .eq('reg_id', reg.reg_id)
+
+    // Capture-time evidence trail (unchanged store): the reminder basis for each reachable
+    // channel — with the DISCLOSURE ACTUALLY SHOWN at the field — plus a marketing row per
+    // channel when the one box was ticked.
+    const evidence = [
+      ...channels.map((channel) => ({
+        registration_id: reg.reg_id,
+        channel,
+        action: 'granted',
+        disclosure_text: channel === 'sms' ? SMS_REMINDER_DISCLOSURE : `${disclosureText} ${EMAIL_REMINDER_BASIS}`,
+        disclosure_version: `${SIGNUP_FORM_VERSION} · ${disclosureVersion}`,
+        ip_address: ip,
+        user_agent: userAgent,
+      })),
+      ...(v.data.marketing_opt_in === true
+        ? channels.map((channel) => ({
+            registration_id: reg.reg_id,
+            channel,
+            action: 'granted',
+            disclosure_text: MARKETING_OPT_IN_LABEL,
+            disclosure_version: `${SIGNUP_FORM_VERSION} · marketing`,
+            ip_address: ip,
+            user_agent: userAgent,
+          }))
+        : []),
+    ]
+    await db.from('workshop_consent_events').insert(evidence)
 
     await writeAudit({
       actor: 'public',
@@ -167,13 +197,13 @@ export async function POST(req: NextRequest) {
       entityId: reg.reg_id,
       diff: { workshop_id: v.data.workshop_id, source: leadSource },
     })
-    if (channels.length > 0) {
+    {
       await writeAudit({
         actor: 'public',
         action: 'consent.captured',
         entity: 'workshop_registration',
         entityId: reg.reg_id,
-        diff: { source: 'workshop', channels, disclosure_version: disclosureVersion },
+        diff: { source: 'workshop', channels, marketing_opt_in: v.data.marketing_opt_in === true, form_version: SIGNUP_FORM_VERSION },
       })
     }
 

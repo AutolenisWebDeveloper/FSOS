@@ -1002,9 +1002,10 @@ export const WorkshopApproveSchema = z.object({
 })
 export type WorkshopApprove = z.infer<typeof WorkshopApproveSchema>
 
-// Public workshop registration. Consent captured at registration (§2.5). No securities
-// data. Honeypot handled before Zod in the route. Phone required only when SMS consent
-// is given (TCPA — registration itself is never conditioned on consent).
+// Public workshop registration — SETTLED consent model (Gate 1): registering IS consent
+// for this workshop's reminders (no checkbox; the phone field carries the FFS-approved
+// reminder disclosure). ONE unchecked box covers POST-EVENT MARKETING only. No
+// securities data. Honeypot handled before Zod in the route.
 export const WorkshopRegisterSchema = z
   .object({
     workshop_id: uuid,
@@ -1015,17 +1016,8 @@ export const WorkshopRegisterSchema = z
     chosen_delivery: z.enum(['in_person', 'virtual']).optional(),
     // D-7: plus-ones consume IN-PERSON capacity only (the claim function enforces).
     guest_count: z.number().int().min(0).max(10).optional().default(0),
-    consent_email: z.boolean().optional().default(false),
-    consent_sms: z.boolean().optional().default(false),
-  })
-  .superRefine((v, ctx) => {
-    if (v.consent_sms && !v.phone) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['phone'],
-        message: 'A phone number is required to receive SMS reminders.',
-      })
-    }
+    // The ONE marketing fact (post-event follow-up + nurture). Never reminders.
+    marketing_opt_in: z.boolean().optional().default(false),
   })
 export type WorkshopRegister = z.infer<typeof WorkshopRegisterSchema>
 
@@ -1046,8 +1038,9 @@ export type RegistrationPatch = z.infer<typeof RegistrationPatchSchema>
 export const ATTENDANCE_STATUS = ['registered', 'attended', 'no_show', 'left_early'] as const
 
 // Kiosk check-in / walk-in add. Exactly one action: check in a known registrant by their
-// unique join_token, OR add a walk-in (creates a registration + attendance row). Consent
-// for a walk-in is captured the same way as public registration (optional, independent).
+// unique join_token, OR add a walk-in (creates a registration + attendance row). SETTLED
+// consent model: the walk-in form IS that person's one-time signup surface — signing in
+// covers this workshop's comms; ONE optional box covers post-event marketing.
 export const WorkshopCheckInSchema = z
   .object({
     join_token: z.string().trim().min(1).max(200).optional(),
@@ -1057,14 +1050,8 @@ export const WorkshopCheckInSchema = z
         email: z.string().trim().email('Enter a valid email').max(200).optional().or(z.literal('')),
         phone: optionalPhone,
         chosen_delivery: z.enum(['in_person', 'virtual']).optional(),
-        consent_email: z.boolean().optional().default(false),
-        consent_sms: z.boolean().optional().default(false),
+        marketing_opt_in: z.boolean().optional().default(false),
         session_id: uuid.optional(),
-      })
-      .superRefine((v, ctx) => {
-        if (v.consent_sms && !v.phone) {
-          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['phone'], message: 'A phone number is required for SMS consent.' })
-        }
       })
       .optional(),
   })

@@ -15,7 +15,7 @@ const route = await bundle('src/app/api/public/workshops/register/route.ts')
 const W = 'dddd1111-1111-1111-1111-111111111111'
 const S = 'dddd2222-2222-2222-2222-222222222222'
 const PUBLISHED = { workshop_id: W, title: 'T', status: 'published', max_attendees: 50, disclosure_config_id: null }
-const GOOD_BODY = { workshop_id: W, session_id: S, name: 'A', email: 'a@x.com', consent_email: false, consent_sms: false }
+const GOOD_BODY = { workshop_id: W, session_id: S, name: 'A', email: 'a@x.com', marketing_opt_in: false }
 const req = (body, ip) => makeReq('/api/public/workshops/register', { body, headers: { 'x-forwarded-for': ip } })
 
 // A scripted db for one full happy-path request: workshop → rpc claim → session detail.
@@ -73,9 +73,15 @@ console.log('Claim inputs (D-7 guest passthrough + normalization by the function
 {
   const db = happyDb({ ok: true, reg_id: 'r-1' })
   installDb(db)
-  const res = await route.POST(req({ ...GOOD_BODY, guest_count: 3, chosen_delivery: 'in_person' }, '198.51.100.14'))
+  const res = await route.POST(req({ ...GOOD_BODY, guest_count: 3, chosen_delivery: 'in_person', phone: '+12145550188', marketing_opt_in: true }, '198.51.100.14'))
   installDb(null)
   ok('a successful claim returns ok + join_token', res.status === 200 && !!(await res.json()).join_token)
+  const rowUpdate = db.calls.find((c) => c.table === 'workshop_registrations' && c.method === 'update')
+  ok('the consent FACTS are stamped on the registration row (opt-in + captured_at + form version)',
+    !!rowUpdate && rowUpdate.payload.marketing_opt_in === true && !!rowUpdate.payload.consent_captured_at && typeof rowUpdate.payload.consent_form_version === 'string')
+  const evidence = db.calls.find((c) => c.table === 'workshop_consent_events' && c.method === 'insert')
+  ok('capture-time evidence rows are written (reminder basis + the marketing grant)',
+    !!evidence && Array.isArray(evidence.payload) && evidence.payload.length === 4)
   const call = db.rpcCalls?.[0]
   ok('the route claims through workshop_claim_registration', call?.fn === 'workshop_claim_registration')
   ok('guest_count reaches the claim (in-person plus-ones consume seats)', call?.args?.p_guest_count === 3)

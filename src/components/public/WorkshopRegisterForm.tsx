@@ -4,6 +4,7 @@ import * as React from 'react'
 import Link from 'next/link'
 import { CheckCircle2, CalendarDays, MapPin, Video } from 'lucide-react'
 import { postJson, firstFieldError } from '@/lib/client/api'
+import { SMS_REMINDER_DISCLOSURE, MARKETING_OPT_IN_LABEL } from '@/lib/workshops/consent-copy'
 import { Field } from '@/components/forms/Field'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -35,8 +36,7 @@ export function WorkshopRegisterForm({ workshop }: { workshop: PublicWorkshop })
   const [name, setName] = React.useState('')
   const [email, setEmail] = React.useState('')
   const [phone, setPhone] = React.useState('')
-  const [consentEmail, setConsentEmail] = React.useState(false)
-  const [consentSms, setConsentSms] = React.useState(false)
+  const [marketingOptIn, setMarketingOptIn] = React.useState(false)
   const [delivery, setDelivery] = React.useState<'in_person' | 'virtual'>(
     workshop.delivery_mode === 'virtual' ? 'virtual' : 'in_person',
   )
@@ -60,11 +60,6 @@ export function WorkshopRegisterForm({ workshop }: { workshop: PublicWorkshop })
     e.preventDefault()
     setError(null)
     setFieldErr(undefined)
-    if (consentSms && !phone.trim()) {
-      setFieldErr('phone')
-      setError('A phone number is required to receive SMS reminders.')
-      return
-    }
     setBusy(true)
     const res = await postJson<{ join_token?: string; already_registered?: boolean }>('/api/public/workshops/register', {
       workshop_id: workshop.workshop_id,
@@ -73,8 +68,7 @@ export function WorkshopRegisterForm({ workshop }: { workshop: PublicWorkshop })
       email,
       phone: phone || undefined,
       chosen_delivery: isHybrid ? delivery : workshop.delivery_mode === 'virtual' ? 'virtual' : 'in_person',
-      consent_email: consentEmail,
-      consent_sms: consentSms,
+      marketing_opt_in: marketingOptIn,
       guest_count: attendingInPerson ? guests : 0,
       lead_source: 'workshop',
       company,
@@ -146,7 +140,7 @@ export function WorkshopRegisterForm({ workshop }: { workshop: PublicWorkshop })
           <Field id="email" label="Email" required error={fieldErr === 'email' ? error ?? undefined : undefined}>
             <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" aria-invalid={fieldErr === 'email'} />
           </Field>
-          <Field id="phone" label="Phone" hint={consentSms ? 'Required for SMS reminders.' : 'Optional.'} error={fieldErr === 'phone' ? error ?? undefined : undefined}>
+          <Field id="phone" label="Phone (optional)" hint={SMS_REMINDER_DISCLOSURE} error={fieldErr === 'phone' ? error ?? undefined : undefined}>
             <Input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="tel" aria-invalid={fieldErr === 'phone'} />
           </Field>
 
@@ -192,15 +186,13 @@ export function WorkshopRegisterForm({ workshop }: { workshop: PublicWorkshop })
             <input id="company" tabIndex={-1} autoComplete="off" value={company} onChange={(e) => setCompany(e.target.value)} />
           </div>
 
+          {/* SETTLED model (D-3): ONE unchecked box, POST-EVENT MARKETING only — the
+              reminder basis is the registration itself (disclosure at the phone field). */}
           <fieldset className="space-y-2 rounded-md border border-border bg-muted/50 p-4">
-            <legend className="px-1 text-sm font-medium text-foreground">Contact permission (optional)</legend>
+            <legend className="px-1 text-sm font-medium text-foreground">Optional</legend>
             <label className="flex items-start gap-2 text-sm text-foreground/80">
-              <input type="checkbox" checked={consentEmail} onChange={(e) => setConsentEmail(e.target.checked)} className="mt-0.5 h-4 w-4 accent-primary" />
-              <span>Email me about this and future educational workshops.</span>
-            </label>
-            <label className="flex items-start gap-2 text-sm text-foreground/80">
-              <input type="checkbox" checked={consentSms} onChange={(e) => setConsentSms(e.target.checked)} className="mt-0.5 h-4 w-4 accent-primary" />
-              <span>Text me event reminders (SMS).</span>
+              <input type="checkbox" checked={marketingOptIn} onChange={(e) => setMarketingOptIn(e.target.checked)} className="mt-0.5 h-4 w-4 accent-primary" />
+              <span>{MARKETING_OPT_IN_LABEL}</span>
             </label>
             {workshop.sms_disclosure ? (
               <p className="px-1 text-xs leading-relaxed text-muted-foreground">{workshop.sms_disclosure}</p>
@@ -208,7 +200,7 @@ export function WorkshopRegisterForm({ workshop }: { workshop: PublicWorkshop })
             <p className="px-1 text-xs text-muted-foreground">
               See our{' '}
               <Link href="/sms-terms" className="underline hover:text-foreground">SMS Terms</Link> and{' '}
-              <Link href="/privacy" className="underline hover:text-foreground">Privacy Policy</Link>. Registering does not require consent.
+              <Link href="/privacy" className="underline hover:text-foreground">Privacy Policy</Link>. Registering does not require this.
             </p>
           </fieldset>
 

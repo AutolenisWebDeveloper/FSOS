@@ -62,8 +62,9 @@ function venueZone() { return 'America/Chicago' }
 const REG = {
   reg_id: 'reg-1', session_id: 'sess-1', workshop_id: 'w-1', name: 'Alex Rivera',
   email: 'alex@example.com', phone: '+12145550188', consent_channels: ['email', 'sms'],
-  join_url: null, created_at: '2026-08-01T00:00:00Z', status: 'registered',
-  lead_converted_at: null, referral_id: null,
+  join_url: null, created_at: '2026-08-01T00:00:00Z', registered_at: '2026-08-01T00:00:00Z',
+  status: 'registered', lead_converted_at: null, referral_id: null,
+  marketing_opt_in: false,
 }
 const regWithPhone = (phone) => ({ ...REG, phone })
 const WORKSHOP = { workshop_id: 'w-1', title: 'Retirement Readiness 101', slug: 'rr-101', is_security: false, status: 'published' }
@@ -84,7 +85,6 @@ console.log('\nsendWorkshopMessage — the gate invocation IS the guarantee (rem
   const db = fakeDb({
     workshop_message_log: [null, { id: 'log-1' }],   // no existing row → insert claim wins
     workshop_message_templates: [TPL],
-    workshop_consent_events: [{ action: 'granted' }],
   })
   const status = await engine.sendWorkshopMessage(db, {
     reg: REG, workshop: WORKSHOP, session: session(venueZone()), kind: 'reminder_1h', channel: 'email', config: CONFIG,
@@ -94,7 +94,10 @@ console.log('\nsendWorkshopMessage — the gate invocation IS the guarantee (rem
     globalThis.__gateCalls.length === 1)
   const ctx = globalThis.__gateCalls[0]
   ok('gate receives the approved comm_templates handle (step-4 input)', ctx.templateId === 'tpl-1')
-  ok('gate receives the durable consent fact (step-1 input)', ctx.durableConsentGranted === true)
+  ok('gate receives the consent basis read from the ROW (reminder class = registration itself)', ctx.durableConsentGranted === true)
+  ok('reminder-class sends declare the TRANSACTIONAL purpose (registration-derived)', ctx.purpose === 'TRANSACTIONAL')
+  ok('the engine queried NO consent store at send time (SETTLED model: the row is the record)',
+    !db.calls.some((c) => c.table === 'workshop_consent_events'))
   ok('gate receives a numeric utcOffsetHours for quiet hours (step-2 input)', typeof ctx.utcOffsetHours === 'number')
   ok('gate receives the registration entity for audit lineage', ctx.entity?.type === 'workshop_registration' && ctx.entity?.id === 'reg-1')
   ok('securities flag is explicitly false on the excluded-population path', ctx.isSecurity === false)
@@ -113,7 +116,6 @@ console.log('\nQuiet-hours defers SMS in the RECIPIENT zone, BEFORE the gate (WS
     workshop_message_log: [null, { id: 'log-2' }],
     workshop_message_templates: [TPL_SMS],
     workshop_disclosure_configs: [DISCLOSURE_OK],
-    workshop_consent_events: [{ action: 'granted' }],
   })
   const status = await engine.sendWorkshopMessage(db, {
     // Venue zone is Chicago regardless — the decision must come from the PHONE.
@@ -134,7 +136,6 @@ console.log('\nQuiet-hours defers SMS in the RECIPIENT zone, BEFORE the gate (WS
     workshop_message_log: [null, { id: 'log-2b' }],
     workshop_message_templates: [TPL_SMS],
     workshop_disclosure_configs: [DISCLOSURE_OK],
-    workshop_consent_events: [{ action: 'granted' }],
   })
   const status2 = await engine.sendWorkshopMessage(db2, {
     reg: regWithPhone(inw.phone), workshop: WORKSHOP, session: session(venueZone()), kind: 'reminder_1h', channel: 'sms', config: CONFIG,
@@ -152,7 +153,6 @@ console.log('\nUnresolvable recipient zone fails CLOSED (WS-005: no default, no 
     workshop_message_log: [null, { id: 'log-2c' }],
     workshop_message_templates: [TPL_SMS],
     workshop_disclosure_configs: [DISCLOSURE_OK],
-    workshop_consent_events: [{ action: 'granted' }],
   })
   const status = await engine.sendWorkshopMessage(db, {
     reg: regWithPhone('+18005551234'), workshop: WORKSHOP, session: session(venueZone()), kind: 'reminder_1h', channel: 'sms', config: CONFIG,
@@ -169,7 +169,6 @@ console.log('\nUnknown merge tokens pass through UNRESOLVED (WS-032: gate fail-c
   const db = fakeDb({
     workshop_message_log: [null, { id: 'log-2d' }],
     workshop_message_templates: [{ ...TPL, body: 'Hi {{name}} — {{bogus_token}} at {{starts_local}}.' }],
-    workshop_consent_events: [{ action: 'granted' }],
   })
   await engine.sendWorkshopMessage(db, {
     reg: REG, workshop: WORKSHOP, session: session(venueZone()), kind: 'reminder_1h', channel: 'email', config: CONFIG,
@@ -192,19 +191,46 @@ console.log('\nConfig read error fails CLOSED (WS-068: an unreadable kill switch
     !db.calls.some((c) => c.table === 'workshop_sessions') && globalThis.__gateCalls.length === 0)
 }
 
-console.log('\nDurable consent guard blocks BEFORE the gate')
+console.log('\nThe class boundary (SETTLED model): marketing kinds need the ROW opt-in; reminders never do')
 {
+  // A nurture (marketing-class) kind WITHOUT marketing_opt_in → blocked BEFORE the gate.
   globalThis.__gateCalls = []
   const db = fakeDb({
     workshop_message_log: [null, { id: 'log-3' }],
     workshop_message_templates: [TPL],
-    workshop_consent_events: [{ action: 'revoked' }],   // latest action wins
   })
   const status = await engine.sendWorkshopMessage(db, {
+    reg: REG, workshop: WORKSHOP, session: session(venueZone()), kind: 'nurture_attended', channel: 'email', config: CONFIG,
+  })
+  ok('a marketing kind without marketing_opt_in → terminally blocked', status === 'blocked')
+  ok('the gate was NOT invoked for it', globalThis.__gateCalls.length === 0)
+  const fin = db.calls.find((c) => c.table === 'workshop_message_log' && c.method === 'update')
+  ok('the block names the missing MARKETING fact, not a reminder problem',
+    !!fin && fin.payload.reason === 'no_marketing_opt_in')
+
+  // The same kind WITH the row fact → gate invoked with the WORKSHOP marketing purpose.
+  globalThis.__gateCalls = []
+  const db2 = fakeDb({
+    workshop_message_log: [null, { id: 'log-3b' }],
+    workshop_message_templates: [TPL],
+  })
+  const s2 = await engine.sendWorkshopMessage(db2, {
+    reg: { ...REG, marketing_opt_in: true }, workshop: WORKSHOP, session: session(venueZone()), kind: 'nurture_attended', channel: 'email', config: CONFIG,
+  })
+  ok('with marketing_opt_in the marketing kind sends', s2 === 'sent' && globalThis.__gateCalls.length === 1)
+  ok('…declaring the WORKSHOP marketing purpose to the gate', globalThis.__gateCalls[0].purpose === 'WORKSHOP')
+
+  // And the allowlist keeps the classes apart: a REMINDER kind sends with marketing FALSE.
+  globalThis.__gateCalls = []
+  const db3 = fakeDb({
+    workshop_message_log: [null, { id: 'log-3c' }],
+    workshop_message_templates: [TPL],
+  })
+  const s3 = await engine.sendWorkshopMessage(db3, {
     reg: REG, workshop: WORKSHOP, session: session(venueZone()), kind: 'reminder_1h', channel: 'email', config: CONFIG,
   })
-  ok('latest action revoked → terminally blocked (no_channel_consent)', status === 'blocked')
-  ok('the gate was NOT invoked for the unconsented send', globalThis.__gateCalls.length === 0)
+  ok('a reminder-class kind sends WITHOUT any marketing opt-in (registration is the basis)',
+    s3 === 'sent' && globalThis.__gateCalls.length === 1)
 }
 
 console.log('\nUnapproved/missing template defers BEFORE the gate (placeholder can never send)')

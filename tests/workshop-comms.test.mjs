@@ -57,6 +57,13 @@ ok('confirmation due while the event is still upcoming', R.isConfirmationDue({ s
 const kinds = R.dueReminderKinds({ startMs: now + 30 * MIN, nowMs: now, registeredMs: now - 10 * D, offsetsMinutes: [10080, 1440, 60], confirmationEnabled: true })
 ok('dueReminderKinds includes confirmation first + the due 1h reminder', kinds[0] === 'confirmation' && kinds.includes('reminder_1h'))
 
+console.log('\nReminder-class allowlist (SETTLED consent model — the closed enum)')
+ok('the allowlist is EXACTLY the reminder kinds (closed set)',
+  JSON.stringify([...R.REMINDER_CLASS].sort()) === JSON.stringify(['confirmation', 'reminder_1d', 'reminder_1h', 'reminder_3d', 'reminder_7d', 'reminder_day_of', 'reminder_starting']))
+ok('every nurture/marketing kind is OUTSIDE the reminder class (cannot borrow the registration basis)',
+  ['nurture_attended', 'nurture_left_early', 'nurture_no_show', 'nurture_registered_no_show'].every((k) => R.isReminderClass(k) === false))
+ok('an unknown kind is outside the class too (no default-open)', R.isReminderClass('anything_else') === false)
+
 console.log('\nQuiet-hours floor (recipient-local 9–20)')
 ok('8am blocked, 9am ok, 7:59pm ok, 8pm blocked', R.withinQuietHours(8) === false && R.withinQuietHours(9) === true && R.withinQuietHours(19) === true && R.withinQuietHours(20) === false)
 // recipientLocalHour: at 02:00 UTC with Central offset -6 → 20:00 previous day → 20 → blocked.
@@ -132,7 +139,8 @@ console.log('\nEngine wiring (executable-statement anchors; behavior proven in w
 const eng = readFileSync(join(root, 'src/lib/workshops/comms-engine.ts'), 'utf8')
 ok('the ONE dispatch is the awaited gate call (anchor: the executable await)', /const outcome = await sendThroughGate\(\{/.test(eng))
 ok('no raw sender import can reach the engine', !/from '@\/lib\/messaging'/.test(eng) && !/\bsendSms\b/.test(eng) && !/\bsendEmail\b/.test(eng))
-ok('durable consent is READ at the send site (anchor: the executable await + guard)', /const consent = await durableConsentGranted\(db, reg\.reg_id, channel\)/.test(eng) && /if \(!consent\)/.test(eng))
+ok('consent is READ FROM THE ROW at the send site (SETTLED model anchor: the executable ternary + guard)', /const consent = isReminderClass\(kind\) \? true : reg\.marketing_opt_in === true/.test(eng) && /if \(!consent\)/.test(eng))
+ok('the purpose class is declared per kind (executable ternary)', /purpose: isReminderClass\(kind\) \? 'TRANSACTIONAL' : 'WORKSHOP'/.test(eng))
 ok('is_security exclusion is the executable selection guard (anchor: the full statement)', /if \(!workshop \|\| workshop\.status !== 'published' \|\| workshop\.is_security === true\) continue/.test(eng))
 ok('securities registrants route to FFS via the executable call (anchor)', /await routeSecuritiesToFfs\(db, reg, workshop\)/.test(eng))
 ok('sendable-template query requires approved+active+gate-handle (executable .eq chain)', /\.eq\('status', 'approved'\)/.test(eng) && /\.eq\('active', true\)/.test(eng) && /\.not\('comm_template_id', 'is', null\)/.test(eng))

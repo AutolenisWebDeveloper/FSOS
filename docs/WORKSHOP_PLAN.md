@@ -754,3 +754,52 @@ the earliest, cancels the later, rebuilds the index). `workshop-register-route.t
 
 Findings closed: WS-003, WS-004, WS-010 (per D-4), WS-024, WS-037, WS-048, WS-051,
 WS-057 (mitigated: logged), WS-059, WS-060, WS-061.
+
+---
+
+## BATCH 3 — EXECUTION RECORD (2026-08-29)
+
+**The SETTLED consent model is live** (owner directive, D-3(a)): consent is captured ONE
+TIME on the signup surface; registering IS consent for that workshop's reminders; ONE
+unchecked box governs POST-EVENT MARKETING only; both facts live on the registration row
+and every downstream send just READS them — no consent logic anywhere else.
+
+- **Migration 129**: `marketing_opt_in` + `consent_captured_at` + `consent_form_version`
+  on registrations; legacy backfill maps the OLD email box (marketing-inclusive wording)
+  to `marketing_opt_in` — the old SMS box was reminders-only and grants nothing;
+  `senior_focused` + `senior_disclosure_config_id` on workshops (D-6, default false);
+  WS-020: the workshops FK is now ON DELETE RESTRICT — a workshop with registrations
+  cannot be hard-deleted, so the record of what a person signed up for is durable
+  (evidence still follows its protected registration).
+- **`src/lib/workshops/consent-copy.ts`**: THE capture copy, single-sourced to the forms
+  AND the evidence writes — `SIGNUP_FORM_VERSION` ('signup-v2-2026-08'),
+  `SMS_REMINDER_DISCLOSURE` (the D-3 wording, verbatim), `MARKETING_OPT_IN_LABEL`. Bump
+  the version whenever wording changes; it stamps every registration row.
+- **Engine**: consent is read from the ROW — `isReminderClass(kind) ? true :
+  reg.marketing_opt_in === true`; the `REMINDER_CLASS` closed enum (the D-3 allowlist,
+  incl. the D-1 kinds `reminder_3d`/`reminder_day_of` ahead of Batch 5) is what keeps a
+  marketing kind from ever borrowing the registration basis (the POLICY_DEADLINE-leak
+  class, kept closed); the db-querying consent helper is deleted; reminder channels =
+  contact-present; nurture channels = [] unless `marketing_opt_in`; purposes declared to
+  the gate: reminder class → TRANSACTIONAL, nurture → WORKSHOP (existing taxonomy — the
+  engine's recipient-local quiet-hours pre-check still covers EVERY workshop SMS).
+- **Route + walk-in**: rate-limit→honeypot→schema unchanged; after the claim, the row is
+  stamped with the three consent facts; capture evidence rows record the DISCLOSURE
+  ACTUALLY SHOWN (reminder basis per reachable channel + marketing rows when opted); the
+  kiosk walk-in sheet is that person's one-time signup (same facts, `· walk-in` version
+  tag).
+- **Forms** (both public + kiosk): consent checkboxes GONE; the phone field carries the
+  approved reminder disclosure (aria-describedby); ONE optional marketing box.
+- **WS-036**: the 1:1 console waiver no longer stacks with a caller-declared
+  MARKETING-class purpose (`consentWaived: !isMarketingPurpose(purpose)`) — marketing 1:1
+  sends clear the real consent gate; ADR-033 servicing behavior unchanged.
+
+**Proofs**: invocation suite grown to 37 checks — the class boundary EXECUTED (marketing
+kind without the row fact → blocked `no_marketing_opt_in`, never reaches the gate; with
+it → sent declaring WORKSHOP; a reminder kind sends with marketing FALSE; no consent
+store queried at send time); pure allowlist closed-set test; route test asserts the row
+stamp + 4 evidence rows; all five PG suites re-ran green.
+
+Findings closed: WS-012, WS-013 (settled model supersedes both), WS-020, WS-022 → Batch 5,
+WS-036, WS-062 (grant-only store is now BY DESIGN — suppression owns withdrawal).
+Decision D-6 schema shipped.

@@ -12,7 +12,7 @@
 //    through route to FFS via convertRegistrationToLead(is_security:true) — never a send.
 //  - Consent: a channel is attempted ONLY when the registrant has a durable `granted` (not
 //    later `revoked`) row for it in workshop_consent_events; that fact is passed to the gate
-//    as durableConsentGranted. DNC/STOP (gate step 3) is the independent opt-out backstop.
+//    from the registration row (SETTLED model). DNC/STOP (gate step 3) is the independent opt-out backstop.
 //  - Quiet-hours: recipient-local 9–20 is pre-checked as a scheduling DEFERRAL (retry next
 //    tick, no escalation); the gate re-enforces it authoritatively at dispatch.
 //  - Placeholder templates cannot activate: only an approved+active template with an
@@ -30,6 +30,7 @@ import {
   type WorkshopLeadContext,
 } from './server'
 import {
+  isReminderClass,
   dueReminderKinds,
   segmentFor,
   nurtureKindForSegment,
@@ -123,6 +124,8 @@ interface RegRow {
   /** Registration timestamp — the base table's column is registered_at (WS-001: the
    *  engine previously selected a nonexistent created_at and silently handled nobody). */
   registered_at: string | null
+  /** SETTLED consent model: the ONE marketing fact, captured at signup (D-3). */
+  marketing_opt_in: boolean | null
   status: string | null
   workshop_id: string
   session_id: string | null
@@ -232,24 +235,11 @@ async function selectSendableTemplate(db: Db, kind: MessageKind, channel: Channe
   }
 }
 
-// ── Durable per-channel consent guard ───────────────────────────────────────────
-
-/**
- * True only when the LATEST workshop_consent_events action for this registration+channel is
- * `granted`. A later `revoked` wins. No row → false. This is the durable per-channel consent
- * guard P2 relies on; it is also passed to the gate as durableConsentGranted.
- */
-export async function durableConsentGranted(db: Db, regId: string, channel: Channel): Promise<boolean> {
-  const { data } = await db
-    .from('workshop_consent_events')
-    .select('action, captured_at')
-    .eq('registration_id', regId)
-    .eq('channel', channel)
-    .order('captured_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-  return data?.action === 'granted'
-}
+// ── Consent basis (SETTLED model, D-3) ──────────────────────────────────────────
+// The registration row IS the consent record: the reminder class rides the registration
+// itself; marketing (nurture) rides marketing_opt_in. No store is re-queried at send
+// time — workshop_consent_events remains the CAPTURE-TIME evidence trail only, written
+// by the registration route. DNC/STOP (gate step 3) is the independent opt-out backstop.
 
 // ── One message send (shared by both passes) ────────────────────────────────────
 
@@ -329,11 +319,15 @@ export async function sendWorkshopMessage(db: Db, args: SendArgs): Promise<LogSt
     return finalize('deferred', { reason: 'template_not_approved' })
   }
 
-  // Durable per-channel consent guard (belt + suspenders with the gate).
-  const consent = await durableConsentGranted(db, reg.reg_id, channel)
+  // SETTLED consent model (D-3): the consent fact is READ FROM THE REGISTRATION —
+  // no store re-query, no re-arbitration. Registering IS consent for the reminder
+  // class; every other kind (all nurture/marketing) requires the row's
+  // marketing_opt_in. The closed REMINDER_CLASS enum is what keeps a marketing kind
+  // from ever borrowing the registration basis.
+  const consent = isReminderClass(kind) ? true : reg.marketing_opt_in === true
   if (!consent) {
-    await writeAudit({ actor: ACTOR, action: 'comms.blocked', entity: 'workshop_registration', entityId: reg.reg_id, diff: { kind, channel, reason: 'no_channel_consent' } })
-    return finalize('blocked', { gate_blocked_step: 'consent', reason: 'no_channel_consent' })
+    await writeAudit({ actor: ACTOR, action: 'comms.blocked', entity: 'workshop_registration', entityId: reg.reg_id, diff: { kind, channel, reason: 'no_marketing_opt_in' } })
+    return finalize('blocked', { gate_blocked_step: 'consent', reason: 'no_marketing_opt_in' })
   }
 
   // Quiet-hours scheduling pre-check, SMS ONLY — computed in the RECIPIENT's timezone
@@ -396,6 +390,11 @@ export async function sendWorkshopMessage(db: Db, args: SendArgs): Promise<LogSt
     templateId: tpl.comm_template_id,
     isSecurity: false,
     durableConsentGranted: consent,
+    // Purpose taxonomy (existing platform machinery): reminder-class sends are
+    // registration-derived event operations (TRANSACTIONAL); nurture is the WORKSHOP
+    // marketing class. The engine's own recipient-local quiet-hours pre-check applies
+    // to EVERY workshop SMS regardless (conservative operating setting).
+    purpose: isReminderClass(kind) ? 'TRANSACTIONAL' : 'WORKSHOP',
     utcOffsetHours: utcOffset,
     entity: { type: 'workshop_registration', id: reg.reg_id },
     recipientContext: { full_name: reg.name },
@@ -454,7 +453,7 @@ export async function runReminderPass(db: Db = getDb()): Promise<PassResult> {
 
     const { data: regs, error: regsErr } = await db
       .from('workshop_registrations')
-      .select('reg_id, name, email, phone, consent_channels, join_url, registered_at, status, workshop_id, session_id, lead_converted_at, referral_id')
+      .select('reg_id, name, email, phone, consent_channels, join_url, registered_at, marketing_opt_in, status, workshop_id, session_id, lead_converted_at, referral_id')
       .eq('session_id', s.id)
       .not('status', 'in', '("cancelled","ffs_referred")')
     if (regsErr) {
@@ -519,19 +518,18 @@ async function releaseStrandedClaim(db: Db, regId: string, channel: Channel, kin
 }
 
 /**
- * Channels to attempt for a reminder kind, intersected with the registrant's consented
- * channels (consent_channels staging array; durable consent re-checked at send). Cadence
+ * Channels to attempt for a reminder kind — SETTLED model: registering IS consent for
+ * reminders, so the only per-registrant filter is which contact details exist. Cadence
  * (spec §2.3): confirmation/7d = email; 1d/1h = email + SMS; starting = SMS.
  */
 function channelsForReminder(kind: ReminderKind, reg: RegRow): Channel[] {
-  const consented = new Set((reg.consent_channels ?? []).map((c) => c))
   const wants: Channel[] =
     kind === 'reminder_starting'
       ? ['sms']
       : kind === 'reminder_1d' || kind === 'reminder_1h'
         ? ['email', 'sms']
         : ['email']
-  return wants.filter((c) => consented.has(c) && (c === 'email' ? !!reg.email : !!reg.phone))
+  return wants.filter((c) => (c === 'email' ? !!reg.email : !!reg.phone))
 }
 
 // ── PASS 2: segmented post-event nurture ─────────────────────────────────────────
@@ -572,7 +570,7 @@ export async function runNurturePass(db: Db = getDb()): Promise<PassResult> {
 
     const { data: regs, error: regsErr } = await db
       .from('workshop_registrations')
-      .select('reg_id, name, email, phone, consent_channels, join_url, registered_at, status, workshop_id, session_id, lead_converted_at, referral_id')
+      .select('reg_id, name, email, phone, consent_channels, join_url, registered_at, marketing_opt_in, status, workshop_id, session_id, lead_converted_at, referral_id')
       .eq('session_id', s.id)
       .is('nurtured_at', null)
       .not('status', 'in', '("cancelled","ffs_referred")')
@@ -639,13 +637,13 @@ export async function runNurturePass(db: Db = getDb()): Promise<PassResult> {
   return { ok: errors.length === 0, errors, handled, sends, deferred, blocked }
 }
 
-/** SMS/email channels to attempt for a nurture segment, intersected with consent. */
+/** SMS/email channels for a nurture segment — MARKETING tier: gated entirely by the
+ *  registration row's marketing_opt_in (SETTLED model), then by which contact details
+ *  exist. Email for all segments; SMS additionally for attended + no_show. */
 function channelsForNurture(segment: Segment, reg: RegRow): Channel[] {
-  const consented = new Set((reg.consent_channels ?? []).map((c) => c))
-  // Email for all segments; SMS additionally for attended + no_show (the higher-intent
-  // touches). All still consent-gated + placeholder-gated + quiet-hours-gated.
+  if (reg.marketing_opt_in !== true) return []
   const wants: Channel[] = segment === 'no_show' || segment === 'attended' ? ['email', 'sms'] : ['email']
-  return wants.filter((c) => consented.has(c) && (c === 'email' ? !!reg.email : !!reg.phone))
+  return wants.filter((c) => (c === 'email' ? !!reg.email : !!reg.phone))
 }
 
 /** Securities workshop → FFS-supervised path (firewall). No message, no automated segment. */

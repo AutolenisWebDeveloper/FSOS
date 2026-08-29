@@ -6,7 +6,7 @@ import { sendThroughGate } from '@/lib/comms/send'
 import { runIdempotent } from '@/lib/jobs/runtime'
 import { isManualPurposeAllowed } from '@/lib/comms/console'
 import { resolveAssetPayload, adHocTemplateId } from '@/lib/comms/assets'
-import { MESSAGE_PURPOSES, type MessagePurpose } from '@/lib/comms/purpose'
+import { MESSAGE_PURPOSES, isMarketingPurpose, type MessagePurpose } from '@/lib/comms/purpose'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -126,8 +126,10 @@ export async function POST(req: NextRequest) {
         humanAuthored,
         // Individual 1:1 operator send — consent-on-file is waived (ADR-033). Opt-out-safe:
         // an explicit revoke still blocks, and DNC/quiet-hours/securities/recommendation all
-        // still apply. This is not the automated mass-marketing case consent gates.
-        consentWaived: true,
+        // still apply. WS-036: the waiver is for 1:1 SERVICING — it never stacks with a
+        // caller-declared MARKETING-class purpose (MARKETING/WORKSHOP), which must clear the
+        // real consent gate like any other marketing send.
+        consentWaived: !(d.purpose && isMarketingPurpose(d.purpose as MessagePurpose)),
         purpose: d.purpose as MessagePurpose | undefined,
         sourceKind,
         sourceCampaignKey,

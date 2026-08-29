@@ -1141,3 +1141,88 @@ all green. Manifest: EMPTY.
 Findings closed: WS-020 (residue), WS-025, WS-028, WS-030, WS-031, WS-033 (code side),
 WS-039, WS-042, WS-043, WS-047 (residue), WS-063 (refuted). Deferred-not-dropped:
 WS-050, WS-B13.
+
+---
+
+## BATCH 8 — EXECUTION RECORD (2026-08-29)
+
+Frontend states, a11y, the go-live checklist, and Playwright on captured transport.
+
+- **`docs/WORKSHOP_GO_LIVE.md`** — the owner's deliverable: everything that must be true
+  before this branch ships, none of it code, each item tagged OWNER / FFS / PLATFORM,
+  with an ordered sequence at the end. Items: (1) the instant-ack gate handle, FIRST and
+  marked a deploy blocker — unapproved, the registration receipt does not send;
+  (2) FFS template approval, with the live inventory (25 template rows / 0 approved,
+  4 disclosure configs / 0 approved, the dead D-8 `confirmation` row called out, and
+  `reminder_1h` flagged as capability-not-cadence); (3) D-6 senior_focused still open
+  with the notice/filing lead time stated as weeks that gate activation; (4) WS-025
+  physical address; (5) A2P campaign coverage + Advanced Opt-Out (NOT VERIFIED);
+  (6) `CRON_SECRET` — without it the engine never runs (WS-030's consequence);
+  (7) **the PLATFORM cron item the owner directed**; (8) WS-B13 as an accepted
+  operational gap (in-memory throttle does not span serverless instances), with WS-050
+  and the refuted WS-063 recorded beside it; (9) live provider delivery, NOT VERIFIED by
+  any batch, with what the suites do and do not prove.
+- **Cron header-auth item, scoped accurately.** `/api/cron/[job]:17` still returns true
+  on the `x-vercel-cron` header alone; the 21 reachable jobs are enumerated (plus the
+  unscheduled `agent-runner` alias), and the six that dispatch client-facing messages are
+  named. While enumerating, TWO MORE routes were found with the same pattern —
+  `/api/cron/booking-reminders` and `/api/cron/social-publish`, both send-capable —
+  recorded in the same table so the separate scoping is accurate. Not fixed here;
+  deploying this branch neither fixes nor depends on it.
+- **WS-045** roster CSV: `GET /api/workshops/[id]/roster`, role-gated like its page,
+  RFC-4180 quoted with formula-injection neutralization (a roster carries
+  attacker-suppliable names), attendance merged from the table (WS-040), and AUDITED as
+  a PII export — `entity.exported` added to the audit taxonomy for it.
+- **WS-046** edit-in-place: `WorkshopEditPanel` on the detail page wired to the Batch-4
+  PATCH — details, `budget_spend` + note (so cost-per-lead works), and the schedule/venue
+  path, with the venue-zone conversion done in the panel and a warning shown BEFORE
+  saving a material change ("changing the time notifies everyone already registered").
+- **WS-049** door polish: undo for a mis-tap and a no-show mark, both through the
+  existing reconcile endpoint (optimistic, reverting on failure), 48px targets, a
+  no-show badge on the row, and a 24px walk-in consent checkbox.
+- **WS-052** a validation failure can no longer be invisible: BOTH register forms render
+  the summary whenever the rejected field has no inline slot (`workshop_id`,
+  `session_id`, `chosen_delivery` used to display nothing at all), the site form gains
+  the `aria-describedby` error association it had drifted from, and focus moves to the
+  summary so a keyboard user is never left with a silently un-busied button.
+- **WS-053** cancelling a workshop is now confirmed, with consequence copy that names
+  what actually happens (notices sent, public page closed, Zoom deleted, terminal).
+- **WS-054** the filtered-empty admin list gets a real state naming the filter and a
+  clear-filters action, instead of headers over a void.
+- **WS-055** keyboard focus restored on exactly the controls that had `outline:none`
+  (`.field input/select/textarea`, `.wselect`) via `:focus-visible`.
+- **WS-056** hardcoded hex on the funnel replaced with named tokens
+  (`--on-navy*`), a loading skeleton added for the public route group (4+ sequential
+  queries used to leave the browser on the previous page), and the stale workshop/events
+  entries in `docs/routes.md` corrected.
+- **WS-073** the consult metric now counts a signal the PERSON gave — `consult_requested`
+  from the feedback form, or an actual booked appointment — instead of the automation's
+  own `lead_converted_at`/referral stamp, which the nurture pass writes for every
+  attendee (it made "consults booked" a synonym for "attended"). The old count survives
+  as `automationRouted`, labelled pipeline entry, so nothing is hidden — only correctly
+  named. The analytics loader reads the feedback signal.
+- **Captured transport** (`src/lib/comms/capture-transport.ts`): a test-only provider
+  boundary. When `COMMS_CAPTURE_TRANSPORT` names a file and NODE_ENV is not production,
+  both provider calls append a JSON-Lines record and return synthetic success. It sits
+  LAST, after every validation, and a capture-write failure FAILS THE SEND rather than
+  falling through to a provider.
+
+**Found by running the real app** (CLAUDE.md §7 — review the rendered interface): the
+Batch-4 cancel page 500'd when the database was unreachable. Public pages must degrade;
+it now renders a "temporarily unavailable" recovery state with a contact route, mirroring
+the hub's own guard. Caught because the E2E suite drives the built app, not a mock.
+
+**Proofs:** `tests/comms-capture-transport.test.mjs` — 15 checks EXECUTING the module
+(activation rules, the production refusal, the JSON-Lines record, and fail-closed on a
+throwing write) plus source-order anchors proving the capture branch precedes each
+provider call. During authoring one of those anchors matched the string `api.twilio.com`
+in a COMMENT — the §11a defect class — and was re-anchored on the executable fetch.
+`tests/workshop-ops.test.mjs` (48) updated to the WS-073 definition, pinning that an
+automation-stamped registrant is NOT a consult. **Playwright: 16 passed, 12 skipped
+loudly, 0 failed** across desktop + a 375px chromium viewport (the phone device presets
+default to WebKit, which this container does not ship). Full gates: **197 unit files,
+21 RLS files, type-check, lint, build** — all green. Manifest: **EMPTY at start and
+finish**, as directed.
+
+Findings closed: WS-045, WS-046, WS-049, WS-052, WS-053, WS-054, WS-055, WS-056,
+WS-073. Deferred-not-dropped and recorded on the go-live checklist: WS-050, WS-B13.

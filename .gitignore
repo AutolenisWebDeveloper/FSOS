@@ -64,3 +64,7 @@ data/rule_fetch_log.json
 __pycache__/
 *.pyc
 .phase2/
+
+# Playwright (Batch 8) — local run artifacts only.
+/test-results/
+/playwright-report/

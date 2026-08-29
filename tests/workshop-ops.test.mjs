@@ -78,17 +78,24 @@ console.log('\nAttendance stats + in-person/virtual split (computeAttendanceStat
   ok('virtual split: 2 reg, attended+left_early=2 -> 1.0', s.virtual.registrations === 2 && near(s.virtual.attendanceRate, 1))
 }
 
-console.log('\nConsult conversion (computeConsultConversion)')
+console.log('\nConsult conversion (computeConsultConversion) — WS-073 definition')
 {
+  // WS-073: a consult is a signal the PERSON gave (asked on the feedback form, or an
+  // appointment exists) — NOT the automation's own referral/lead_converted_at stamp,
+  // which the nurture pass writes for every attendee. 'b' below carries only that stamp.
   const regs = [
     { reg_id: 'a', referral_id: 'r1', appointment_booked: true },
     { reg_id: 'b', lead_converted_at: '2026-01-01T00:00:00Z', appointment_booked: false },
-    { reg_id: 'c' },
+    { reg_id: 'c', consult_requested: true },
     { reg_id: 'd' },
   ]
   const c = m.computeConsultConversion(regs)
-  ok('booked = 2', c.consultsBooked === 2)
-  ok('showed = 1', c.consultsShowed === 1)
+  ok('booked = 2 — the booked appointment and the explicit ASK, and only those', c.consultsBooked === 2)
+  ok('the automation-stamped registrant is NOT counted as a consult (the WS-073 defect)',
+    m.computeConsultConversion([{ reg_id: 'b', lead_converted_at: '2026-01-01T00:00:00Z', referral_id: 'r9' }]).consultsBooked === 0)
+  ok('…but it IS reported separately as pipeline entry (nothing hidden, only renamed)',
+    c.automationRouted === 2)
+  ok('showed = 1 (only a real appointment)', c.consultsShowed === 1)
   ok('bookedRate = 2/4', near(c.bookedRate, 0.5))
   ok('showRate = 1/2', near(c.showRate, 0.5))
 }

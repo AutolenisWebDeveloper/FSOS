@@ -6,6 +6,9 @@ import { CheckCircle2, CalendarDays, MapPin, Video } from 'lucide-react'
 import { postJson, firstFieldError } from '@/lib/client/api'
 import { SMS_REMINDER_DISCLOSURE, MARKETING_OPT_IN_LABEL } from '@/lib/workshops/consent-copy'
 import { Field } from '@/components/forms/Field'
+
+/** Fields with an inline error slot; anything else falls through to the form summary. */
+const INLINE_ERROR_FIELDS = new Set(['name', 'email', 'phone'])
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 
@@ -204,7 +207,11 @@ export function WorkshopRegisterForm({ workshop }: { workshop: PublicWorkshop })
             </p>
           </fieldset>
 
-          {error && fieldErr === undefined ? (
+          {/* WS-052: renders whenever the named field has no inline slot of its own —
+              a rejection on workshop_id / session_id / chosen_delivery used to display
+              nothing at all. (The three inline fields use the shared Field primitive,
+              which owns their aria-describedby association.) */}
+          {error && !INLINE_ERROR_FIELDS.has(fieldErr ?? '') ? (
             <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {error}
             </p>

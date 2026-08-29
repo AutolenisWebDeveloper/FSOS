@@ -56,7 +56,7 @@ export default async function WorkshopRegisterPage(props: { params: Promise<{ sl
         <div className="shell wreg">
           {/* Event summary rail */}
           <aside className="wsummary reveal">
-            <span className="wtopic" style={{ background: 'rgba(255,255,255,.12)', borderColor: 'rgba(255,255,255,.2)', color: '#E4ECFA' }}>
+            <span className="wtopic" style={{ background: 'var(--on-navy-veil)', borderColor: 'var(--on-navy-veil-line)', color: 'var(--on-navy)' }}>
               {w.topic}
             </span>
             <h2>{w.title}</h2>

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Loader2, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/archetypes/overlays'
 import { patchJson, firstFieldError } from '@/lib/client/api'
 
 // Workshop lifecycle control (spec §8). The publish path is HARD-GATED: an FSA can move a
@@ -15,6 +16,7 @@ import { patchJson, firstFieldError } from '@/lib/client/api'
 export function WorkshopStatusControl({ workshopId, status }: { workshopId: string; status: string }) {
   const router = useRouter()
   const [busy, setBusy] = React.useState(false)
+  const [confirmCancel, setConfirmCancel] = React.useState(false)
 
   async function setStatus(next: string, msg: string) {
     setBusy(true)
@@ -65,10 +67,32 @@ export function WorkshopStatusControl({ workshopId, status }: { workshopId: stri
         </Button>
       ) : null}
 
+      {/* WS-053: cancelling is DESTRUCTIVE and registrant-affecting — it notifies
+          everyone registered, pulls the public page, and is terminal (reopening to
+          draft voids the compliance approval). It gets a confirmation, per DESIGN §7. */}
       {status !== 'cancelled' && status !== 'completed' ? (
-        <Button size="sm" variant="outline" onClick={() => setStatus('cancelled', 'Workshop cancelled.')} disabled={busy}>
-          Cancel
-        </Button>
+        <>
+          <Button size="sm" variant="outline" onClick={() => setConfirmCancel(true)} disabled={busy}>
+            Cancel workshop
+          </Button>
+          <ConfirmDialog
+            open={confirmCancel}
+            onOpenChange={setConfirmCancel}
+            title="Cancel this workshop?"
+            consequence={
+              status === 'published'
+                ? 'Everyone already registered will be sent a cancellation notice, the public registration page closes immediately, and any Zoom links are deleted. Cancelling is terminal: reopening it to draft voids the compliance approval, so republishing needs a fresh one.'
+                : 'The workshop moves to cancelled. This is terminal: reopening it to draft voids any compliance approval, so republishing needs a fresh one.'
+            }
+            confirmLabel="Cancel workshop"
+            destructive
+            pending={busy}
+            onConfirm={async () => {
+              await setStatus('cancelled', 'Workshop cancelled.')
+              setConfirmCancel(false)
+            }}
+          />
+        </>
       ) : null}
     </div>
   )

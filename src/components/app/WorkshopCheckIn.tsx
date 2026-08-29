@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { Loader2, Check, Search, UserPlus, ScanLine } from 'lucide-react'
+import { Loader2, Check, Search, UserPlus, ScanLine, Undo2, UserX } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -89,6 +89,24 @@ export function WorkshopCheckIn({
       return
     }
     toast.success(`${row.name ?? 'Attendee'} checked in.`)
+  }
+
+  /** WS-049: correct a mis-tap (undo) or mark a door no-show — both through the existing
+   *  reconcile endpoint (capture_method='manual'), optimistic with revert on failure. */
+  async function reconcile(row: CheckInRow, status: 'registered' | 'no_show') {
+    setBusyId(row.reg_id)
+    const prev = row.attendance_status
+    setStatus(row.reg_id, status)
+    const res = await retryPost(`/api/workshops/${workshopId}/attendance`, {
+      entries: [{ registration_id: row.reg_id, status }],
+    })
+    setBusyId(null)
+    if (!res.ok) {
+      setStatus(row.reg_id, prev)
+      toast.error(firstFieldError(res.error as never).message || 'Could not update — try again.')
+      return
+    }
+    toast.success(status === 'no_show' ? `${row.name ?? 'Attendee'} marked no-show.` : `Check-in undone for ${row.name ?? 'attendee'}.`)
   }
 
   async function checkInByScan(e: React.FormEvent) {
@@ -184,25 +202,70 @@ export function WorkshopCheckIn({
                     <div className="flex items-center gap-2 font-medium">
                       <span className="truncate">{r.name ?? 'Attendee'}</span>
                       {r.is_walk_in ? <Badge variant="active">walk-in</Badge> : null}
+                      {r.attendance_status === 'no_show' ? <Badge variant="draft">no-show</Badge> : null}
                     </div>
                     <div className="numeric truncate text-xs text-muted-foreground">{r.email ?? '—'}</div>
                   </div>
-                  <Button
-                    type="button"
-                    size="lg"
-                    variant={done ? 'default' : 'outline'}
-                    disabled={busy || done}
-                    onClick={() => checkIn(r)}
-                    className="h-12 min-w-[7rem]"
-                    aria-label={done ? `${r.name ?? 'Attendee'} checked in` : `Check in ${r.name ?? 'attendee'}`}
-                  >
-                    {busy ? (
-                      <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Button
+                      type="button"
+                      size="lg"
+                      variant={done ? 'default' : 'outline'}
+                      disabled={busy || done}
+                      onClick={() => checkIn(r)}
+                      className="h-12 min-w-[7rem]"
+                      aria-label={done ? `${r.name ?? 'Attendee'} checked in` : `Check in ${r.name ?? 'attendee'}`}
+                    >
+                      {busy ? (
+                        <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
+                      ) : (
+                        <Check className="h-5 w-5" aria-hidden />
+                      )}
+                      {done ? 'Checked in' : 'Check in'}
+                    </Button>
+                    {/* WS-049: a mis-tap at the door is recoverable; a known absence is
+                        recordable. Both are 48px targets, both revert on failure. */}
+                    {done ? (
+                      <Button
+                        type="button"
+                        size="lg"
+                        variant="ghost"
+                        disabled={busy}
+                        onClick={() => reconcile(r, 'registered')}
+                        className="h-12 w-12 p-0"
+                        aria-label={`Undo check-in for ${r.name ?? 'attendee'}`}
+                        title="Undo check-in"
+                      >
+                        <Undo2 className="h-5 w-5" aria-hidden />
+                      </Button>
+                    ) : r.attendance_status === 'no_show' ? (
+                      <Button
+                        type="button"
+                        size="lg"
+                        variant="ghost"
+                        disabled={busy}
+                        onClick={() => reconcile(r, 'registered')}
+                        className="h-12 w-12 p-0"
+                        aria-label={`Clear no-show for ${r.name ?? 'attendee'}`}
+                        title="Clear no-show"
+                      >
+                        <Undo2 className="h-5 w-5" aria-hidden />
+                      </Button>
                     ) : (
-                      <Check className="h-5 w-5" aria-hidden />
+                      <Button
+                        type="button"
+                        size="lg"
+                        variant="ghost"
+                        disabled={busy}
+                        onClick={() => reconcile(r, 'no_show')}
+                        className="h-12 w-12 p-0"
+                        aria-label={`Mark ${r.name ?? 'attendee'} as a no-show`}
+                        title="Mark no-show"
+                      >
+                        <UserX className="h-5 w-5" aria-hidden />
+                      </Button>
                     )}
-                    {done ? 'Checked in' : 'Check in'}
-                  </Button>
+                  </div>
                 </div>
               </li>
             )
@@ -290,7 +353,7 @@ function WalkInForm({
           {/* SETTLED model: signing in IS this workshop's comms basis; the ONE box is
               post-event marketing only. */}
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={marketingOptIn} onChange={(e) => setMarketingOptIn(e.target.checked)} className="h-4 w-4" />
+            <input type="checkbox" checked={marketingOptIn} onChange={(e) => setMarketingOptIn(e.target.checked)} className="h-6 w-6 accent-primary" />
             Future workshops &amp; resources (optional)
           </label>
           <div className="flex justify-end">

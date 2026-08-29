@@ -99,6 +99,8 @@ export async function buildWorkshopAnalytics(db: Db, workshops: WorkshopRecord[]
   // Attendance for those registrations (keyed by registration_id → workshop via regs).
   const regIds = regs.map((r) => r.reg_id)
   const attByReg = new Map<string, AttLite>()
+  // WS-073: the REAL consult signal — the registrant asked on the feedback form.
+  const consultRequested = new Set<string>()
   if (regIds.length > 0) {
     // Supabase caps .in() lists; chunk to stay well under the limit.
     for (const chunk of chunkArray(regIds, 300)) {
@@ -107,6 +109,13 @@ export async function buildWorkshopAnalytics(db: Db, workshops: WorkshopRecord[]
         .select('registration_id, status, capture_method')
         .in('registration_id', chunk)
       for (const a of (att as AttLite[]) ?? []) attByReg.set(a.registration_id, a)
+      const { data: fb } = await db
+        .from('workshop_feedback')
+        .select('registration_id, consult_requested')
+        .in('registration_id', chunk)
+      for (const f of ((fb as { registration_id: string; consult_requested: boolean | null }[]) ?? [])) {
+        if (f.consult_requested === true) consultRequested.add(f.registration_id)
+      }
     }
   }
 
@@ -144,6 +153,7 @@ export async function buildWorkshopAnalytics(db: Db, workshops: WorkshopRecord[]
       referral_id: r.referral_id,
       lead_converted_at: r.lead_converted_at,
       appointment_booked: r.appointment_booked,
+      consult_requested: consultRequested.has(r.reg_id),
     }
     const list = regsByWorkshop.get(r.workshop_id) ?? []
     list.push(rl)

@@ -61,6 +61,24 @@ export async function sendEmail(
   // enforcement (gate.ts step message_content); this is defense-in-depth for any direct caller.
   if (!html || html.trim() === '') return { ok: false, error: 'empty_email_body' }
   const replyTo = opts?.replyTo || process.env.RESEND_REPLY_TO || undefined
+  // CAPTURED TRANSPORT (test-only): every validation above has run; this replaces the
+  // provider call itself. A capture-write failure FAILS THE SEND — it never falls
+  // through to Resend.
+  {
+    const { captureActive, captureMessage } = await import('./comms/capture-transport')
+    if (captureActive()) {
+      const ok = captureMessage({
+        at: new Date().toISOString(),
+        channel: 'email',
+        to,
+        subject,
+        body: html,
+        bodyText: text,
+        attachments: opts?.attachments?.map((a) => a.filename),
+      })
+      return ok ? { ok: true, id: `captured_${Date.now()}` } : { ok: false, error: 'capture_write_failed' }
+    }
+  }
   try {
     const resend = new Resend(apiKey)
     const { data, error } = await resend.emails.send({
@@ -112,6 +130,13 @@ export async function sendSms(to: string, body: string, correlationId?: string):
   if (!body || body.trim() === '') return { ok: false, error: 'empty_sms_body' }
   if (/<!doctype html|<html[\s>]|<\/html>|<body[\s>]|<table[\s>]/i.test(body)) {
     return { ok: false, error: 'html_body_in_sms' }
+  }
+  {
+    const { captureActive, captureMessage } = await import('./comms/capture-transport')
+    if (captureActive()) {
+      const ok = captureMessage({ at: new Date().toISOString(), channel: 'sms', to, body, correlationId })
+      return ok ? { ok: true, id: `SMcaptured${Date.now()}` } : { ok: false, error: 'capture_write_failed' }
+    }
   }
   try {
     const params: Record<string, string> = { To: to, Body: body }

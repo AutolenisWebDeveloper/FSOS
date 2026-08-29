@@ -86,7 +86,7 @@ export default async function WorkshopLandingPage(props: { params: Promise<{ slu
                 <a className="btn btn--red" href={registerHref}>
                   {ctaLabel} <ArrowRight aria-hidden />
                 </a>
-                <span className="wbadge" style={{ background: 'rgba(255,255,255,.1)', borderColor: 'rgba(255,255,255,.2)', color: '#E4ECFA' }}>
+                <span className="wbadge" style={{ background: 'var(--on-navy-veil)', borderColor: 'var(--on-navy-veil-line)', color: 'var(--on-navy)' }}>
                   <GraduationCap aria-hidden /> Free · education only
                 </span>
               </div>
@@ -109,7 +109,7 @@ export default async function WorkshopLandingPage(props: { params: Promise<{ slu
                   <GraduationCap aria-hidden />
                   <span>{FORMAT_LABEL[w.delivery_mode] ?? 'In person'} educational workshop</span>
                   {timeOnly ? (
-                    <span style={{ color: '#C9D8F0', fontWeight: 600 }}>Starts {timeOnly}</span>
+                    <span style={{ color: 'var(--on-navy-dim)', fontWeight: 600 }}>Starts {timeOnly}</span>
                   ) : null}
                 </div>
               )}

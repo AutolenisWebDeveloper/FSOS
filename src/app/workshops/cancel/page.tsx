@@ -17,14 +17,41 @@ export const metadata: Metadata = { title: 'Cancel registration — Workshop', r
 // itself is a POST from the button, never a GET side effect).
 export default async function WorkshopCancelPage(props: { searchParams: Promise<{ token?: string }> }) {
   const { token } = await props.searchParams
-  const lookup = token ? await loadRegistrationForCancel(token) : null
+  // A DB/config failure on a PUBLIC page must degrade, never 500 — the mirror of the
+  // hub's own guard. Found by running the built app against an unconfigured database.
+  let lookup: Awaited<ReturnType<typeof loadRegistrationForCancel>> | null = null
+  let loadError = false
+  if (token) {
+    try {
+      lookup = await loadRegistrationForCancel(token)
+    } catch {
+      loadError = true
+    }
+  }
 
   return (
     <PublicPage>
       <div className="w-full max-w-xl">
         <PublicBrandLockup />
         <div className="rounded-xl border border-border bg-card p-6 shadow-elev-xs sm:p-8">
-          {!token || !lookup?.found ? (
+          {loadError ? (
+            <>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                <LinkIcon aria-hidden className="h-3 w-3" />
+                Temporarily unavailable
+              </span>
+              <h1 className="mt-3 text-xl font-semibold text-foreground">We couldn&apos;t load your registration</h1>
+              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                Something went wrong on our side — your registration has not changed. Please try
+                this link again in a moment, or contact us and we&apos;ll cancel it for you.
+              </p>
+              <p className="mt-4 text-sm">
+                <Link href="/contact" className="font-medium text-primary underline underline-offset-2">
+                  Contact us
+                </Link>
+              </p>
+            </>
+          ) : !token || !lookup?.found ? (
             <>
               <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
                 <LinkIcon aria-hidden className="h-3 w-3" />

@@ -28,7 +28,7 @@ differently. Below is a faithful map so you can decide whether any label should 
 | 5 | Campaigns | **Campaigns** · `/app/comms/campaigns` (under Communications) | ✅ exact label | Lives inside the Communications workspace. |
 | 6 | Cross-Sell Center | **Cross-Sell** · `/app/cross-sell` | ~ near | App label is "Cross-Sell" (no "Center"). |
 | 7 | AI Command Center | **AI Workforce** · `/app/ai/workforce` (+ AI Operations `/app/ai`) | ~ near | App label is "AI Workforce" / "AI Operations". |
-| 8 | Compliance Center | **Compliance** · `/app/compliance` (FSA) → Compliance Intelligence `/app/compliance/intelligence` | ~ near | App label is "Compliance". (Points only at the authorized Compliance Intelligence module — ADR-012. No NIGO scoring surface.) |
+| 8 | Compliance Center | **Compliance** · `/app/compliance` (FSA) | ~ near | App label is "Compliance". *(The Compliance Intelligence destination listed here was excised 2026-08-28 — ADR-040.)* |
 | 9 | Reports & Forecasting | **Dashboards** · `/app/dashboards` + **Forecasts** · `/app/forecasts` | ~ near | App splits into Dashboards + Forecasts (both under Executive). No combined "Reports & Forecasting" node. |
 | 10 | Workshops | **Workshops** · `/app/workshops` | ✅ exact | Keep. |
 | 11 | Documents | **Documents** · `/app/documents` (Admin: "Documents") | ✅ exact | Keep. |

@@ -45,7 +45,7 @@ The native comms platform (Slices 1–9) extends the CRM in-place under `src/lib
 
 1. **Agents are durable background jobs, not chat sessions (§6).** Every agent run writes `agent_runs` (inputs, model, tokens, cost, confidence) and every action writes `agent_actions` (tool, target, outcome, audit link). The gateway and each agent have a kill switch checked at run start (`/super/ai/policies`).
 2. **Green-zone agents only (§2.2).** The roster identifies, educates, invites, schedules, reminds, follows up, drafts internal materials, assembles data, and logs. No agent makes an individualized product/investment/replacement/allocation recommendation. Any client-facing action passes the Compliance Guardrail (see **twilio-a2p-compliance**) before dispatch; an AI message the code can't classify as low-risk is draft-only, never auto-sent.
-3. **No NIGO on the spine (§3).** Case Management OS (`/app/cases`) stays NIGO-free — no NIGO scoring, defect categories, or cross-links onto `agency_partnerships → … → cases`. NIGO work lives only in the isolated Compliance Intelligence island (**fsos-nigo-intelligence**); never FK from `nigo_cases` into `cases`.
+3. **No NIGO on the spine (§3).** Case Management OS (`/app/cases`) stays NIGO-free — no NIGO scoring, defect categories, or cross-links onto `agency_partnerships → … → cases`. The Compliance Intelligence module that formerly owned NIGO work was excised (ADR-040); its tables are retained but orphaned. Do not build NIGO onto the spine, and never FK from `nigo_cases` into `cases`.
 4. **Securities firewall (§2.1).** Track that a securities opportunity/case exists (stage, engagement model, referring agency, expected/actual commission) plus a non-substantive `ffs_case_ref`. Never store securities account numbers, order details, or suitability determinations. `is_security = true` records are excluded from the automated comms engine.
 5. **Model calls go through the gateway.** Use `src/lib/ai/` / `src/lib/anthropic.ts` — never a provider SDK directly from a route or component (§1).
 6. **GoHighLevel is frozen.** The native comms platform replaces GHL functionality in-place; do not extend or remove GHL as part of comms work — leave it untouched.
@@ -59,7 +59,6 @@ The native comms platform (Slices 1–9) extends the CRM in-place under `src/lib
 ## When NOT to use this skill
 
 - Send-path SMS/email compliance details (the gate, consent, quiet hours, delegation authority, simulation dry-run) → **twilio-a2p-compliance**.
-- NIGO / suitability / knowledge-corpus work → **fsos-nigo-intelligence** / **finra-rule-ingestion**.
 - Public marketing surface → **farmers-brand-website**.
 
 ## Validate before claiming done

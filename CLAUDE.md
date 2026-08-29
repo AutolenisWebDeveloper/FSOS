@@ -140,9 +140,6 @@ skills when the work spans multiple domains.
 | Skill | Use |
 |---|---|
 | `fsos-crm-workflows` | Agency partnerships, contacts, referrals, pipelines, workflows, and CRM operations. |
-| `fsos-nigo-intelligence` | Compliance Intelligence and NIGO-resolution functionality when that module is specifically requested. |
-| `finra-rule-ingestion` | Ingest and structure authority-tagged reference documents when requested. |
-| `rightbridge-pdf-analysis` | Extract and analyze RightBRIDGE documents and related structured information. |
 | `fsos-financial-planning` | FNA calculations, models, assumptions, plans, scenarios, goals, and financial-planning workflows. |
 | `marketing-plan` | Campaign strategy, segmentation, cadence, channel planning, content themes, and measurement. |
 

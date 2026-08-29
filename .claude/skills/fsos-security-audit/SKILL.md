@@ -44,7 +44,7 @@ Auth/verification must fail **closed** in production. Example precedent: Twilio 
 
 ## When NOT to use this skill
 
-- Implementing the feature itself → the relevant build skill (**fsos-crm-workflows**, **twilio-a2p-compliance**, **fsos-nigo-intelligence**, **farmers-brand-website**).
+- Implementing the feature itself → the relevant build skill (**fsos-crm-workflows**, **twilio-a2p-compliance**, **farmers-brand-website**).
 - General code-quality review with no security/guardrail angle → the built-in **code-review** skill.
 
 ## Definition of Done for an audit

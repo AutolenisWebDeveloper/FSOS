@@ -64,14 +64,15 @@ These are the product's identity. The design must make them **visible**, not hid
    config defaults flagged `is_assumption`, each rendering a **gold "config default —
    verify" badge**. Never a hard-coded fact.
 
-The **Compliance Intelligence** module (`/app/compliance/intelligence`) is the one
-authorized exception: a retrieval-grounded drafting/analysis aid, still firewall-bound,
-every conclusion cited to an uploaded library passage.
+(A **Compliance Intelligence** module at `/app/compliance/intelligence` previously stood
+as an authorized exception here. It was excised at the owner's direction — see
+`docs/adr/ADR-040-compliance-intelligence-excision.md`. Its database schema is retained
+but orphaned; no code path reads it.)
 
 ## Primary user goals (what a screen exists to accelerate)
 
 - **Triage first.** The FSA opens the app to answer "what needs me now?" — escalations,
-  overdue reviews, at-risk policies, NIGO correspondence, referrals awaiting action.
+  overdue reviews, at-risk policies, referrals awaiting action.
 - **Work the spine.** Move records forward: qualify a referral → build a household →
   run a review → open an opportunity → manage the case → reconcile the commission.
 - **Engage compliantly.** Run campaigns, sequences, and 1:1 comms that always clear

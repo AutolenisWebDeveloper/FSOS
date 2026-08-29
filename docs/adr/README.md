@@ -32,7 +32,7 @@
 | 008 | AI Governance | Accepted | [`ADR-008-ai-governance.md`](./ADR-008-ai-governance.md) |
 | 009 | Design-System Governance | Accepted | [`ADR-009-design-system-governance.md`](./ADR-009-design-system-governance.md) |
 | 010 | Data Ownership & Row-Level Security | Accepted | [`ADR-010-data-ownership-and-rls.md`](./ADR-010-data-ownership-and-rls.md) |
-| 012 | Compliance Intelligence (NIGO-Resolution) Exception | Accepted | [`ADR-012-compliance-intelligence-exception.md`](./ADR-012-compliance-intelligence-exception.md) |
+| 012 | Compliance Intelligence (NIGO-Resolution) Exception | Superseded by 040 | [`ADR-012-compliance-intelligence-exception.md`](./ADR-012-compliance-intelligence-exception.md) |
 | 013 | Canonical `comm_*` Communications Data Model (reconcile the 006 duplication) | Accepted | [`ADR-013-canonical-comm-model.md`](./ADR-013-canonical-comm-model.md) |
 | 014 | GoHighLevel Decommission (ordered, data-preservation-first) | Accepted | [`ADR-014-gohighlevel-decommission.md`](./ADR-014-gohighlevel-decommission.md) |
 | 015 | Delegated Agency-Communication Authority & Actual-Sender vs Represented-Party Model **(§19-canonical 015)** | Accepted | [`ADR-015-delegated-agency-communication.md`](./ADR-015-delegated-agency-communication.md) |
@@ -62,5 +62,6 @@
 | 035 | Accessibility / Responsive Verification via a Manual Pre-Ship Checklist | Accepted | [`ADR-035-a11y-preship-checklist.md`](./ADR-035-a11y-preship-checklist.md) |
 | 036 | Contact Import: Field Recognition & Mapping Model | Accepted | [`ADR-036-contact-import-mapping-model.md`](./ADR-036-contact-import-mapping-model.md) |
 | 037 | Communication Template Version History (database-enforced copy retention) | Accepted | [`ADR-037-comm-template-version-history.md`](./ADR-037-comm-template-version-history.md) |
+| 040 | Compliance Intelligence Excision (supersedes 012; retained schema map) | Accepted | [`ADR-040-compliance-intelligence-excision.md`](./ADR-040-compliance-intelligence-excision.md) |
 
 **Note:** ADR-011 has no file (the sequence skips it). `CLAUDE.md` §19 indexes all 41 ADRs including both documents of each colliding pair; cite a colliding ADR by filename slug, never by bare number.

@@ -1,6 +1,6 @@
 # ADR-012 — Compliance Intelligence (NIGO-Resolution) Exception
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-040](./ADR-040-compliance-intelligence-excision.md) (2026-08-28) — the platform owner reversed the decision recorded here and directed that the module be excised. Retained for authorization history; the module's retained database schema is documented in ADR-040.
 **Date:** 2026-07-21
 **Owner:** FSOS Engineering (authorized by the platform owner / licensed FSA)
 

@@ -275,3 +275,54 @@ export async function loadPublicWorkshops(): Promise<PublicWorkshopCard[]> {
   })
   return cards
 }
+
+// ── Registrant self-cancel lookup (WS-009) ──────────────────────────────────────
+
+export interface CancelLookup {
+  found: boolean
+  already_cancelled: boolean
+  past: boolean
+  workshop_title: string | null
+  when_local: string | null
+}
+
+/**
+ * Resolve a cancel-link token to just what the confirm page needs to show — the event
+ * being cancelled and whether there is anything left to cancel. Token-addressed only
+ * (the per-registrant join_token); exposes no other registrant data.
+ */
+export async function loadRegistrationForCancel(token: string): Promise<CancelLookup> {
+  const none: CancelLookup = { found: false, already_cancelled: false, past: false, workshop_title: null, when_local: null }
+  if (!token || token.length < 8 || token.length > 200) return none
+  const db = getDb()
+  const { data: reg } = await db
+    .from('workshop_registrations')
+    .select('reg_id, workshop_id, session_id, status')
+    .eq('join_token', token)
+    .maybeSingle()
+  if (!reg) return none
+
+  let title: string | null = null
+  let whenLocal: string | null = null
+  let past = false
+  const { data: w } = await db.from('workshops').select('title').eq('workshop_id', reg.workshop_id).maybeSingle()
+  title = w?.title ?? null
+  if (reg.session_id) {
+    const { data: s } = await db
+      .from('workshop_sessions')
+      .select('starts_at, timezone')
+      .eq('id', reg.session_id)
+      .maybeSingle()
+    if (s?.starts_at) {
+      whenLocal = formatInVenueZone(s.starts_at, s.timezone, 'full')
+      past = Date.parse(s.starts_at) <= Date.now()
+    }
+  }
+  return {
+    found: true,
+    already_cancelled: reg.status === 'cancelled',
+    past,
+    workshop_title: title,
+    when_local: whenLocal,
+  }
+}

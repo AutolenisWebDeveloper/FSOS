@@ -150,6 +150,7 @@ export const IDS = {
   emailTpl: 'aaaa4444-4444-4444-4444-444444444444',
   smsTpl: 'aaaa5555-5555-5555-5555-555555555555',
   smsDisclosure: 'aaaa6666-6666-6666-6666-666666666666',
+  approval: 'aaaa7777-7777-7777-7777-777777777777',
 }
 
 let dbSeq = 0
@@ -190,8 +191,15 @@ export function freshWorkshopDb(opts) {
     insert into workshop_disclosure_configs (id, kind, version, body, is_assumption, approved_by, approved_at)
       values ('${IDS.smsDisclosure}', 'sms', 9, 'Msg + data rates may apply. Reply STOP to opt out.', false, 'FFS Principal (test)', now())
       on conflict (kind, version) do nothing;
+    -- Published THROUGH the real gate (mig 130 enforces it on INSERT too): draft first,
+    -- then an approved compliance approval + the approved disclosure open the gate.
     insert into workshops (workshop_id, title, topic, scheduled_at, status, is_security, slug)
-      values ('${IDS.workshop}', 'Retirement Readiness 101', 'retirement', '${opts.startsAtIso}', 'published', false, 'retirement-readiness-101');
+      values ('${IDS.workshop}', 'Retirement Readiness 101', 'retirement', '${opts.startsAtIso}', 'draft', false, 'retirement-readiness-101');
+    insert into workshop_approvals (id, workshop_id, approver_name, approver_crd, decision)
+      values ('${IDS.approval}', '${IDS.workshop}', 'FFS Principal (test)', 'CRD-000000', 'approved');
+    update workshops
+      set compliance_approval_ref = '${IDS.approval}', disclosure_config_id = '${IDS.smsDisclosure}', status = 'published'
+      where workshop_id = '${IDS.workshop}';
     insert into workshop_sessions (id, workshop_id, starts_at, ends_at, delivery_mode, timezone, venue_name, status)
       values ('${IDS.session}', '${IDS.workshop}', '${opts.startsAtIso}',
               '${opts.endsAtIso ?? opts.startsAtIso}', 'in_person', '${opts.timezone}', 'McKinney Community Hall', 'scheduled');

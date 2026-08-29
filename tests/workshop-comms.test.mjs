@@ -58,11 +58,33 @@ const kinds = R.dueReminderKinds({ startMs: now + 30 * MIN, nowMs: now, register
 ok('dueReminderKinds includes confirmation first + the due 1h reminder', kinds[0] === 'confirmation' && kinds.includes('reminder_1h'))
 
 console.log('\nReminder-class allowlist (SETTLED consent model — the closed enum)')
-ok('the allowlist is EXACTLY the reminder kinds (closed set)',
-  JSON.stringify([...R.REMINDER_CLASS].sort()) === JSON.stringify(['confirmation', 'reminder_1d', 'reminder_1h', 'reminder_3d', 'reminder_7d', 'reminder_day_of', 'reminder_starting']))
+// Batch 4 widened the class by exactly the four LIFECYCLE service kinds (a change/
+// cancellation notice + the cancel ack service the registration itself). Still closed.
+ok('the allowlist is EXACTLY the reminder + lifecycle-service kinds (closed set)',
+  JSON.stringify([...R.REMINDER_CLASS].sort()) === JSON.stringify([
+    'cancel_ack', 'change_reschedule', 'change_venue', 'confirmation', 'event_cancelled',
+    'reminder_1d', 'reminder_1h', 'reminder_3d', 'reminder_7d', 'reminder_day_of', 'reminder_starting',
+  ]))
 ok('every nurture/marketing kind is OUTSIDE the reminder class (cannot borrow the registration basis)',
-  ['nurture_attended', 'nurture_left_early', 'nurture_no_show', 'nurture_registered_no_show'].every((k) => R.isReminderClass(k) === false))
+  ['nurture_attended', 'nurture_left_early', 'nurture_no_show', 'nurture_registered_no_show', 'nurture_followup'].every((k) => R.isReminderClass(k) === false))
 ok('an unknown kind is outside the class too (no default-open)', R.isReminderClass('anything_else') === false)
+
+console.log('\nClaim generation (WS-029 re-arm key) + change-kind pick')
+ok('re-armable kinds claim at the session generation (floored to 1)',
+  R.claimGeneration('reminder_1d', 3) === 3 && R.claimGeneration('change_reschedule', 2) === 2 &&
+  R.claimGeneration('reminder_7d', null) === 1 && R.claimGeneration('event_cancelled', 0) === 1)
+ok('one-time kinds pin to generation 0 REGARDLESS of the session generation (a reschedule can never replay them)',
+  R.claimGeneration('confirmation', 5) === 0 && R.claimGeneration('cancel_ack', 5) === 0 &&
+  R.claimGeneration('nurture_attended', 5) === 0 && R.claimGeneration('nurture_followup', 5) === 0)
+ok('the re-armable set is EXACTLY the pre-event reminders + change notices (closed set)',
+  JSON.stringify([...R.REARMABLE_KINDS].sort()) === JSON.stringify([
+    'change_reschedule', 'change_venue', 'event_cancelled',
+    'reminder_1d', 'reminder_1h', 'reminder_3d', 'reminder_7d', 'reminder_day_of', 'reminder_starting',
+  ]))
+ok('a time move dominates a combined edit (ONE reschedule notice, never two)',
+  R.pickChangeKind({ timeChanged: true, venueChanged: true }) === 'change_reschedule' &&
+  R.pickChangeKind({ timeChanged: false, venueChanged: true }) === 'change_venue' &&
+  R.pickChangeKind({ timeChanged: false, venueChanged: false }) === null)
 
 console.log('\nQuiet-hours floor (recipient-local 9–20)')
 ok('8am blocked, 9am ok, 7:59pm ok, 8pm blocked', R.withinQuietHours(8) === false && R.withinQuietHours(9) === true && R.withinQuietHours(19) === true && R.withinQuietHours(20) === false)

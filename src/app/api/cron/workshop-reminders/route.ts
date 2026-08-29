@@ -14,7 +14,7 @@
 //
 // Auth mirrors /api/cron/[job]: Vercel Cron header OR a Bearer CRON_SECRET.
 import { NextRequest, NextResponse } from 'next/server'
-import { runReminderPass, runNurturePass } from '@/lib/workshops/comms-engine'
+import { runReminderPass, runChangePass, runNurturePass } from '@/lib/workshops/comms-engine'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -31,14 +31,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
   try {
-    // Reminders first, then nurture. Each pass is independently idempotent.
+    // Change notices first (a reschedule/cancellation outranks a routine reminder),
+    // then reminders, then nurture. Each pass is independently idempotent.
+    const changes = await runChangePass()
     const reminders = await runReminderPass()
     const nurture = await runNurturePass()
     // WS-064: a pass that surfaced query/send errors is a FAILED cron run — return 500
     // so cron dashboards alert instead of reading an invisible { ok:true, handled:0 }.
-    const failed = reminders.ok === false || nurture.ok === false
+    const failed = changes.ok === false || reminders.ok === false || nurture.ok === false
     return NextResponse.json(
-      { job: 'workshop-reminders', reminders, nurture },
+      { job: 'workshop-reminders', changes, reminders, nurture },
       failed ? { status: 500 } : undefined,
     )
   } catch (err) {

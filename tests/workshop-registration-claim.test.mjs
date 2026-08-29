@@ -29,9 +29,21 @@ try {
   bootCluster(PGBIN)
   q('postgres', `create database ${DB} template fsos_wbase`)
   q(DB, `
+    -- Published THROUGH the real gate (mig 130 enforces it on INSERT too).
+    insert into workshop_disclosure_configs (id, kind, version, body, is_assumption, approved_by, approved_at)
+      values ('cccc6666-6666-6666-6666-666666666666', 'general', 90, 'Approved disclosure (test).', false, 'FFS Principal (test)', now());
     insert into workshops (workshop_id, title, topic, scheduled_at, status)
-      values ('${W}', 'Cap Test', 'retirement', now() + interval '2 days', 'published'),
-             ('${W2}', 'Other Workshop', 'retirement', now() + interval '3 days', 'published');
+      values ('${W}', 'Cap Test', 'retirement', now() + interval '2 days', 'draft'),
+             ('${W2}', 'Other Workshop', 'retirement', now() + interval '3 days', 'draft');
+    insert into workshop_approvals (id, workshop_id, approver_name, decision)
+      values ('cccc7777-7777-7777-7777-777777777777', '${W}', 'FFS Principal (test)', 'approved'),
+             ('cccc8888-8888-8888-8888-888888888888', '${W2}', 'FFS Principal (test)', 'approved');
+    update workshops set compliance_approval_ref='cccc7777-7777-7777-7777-777777777777',
+                         disclosure_config_id='cccc6666-6666-6666-6666-666666666666', status='published'
+      where workshop_id='${W}';
+    update workshops set compliance_approval_ref='cccc8888-8888-8888-8888-888888888888',
+                         disclosure_config_id='cccc6666-6666-6666-6666-666666666666', status='published'
+      where workshop_id='${W2}';
     insert into workshop_sessions (id, workshop_id, starts_at, delivery_mode, timezone, capacity_in_person) values
       ('${S}', '${W}', now() + interval '2 days', 'hybrid', 'America/Chicago', 2),
       ('${S_PAST}', '${W}', now() - interval '1 hour', 'in_person', 'America/Chicago', null),

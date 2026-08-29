@@ -803,3 +803,111 @@ stamp + 4 evidence rows; all five PG suites re-ran green.
 Findings closed: WS-012, WS-013 (settled model supersedes both), WS-020, WS-022 → Batch 5,
 WS-036, WS-062 (grant-only store is now BY DESIGN — suppression owns withdrawal).
 Decision D-6 schema shipped.
+
+---
+
+## BATCH 4 — EXECUTION RECORD (2026-08-29)
+
+**Lifecycle transitions exist, change comms flow, and attendance places the pipeline
+opportunity** (WS-007/008/008b/009/023/029/040/044/066/070a-c/074/075/076 + the WS-072
+dedupe half).
+
+- **Migration 130** (`130_workshop_lifecycle.sql`), PROVEN on a fresh chain + probes and
+  re-proven by the RLS suite:
+  - WS-070a: `workshops.status` CHECK (six states; strays normalized to draft first).
+  - WS-066: `kind` CHECK on BOTH `workshop_message_log` and `workshop_message_templates`
+    — the full vocabulary in one write, including the D-1(b) Batch-5 kinds
+    (`reminder_3d`, `reminder_day_of`, `nurture_followup`) and the Batch-4 lifecycle
+    kinds (`change_reschedule`, `change_venue`, `event_cancelled`, `cancel_ack`).
+  - WS-029: `cadence_generation` on sessions + message_log; the send-once key is now
+    UNIQUE(registration, channel, kind, generation) (`idx_wml_claim`; the 3-part
+    original dropped after backfill). One-time kinds (confirmation, nurture_*,
+    cancel_ack) are BACKFILLED to and claimed at generation 0 forever — a reschedule
+    re-arms exactly the pre-event reminders + change notices, never a confirmation.
+  - Publish gate re-created BEFORE INSERT OR UPDATE (the 038 trigger was UPDATE-only —
+    a direct INSERT of a published workshop bypassed it; now it raises).
+  - WS-070b: terminality trigger — cancelled/completed exit ONLY via reopen→draft, and
+    the reopen VOIDS `compliance_approval_ref` (approval rows persist as history), so
+    republish re-runs the real gate against a FRESH approval. Proven end-to-end:
+    approve→publish→cancel→reopen→republish RAISES.
+  - WS-008: workshop→cancelled CASCADES scheduled sessions to cancelled (AFTER
+    trigger) — every cancel path produces the engine's signal, route or direct SQL.
+  - `workshop_registrations.cancelled_at`; sessions `change_kind`/`change_recorded_at`;
+    7 placeholder template seeds for the new kinds (D-5: drafts, engine-invisible).
+- **Engine**: claims are generation-scoped (`claimGeneration` in reminders.ts;
+  REARMABLE_KINDS closed set); new `runChangePass` — cancelled sessions ⇒
+  `event_cancelled` to every active registrant; pending `change_kind` on a published,
+  scheduled session ⇒ that notice to registrants who signed up BEFORE
+  `change_recorded_at` (later signups saw the new details); both channels where the
+  contact exists; the SAME claimed path (one notice per registrant/channel/generation);
+  securities workshops stay excluded (standing firewall). Cron route runs
+  changes→reminders→nurture and fails the run if ANY pass errors. WS-008b: the nurture
+  pass now skips cancelled sessions and non-published/completed workshops (the reminder
+  pass already did). `{{cancel_url}}` merge token available to every template (WS-009).
+  REMINDER_CLASS widened by exactly the four lifecycle SERVICE kinds (they service the
+  registration itself — D-3 basis; STOP/DNC still applies at dispatch).
+- **WS-007**: `PATCH /api/workshops/[id]` accepts session changes
+  (starts_at/ends_at/timezone/venue_name/venue_address, optional session_id; IANA zone
+  validated) — writes the SESSION, bumps the generation + records the change kind ONLY
+  on a material change (time dominates venue: one notice), mirrors
+  `workshops.scheduled_at`, audits before/after. WS-076: the publish gate + terminality
+  + session validation ALL run before any presenter/material side effect — a rejected
+  PATCH now applies zero writes. Terminal-state PATCH gets a clean 422; reopen returns
+  `requires: [fresh compliance approval, zoom re-provisioning]`.
+- **WS-009**: `POST /api/public/workshops/cancel` (join_token, rate-limited, idempotent,
+  past-event 409) + the `/workshops/cancel` confirm page (explicit POST from a button —
+  a mail-client prefetch can never cancel anyone; found/already-cancelled/past/confirm
+  states, venue-zone time, PublicPage chrome). Cancelling frees the seat + duplicate
+  guard (128 already excludes cancelled) and terminates the cadence STRUCTURALLY;
+  `sendCancelAcknowledgment` rides the engine's claimed path at generation 0 (email;
+  placeholder ⇒ deferred per D-5; the cancellation stands regardless).
+- **WS-070c**: `cancelWorkshopZoomMeetings` now also clears the per-registrant
+  `join_url` + `zoom_registrant_id` (join_token kept — it is the manage identity).
+- **D-2(b) / WS-023**: `routeSegmentToSpine` places the pipeline opportunity AT
+  ATTENDANCE for qualified segments — NATIVE stage `'prospect'` (the mig-009 CHECK's
+  entry stage; the owner's "Contacted" label maps here — the CHECK has no such value),
+  engagement `'direct'`, stage_history seeded, deduped on the referral. The manual
+  referral convert route now ENRICHES an attendance-placed opportunity
+  (household/product/premium) instead of double-counting the pipeline. Two latent
+  defects fixed in the same function: the referral insert wrote the engine's ACTOR
+  string into uuid `owner_scope` (failed every insert, error discarded) — now null with
+  the error surfaced; WS-072 dedupe half: referral REUSED by email across registrations
+  (attribution half N/A-by-design: workshop signups are direct engagements).
+- **WS-074/075** on `/approve`: decisions only for draft/pending_review; an
+  approval-time body edit inserts a NEW disclosure version (kind kept, version max+1,
+  approved on arrival) — the shared row is never rewritten, so every earlier approval
+  snapshot keeps pointing at the exact text it approved; snapshot + gate-open reference
+  the new version. Unchanged body = metadata-only bless.
+- **WS-040**: the registrations PATCH attendance mark writes `workshop_attendance`
+  through `reconcileAttendance` (manual capture, legacy flag synced) — the duality that
+  made PATCH-marked attendees nurture as no-shows is closed.
+- **WS-044**: `pipelines.ts` carries the DO-NOT-REVIVE notice naming the native
+  `opportunities.stage` CHECK as the live taxonomy; the module stays only as the
+  display-time resolver for historical ghl_* ids (7 read-only importers).
+
+**Harness (integrity preserved):** guarantee fixtures now publish THROUGH the real gate
+(mig 130 guards INSERT — `freshWorkshopDb` + the claim test seed approval+disclosure
+then update to published); postgrest-shim gained a fail-loud `.or()` translator;
+fakeDb gained ilike/or/gt/lt recorders; the engine bundle exports the new pass + ack.
+
+**Proofs:** `tests/workshop-lifecycle.test.mjs` (RLS) — 23 checks against the REAL
+engine + Postgres: generation re-arm (2×gen1+2×gen2 rows), change-notice
+once-per-generation with re-tick absorption + late-registrant exclusion→inclusion
+across two reschedules, cancel_ack absorbing at gen 0, durable registrant-cancel
+termination, cancel cascade → event_cancelled exactly once per ACTIVE registrant +
+reminder silence, and the five DB guards (INSERT gate, terminality, approval-voiding
+reopen, kind CHECK, 4-part key). `tests/workshop-lifecycle-routes.test.mjs` (unit) —
+36 checks: WS-076 zero-side-effect rejection, terminal 422 + reopen contract, material
+vs immaterial session change + mirror, WS-074 precondition, WS-075 new-version +
+snapshot references, cancel route 404/idempotent/409/success incl. the claimed ack
+deferring on the placeholder, WS-040 upserts. Closed-set pins updated deliberately
+(REMINDER_CLASS 11, REARMABLE 9, claimGeneration, pickChangeKind — workshop-comms now
+60 checks). Full gates green: 196 unit files, 21 RLS files, type-check, lint, build
+(`/workshops/cancel` in the route table). Manifest: EMPTY (no pins).
+
+Findings closed: WS-007, WS-008, WS-008b, WS-009, WS-023, WS-029, WS-040, WS-044,
+WS-066, WS-070a, WS-070b, WS-070c, WS-074, WS-075, WS-076, WS-072 (dedupe half; the
+referring_agency_id half is N/A-by-design for direct workshop signups). D-2(b) shipped
+with "Contacted" mapped to the native entry stage `'prospect'` — the native CHECK has no
+Contacted value and the owner mandated native stages; flagged for the owner in the
+batch report.

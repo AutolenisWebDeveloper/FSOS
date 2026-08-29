@@ -969,8 +969,37 @@ export const WorkshopPatchSchema = z
     // the UI — a planning figure, never a Farmers-published number; guardrail 3).
     budget_spend: z.coerce.number().min(0).max(10_000_000).optional(),
     budget_spend_note: z.string().trim().max(500).optional(),
+    // ── WS-007 (Batch 4): session reschedule / venue change. The SESSION is the single
+    // source of truth for when/where; a material change bumps its cadence generation
+    // (re-arming reminders) and queues the change notice through the engine. Targets the
+    // workshop's single upcoming session unless session_id says otherwise.
+    session_id: uuid.optional(),
+    starts_at: z.string().datetime({ offset: true }).optional(),
+    ends_at: z.string().datetime({ offset: true }).nullable().optional(),
+    timezone: z
+      .string()
+      .trim()
+      .min(1)
+      .max(64)
+      .refine(
+        (tz) => {
+          try {
+            new Intl.DateTimeFormat('en-US', { timeZone: tz })
+            return true
+          } catch {
+            return false
+          }
+        },
+        { message: 'Unknown IANA timezone' },
+      )
+      .optional(),
+    venue_name: z.string().trim().max(300).nullable().optional(),
+    venue_address: z.string().trim().max(500).nullable().optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'No changes provided' })
+  .refine((v) => !(v.session_id && !v.starts_at && v.ends_at === undefined && !v.timezone && v.venue_name === undefined && v.venue_address === undefined), {
+    message: 'session_id was provided without any session change',
+  })
 export type WorkshopPatch = z.infer<typeof WorkshopPatchSchema>
 
 // Presenter (reusable across workshops — wholesaler / fund-family model). No securities
@@ -1041,6 +1070,13 @@ export const ATTENDANCE_STATUS = ['registered', 'attended', 'no_show', 'left_ear
 // unique join_token, OR add a walk-in (creates a registration + attendance row). SETTLED
 // consent model: the walk-in form IS that person's one-time signup surface — signing in
 // covers this workshop's comms; ONE optional box covers post-event marketing.
+// Registrant self-cancel (WS-009): token-addressed (the per-registrant join_token from
+// the confirmation/reminder cancel link) — never a name/email lookup.
+export const WorkshopCancelSchema = z.object({
+  token: z.string().trim().min(8, 'Invalid link').max(200),
+})
+export type WorkshopCancel = z.infer<typeof WorkshopCancelSchema>
+
 export const WorkshopCheckInSchema = z
   .object({
     join_token: z.string().trim().min(1).max(200).optional(),

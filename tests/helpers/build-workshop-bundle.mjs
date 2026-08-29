@@ -36,7 +36,7 @@ export async function buildWorkshopBundle() {
   const entry = join(dir, 'entry.ts')
   writeFileSync(
     entry,
-    `export { runReminderPass, runNurturePass, sendWorkshopMessage } from '@/lib/workshops/comms-engine'\n` +
+    `export { runReminderPass, runChangePass, runNurturePass, sendWorkshopMessage, sendCancelAcknowledgment } from '@/lib/workshops/comms-engine'\n` +
       `export { sendThroughGate } from '@/lib/comms/send'\n`,
   )
 

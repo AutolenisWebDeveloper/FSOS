@@ -45,6 +45,8 @@ const RLS = new Set([
   'workshop-guarantee-suppression.test.mjs',
   'workshop-guarantee-termination.test.mjs',
   'workshop-registration-claim.test.mjs',
+  // Batch 4 — lifecycle/change-comms guarantees (full engine + migration 130 triggers).
+  'workshop-lifecycle.test.mjs',
 ])
 
 const mode = process.argv[2] === 'rls' ? 'rls' : 'unit'

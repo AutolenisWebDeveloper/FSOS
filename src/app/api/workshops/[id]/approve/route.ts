@@ -35,11 +35,22 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     const db = getDb()
     const { data: workshop, error: wErr } = await db
       .from('workshops')
-      .select('workshop_id, disclosure_config_id')
+      .select('workshop_id, status, disclosure_config_id')
       .eq('workshop_id', params.id)
       .maybeSingle()
     if (wErr) return dbErrorResponse('workshops/[id]/approve', wErr)
     if (!workshop) return NextResponse.json({ error: 'Workshop not found' }, { status: 404 })
+
+    // WS-074: approval decisions apply to workshops UNDER REVIEW (draft/pending_review).
+    // Re-approving an already-approved/published workshop would silently swap the
+    // snapshot under a live event, and a terminal workshop must be reopened (which voids
+    // the old approval) before a fresh review — never approved in place.
+    if (workshop.status !== 'draft' && workshop.status !== 'pending_review') {
+      return NextResponse.json(
+        { error: `This workshop is ${workshop.status}; approval decisions apply to draft or pending-review workshops. Reopen or move it back to draft to re-run review.` },
+        { status: 422 },
+      )
+    }
 
     // ── Rejection: record it and send the workshop back to draft. ──
     if (v.data.decision === 'rejected') {
@@ -83,17 +94,56 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       )
     }
 
-    // Bless the disclosure version (is_assumption -> false = verified/approved).
-    await db
-      .from('workshop_disclosure_configs')
-      .update({
-        body: effectiveBody,
-        is_assumption: false,
-        approved_by: v.data.approver_name,
-        approved_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+    // WS-075: an approval-time BODY EDIT creates a NEW disclosure version instead of
+    // rewriting the shared row in place — every earlier approval snapshot keeps pointing
+    // at the exact text it approved (FINRA 2210 recordkeeping). An unchanged body just
+    // blesses the existing version (metadata only; no text moves under anyone).
+    let approvedDisclosureId = disclosure.id
+    let approvedDisclosureVersion = disclosure.version
+    if (v.data.disclosure_body !== undefined && v.data.disclosure_body !== disclosure.body) {
+      const { data: latest, error: verErr } = await db
+        .from('workshop_disclosure_configs')
+        .select('version')
+        .eq('kind', disclosure.kind)
+        .order('version', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (verErr) return dbErrorResponse('workshops/[id]/approve', verErr)
+      const nextVersion = (latest?.version ?? disclosure.version) + 1
+      const { data: created, error: cErr } = await db
+        .from('workshop_disclosure_configs')
+        .insert({
+          kind: disclosure.kind,
+          version: nextVersion,
+          body: effectiveBody,
+          is_assumption: false,
+          approved_by: v.data.approver_name,
+          approved_at: new Date().toISOString(),
+        })
+        .select('id, version')
+        .single()
+      if (cErr || !created) return dbErrorResponse('workshops/[id]/approve', cErr ?? { message: 'Disclosure version create failed' })
+      approvedDisclosureId = created.id
+      approvedDisclosureVersion = created.version
+      await writeAudit({
+        actor,
+        action: 'entity.created',
+        entity: 'workshop_disclosure_config',
+        entityId: approvedDisclosureId,
+        diff: { kind: disclosure.kind, version: nextVersion, superseded_version: disclosure.version, reason: 'approval_time_edit' },
       })
-      .eq('id', disclosureId)
+    } else {
+      // Bless the existing version (is_assumption -> false = verified/approved).
+      await db
+        .from('workshop_disclosure_configs')
+        .update({
+          is_assumption: false,
+          approved_by: v.data.approver_name,
+          approved_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', disclosure.id)
+    }
 
     // Snapshot the exact approved bundle: materials + presenters + disclosure version.
     const { data: materials } = await db
@@ -116,7 +166,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         material_versions: {
           materials: materials ?? [],
           presenters: presenters ?? [],
-          disclosure: { id: disclosure.id, kind: disclosure.kind, version: disclosure.version },
+          disclosure: { id: approvedDisclosureId, kind: disclosure.kind, version: approvedDisclosureVersion },
         },
       })
       .select('id')
@@ -128,7 +178,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       .from('workshops')
       .update({
         compliance_approval_ref: appr.id,
-        disclosure_config_id: disclosureId,
+        disclosure_config_id: approvedDisclosureId,
         status: 'compliance_approved',
         updated_at: new Date().toISOString(),
       })
@@ -139,7 +189,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       action: 'approval.decided',
       entity: 'workshop',
       entityId: params.id,
-      diff: { decision: 'approved', approval_id: appr.id, disclosure_config_id: disclosureId },
+      diff: { decision: 'approved', approval_id: appr.id, disclosure_config_id: approvedDisclosureId },
     })
     return NextResponse.json({ ok: true, decision: 'approved', approval_id: appr.id })
   } catch (e) {

@@ -185,7 +185,24 @@ export function makeShim({ host, port, db, user = 'postgres', asRole = null }) {
     }
     overlaps(c, vals) { this.filters.push(`${ident(c)} && ${lit(vals)}::text[]`); return this }
     contains(c, vals) { this.filters.push(`${ident(c)} @> ${lit(vals)}::jsonb`); return this }
-    or() { throw new HarnessError('.or() not implemented — add it if the path under test needs it') }
+    or(expr) {
+      // PostgREST disjunction — the subset the engine actually issues (eq / neq /
+      // is.null / not.is.null terms, comma-joined). Anything else still fails loud so a
+      // new operator can't silently translate wrong.
+      const parts = String(expr).split(',').map((term) => {
+        let m = term.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\.not\.is\.null$/)
+        if (m) return `${ident(m[1])} is not null`
+        m = term.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\.is\.null$/)
+        if (m) return `${ident(m[1])} is null`
+        m = term.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\.eq\.(.+)$/)
+        if (m) return `${ident(m[1])} = ${lit(m[2])}`
+        m = term.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\.neq\.(.+)$/)
+        if (m) return `${ident(m[1])} <> ${lit(m[2])}`
+        throw new HarnessError(`.or(): unsupported term '${term}' — extend the translator`)
+      })
+      this.filters.push(`(${parts.join(' or ')})`)
+      return this
+    }
     filter() { throw new HarnessError('.filter() not implemented') }
     rpc() { throw new HarnessError('.rpc() not implemented') }
 

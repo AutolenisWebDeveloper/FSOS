@@ -749,6 +749,13 @@ export async function cancelWorkshopZoomMeetings(db: Db, workshopId: string): Pr
         updated_at: nowIso(),
       })
       .eq('id', s.id)
+    // WS-070c: the per-registrant links died with the meeting — clear them so no stale
+    // join URL can ever surface (merge tokens, resend, UI). join_token is NOT touched:
+    // it is the registrant's manage/cancel identity, independent of Zoom.
+    await db
+      .from('workshop_registrations')
+      .update({ join_url: null, zoom_registrant_id: null })
+      .eq('session_id', s.id)
     result.deleted++
   }
   return result

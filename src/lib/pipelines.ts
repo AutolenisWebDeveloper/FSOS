@@ -12,6 +12,14 @@
 // Stage `id` values are the canonical, opaque stage identifiers of record. They
 // remain stable so historical rows that stored a stage id still resolve to the
 // correct human-readable stage/pipeline through findStageById().
+//
+// ⚠ WS-044 / Gate-1 decision D-2 (2026-08-29): THIS STAGE-ID TAXONOMY IS DORMANT —
+// DO NOT REVIVE IT FOR LIVE PLACEMENT. The live pipeline taxonomy of record is the
+// NATIVE `opportunities.stage` CHECK (migration 009: prospect → fact_find →
+// quoted_proposed → application → underwriting_suitability → placed_issued | lost).
+// Workshop-attendance placement and every other new opportunity write uses those
+// native stages. This module remains ONLY as the display-time resolver for
+// historical `ghl_*` ids (pipelineSummary below); nothing may branch on it.
 // ─────────────────────────────────────────────────────────────────────────
 
 // Internal pipeline taxonomy used by commission_cases.pipeline and scoring.

@@ -29,7 +29,12 @@ export type NurtureKind =
   | 'nurture_no_show'
   | 'nurture_registered_no_show'
 
-export type MessageKind = ReminderKind | NurtureKind
+/** Batch 4 lifecycle kinds: schedule/venue change notices, the agency-cancellation
+ *  notice, and the registrant-cancel acknowledgment. All TRANSACTIONAL — they service
+ *  the registration itself (see REMINDER_CLASS below). */
+export type ChangeKind = 'change_reschedule' | 'change_venue' | 'event_cancelled' | 'cancel_ack'
+
+export type MessageKind = ReminderKind | NurtureKind | ChangeKind
 export type Channel = 'sms' | 'email'
 
 // ── The reminder-class allowlist (SETTLED consent model, D-3) ──────────────────
@@ -37,6 +42,11 @@ export type Channel = 'sms' | 'email'
 // nurture/marketing) requires the registration row's marketing_opt_in. The closed enum
 // is what keeps a marketing kind from ever routing through the registration basis
 // (the POLICY_DEADLINE-leak class, kept closed).
+//
+// Batch 4 adds the lifecycle service notices: a reschedule/venue-change/cancellation
+// notice and the cancel acknowledgment SERVICE the registration the person already
+// holds — they are transactional facts about their own signup, not marketing. STOP/DNC
+// suppression still applies to every SMS at dispatch (unchanged).
 export const REMINDER_CLASS: ReadonlySet<string> = new Set([
   'confirmation',
   'reminder_7d',
@@ -45,9 +55,49 @@ export const REMINDER_CLASS: ReadonlySet<string> = new Set([
   'reminder_day_of',
   'reminder_1h',
   'reminder_starting',
+  'change_reschedule',
+  'change_venue',
+  'event_cancelled',
+  'cancel_ack',
 ])
 export function isReminderClass(kind: string): boolean {
   return REMINDER_CLASS.has(kind)
+}
+
+// ── Claim generation (WS-029 re-arm key) ────────────────────────────────────────
+// The send-once claim is (registration, channel, kind, cadence_generation). A material
+// reschedule bumps the SESSION's generation, which re-arms exactly the kinds below —
+// the pre-event reminders (their moment moved) and the change notices (one per change).
+// Everything else is once-EVER (generation 0): a reschedule must never replay a
+// confirmation, a nurture message, or a cancel acknowledgment.
+export const REARMABLE_KINDS: ReadonlySet<string> = new Set([
+  'reminder_7d',
+  'reminder_3d',
+  'reminder_1d',
+  'reminder_day_of',
+  'reminder_1h',
+  'reminder_starting',
+  'change_reschedule',
+  'change_venue',
+  'event_cancelled',
+])
+
+/** The cadence_generation a claim for `kind` is keyed at. One-time kinds pin to 0. */
+export function claimGeneration(kind: string, sessionGeneration: number | null | undefined): number {
+  if (!REARMABLE_KINDS.has(kind)) return 0
+  const g = typeof sessionGeneration === 'number' && Number.isFinite(sessionGeneration) ? sessionGeneration : 1
+  return Math.max(1, Math.trunc(g))
+}
+
+/**
+ * Which change-notice kind a session edit produces. A time move (start/end/timezone)
+ * dominates — its notice template restates the full details, venue included — so a
+ * combined move+venue edit sends ONE reschedule notice, never two.
+ */
+export function pickChangeKind(input: { timeChanged: boolean; venueChanged: boolean }): 'change_reschedule' | 'change_venue' | null {
+  if (input.timeChanged) return 'change_reschedule'
+  if (input.venueChanged) return 'change_venue'
+  return null
 }
 
 // Quiet-hours floor — mirrors src/lib/compliance/guardrail.ts withinQuietHours (9–20

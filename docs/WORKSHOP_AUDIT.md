@@ -610,3 +610,63 @@ roster.
 `assets/upload/route.ts:44-46` stores the client-supplied MIME (route is role-gated;
 exploitation needs a staff account). Not verified end-to-end; graded honestly as
 HYPOTHESIS for the Batch 7 hardening list.
+
+---
+
+## §10 — Appended findings (2026-08-29, Surface H frontend round; graded first-hand)
+
+**WS-051 · H · BROKEN · PROVEN — Every date/time on the public workshop funnel renders in
+the SERVER's timezone.** The detail page (`workshops/[slug]/page.tsx:44-49`), register
+page (`register/page.tsx:44-45`) and hub cards (`WorkshopHubFilters.tsx:13-15`) all call
+`toLocaleString('en-US', {...})` with **no `timeZone`** — on Vercel (UTC) a 6:00 PM
+Central session displays as “11:00 PM”, and with `dateStyle:'full'` an evening event shows
+the **wrong day**. The repo's own `TimeCell` (`ui/time.tsx:60`) is used zero times on the
+funnel, and these pages read the legacy `workshops.scheduled_at` rather than the session's
+`starts_at` + IANA `timezone` — which the ack email path DOES use correctly
+(`register/route.ts:174-184`). Registrants see one time on the site and another in email.
+
+**WS-052 · H · BROKEN · PROVEN — A validation failure can be invisible on the live
+register form.** `WorkshopRegisterFormSite` renders the general error only when
+`fieldErr === undefined` (`:101-105`) and renders field errors only under name/email/phone
+(`:112,119,125`); a server rejection naming any other schema field (`workshop_id`,
+`session_id`, `chosen_delivery`) sets `fieldErr` and displays **nothing** — the button
+just un-busies. Related fork-drift: this form drops the `aria-describedby` error
+association the shared `Field` primitive provides, and `WorkshopForm` (admin) marks
+`aria-invalid` but renders no error text at all (toast-only).
+
+**WS-053 · H · BROKEN · PROVEN — Cancelling a published workshop is a single unconfirmed
+click** (`WorkshopStatusControl.tsx:68-72` — no confirm dialog on a destructive,
+registrant-affecting action; DESIGN/§7 requires confirmation), after which the public page
+404s for existing registrants (the public loader nulls non-published — `public.ts:50`)
+with no cancellation notice (WS-008).
+
+**WS-054 · H · BROKEN · PROVEN — Filtered-empty renders a headerless-void table on
+`/app/workshops`.** The empty-state guard tests `allWorkshops.length === 0` while rows map
+over `filtered` (`page.tsx:98,113-128`) — an active filter with no matches shows column
+headers over zero rows with no message or clear-filters action.
+
+**WS-055 · H · RISK · PROVEN — The `.msite` focus indicator is cancelled on form
+controls.** `.msite :focus-visible{outline:3px solid var(--red)}` (`marketing.css:33`) is
+overridden by higher-specificity `outline:none` on `.field input/select/textarea:focus`
+(`:255`) and `.wselect:focus` (`:367`), leaving only a 1.5px border-color change — a weak
+indicator on exactly the elements keyboard users interact with (WCAG 2.4.7 exposure).
+
+**WS-056 · H · GAP/POLISH · PROVEN (grouped) — Design-system and state debt on the
+funnel.** Hardcoded hex colors in `.msite` surfaces (`[slug]/page.tsx:91,114` — DESIGN.md
+§6.5 forbids by name); three hand-rolled segmented controls in `WorkshopFeedbackForm`
+(§7); a third forked KPI tile on the report page; guardrail gold mislabeling a fund-family
+name on review; no loading boundary on the public routes (4+ sequential DB queries,
+`public.ts:41-99`); hub filter state not URL-persisted and filtered-empty offers no
+clear action; raw internal error strings rendered on six admin surfaces; `/events` +
+`EventsIndex` is an orphaned client-fetched duplicate unreachable from site nav;
+`docs/routes.md`/`docs/sitemap.md` document two `/events` routes that don't exist and omit
+the `/workshops` funnel entirely (docs stale — code wins); check-in disclosure toggles
+lack `aria-expanded`; admin form's timezone default is a hidden hardcoded
+`America/Chicago` with no assumption badge.
+
+**WS-057 · H · RISK · HYPOTHESIS — Honeypot + browser autofill silently discards a real
+registration.** A password-manager/autofill that fills the visually-hidden `company` field
+gets the fake-success response (`register/route.ts:25-27`) and the confirmation screen
+with no record created. Mechanism proven in code; real-world autofill frequency not
+verifiable statically. Mitigation (Batch 2): the field already sets `autocomplete="off"`; add a
+time-trap signal and log honeypot hits for monitoring instead of silently succeeding.

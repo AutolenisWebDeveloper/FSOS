@@ -69,8 +69,10 @@ Rollback: revert the commit (no schema change in this batch).
 ## Batch 2 — Registration integrity (BROKEN FLOWS)
 
 **Fixes:** WS-003 (duplicates), WS-004 (capacity atomicity + configurability), WS-037
-(past events registerable — register-time date guard), WS-B13 (documented), WS-024's
-missing already-registered UX.
+(past events registerable — register-time date guard), WS-051 (public funnel renders
+server-timezone dates — switch every funnel date to the session's `starts_at` rendered in
+its IANA `timezone`, the ack-email pattern), WS-057 (honeypot hits logged, not silently
+faked), WS-B13 (documented), WS-024's missing already-registered UX.
 
 Scope:
 - Migration `128_workshop_registration_integrity.sql` (additive):
@@ -290,7 +292,10 @@ Rollback: revert commit (no schema change).
 
 ## Batch 8 — Frontend states, a11y completion, E2E + full gates (POLISH + PROOF)
 
-**Fixes:** WS-021, WS-024 residue, WS-045 (roster export), WS-019 (test debt), Playwright
+**Fixes:** WS-021, WS-024 residue, WS-045 (roster export), WS-019 (test debt), WS-052
+(invisible validation failure + aria-describedby fork-drift), WS-053 (unconfirmed
+destructive cancel + post-cancel 404), WS-054 (filtered-empty table), WS-055 (.msite focus
+indicator), WS-056 (design-system/state debt incl. stale docs/routes.md), Playwright
 (Phase 5 scope).
 
 Scope:

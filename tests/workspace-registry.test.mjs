@@ -164,8 +164,11 @@ t('registry-covers-legacy-nav (all portals): no fan-out destination dropped', ()
   for (const [portal, { root, hrefs }] of Object.entries(LEGACY_NAV)) {
     for (const href of hrefs) {
       assert.ok(coveredInPortal(portal, href, root), `${portal}: legacy ${href} not covered by a specific workspace prefix`)
-      // And the boundary did not shift: it resolves to a workspace in the same portal.
-      assert.equal(activeWorkspace(portal, href)?.portal, portal, `${portal}: ${href} resolves outside its portal`)
+      // §11a repair: the old second leg asserted activeWorkspace(...).portal === portal,
+      // which activeWorkspace guarantees BY CONSTRUCTION (it filters to the portal's
+      // workspaces before resolving) — true for every input, deleted as a tautology.
+      // Specific resolution is pinned by the exact-id block below ('longest-prefix
+      // resolution'); coverage is proven by coveredInPortal above.
     }
   }
 })

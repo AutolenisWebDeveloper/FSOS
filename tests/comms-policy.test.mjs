@@ -25,12 +25,26 @@ const t = (name, fn) => { fn(); passed++; console.log('  ✓', name) }
 
 console.log('Purpose classification (§9)')
 
-t('all 10 message purposes map to a consent purpose for both channels', () => {
+t('all 10 message purposes map to their EXACT consent purpose on both channels', () => {
   assert.equal(MESSAGE_PURPOSES.length, 10)
+  // §11a repair: the old assertion checked only non-emptiness — the switch's default
+  // branch satisfies it for every input, so deleting the purpose-specific mapping stayed
+  // green. Pin the complete 20-entry table instead.
+  const EXPECTED = {
+    MARKETING: { sms: 'MARKETING_SMS', email: 'MARKETING_EMAIL' },
+    WORKSHOP: { sms: 'WORKSHOP_COMMUNICATIONS', email: 'WORKSHOP_COMMUNICATIONS' },
+    BIRTHDAY: { sms: 'BIRTHDAY_COMMUNICATIONS', email: 'BIRTHDAY_COMMUNICATIONS' },
+    RELATIONSHIP: { sms: 'BIRTHDAY_COMMUNICATIONS', email: 'BIRTHDAY_COMMUNICATIONS' },
+    APPOINTMENT: { sms: 'APPOINTMENT_REMINDERS', email: 'APPOINTMENT_REMINDERS' },
+    SERVICING: { sms: 'SERVICE_NOTIFICATIONS', email: 'SERVICE_NOTIFICATIONS' },
+    APPLICATION_STATUS: { sms: 'SERVICE_NOTIFICATIONS', email: 'SERVICE_NOTIFICATIONS' },
+    DOCUMENT_REQUEST: { sms: 'SERVICE_NOTIFICATIONS', email: 'SERVICE_NOTIFICATIONS' },
+    POLICY_DEADLINE: { sms: 'SERVICE_NOTIFICATIONS', email: 'SERVICE_NOTIFICATIONS' },
+    TRANSACTIONAL: { sms: 'TRANSACTIONAL_SMS', email: 'TRANSACTIONAL_EMAIL' },
+  }
   for (const p of MESSAGE_PURPOSES) {
     for (const ch of ['sms', 'email']) {
-      const cp = purposeToConsentPurpose(p, ch)
-      assert.ok(typeof cp === 'string' && cp.length > 0, `${p}/${ch}`)
+      assert.equal(purposeToConsentPurpose(p, ch), EXPECTED[p]?.[ch], `${p}/${ch}`)
     }
   }
 })

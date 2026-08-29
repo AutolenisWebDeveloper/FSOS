@@ -70,6 +70,7 @@ async function bundle(entry) {
 
 console.log('\nlib/notifications/transactional.ts — shared transactional sends (Resend mocked)')
 const notify = await bundle('src/lib/notifications/transactional.ts')
+const site = await bundle('src/lib/site.ts')
 
 await at('FSA inbox resolves env → reply-to → CONTACT.email (precedence)', async () => {
   process.env.FSOS_NOTIFY_EMAIL = 'leads@fsa.example'
@@ -78,7 +79,7 @@ await at('FSA inbox resolves env → reply-to → CONTACT.email (precedence)', a
   process.env.RESEND_REPLY_TO = 'reply@fsa.example'
   assert.equal(notify.fsaNotificationInbox(), 'reply@fsa.example', 'falls back to RESEND_REPLY_TO')
   delete process.env.RESEND_REPLY_TO
-  assert.match(notify.fsaNotificationInbox(), /@/, 'falls back to a real CONTACT.email default')
+  assert.equal(notify.fsaNotificationInbox(), site.CONTACT.email, 'falls back to EXACTLY CONTACT.email (the documented third precedence leg)')
 })
 
 await at('notifyFsa sends to the FSA inbox with subject/html/text + reply-to', async () => {
@@ -188,7 +189,10 @@ t('no transactional intake send gates on the marketing consent table', () => {
     'src/app/api/public/workshops/register/route.ts',
   ]) {
     const src = read(rel)
-    assert.ok(!/\.from\('consents'\)/.test(src), `${rel} does not read consents for a transactional send`)
+    // §11a repair: tightened beyond the single-spelling absence check — also ban the
+    // consent-gating MODULES whose import is how gating would realistically arrive.
+    assert.ok(!/\.from\(\s*['\"]consents['\"]\s*\)/.test(src), `${rel} does not read consents for a transactional send`)
+    assert.ok(!/@\/lib\/comms\/policy-resolver|@\/lib\/comms\/simulation|@\/lib\/comms\/consent-population/.test(src), `${rel} does not import a consent-gating module`)
   }
 })
 

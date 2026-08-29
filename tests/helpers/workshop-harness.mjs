@@ -103,9 +103,24 @@ const stubPlugin = {
   },
 }
 
-/** esbuild-bundle a src entry (service or route) to CJS and require it. */
-export async function bundle(entry) {
-  const outfile = join(out, entry.replace(/[/.[\]()]/g, '_') + '.cjs')
+/**
+ * esbuild-bundle a src entry (service or route) to CJS and require it.
+ * opts.aliases: { '@/lib/comms/send': '/abs/path/to/stub.mjs' } — per-call module
+ * substitutions resolved BEFORE the standard stubs (used by removal-guard tests that
+ * record a production call boundary).
+ */
+export async function bundle(entry, opts = {}) {
+  const aliasKey = Object.keys(opts.aliases ?? {}).join('|')
+  const outfile = join(out, (entry + '_' + aliasKey).replace(/[/.[\]()|@]/g, '_') + '.cjs')
+  const aliasPlugin = {
+    name: 'workshop-harness-extra-aliases',
+    setup(b) {
+      for (const [mod, path] of Object.entries(opts.aliases ?? {})) {
+        const filter = new RegExp(`^${mod.replace(/[/@]/g, (c) => `\\${c}`)}$`)
+        b.onResolve({ filter }, () => ({ path }))
+      }
+    },
+  }
   await build({
     entryPoints: [join(root, entry)],
     bundle: true,
@@ -114,7 +129,7 @@ export async function bundle(entry) {
     target: 'node18',
     outfile,
     logLevel: 'silent',
-    plugins: [stubPlugin],
+    plugins: [aliasPlugin, stubPlugin],
   })
   return require(outfile)
 }

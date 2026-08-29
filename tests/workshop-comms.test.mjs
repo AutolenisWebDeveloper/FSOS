@@ -63,9 +63,15 @@ ok('8am blocked, 9am ok, 7:59pm ok, 8pm blocked', R.withinQuietHours(8) === fals
 ok('a "starting now" send at 8:05pm local is outside quiet hours', R.withinQuietHours(R.recipientLocalHour(Date.UTC(2026, 6, 20, 2, 5), -6)) === false)
 ok('same send at 3:00pm local is inside quiet hours', R.withinQuietHours(R.recipientLocalHour(Date.UTC(2026, 6, 20, 21, 0), -6)) === true)
 
-console.log('\nTimezone offset (utcOffsetHoursForTimezone)')
-const chi = R.utcOffsetHoursForTimezone('America/Chicago', Date.UTC(2026, 6, 20, 18, 0))
-ok('America/Chicago resolves to CDT/CST (−5 or −6)', chi === -5 || chi === -6)
+console.log('\nTimezone offset (utcOffsetHoursForTimezone) — §11a repair: pinned per fixture date')
+// July 20 is unambiguously CDT: the ONLY correct answer is −5. (The old assertion accepted
+// −5 OR −6 — true for every legal state including the total-failure fallback — §11a A.)
+ok('America/Chicago on July 20 is exactly CDT (−5)', R.utcOffsetHoursForTimezone('America/Chicago', Date.UTC(2026, 6, 20, 18, 0)) === -5)
+ok('America/Chicago on January 20 is exactly CST (−6)', R.utcOffsetHoursForTimezone('America/Chicago', Date.UTC(2026, 0, 20, 18, 0)) === -6)
+// DST boundary pair (2026: spring-forward Mar 8, fall-back Nov 1): the offset CHANGES
+// across each boundary — a wrong-offset or no-DST implementation fails one side.
+ok('spring-forward 2026: −6 the day before, −5 the day after', R.utcOffsetHoursForTimezone('America/Chicago', Date.UTC(2026, 2, 7, 18, 0)) === -6 && R.utcOffsetHoursForTimezone('America/Chicago', Date.UTC(2026, 2, 9, 18, 0)) === -5)
+ok('fall-back 2026: −5 the day before, −6 the day after', R.utcOffsetHoursForTimezone('America/Chicago', Date.UTC(2026, 9, 31, 18, 0)) === -5 && R.utcOffsetHoursForTimezone('America/Chicago', Date.UTC(2026, 10, 2, 18, 0)) === -6)
 ok('unknown zone falls back to Central floor (−6)', R.utcOffsetHoursForTimezone('Not/AZone', now) === -6)
 
 console.log('\nIdempotency (decideClaim / classifySendOutcome)')
@@ -107,17 +113,22 @@ ok('config offsets + score deltas + physical address are assumption-badged confi
 ok('NO insert/update/delete policy on the new tables (service-role writes only)', !/for\s+(insert|update|delete)/i.test(mig))
 ok('additive only — no destructive DDL', !/\bdrop\s+table\b/i.test(mig) && !/\bdrop\s+column\b/i.test(mig) && !/\btruncate\b/i.test(mig))
 
-// ── Part 3: static engine guarantees (comms-engine.ts + send.ts) ──
-console.log('\nEngine wiring (static guarantees)')
+// ── Part 3: engine wiring — §11a repair. The old regexes here were satisfiable by the
+// header comment and the import line alone (delete the gated dispatch, keep the comment,
+// stay green — sweep §11a pattern B). The BEHAVIORAL guarantees now live in
+// tests/workshop-engine-invocation.test.mjs (executed engine + recording gate stub) and
+// the pinned workshop-guarantee-*.test.mjs suite (real Postgres). What remains here are
+// EXECUTABLE-STATEMENT anchors: each regex matches only the executable call/guard, so a
+// comment or import cannot satisfy it.
+console.log('\nEngine wiring (executable-statement anchors; behavior proven in workshop-engine-invocation)')
 const eng = readFileSync(join(root, 'src/lib/workshops/comms-engine.ts'), 'utf8')
-ok('engine sends ONLY through the existing gate (sendThroughGate), never a raw sender', /sendThroughGate/.test(eng) && !/from '@\/lib\/messaging'/.test(eng) && !/\bsendSms\b/.test(eng) && !/\bsendEmail\b/.test(eng))
-ok('durable per-channel consent guard is read + fed to the gate', /durableConsentGranted/.test(eng) && /workshop_consent_events/.test(eng) && /action\s*===\s*'granted'/.test(eng))
-ok('no send on a channel without durable granted consent (blocked before dispatch)', /const consent = await durableConsentGranted/.test(eng) && /if \(!consent\)/.test(eng))
-ok('is_security workshops are excluded from selection', /is_security\s*===\s*true\)\s*continue/.test(eng) || /is_security === true/.test(eng))
-ok('is_security registrants route to FFS (not the automated segments)', /routeSecuritiesToFfs/.test(eng) && /is_security: true/.test(eng))
-ok('placeholder templates cannot activate (approved+active+gate-handle required)', /\.eq\('status', 'approved'\)/.test(eng) && /\.eq\('active', true\)/.test(eng) && /\.not\('comm_template_id', 'is', null\)/.test(eng))
-ok('missing/placeholder template → deferred (template_not_approved), never sent', /template_not_approved/.test(eng))
-ok('atomic claim before dispatch (idempotency): insert sending + guarded deferred retry', /status: 'sending'/.test(eng) && /\.eq\('status', 'deferred'\)/.test(eng))
+ok('the ONE dispatch is the awaited gate call (anchor: the executable await)', /const outcome = await sendThroughGate\(\{/.test(eng))
+ok('no raw sender import can reach the engine', !/from '@\/lib\/messaging'/.test(eng) && !/\bsendSms\b/.test(eng) && !/\bsendEmail\b/.test(eng))
+ok('durable consent is READ at the send site (anchor: the executable await + guard)', /const consent = await durableConsentGranted\(db, reg\.reg_id, channel\)/.test(eng) && /if \(!consent\)/.test(eng))
+ok('is_security exclusion is the executable selection guard (anchor: the full statement)', /if \(!workshop \|\| workshop\.status !== 'published' \|\| workshop\.is_security === true\) continue/.test(eng))
+ok('securities registrants route to FFS via the executable call (anchor)', /await routeSecuritiesToFfs\(db, reg, workshop\)/.test(eng))
+ok('sendable-template query requires approved+active+gate-handle (executable .eq chain)', /\.eq\('status', 'approved'\)/.test(eng) && /\.eq\('active', true\)/.test(eng) && /\.not\('comm_template_id', 'is', null\)/.test(eng))
+ok('atomic claim before dispatch (executable insert + guarded retry update)', /status: 'sending'/.test(eng) && /\.eq\('status', 'deferred'\)/.test(eng))
 
 const send = readFileSync(join(root, 'src/lib/comms/send.ts'), 'utf8')
 ok('send.ts consent is additive OR (member consent OR public-intake grant OR durable grant — never reduces)', /memberConsent \|\| contactConsent \|\| ctx\.durableConsentGranted === true/.test(send))

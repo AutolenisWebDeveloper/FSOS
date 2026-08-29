@@ -142,8 +142,11 @@ t('invalid timezone falls back to the default zone; default is America/Chicago',
   const at = new Date('2026-08-07T18:30:00Z')
   assert.equal(DEFAULT_TIMEZONE, 'America/Chicago')
   assert.equal(localHourInTimeZone('Not/AZone', at), localHourInTimeZone('America/Chicago', at))
+  // §11a repair: 0-23 was the function's whole output range. Pin the no-arg default
+  // against an INDEPENDENT Intl computation of the America/Chicago hour right now.
+  const expectHour = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hourCycle: 'h23' }).format(new Date()))
   const now = localHourInTimeZone()
-  assert.ok(Number.isInteger(now) && now >= 0 && now <= 23)
+  assert.equal(now, expectHour, 'no-arg call must resolve the current hour in the default America/Chicago zone')
 })
 
 console.log(`\nAll ${passed} assertions passed.`)

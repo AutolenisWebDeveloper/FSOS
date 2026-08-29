@@ -1,0 +1,19 @@
+{
+  "//": "EXPECTED-FAILURE MANIFEST (Batch 0 exit gate — owner directive at Gate 1, merged with the WS-077 assertion contract). Each entry pins ONE test file that is deliberately RED, names the WS finding that keeps it red, and the batch whose landing turns it green. scripts/run-tests.mjs enforces the EXACT set: an unpinned failure hard-fails the run, and a PINNED FILE THAT PASSES also hard-fails (stale pin or vacuous assertion). Remove each entry in the commit that turns its file green. The manifest must reach zero.",
+  "workshop-guarantee-send-once.test.mjs": {
+    "ws": "WS-001/WS-016 — engine selects nonexistent created_at; send-once claim unreachable",
+    "green_by": "Batch 1"
+  },
+  "workshop-guarantee-quiet-hours.test.mjs": {
+    "ws": "WS-005 (recipient-local quiet hours; currently masked by WS-001)",
+    "green_by": "Batch 1"
+  },
+  "workshop-guarantee-suppression.test.mjs": {
+    "ws": "WS-001 (dispatch-time suppression unprovable while the engine is dead)",
+    "green_by": "Batch 1"
+  },
+  "workshop-guarantee-termination.test.mjs": {
+    "ws": "WS-026/WS-001 (absorbing terminal block unprovable while the engine is dead)",
+    "green_by": "Batch 1"
+  }
+}

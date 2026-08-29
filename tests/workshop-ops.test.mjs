@@ -195,16 +195,16 @@ ok('reaffirms RLS on workshop_attendance', /alter table workshop_attendance\s+en
 console.log('\nConvert-to-lead firewall + check-in idempotency (static)')
 const regRoute = readFileSync(join(root, 'src/app/api/workshops/registrations/[id]/route.ts'), 'utf8')
 ok('securities workshop routes convert to FFS (not automated engine)', /is_security === true/.test(regRoute) && /ffs_referred/.test(regRoute))
-ok('non-securities convert routes through convertRegistrationToLead', /convertRegistrationToLead/.test(regRoute))
+ok('non-securities convert routes through convertRegistrationToLead (anchor: the executable await)', /await convertRegistrationToLead\(/.test(regRoute))
 const server = readFileSync(join(root, 'src/lib/workshops/server.ts'), 'utf8')
-ok('check-in uses resolveCheckIn for idempotent no-op', /resolveCheckIn/.test(server))
+ok('check-in uses resolveCheckIn for idempotent no-op (anchor: the executable call)', /resolveCheckIn\(existing/.test(server) || /= resolveCheckIn\(/.test(server))
 ok('convert helper firewalls is_security to FFS with no automated push', /is_security === true/.test(server) && /routed: 'ffs'/.test(server))
 // GHL excised (Pre-Phase-2): the non-securities path now marks the native conversion
 // (lead_converted_at) with no external provider push. This asserts the preserved behavior.
-ok('convert helper marks the native conversion (lead_converted_at), no GHL', /lead_converted_at/.test(server) && /routed: 'native'/.test(server) && !/GHL_CUSTOM_FIELDS/.test(server))
+ok('convert helper marks the native conversion (anchor: the executable update payload)', /lead_converted_at: nowIso\(\)|lead_converted_at: new Date\(\)\.toISOString\(\)/.test(server) && /routed: 'native'/.test(server) && !/GHL_CUSTOM_FIELDS/.test(server))
 const checkinRoute = readFileSync(join(root, 'src/app/api/workshops/[id]/check-in/route.ts'), 'utf8')
-ok('check-in route supports token + walk-in', /checkInByToken/.test(checkinRoute) && /addWalkIn/.test(checkinRoute))
+ok('check-in route supports token + walk-in (anchors: the executable awaits)', /await checkInByToken\(/.test(checkinRoute) && /await addWalkIn\(/.test(checkinRoute))
 const attRoute = readFileSync(join(root, 'src/app/api/workshops/[id]/attendance/route.ts'), 'utf8')
-ok('attendance reconcile route is staff-gated + audited', /requirePermission/.test(attRoute) && /reconcileAttendance/.test(attRoute))
+ok('attendance reconcile route is staff-gated + audited (anchors: the executable calls)', /requirePermission\(auth\.session/.test(attRoute) && /await reconcileAttendance\(/.test(attRoute))
 
 console.log(`\n${passed} checks passed.\n`)

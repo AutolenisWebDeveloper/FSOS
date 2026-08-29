@@ -120,7 +120,12 @@ t('short GSM body is one segment; >160 GSM chars split; unicode shortens the bud
   assert.equal(long.segments, 2)
   const uni = smsSegmentInfo('emoji 😀 here')
   assert.equal(uni.encoding, 'UCS-2')
-  assert.ok(uni.segments >= 1)
+  // §11a repair: segments >= 1 was true for the function's whole output range. Pin the
+  // exact UCS-2 budget: 13 UTF-16 units → 1 segment; 71 units → 2 (the 70/67 split).
+  assert.equal(uni.segments, 1)
+  const uniLong = smsSegmentInfo('😀' + 'a'.repeat(69))   // 2 + 69 = 71 UTF-16 units
+  assert.equal(uniLong.encoding, 'UCS-2')
+  assert.equal(uniLong.segments, 2)
 })
 
 console.log('Verification code')

@@ -608,3 +608,58 @@ channel is non-negotiable.
 **D-9 · (b) REBUILD, ADD-THEN-DELETE:** Commit A adds the rebuilt delivery test file
 (behavioral + DDL assertions ported, PASSING) alongside the old; Commit B deletes the
 regex tail and the old file — a porting regression must show as a diff.
+
+---
+
+## BATCH 0 — EXECUTION RECORD (2026-08-29)
+
+Commits: A `3ef41a0` (rebuilt delivery guarantee suite alongside old — 70 executed checks),
+B `e76ed8b` (old file deleted after porting), C (this commit — §11a repairs, manifest,
+runner enforcement, removal-guard, four pinned guarantee tests).
+
+**§11a instance disposition — all 42 addressed:**
+- `workshop-delivery` (15 incl. the L227 addendum): superseded by the EXECUTED guarantee
+  suite (D-9b rebuild, Commits A/B).
+- `workshop-comms` (6): July offset pinned to exactly −5, January −6, plus a 2026
+  spring-forward and fall-back DST boundary pair; the comment/import-satisfiable Part-3
+  regexes replaced by executable-statement anchors, with the BEHAVIOR now executed in
+  `workshop-engine-invocation.test.mjs` (WS-019 closure for the engine-wiring class).
+- `workshop-ops` (5): rewritten to executable call-site anchors (`await fn(...)`).
+- `workshop-zoom-provision` (4): closed field-set pin on the Zoom create body; exact
+  console-call anchor; executable column-assignment anchor; robust type-block extraction
+  that FAILS when the block is missing (no vacuous `?? ''`).
+- `comms-console` (1): UCS-2 segments pinned exactly (13 units → 1, 71 units → 2).
+- `comms-policy` (1): the full 20-entry purpose→consent mapping pinned (deleting the
+  purpose-specific switch arms now fails).
+- `quiet-hours-scope` (1): no-arg default pinned against an independent Intl computation.
+- `transactional-notifications` (2): fallback pinned to exactly `CONTACT.email`;
+  consent-absence check extended to ban the consent-gating module imports.
+- `operational-email` (4 + 2 removed with WS-002): import-line legs dropped in favor of
+  call-site anchors; consents check tightened; `RESEND_FROM_EMAIL` asserted INSIDE
+  sendEmail's extracted body with extraction-failure = test failure.
+- `workspace-registry` (1): the by-construction portal equality deleted as a tautology
+  (specific resolution stays pinned by the exact-id block; coverage by coveredInPortal).
+
+**Removal-guard (owner item 3):** `tests/workshop-engine-invocation.test.mjs` executes
+`sendWorkshopMessage` + the pass selectors with a recording stub at the ONE production
+boundary — 21 checks: gate invoked exactly once with templateId/durableConsentGranted/
+utcOffsetHours/entity; quiet-hours defers BEFORE the gate; revoked consent and missing
+template block/defer BEFORE the gate; terminal rows absorb; claim-race loss skips; the
+securities firewall is EXECUTED out of the pass. Deleting the sendThroughGate call fails
+it; editing a comment cannot satisfy it. (During development this suite caught its own
+fixture gap — an SMS template without an approved disclosure deferred for the wrong
+reason — proof the assertions bite.)
+
+**Expected-failure manifest (owner directive, = the WS-077 contract):**
+`tests/expected-failures.json` + `scripts/run-tests.mjs` enforcement, both directions
+verified by execution: the four pinned files run RED with the WS-001 signature printed
+from the engine's real SQL, and a deliberately stale pin made the whole run exit 1 with
+"PINNED file(s) PASSED — stale pin or vacuous assertion" (demo captured, then reverted).
+Orphan pins (manifest entries for deleted files) also fail the run.
+
+**Four pinned guarantee tests (rls set — full engine + real gate against ephemeral
+Postgres, 127 migrations applied, providers stubbed at fetch):** send-once ×3 runs;
+recipient-local quiet-hours defer-then-retry (venue Chicago vs +1907 Anchorage);
+dispatch-time DNC suppression (SMS blocked, email still sent); absorbing termination
+(3 extra runs — no resume, no attempt growth). All four red today with the WS-001
+signature; manifest says green by Batch 1.

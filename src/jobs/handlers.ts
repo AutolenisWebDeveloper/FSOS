@@ -9,6 +9,7 @@ import { dispatchCampaign, refreshCampaignMetrics, campaignDispatchContext, type
 import { buildDataConfidence } from '@/lib/comms/claims'
 import { resolveClaimFields } from '@/lib/comms/claim-resolver'
 import { sendMessage, isTemplateApproved } from '@/lib/comms/send'
+import { isDeferralGateStep } from '@/lib/comms/gate'
 import { evaluateResume } from '@/lib/comms/conversation-mode'
 import { smsA2pApproved } from '@/lib/comms/a2p'
 import type { JobResult } from './index'
@@ -213,7 +214,7 @@ export async function dripAdvance(): Promise<JobResult> {
       // Slice 8 §18 — resolve declared claims for this recipient; unverified/conflicting
       // excludes the step + raises a verification task (§13). Absent claim_fields → no-op.
       const claims = await resolveClaimFields(camp.claim_fields, { householdId: e.household_id })
-      await sendMessage({
+      const outcome = await sendMessage({
         channel: camp.channel as 'sms' | 'email',
         to,
         subject: step.subject,
@@ -233,6 +234,13 @@ export async function dripAdvance(): Promise<JobResult> {
         ownership: campCtx.ownership ?? { representedAgencyId: e.agency_id },
         dataConfidence: claims.length > 0 ? buildDataConfidence(claims) : undefined,
       })
+      // DEFERRAL (configured window / business hours / frequency / collision / A2P hold):
+      // a self-clearing hold, not a verdict on this step. HOLD the cursor — next_send_at
+      // stays due, so the next drip run re-attempts this same step once the hold clears.
+      // Advancing would burn the step: the cursor is past it and nothing ever re-attempts
+      // it — the exact failure the exempt-purpose defer rule exists to prevent. Terminal
+      // blocks (consent, DNC, template, …) still advance past the step exactly as before.
+      if (!outcome.sent && isDeferralGateStep(outcome.gate.blockedStep)) continue
       handled++
     }
 

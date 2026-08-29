@@ -173,6 +173,60 @@ await t('a configured window makes the timezone REQUIRED even on an exempt purpo
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
+console.log('\nEmpty intersection — a window that can NEVER open escalates, never defers forever')
+
+await t('EMPTY INTERSECTION (campaign 7–9 ∩ floor 9–20, Honolulu recipient) → window_misconfigured ESCALATES', async () => {
+  // 18:00 recipient-local (inside the floor, so the floor itself is not the verdict) with a
+  // configured window that cannot overlap the floor at ANY hour. There is no next opening a
+  // deferral could wait for — retrying forever with nobody seeing it is the failure mode.
+  const { r, calls } = await smsTo('+18085550147', {
+    hoursWindows: { 'campaign:early_bird': { startHour: 7, endHour: 9, days: [0, 1, 2, 3, 4, 5, 6] } },
+  }, { campaignKey: 'early_bird' }, LATE) // 04:00 UTC → 18:00 Pacific/Honolulu
+  assert.equal(r.ok, false)
+  assert.equal(r.blockedStep, 'window_misconfigured', 'its OWN step — separable from configured_window and quiet_hours')
+  assert.equal(r.escalated, true, 'a config error with no self-clearing condition must reach a human')
+  assert.equal(calls.escalate.length, 1)
+  assert.equal(calls.escalate[0].outcome.escalate, true)
+  assert.equal(calls.sms.length, 0, 'provider never reached')
+  assert.match(r.reason, /never overlap/, 'the reason names the misconfiguration, not a generic block')
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\nNPA/ZIP dual resolution — agreement records both; disagreement binds BOTH zones')
+
+await t('AGREEMENT: one zone, method both, both inputs recorded — the send itself unchanged', async () => {
+  const { r } = await smsTo('+12145550147', { recipientLocation: { phone: '+12145550147', zip: '75201' } }, {}, NOON)
+  assert.equal(r.ok, true, '12:00 America/Chicago sends exactly as with the NPA alone')
+  assert.equal(r.timezone.zone, 'America/Chicago')
+  assert.equal(r.timezone.secondaryZone ?? null, null, 'agreement carries no second zone')
+  assert.equal(r.timezone.resolution.method, 'both')
+  assert.equal(r.timezone.resolution.input, '214+752', 'both pieces of evidence on the send record')
+})
+
+await t('DISAGREEMENT NARROWS: the LA-evening send that passed on NPA alone BLOCKS when the ZIP says Chicago', async () => {
+  // Same phone + instant as the flag-ON happy case above (18:30 Los_Angeles — allowed), but
+  // now the household ZIP resolves Dallas, where it is 20:30 — outside the floor. Neither
+  // input can be trusted alone, so BOTH zones must allow; the result is never wider than
+  // either alone.
+  const { r, calls } = await smsTo('+13105550147', { recipientLocation: { phone: '+13105550147', zip: '75201' } }, {}, LA_EVE)
+  assert.equal(r.ok, false, 'allowed in the NPA zone, outside the floor in the ZIP zone → blocked')
+  assert.equal(r.blockedStep, 'quiet_hours', 'a statutory miss in EITHER zone is the statutory verdict')
+  assert.equal(r.escalated, true)
+  assert.equal(calls.sms.length, 0)
+  assert.equal(r.timezone.zone, 'America/Los_Angeles', 'the NPA zone stays primary on the record')
+  assert.equal(r.timezone.secondaryZone, 'America/Chicago', 'the disagreeing ZIP zone is recorded, never discarded')
+  assert.equal(r.timezone.resolution.method, 'both')
+  assert.equal(r.timezone.resolution.input, '310+752')
+})
+
+await t('ONE-RESOLVES is unchanged: toll-free + ZIP still resolves method zip (no phantom second zone)', async () => {
+  const { r } = await smsTo('+18005550147', { recipientLocation: { phone: '+18005550147', zip: '90001' } }, {}, LA_EVE)
+  assert.equal(r.ok, true)
+  assert.equal(r.timezone.resolution.method, 'zip')
+  assert.equal(r.timezone.secondaryZone ?? null, null)
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
 console.log('\nEscalation contract — no bare {ok:false} anywhere')
 
 await t('every policy withhold carries blockedStep + reason + escalated and hits the escalation path', async () => {
@@ -220,6 +274,15 @@ await t('mig 123: additive only, scoped-id CHECK, tz columns with method CHECK, 
   assert.ok(!/drop table|truncate|delete from/i.test(mig), 'no destructive statement')
   assert.ok(!/insert into comm_hours_policy.*agent:|insert into comm_hours_policy.*campaign:/i.test(mig),
     'no seeded scoped window — a narrowing nobody configured must not hold real sends')
+})
+
+await t('mig 124: method CHECK widened to npa|zip|both, additive only, existing rows unaffected', async () => {
+  const { readFileSync } = await import('node:fs')
+  const mig = readFileSync('supabase/migrations/124_tz_resolution_method_both.sql', 'utf8')
+  assert.ok(/drop constraint if exists comm_messages_tz_resolution_method_check/.test(mig), 're-created, not stacked')
+  assert.ok(/tz_resolution_method in \('npa', 'zip', 'both'\)/.test(mig), "the CHECK admits 'both'")
+  assert.ok(/or tz_resolution_method is null/.test(mig), 'null (caller/legacy resolution) still valid')
+  assert.ok(!/drop table|truncate|delete from|drop column/i.test(mig), 'no destructive statement')
 })
 
 process.env.QUIET_HOURS_RECIPIENT_LOCAL = ''

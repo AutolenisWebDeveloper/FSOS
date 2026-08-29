@@ -24,6 +24,7 @@
 import { getDb } from '@/lib/supabase/client'
 import { runAgent } from '@/jobs/agent-runner'
 import { sendMessage } from '@/lib/comms/send'
+import { isDeferralGateStep } from '@/lib/comms/gate'
 import { resolveEffectiveSuppression } from '@/lib/comms/suppression'
 import { isWithinOperatingHours } from '@/lib/comms/hours'
 import { searchKnowledge, renderKnowledgeContext } from '@/lib/knowledge/library'
@@ -499,6 +500,15 @@ export async function runOutreachAgent(agentKey: OutreachAgentKey): Promise<{ se
           await db.from('outreach_queue').update({ status: 'sent', message_id: outcome.messageId ?? null, dispatched_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', item.id)
           await ctx.recordAction({ kind: `outreach:${item.source}`, targetType: item.entity_type, targetId: item.entity_id, outcome: 'sent', note: item.reason ?? undefined })
           stats.sent++
+        } else if (isDeferralGateStep(outcome.gate.blockedStep)) {
+          // DEFERRAL (configured window / business hours / frequency / collision / A2P
+          // hold): a self-clearing hold, not a verdict on this outreach. 'held' (allowed
+          // by the outreach_queue status CHECK) instead of terminal 'blocked', so the
+          // reporting shows an operational hold rather than a compliance block, and
+          // tomorrow's buildQueue re-queues the still-eligible target for a fresh
+          // in-window attempt (the queue is keyed per (queue_date, agent, entity)).
+          await db.from('outreach_queue').update({ status: 'held', message_id: outcome.messageId ?? null, block_reason: outcome.gate.blockedStep ?? 'deferred', updated_at: new Date().toISOString() }).eq('id', item.id)
+          stats.skipped++
         } else {
           // Blocked at the gate — the dispatcher already logged the compliance_event
           // + escalation. Mark the queue item and count it (never silently dropped).

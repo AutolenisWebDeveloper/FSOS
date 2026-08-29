@@ -205,15 +205,19 @@ export function evaluateQuietHours(input: QuietHoursInput): QuietHoursDecision {
 
   if (!effective) {
     // The operator configured windows that cannot overlap (each other, or the floor).
-    // Fail closed — hold the send — but do NOT escalate as a compliance event: this is a
-    // configuration error for the operator to fix, not a violation by the send.
+    // Fail closed AND ESCALATE: this is a configuration error with no self-clearing
+    // condition — there is no "next opening" a deferral could wait for, so treating it as
+    // a hold would retry forever without a person ever seeing it. Escalating routes it to
+    // the operator who owns the hours policy. (It is still not a compliance VIOLATION by
+    // the send; the gate gives it its own step, `window_misconfigured`, so reporting can
+    // separate "misconfigured policy" from every other block.)
     return {
       outcome: 'window_unsatisfiable',
       allowed: false,
-      escalate: false,
+      escalate: true,
       blockedBy: 'intersection',
       hoursUntilOpen: null,
-      reason: 'Configured send window does not overlap the permitted hours — held; check the hours policy.',
+      reason: 'Configured send windows never overlap the permitted hours — nothing can ever send; fix the hours policy.',
     }
   }
 
@@ -233,4 +237,33 @@ export function evaluateQuietHours(input: QuietHoursInput): QuietHoursDecision {
     hoursUntilOpen: hoursUntilWindowOpens(localHour, localDay, effective),
     reason: `Outside the configured ${culprit?.scope ?? 'send'} window (${effective.startHour}:00–${effective.endHour}:00 recipient-local) — deferred to the next opening.`,
   }
+}
+
+/**
+ * Combine the quiet-hours decisions of TWO evaluation zones into one verdict — the
+ * NPA/ZIP-disagreement case, where the recipient's phone and address resolve to different
+ * timezones and neither can be trusted alone. Requiring BOTH zones to allow the send is
+ * the intersection of the two zones' permitted instants, so the result is always at least
+ * as restrictive as either alone (the same narrow-only guarantee the window intersection
+ * gives within one zone).
+ *
+ * Severity order on disagreement about WHY: a statutory-floor miss in either zone wins
+ * (escalating) over a configured-window miss (deferral) over an unsatisfiable config. The
+ * deferral target is the LATER of the two next openings — the first instant both permit.
+ */
+export function combineQuietHoursDecisions(a: QuietHoursDecision, b: QuietHoursDecision): QuietHoursDecision {
+  if (a.allowed && b.allowed) return a
+  if (!a.allowed && b.allowed) return a
+  if (a.allowed && !b.allowed) return b
+  // Both disallow — surface the more severe outcome.
+  const severity: Record<QuietHoursOutcome, number> = {
+    outside_floor: 3,
+    window_unsatisfiable: 2,
+    outside_configured_window: 1,
+    allowed: 0,
+  }
+  const worse = severity[a.outcome] >= severity[b.outcome] ? a : b
+  const opens = [a.hoursUntilOpen, b.hoursUntilOpen]
+  const hoursUntilOpen = opens.some((h) => h == null) ? null : Math.max(opens[0] as number, opens[1] as number)
+  return { ...worse, hoursUntilOpen }
 }

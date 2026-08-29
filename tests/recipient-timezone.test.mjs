@@ -145,18 +145,39 @@ t('null → null', () => assert.equal(timeZoneForZip(null), null))
 // ── The composed resolver ────────────────────────────────────────────────────
 console.log('\nresolveRecipientTimeZone() — NPA primary, ZIP secondary, fail closed')
 
-t('phone resolves → method npa, zone recorded, input recorded', () => {
-  const r = resolveRecipientTimeZone({ phone: '+12145550147', zip: '90001' })
+t('phone only → method npa, zone recorded, input recorded', () => {
+  const r = resolveRecipientTimeZone({ phone: '+12145550147' })
   assert.equal(r.resolved, true)
   assert.equal(r.timeZone, 'America/Chicago')
   assert.equal(r.method, 'npa')
   assert.equal(r.input, '214')
 })
 
-t('NPA WINS over ZIP when both resolve (phone is the spine field)', () => {
+t('both resolve and AGREE → one zone, method both, both inputs recorded, no secondary', () => {
+  const r = resolveRecipientTimeZone({ phone: '+12145550147', zip: '75201' })
+  assert.equal(r.resolved, true)
+  assert.equal(r.timeZone, 'America/Chicago')
+  assert.equal(r.method, 'both')
+  assert.equal(r.input, '214+752')
+  assert.equal(r.secondaryTimeZone, undefined, 'agreement carries NO secondary zone')
+})
+
+t('both resolve and DISAGREE → NPA zone primary, ZIP zone rides along as secondary', () => {
+  // A Dallas phone with an LA ZIP — neither can be trusted alone, so BOTH are surfaced
+  // and the caller must satisfy both zones' windows (never wider than either alone).
+  const r = resolveRecipientTimeZone({ phone: '+12145550147', zip: '90001' })
+  assert.equal(r.resolved, true)
+  assert.equal(r.timeZone, 'America/Chicago', 'NPA stays the primary zone')
+  assert.equal(r.secondaryTimeZone, 'America/Los_Angeles', 'the disagreeing ZIP zone is NOT discarded')
+  assert.equal(r.method, 'both')
+  assert.equal(r.input, '214+900', 'both pieces of evidence recorded')
+})
+
+t('disagreement: NY phone + LA ZIP keeps NY primary', () => {
   const r = resolveRecipientTimeZone({ phone: '2125550147', zip: '90001' })
-  assert.equal(r.timeZone, 'America/New_York', 'NPA must take precedence')
-  assert.equal(r.method, 'npa')
+  assert.equal(r.timeZone, 'America/New_York', 'NPA must stay primary')
+  assert.equal(r.secondaryTimeZone, 'America/Los_Angeles')
+  assert.equal(r.method, 'both')
 })
 
 t('no phone → falls back to ZIP', () => {

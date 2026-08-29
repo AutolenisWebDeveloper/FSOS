@@ -34,6 +34,7 @@ const {
   withinWindow,
   hoursUntilWindowOpens,
   evaluateQuietHours,
+  combineQuietHoursDecisions,
   isEmptyWindow,
 } = require(join(out, 'quiet-hours-window.js'))
 
@@ -178,12 +179,58 @@ t('exempt purpose: the configured window is NOT intersected with the floor it is
   assert.equal(d.outcome, 'allowed')
 })
 
-t('unsatisfiable config (disjoint from the floor) → held as misconfiguration, non-escalating', () => {
+t('unsatisfiable config (disjoint from the floor) → ESCALATING misconfiguration, never an unbounded defer', () => {
   const d = evaluateQuietHours({ localHour: 12, localDay: 3, floorApplies: true, campaignWindow: W(21, 23) })
   assert.equal(d.outcome, 'window_unsatisfiable')
   assert.equal(d.allowed, false)
-  assert.equal(d.escalate, false)
+  // A window that can never open has no self-clearing condition: a non-escalating hold
+  // would retry forever with nobody ever seeing it. It must surface to the operator.
+  assert.equal(d.escalate, true, 'a config that can never send must escalate, not defer forever')
   assert.equal(d.hoursUntilOpen, null, 'there is no next opening to defer to')
+})
+
+// ── Dual-zone combination (NPA/ZIP disagreement) ────────────────────────────
+console.log('\ncombineQuietHoursDecisions — both zones must allow; severity + latest opening win')
+
+const ALLOWED = { outcome: 'allowed', allowed: true, escalate: false }
+
+t('both zones allow → allowed', () => {
+  const d = combineQuietHoursDecisions(ALLOWED, { ...ALLOWED })
+  assert.equal(d.allowed, true)
+  assert.equal(d.outcome, 'allowed')
+})
+
+t('either zone disallows → disallowed (the intersection of permitted instants)', () => {
+  const block = evaluateQuietHours({ localHour: 22, localDay: 3, floorApplies: true })
+  assert.equal(combineQuietHoursDecisions(ALLOWED, block).allowed, false)
+  assert.equal(combineQuietHoursDecisions(block, ALLOWED).allowed, false)
+  assert.equal(combineQuietHoursDecisions(block, ALLOWED).outcome, 'outside_floor')
+})
+
+t('both disallow → the MORE SEVERE outcome surfaces (floor beats configured window)', () => {
+  const floor = evaluateQuietHours({ localHour: 22, localDay: 3, floorApplies: true })
+  const config = evaluateQuietHours({ localHour: 9, localDay: 3, floorApplies: true, campaignWindow: W(10, 18) })
+  const d = combineQuietHoursDecisions(config, floor)
+  assert.equal(d.outcome, 'outside_floor', 'a statutory miss in EITHER zone is the verdict')
+  assert.equal(d.escalate, true)
+})
+
+t('deferral target is the LATER opening — the first instant BOTH zones permit', () => {
+  // Both evaluated at 9:00 (inside the floor, so the configured window is the decider):
+  // zone A's window opens in 1h, zone B's in 3h → combined must wait 3h.
+  const a = evaluateQuietHours({ localHour: 9, localDay: 3, floorApplies: true, campaignWindow: W(10, 18) })
+  const b = evaluateQuietHours({ localHour: 9, localDay: 3, floorApplies: true, campaignWindow: W(12, 18) })
+  assert.equal(a.hoursUntilOpen, 1)
+  assert.equal(b.hoursUntilOpen, 3)
+  assert.equal(combineQuietHoursDecisions(a, b).hoursUntilOpen, 3)
+})
+
+t('a never-opening side null-safes the combined target to null', () => {
+  const never = evaluateQuietHours({ localHour: 12, localDay: 3, floorApplies: true, campaignWindow: W(21, 23) })
+  const config = evaluateQuietHours({ localHour: 9, localDay: 3, floorApplies: true, campaignWindow: W(10, 18) })
+  const d = combineQuietHoursDecisions(config, never)
+  assert.equal(d.outcome, 'window_unsatisfiable', 'unsatisfiable outranks a configured-window miss')
+  assert.equal(d.hoursUntilOpen, null)
 })
 
 console.log(`\nAll ${passed} assertions passed.`)

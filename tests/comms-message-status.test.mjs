@@ -91,6 +91,9 @@ const BLOCKS = [
   'ownership',
   'consent',
   'timezone_unresolved',
+  // A configured-window stack that can NEVER open (empty intersection) has no self-clearing
+  // condition, so it escalates as a distinct configuration error — never an unbounded defer.
+  'window_misconfigured',
   'quiet_hours',
   'ai_authority',
   'delegation',

@@ -19,6 +19,7 @@ import type { MessagePurpose } from './purpose'
 import type { IdentityContext } from './identity-resolver'
 import { FSA_SENDER_ID } from '@/lib/site'
 import { campaignSendConfig, delegationSendContext } from './campaign-config'
+import { isDeferralGateStep } from './gate'
 import { campaignClaimKeys, buildDataConfidence } from './claims'
 import { resolveClaimFields } from './claim-resolver'
 import { segmentMemberIds } from '@/lib/segments/resolve'
@@ -30,6 +31,8 @@ export interface DispatchCounts {
   sent: number
   suppressed: number
   blocked: number
+  /** Held by a self-clearing gate deferral (window/frequency/A2P); claim released so a re-run re-attempts. */
+  deferred: number
 }
 
 interface Recipient {
@@ -244,7 +247,7 @@ export async function dispatchCampaign(campaignId: string, actor: string): Promi
 
   const channel = campaign.channel as 'sms' | 'email'
   const audience = await resolveAudience(campaign)
-  const counts: DispatchCounts = { audience: audience.length, sent: 0, suppressed: 0, blocked: 0 }
+  const counts: DispatchCounts = { audience: audience.length, sent: 0, suppressed: 0, blocked: 0, deferred: 0 }
 
   // Slice 7 — resolve the campaign-level purpose + delegated-sender context ONCE.
   const campCtx = await campaignDispatchContext(campaign)
@@ -299,6 +302,15 @@ export async function dispatchCampaign(campaignId: string, actor: string): Promi
     if (outcome.sent) {
       counts.sent++
       await db.from('comm_campaign_enrollments').update({ status: 'sent', last_sent_at: new Date().toISOString() }).eq('campaign_id', campaignId).eq('member_id', r.member_id)
+    } else if (isDeferralGateStep(outcome.gate.blockedStep)) {
+      // DEFERRAL (configured window / business hours / frequency / collision / A2P hold):
+      // a self-clearing hold, not a suppression. RELEASE the enrollment claim — a terminal
+      // 'suppressed' row makes the unique (campaign_id, member_id) insert conflict forever,
+      // so no re-dispatch could ever re-attempt this recipient. With the claim released, a
+      // re-run re-claims and re-attempts them once the hold clears; already-sent/suppressed
+      // recipients still conflict on insert (the idempotency guarantee is unchanged).
+      counts.deferred++
+      await db.from('comm_campaign_enrollments').delete().eq('campaign_id', campaignId).eq('member_id', r.member_id).eq('status', 'enrolled')
     } else {
       counts.blocked++
       counts.suppressed++
@@ -317,7 +329,7 @@ async function dispatchDripEnroll(campaign: { id: string; sequence_id: string | 
   if (!campaign.sequence_id) return { error: 'Drip campaign has no sequence attached.' }
   const db = getDb()
   const audience = await resolveAudience(campaign)
-  const counts: DispatchCounts = { audience: audience.length, sent: 0, suppressed: 0, blocked: 0 }
+  const counts: DispatchCounts = { audience: audience.length, sent: 0, suppressed: 0, blocked: 0, deferred: 0 }
   const nowISO = new Date().toISOString()
   for (const r of audience) {
     const { error } = await db

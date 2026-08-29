@@ -131,7 +131,7 @@ export const defaultMessagingDeps: MessagingDeps = {
         allowed: false,
         timezone: {
           resolution: { resolved: false, reason: 'no_input', attempted: [] },
-          zone: null, localHour: null, localDay: null, legacy: false,
+          zone: null, localHour: null, localDay: null, secondaryZone: null, legacy: false,
         },
         resolved: { memberId: null, householdId: null, agencyId: null, consent: false, onDNC: true, suppressed: true },
       }

@@ -33,7 +33,7 @@
 
 import { evaluateGate, type GateInput, type GateResult } from './gate'
 import { quietHoursApply, type MessagePurpose } from './purpose'
-import { evaluateQuietHours, type HoursWindow, type QuietHoursDecision } from './quiet-hours-window'
+import { evaluateQuietHours, combineQuietHoursDecisions, type HoursWindow, type QuietHoursDecision } from './quiet-hours-window'
 import { resolveRecipientTimeZone, type TimezoneResolution } from './recipient-timezone'
 import { DEFAULT_TIMEZONE } from './local-time'
 import { isBusinessSuppressible } from './suppression'
@@ -128,10 +128,16 @@ export interface DispatchPolicyDecision {
   /** What the timezone resolution produced — recorded on the send record (step 5). */
   timezone: {
     resolution: TimezoneResolution
-    /** The zone actually used for the hour computation. */
+    /** The primary zone used for the hour computation (the NPA's on a disagreement). */
     zone: string | null
     localHour: number | null
     localDay: number | null
+    /**
+     * The ZIP's zone when the NPA and ZIP resolved to DIFFERENT zones — the quiet-hours
+     * decision then had to hold in this zone too (the narrower, both-zones verdict).
+     * Null on agreement, single-input resolution, caller resolution, and the legacy path.
+     */
+    secondaryZone: string | null
     /** True when the legacy fixed-zone path produced this (flag OFF). */
     legacy: boolean
   }
@@ -413,7 +419,7 @@ export function resolveDispatchTimeZone(
     const { hour, day } = localPartsInZone(ctx.timeZone, at)
     return {
       resolution: { resolved: true, timeZone: ctx.timeZone, method: 'npa', input: 'caller', approximate: false },
-      zone: ctx.timeZone, localHour: hour, localDay: day, legacy: false,
+      zone: ctx.timeZone, localHour: hour, localDay: day, secondaryZone: null, legacy: false,
     }
   }
   // Caller-supplied fixed offset (the workshop engine). Kept for compatibility; the offset
@@ -422,7 +428,7 @@ export function resolveDispatchTimeZone(
     const shifted = new Date(at.getTime() + ctx.utcOffsetHours * 3600000)
     return {
       resolution: { resolved: true, timeZone: `UTC${ctx.utcOffsetHours >= 0 ? '+' : ''}${ctx.utcOffsetHours}`, method: 'npa', input: 'caller_offset', approximate: true },
-      zone: null, localHour: shifted.getUTCHours(), localDay: shifted.getUTCDay(), legacy: false,
+      zone: null, localHour: shifted.getUTCHours(), localDay: shifted.getUTCDay(), secondaryZone: null, legacy: false,
     }
   }
 
@@ -431,16 +437,24 @@ export function resolveDispatchTimeZone(
     const { hour, day } = localPartsInZone(DEFAULT_TIMEZONE, at)
     return {
       resolution: { resolved: true, timeZone: DEFAULT_TIMEZONE, method: 'npa', input: 'legacy_default', approximate: true },
-      zone: DEFAULT_TIMEZONE, localHour: hour, localDay: day, legacy: true,
+      zone: DEFAULT_TIMEZONE, localHour: hour, localDay: day, secondaryZone: null, legacy: true,
     }
   }
 
   const resolution = resolveRecipientTimeZone({ phone: location.phone, zip: location.zip })
   if (!resolution.resolved) {
-    return { resolution, zone: null, localHour: null, localDay: null, legacy: false }
+    return { resolution, zone: null, localHour: null, localDay: null, secondaryZone: null, legacy: false }
   }
   const { hour, day } = localPartsInZone(resolution.timeZone, at)
-  return { resolution, zone: resolution.timeZone, localHour: hour, localDay: day, legacy: false }
+  return {
+    resolution,
+    zone: resolution.timeZone,
+    localHour: hour,
+    localDay: day,
+    // The ZIP's zone when the two inputs DISAGREE — quiet hours must then hold in both.
+    secondaryZone: resolution.secondaryTimeZone ?? null,
+    legacy: false,
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -574,7 +588,12 @@ export async function resolveDispatchPolicy(
   let quietHours: QuietHoursDecision | undefined
   let configuredWindowOk: boolean | undefined
   let configuredWindowReason: string | undefined
+  let windowMisconfigured: boolean | undefined
   let quietHoursExempt = !floorApplies
+  // The hour the GATE re-derives the floor from. Primary-zone hour, except on a dual-zone
+  // send where only the SECOND zone misses the floor — the gate must then see the failing
+  // hour, or the combined verdict would be silently un-blocked by the passing zone's clock.
+  let gateLocalHour = timezone.localHour
   if (timezoneNeeded && timezone.localHour != null && timezone.localDay != null) {
     quietHours = evaluateQuietHours({
       localHour: timezone.localHour,
@@ -583,11 +602,35 @@ export async function resolveDispatchPolicy(
       campaignWindow,
       workerWindow,
     })
+    // NPA/ZIP DISAGREEMENT: the phone and the address place this recipient in different
+    // zones, so neither hour can be trusted alone. Evaluate in the second zone too and
+    // require BOTH to permit — the intersection of the two zones' windows, always at least
+    // as narrow as either alone (combineQuietHoursDecisions).
+    if (timezone.secondaryZone) {
+      const second = localPartsInZone(timezone.secondaryZone, now)
+      const secondDecision = evaluateQuietHours({
+        localHour: second.hour,
+        localDay: second.day,
+        floorApplies,
+        campaignWindow,
+        workerWindow,
+      })
+      if (quietHours.outcome !== 'outside_floor' && secondDecision.outcome === 'outside_floor') {
+        gateLocalHour = second.hour
+      }
+      quietHours = combineQuietHoursDecisions(quietHours, secondDecision)
+    }
     // The floor verdict is expressed through the gate's existing quiet_hours step so the
     // established escalating-block behavior and its audit action are unchanged.
     quietHoursExempt = quietHours.outcome === 'outside_floor' ? false : true
-    if (quietHours.outcome === 'outside_configured_window' || quietHours.outcome === 'window_unsatisfiable') {
+    if (quietHours.outcome === 'outside_configured_window') {
       configuredWindowOk = false
+      configuredWindowReason = quietHours.reason
+    }
+    // An EMPTY intersection is a configuration error, not a hold: there is no next opening
+    // a deferral could wait for. Its own escalating gate step (2h) so it reaches a person.
+    if (quietHours.outcome === 'window_unsatisfiable') {
+      windowMisconfigured = true
       configuredWindowReason = quietHours.reason
     }
   }
@@ -630,14 +673,16 @@ export async function resolveDispatchPolicy(
     ownershipResolved: ctx.ownershipResolved,
     ownershipConflict: ctx.ownershipConflict,
     hasConsent: consent,
-    // When the floor applies the hour is real; otherwise the step is exempt and the value
-    // is inert. Never pass a fabricated in-window hour while claiming the floor applies.
-    recipientLocalHour: timezone.localHour ?? 12,
+    // When the floor applies the hour is real (the failing zone's hour on a dual-zone
+    // disagreement); otherwise the step is exempt and the value is inert. Never pass a
+    // fabricated in-window hour while claiming the floor applies.
+    recipientLocalHour: gateLocalHour ?? 12,
     quietHoursExempt,
     timezoneResolved,
     timezoneReason: unresolvedTimezoneReason,
     configuredWindowOk,
     configuredWindowReason,
+    windowMisconfigured,
     withinBusinessHours: ctx.templateKind === 'human' ? true : withinBusinessHours,
     withinFrequencyCaps: policy.frequency.allowed,
     frequencyReason: policy.frequency.reason,

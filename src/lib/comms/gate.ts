@@ -15,6 +15,7 @@ export type GateStep =
   | 'timezone_unresolved' // 1b — the recipient's zone could not be resolved; quiet hours is unevaluable
   | 'quiet_hours' // 2 — legal TCPA floor (9–20 recipient-local) on SMS marketing/campaign sends
   | 'configured_window' // 2g — operator's per-campaign / per-worker window (narrows the floor; deferral)
+  | 'window_misconfigured' // 2h — configured windows cannot overlap the floor/each other; config error, escalates
   | 'business_hours' // 2b — operator's hours of operation (can only tighten the floor)
   | 'sms_live' // 2f — SMS staged pending A2P 10DLC approval (non-escalating hold)
   | 'frequency' // 2d — per-recipient rate caps (operational deferral, §9)
@@ -98,6 +99,15 @@ export interface GateInput {
   configuredWindowOk?: boolean
   /** 2g — which layer's window excluded this moment, and when it next opens. */
   configuredWindowReason?: string
+  /**
+   * 2h — the configured windows are UNSATISFIABLE: their intersection with the statutory
+   * floor (and each other) is empty, so no instant can ever send. Defaults to false. This
+   * is a HARD, ESCALATING block, deliberately distinct from `configured_window`: a window
+   * miss is "wait for the opening"; an empty intersection HAS no opening, and deferring it
+   * would retry forever without ever surfacing the misconfiguration to a person. The
+   * operator must fix the hours policy; the send is withheld until they do.
+   */
+  windowMisconfigured?: boolean
   /**
    * 2 — this send is EXEMPT from the quiet-hours floor. Owner-directed scope
    * (2026-08-07): the 9:00–20:00 floor applies to SMS marketing/campaign sends only.
@@ -212,6 +222,7 @@ const BLOCK: Record<GateStep, string> = {
   timezone_unresolved: 'Recipient timezone could not be resolved — quiet hours cannot be evaluated; not sent.',
   quiet_hours: 'Outside permitted quiet hours (9:00–20:00 recipient-local).',
   configured_window: 'Outside the configured send window — held for the next opening.',
+  window_misconfigured: 'The configured send windows never overlap the permitted hours — nothing can ever send; fix the hours policy.',
   business_hours: 'Outside configured hours of operation — held for the next in-hours cycle.',
   sms_live: 'SMS is staged pending A2P 10DLC approval — held until the campaign is approved.',
   dnc: 'Recipient is on the do-not-contact list.',
@@ -329,6 +340,11 @@ export function evaluateGate(input: GateInput): GateResult {
   // retried each cycle, activating automatically when the A2P flag flips true (§12).
   if (input.smsLive === false) return blocked('sms_live', false)
   if (input.withinBusinessHours === false) return blocked('business_hours', false)
+  // 2h — an EMPTY window intersection is a configuration error, not a deferral: there is no
+  // "next opening" to hold for, so deferring would silently retry forever. Escalates so an
+  // operator fixes the policy. Checked before the configured_window deferral so an
+  // unsatisfiable config never masquerades as an ordinary hold.
+  if (input.windowMisconfigured === true) return blocked('window_misconfigured', true, input.configuredWindowReason)
   // 2g — the operator's per-campaign / per-worker window. A DEFERRAL, never a suppression:
   // it is an operator preference narrowing the floor, not a regulatory control, so a miss
   // holds the send for the next opening exactly like business_hours.
@@ -336,4 +352,28 @@ export function evaluateGate(input: GateInput): GateResult {
   if (input.withinFrequencyCaps === false) return blocked('frequency', false, input.frequencyReason)
   if (input.collisionPaused === true) return blocked('collision', false, input.collisionReason)
   return { allowed: true, escalate: false }
+}
+
+/**
+ * The NON-ESCALATING gate steps: operational deferrals, not compliance verdicts. A send
+ * withheld on one of these is a HOLD — the condition clears on its own (the clock reaches
+ * the window, A2P approval lands, the frequency day rolls over) — so the caller that owns
+ * the message's schedule must RE-ATTEMPT it rather than terminally marking it. This set is
+ * the single source of truth for that retry decision; the campaign ticks, the workforce
+ * queue, the workshop engine, and the message-status UI all key off it, so a new deferral
+ * step added to the union cannot silently become terminal in one consumer and retryable in
+ * another. NOTE: `suppression` is escalate=false but is NOT here — a business exclusion is
+ * an intentional operator decision, not a self-clearing hold.
+ */
+export const DEFERRAL_GATE_STEPS: ReadonlySet<GateStep> = new Set<GateStep>([
+  'sms_live',
+  'business_hours',
+  'frequency',
+  'collision',
+  'configured_window',
+])
+
+/** True when a blocked step is an operational deferral the schedule owner should retry. */
+export function isDeferralGateStep(step: string | null | undefined): boolean {
+  return !!step && DEFERRAL_GATE_STEPS.has(step as GateStep)
 }

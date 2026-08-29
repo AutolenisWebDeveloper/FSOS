@@ -25,7 +25,7 @@
 // PURE — no React, no DB, no env. Imported by both Server and Client Components and
 // exercised directly by tests/comms-message-status.test.mjs.
 
-import type { GateStep } from './gate'
+import { DEFERRAL_GATE_STEPS, type GateStep } from './gate'
 
 /** Badge variants this module is allowed to emit (ui/badge.tsx). */
 export type StatusVariant = 'won' | 'pending' | 'lost' | 'blocked' | 'draft' | 'outline'
@@ -77,18 +77,11 @@ export function deliveryStatus(status: string | null | undefined): MessageStatus
  * `Record<GateStep, boolean>`-shaped set so adding a step to `GateStep` without
  * classifying it here is a type error rather than a silent mis-label.
  */
-const DEFERRAL_STEPS = {
-  sms_live: true,
-  business_hours: true,
-  frequency: true,
-  collision: true,
-  // A configured per-campaign / per-worker window is an operator preference narrowing the
-  // statutory floor, not a regulatory control — missing it HOLDS the send for the next
-  // opening. It reads amber (self-resolving), never as a compliance block. Note that
-  // `timezone_unresolved` is deliberately NOT here: an unresolvable recipient zone needs a
-  // human to fix the contact record, so it must read as blocked.
-  configured_window: true,
-} as const satisfies Partial<Record<GateStep, true>>
+// The deferral tier comes from the gate's own DEFERRAL_GATE_STEPS — one source of truth,
+// so the UI cannot classify a step as self-resolving that a schedule owner treats as
+// terminal (or vice versa). `timezone_unresolved` and `window_misconfigured` are
+// deliberately NOT deferrals: both need a human (fix the contact record / fix the hours
+// policy), so they must read as blocked.
 
 export type GateOutcomeTier = 'sent' | 'deferred' | 'blocked'
 
@@ -107,6 +100,7 @@ const STEP_LABEL: Record<GateStep, string> = {
   timezone_unresolved: 'Timezone unknown',
   quiet_hours: 'Quiet hours',
   configured_window: 'Outside send window',
+  window_misconfigured: 'Send window impossible',
   business_hours: 'Outside hours',
   sms_live: 'Awaiting A2P',
   frequency: 'Frequency cap',
@@ -130,6 +124,7 @@ const STEP_DESCRIPTION: Record<GateStep, string> = {
   timezone_unresolved: 'The recipient\u2019s timezone could not be determined from their phone or ZIP, so quiet hours cannot be checked \u2014 withheld. Add a valid phone or address to send.',
   quiet_hours: 'Outside the 9:00\u201320:00 recipient-local TCPA floor (SMS marketing sends).',
   configured_window: 'Outside the send window configured for this campaign or worker \u2014 held for the next opening, not suppressed.',
+  window_misconfigured: 'The configured campaign/worker windows never overlap the permitted hours, so nothing can ever send \u2014 fix the hours policy.',
   business_hours: 'Outside your configured hours of operation — retries next cycle.',
   sms_live: 'SMS is staged pending A2P 10DLC approval — held, not dropped.',
   frequency: 'Recipient frequency cap reached — held for a later cycle.',
@@ -170,7 +165,7 @@ export function gateOutcome(args: {
         description: 'Held by the gate for an unrecognized reason — review before resending.',
       }
     }
-    const deferred = blockedStep in DEFERRAL_STEPS
+    const deferred = DEFERRAL_GATE_STEPS.has(blockedStep)
     return {
       tier: deferred ? 'deferred' : 'blocked',
       // Deferrals are amber (operational, self-resolving); compliance blocks are the

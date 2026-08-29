@@ -197,16 +197,31 @@ export function decideClaim(existingStatus: LogStatus | null): ClaimDecision {
   return 'skip'
 }
 
+// Self-clearing gate steps — a retry on a later tick can genuinely succeed once time
+// passes or a staged hold lifts. Mirrors gate.ts DEFERRAL_GATE_STEPS (+ quiet_hours,
+// which for a reminder is likewise just "wrong time of day"); duplicated as a constant
+// ONLY so this module stays import-free (the same pattern as the quiet-hours constants
+// above) — gate.ts remains the authority on what blocks vs defers a send.
+const RETRYABLE_GATE_STEPS: ReadonlySet<string> = new Set([
+  'quiet_hours',
+  'business_hours',
+  'configured_window',
+  'frequency',
+  'collision',
+  'sms_live',
+])
+
 /**
  * Map a dispatch outcome to the terminal (or retryable) send-log status.
- *   • sent                                   → 'sent' (terminal)
- *   • blocked on a TIME step (quiet/business) → 'deferred' (retry next tick)
- *   • blocked on any other step               → 'blocked' (terminal — consent/DNC/
+ *   • sent                                       → 'sent' (terminal)
+ *   • blocked on a self-clearing step (time
+ *     windows, frequency/collision, SMS staging)  → 'deferred' (retry next tick)
+ *   • blocked on any other step                   → 'blocked' (terminal — consent/DNC/
  *     recommendation/securities/template/other-rule do not fix themselves on retry)
  */
 export function classifySendOutcome(sent: boolean, blockedStep: string | null | undefined): LogStatus {
   if (sent) return 'sent'
-  if (blockedStep === 'quiet_hours' || blockedStep === 'business_hours') return 'deferred'
+  if (blockedStep != null && RETRYABLE_GATE_STEPS.has(blockedStep)) return 'deferred'
   return 'blocked'
 }
 

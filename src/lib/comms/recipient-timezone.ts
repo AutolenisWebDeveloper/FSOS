@@ -46,7 +46,7 @@
 /** An IANA timezone identifier. Named for readability at the call sites below. */
 export type IanaZone = string
 
-export type TimezoneMethod = 'npa' | 'zip'
+export type TimezoneMethod = 'npa' | 'zip' | 'both'
 
 export type TimezoneUnresolvedReason =
   /** Neither a phone nor a ZIP was supplied. */
@@ -64,16 +64,27 @@ export type TimezoneUnresolvedReason =
 
 export interface TimezoneResolved {
   resolved: true
-  /** The IANA zone name. */
+  /** The IANA zone name (the NPA's zone when both inputs resolved and disagree). */
   timeZone: IanaZone
-  /** Which input produced it. */
+  /** Which input(s) produced it: 'npa', 'zip', or 'both' when phone AND ZIP each resolved. */
   method: TimezoneMethod
-  /** The exact input value used — the NPA ('214') or the ZIP3 ('752'). Recorded on the send. */
+  /**
+   * The exact input value(s) used — the NPA ('214'), the ZIP3 ('752'), or, for method
+   * 'both', the pair joined as '<npa>+<zip3>' ('214+900'). Recorded on the send.
+   */
   input: string
   /**
+   * Present ONLY when method is 'both' and the two inputs DISAGREE: the ZIP's zone, which
+   * the quiet-hours evaluation must satisfy IN ADDITION to `timeZone`. Two conflicting
+   * pieces of evidence mean neither can be trusted alone — a phone kept from a previous
+   * state, or a mailing address that is not where the person lives — so the send must be
+   * permissible in BOTH zones (the intersection of the two windows). Absent when the
+   * inputs agree or only one resolved.
+   */
+  secondaryTimeZone?: IanaZone
+  /**
    * True when the NPA or ZIP3 straddles a zone boundary and the map took the majority
-   * side (see KNOWN PRECISION LIMITS above). The send still proceeds; the flag exists so
-   * reporting can distinguish a certain resolution from an approximated one.
+   * side (see KNOWN PRECISION LIMITS above). For method 'both' it is the OR of the two.
    */
   approximate: boolean
 }
@@ -425,7 +436,12 @@ export function timeZoneForZip(zip: string | null | undefined): IanaZone | null 
 export function resolveRecipientTimeZone(input: TimezoneResolutionInput): TimezoneResolution {
   const attempted: TimezoneMethod[] = []
 
-  // ── Primary: phone NPA ──
+  // Both inputs are resolved INDEPENDENTLY, then reconciled. Taking the NPA and never
+  // consulting the ZIP would silently discard disagreeing evidence — and a phone kept from
+  // a previous state is exactly the case where the ZIP is the truer signal.
+  let npaZone: IanaZone | null = null
+  let npaValue: string | null = null
+  let npaApprox = false
   let npaReason: TimezoneUnresolvedReason | null = null
   if (input.phone) {
     attempted.push('npa')
@@ -437,13 +453,18 @@ export function resolveRecipientTimeZone(input: TimezoneResolutionInput): Timezo
     } else {
       const zone = NPA_TO_ZONE.get(npa)
       if (zone) {
-        return { resolved: true, timeZone: zone, method: 'npa', input: npa, approximate: APPROXIMATE_NPAS.has(npa) }
+        npaZone = zone
+        npaValue = npa
+        npaApprox = APPROXIMATE_NPAS.has(npa)
+      } else {
+        npaReason = 'unknown_npa'
       }
-      npaReason = 'unknown_npa'
     }
   }
 
-  // ── Secondary: ZIP ──
+  let zipZone: IanaZone | null = null
+  let zipValue: string | null = null
+  let zipApprox = false
   let zipReason: TimezoneUnresolvedReason | null = null
   if (input.zip) {
     attempted.push('zip')
@@ -453,10 +474,34 @@ export function resolveRecipientTimeZone(input: TimezoneResolutionInput): Timezo
     } else {
       const range = zipRangeFor(input.zip)
       if (range) {
-        return { resolved: true, timeZone: range.zone, method: 'zip', input: z3, approximate: range.approximate === true }
+        zipZone = range.zone
+        zipValue = z3
+        zipApprox = range.approximate === true
+      } else {
+        zipReason = 'unknown_zip'
       }
-      zipReason = 'unknown_zip'
     }
+  }
+
+  if (npaZone && zipZone) {
+    // Both resolved. Agreement → one zone, method 'both' (both pieces of evidence are
+    // recorded). Disagreement → the NPA zone stays primary and the ZIP zone rides along as
+    // `secondaryTimeZone`; the caller must satisfy BOTH windows (quiet-hours-window.ts
+    // combineQuietHoursDecisions), which can only be narrower than either alone.
+    return {
+      resolved: true,
+      timeZone: npaZone,
+      ...(npaZone === zipZone ? {} : { secondaryTimeZone: zipZone }),
+      method: 'both',
+      input: `${npaValue}+${zipValue}`,
+      approximate: npaApprox || zipApprox,
+    }
+  }
+  if (npaZone) {
+    return { resolved: true, timeZone: npaZone, method: 'npa', input: npaValue as string, approximate: npaApprox }
+  }
+  if (zipZone) {
+    return { resolved: true, timeZone: zipZone, method: 'zip', input: zipValue as string, approximate: zipApprox }
   }
 
   // Report the PRIMARY input's failure when one was supplied — it is the more actionable

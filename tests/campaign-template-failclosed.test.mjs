@@ -147,7 +147,9 @@ for (const eng of engines) {
   await record(`${eng.key}: null template → skipped(template_unresolved), NO dispatch`, async () => {
     const r = await fire(eng.key, null)
     assert.equal(r.calls, 0, 'sendMessage must NEVER be called')
-    assert.equal(r.ret, false, 'touch not sent')
+    // fireMessageTouch now returns a tri-state ('sent'|'blocked'|'deferred') so the tick
+    // loop can hold the cursor on deferrals; a template skip is a terminal 'blocked'.
+    assert.equal(r.ret, 'blocked', 'touch not sent (terminal skip, not a deferral)')
     assert.ok(r.status, 'an execution row was recorded')
     assert.equal(r.status.status, 'skipped')
     assert.equal(r.status.detail.reason, 'template_unresolved')

@@ -789,7 +789,11 @@ export async function sendMessage(ctx: SendContext): Promise<SendOutcome> {
           ...(result.resolved ? { consent_at_send: result.resolved.consent } : {}),
           ...(result.timezone
             ? {
-                resolved_timezone: result.timezone.zone,
+                // On an NPA/ZIP zone DISAGREEMENT both zones are recorded, joined as
+                // '<npaZone>+<zipZone>' — the decision had to hold in both (mig 124).
+                resolved_timezone: result.timezone.secondaryZone
+                  ? `${result.timezone.zone}+${result.timezone.secondaryZone}`
+                  : result.timezone.zone,
                 // Method/input are recorded ONLY for a map resolution (a real NPA or ZIP3).
                 // A caller-supplied zone and the legacy flag-off default record the zone
                 // with a null method — mig 123's contract for "not evidence-resolved".

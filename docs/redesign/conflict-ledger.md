@@ -57,7 +57,7 @@ not get to reinterpret them.
 | P9 | **Append-only `audit_log`; RLS on client/agency tables** (CLAUDE.md §10) | Data layer untouched. |
 | P10 | **Preserve recent engineering work** (spec §0): error-leak-audited files, `error.tsx`/`loading.tsx` boundaries, `env.ts`, `money.ts`, migrations 076–080 | None of these are modified by Slice 1; enumerated as off-limits for Slices 2–4. |
 | P11 | **Design tokens; never hardcode a color/spacing/font** (CLAUDE.md §3.1.6, §18, DESIGN.md) | New components resolve through existing tokens; any new token is added to `DESIGN.md` in the same change. |
-| P12 | **NIGO defect-prevention out of scope; Compliance Intelligence isolated** (CLAUDE.md §5) | Workspace 21 links `/app/compliance/intelligence` as-is; no case-spine cross-link introduced. |
+| P12 | **NIGO defect-prevention out of scope; Compliance Intelligence isolated** (CLAUDE.md §5) | Workspace 21 linked `/app/compliance/intelligence` as-is; no case-spine cross-link introduced. *(Module excised 2026-08-28 — ADR-040; the nav entry and route are gone.)* |
 
 ---
 

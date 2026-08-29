@@ -1,5 +1,8 @@
-// tests/compliance-extract.test.mjs — pure logic of the Compliance Intelligence
-// document pipeline (src/lib/compliance/extract.ts). Bundled to JS on the fly via
+// tests/compliance-extract.test.mjs — pure logic of the shared document-extraction
+// module (src/lib/compliance/extract.ts), which backs the AI Knowledge Library upload
+// path. The RightBridge structured-report assertions were removed with the Compliance
+// Intelligence excision; every symbol covered here still has a live consumer.
+// Bundled to JS on the fly via
 // esbuild (tsconfig paths for the @/ alias; pdf2json kept external since these tests
 // never invoke the PDF parser). Skips cleanly when esbuild is unavailable, like
 // resolution.test.mjs — but MUST run under CI_REQUIRE_INFRA=1.
@@ -37,11 +40,7 @@ const {
   densityConfidence,
   reconstructPageText,
   pagesFromModelText,
-  renderPagesWithMarkers,
   joinPageText,
-  guessKind,
-  summarizeStructuredReport,
-  StructuredRightBridgeSchema,
 } = mod
 
 let pass = 0
@@ -113,45 +112,13 @@ console.log('extract — model-vision page splitting')
   ok(single.length === 1 && single[0].page_number === 1, 'no markers → single page 1 fallback')
 }
 
-console.log('extract — rendering helpers')
+console.log('extract — page joining')
 {
   const pages = [
     { page_number: 1, text: 'alpha' },
     { page_number: 2, text: 'beta' },
   ]
-  ok(renderPagesWithMarkers(pages).includes('===== PAGE 2 ====='), 'renderPagesWithMarkers emits page markers')
   ok(joinPageText(pages) === 'alpha\n\nbeta', 'joinPageText concatenates page text')
-}
-
-console.log('extract — document-kind heuristic')
-{
-  ok(guessKind('RightBridge Product Profiler.pdf', '') === 'rightbridge', 'filename → rightbridge')
-  ok(guessKind('notice.pdf', 'This application is Not In Good Order; please provide...') === 'nigo', 'NIGO language → nigo')
-  ok(guessKind('random.pdf', 'hello') === 'other', 'no signal → other')
-}
-
-console.log('extract — structured report schema + summary')
-{
-  const parsed = StructuredRightBridgeSchema.safeParse({
-    report_version: 'v3',
-    sections: [
-      {
-        name: 'Financial',
-        page: 2,
-        questions: [
-          { number: '1', label: 'Net worth', answer: '$500k', page: 2, confidence: 0.9 },
-          { number: '2', label: 'Liquidity need', answer: null, page: 2 },
-        ],
-      },
-    ],
-  })
-  ok(parsed.success, 'a well-formed structured report validates')
-  const summary = summarizeStructuredReport(parsed.success ? parsed.data : { sections: [] })
-  ok(summary.section_count === 1 && summary.question_count === 2, 'summary counts sections + questions')
-  ok(summary.blank_count === 1, 'blank (null) answers are counted as blanks, not fabricated')
-
-  const bad = StructuredRightBridgeSchema.safeParse({ sections: [{ name: 'X', questions: [{ answer: 'no label' }] }] })
-  ok(!bad.success, 'a question with no label is rejected (schema-validated writes)')
 }
 
 console.log(`\ncompliance-extract: ${pass} passed, ${fail} failed.`)

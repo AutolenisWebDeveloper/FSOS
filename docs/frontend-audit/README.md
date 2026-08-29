@@ -37,7 +37,7 @@ untouched.
 
 **No approval gate.** Website content — legal, privacy, terms, SMS/A2P consent
 copy, forms — ships **compliant-by-construction**, written accurately against the
-`twilio-a2p-compliance` / `finra-rule-ingestion` references. No page requires a
+`twilio-a2p-compliance` references. No page requires a
 named individual's prior sign-off to go live — the FSA owns publish. Residual
 regulatory/legal/carrier risk is **documented with a recommendation**, never
 treated as an approval bottleneck; real business-specific values are left as

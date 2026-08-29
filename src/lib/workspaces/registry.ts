@@ -444,10 +444,9 @@ const FSA: Workspace[] = [
     icon: 'ShieldCheck',
     home: '/app/compliance',
     match: ['/app/compliance', '/app/settings', '/app/help'],
-    description: 'Consent, DNC, the securities firewall, licenses, and Compliance Intelligence.',
+    description: 'Consent, DNC, the securities firewall, and licenses.',
     nav: [
       { href: '/app/compliance', label: 'Overview', icon: 'ShieldCheck', exact: true },
-      { href: '/app/compliance/intelligence', label: 'Compliance Intelligence', icon: 'ScanSearch' },
       { href: '/app/compliance/consent', label: 'Consent', icon: 'ClipboardCheck' },
       { href: '/app/compliance/dnc', label: 'DNC', icon: 'ShieldCheck' },
       { href: '/app/compliance/firewall', label: 'Securities Firewall', icon: 'ShieldCheck' },

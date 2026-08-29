@@ -104,7 +104,7 @@ const LEGACY_FSA_NAV = [
   '/app/comms/inbox', '/app/knowledge', '/app/contacts/upload', '/app/forms', '/app/workshops',
   '/app/workshops/review', '/app/documents', '/app/workflows', '/app/tasks', '/app/calendar',
   '/app/booking', '/app/tools/calculator', '/app/ai', '/app/ai/escalations', '/app/assistant',
-  '/app/compliance', '/app/compliance/intelligence', '/app/reports', '/app/contacts/ffs',
+  '/app/compliance', '/app/reports', '/app/contacts/ffs',
   '/app/settings', '/app/help',
 ]
 function coveredSpecifically(href) {

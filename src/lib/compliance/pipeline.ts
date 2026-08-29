@@ -1,9 +1,12 @@
 // src/lib/compliance/pipeline.ts
-// Orchestration for the Compliance Intelligence document pipeline (owner-authorized
-// module; CLAUDE.md §5 authorized exception + docs/adr/ADR-012). This is the layer that MAY call the AI gateway: it chooses
-// the extraction path (native PDF text → model-vision OCR fallback for scanned/low-
-// text PDFs and images) and builds the version-aware structured RightBridge report.
-// Pure byte→text helpers live in ./extract; DB + storage stay in the route handlers.
+// Document extraction orchestration. This is the layer that MAY call the AI gateway: it
+// chooses the extraction path (native PDF text → model-vision OCR fallback for scanned/
+// low-text PDFs and images). Pure byte→text helpers live in ./extract; DB + storage stay
+// in the callers.
+//
+// Consumed by the AI Knowledge Library upload path (src/lib/knowledge/uploads.ts). The
+// RightBridge report-structuring half of this module was removed with the Compliance
+// Intelligence excision; extraction itself is shared infrastructure and stays.
 //
 // GUARDRAILS: the vision/OCR prompt transcribes ONLY what is on the page (no summary,
 // no invented field, blanks stay blank), preserves page-number markers so every fact
@@ -11,11 +14,8 @@
 // system never treats uncertain OCR as verified fact (CLAUDE.md §2.1/§2.3).
 
 import { runGateway, type GatewayAttachment } from '@/lib/ai/gateway'
-import { runJson } from '@/lib/compliance/intelligence'
 import {
   ExtractionResult,
-  StructuredRightBridge,
-  StructuredRightBridgeSchema,
   densityConfidence,
   extOf,
   extractPdfText,
@@ -23,7 +23,6 @@ import {
   fileFamily,
   imageMediaType,
   pagesFromModelText,
-  renderPagesWithMarkers,
 } from '@/lib/compliance/extract'
 
 /** Model used for vision/OCR + structuring (kept in one place for migration). */
@@ -113,50 +112,4 @@ async function extractViaVision(
     confidence: Number(Math.min(confidence, 0.9).toFixed(3)),
     low_confidence: low || charCount === 0,
   }
-}
-
-const STRUCTURE_SYSTEM = [
-  'You convert an extracted RightBridge suitability report into a STRUCTURED representation.',
-  'Work ONLY from the provided report text. Never invent a section, question, answer, or page number.',
-  'For each answer, copy the value exactly as written; if a field is blank, set answer to null (do NOT guess).',
-  'Use the "===== PAGE n =====" markers in the text to set each item\'s page number.',
-  'Give each item a confidence in [0,1] reflecting how clearly the value was stated in the text.',
-  'Output ONLY the requested JSON object. No prose, no markdown fences.',
-].join(' ')
-
-/**
- * Build the version-aware structured report (sections → questions → answers, each
- * with a source page + confidence) from extracted page text. Returns a schema-valid
- * object or null if the model could not produce one. Grounded strictly in the text
- * passed in — no field is fabricated.
- */
-export async function structureRightBridge(
-  pages: { page_number: number; text: string }[],
-): Promise<StructuredRightBridge | null> {
-  const marked = renderPagesWithMarkers(
-    pages.map((p) => ({ page_number: p.page_number, text: p.text, char_count: p.text.length, low_confidence: false })),
-  )
-  if (!marked.trim()) return null
-
-  const user = [
-    'Structure this RightBridge report. Preserve section names, question numbers, labels, selected answers, entered explanations, and the page each appears on.',
-    '',
-    'REPORT TEXT (page-marked):',
-    `"""${marked.slice(0, 120_000)}"""`,
-    '',
-    'Return ONLY this JSON:',
-    '{',
-    '  "report_version": "the report version/name if stated, else null",',
-    '  "sections": [',
-    '    { "name": "section name", "page": 1, "questions": [',
-    '      { "number": "1a or null", "label": "question/field label", "answer": "value exactly as written or null if blank", "explanation": "entered free-text or null", "page": 1, "confidence": 0.0 }',
-    '    ] }',
-    '  ]',
-    '}',
-  ].join('\n')
-
-  const out = await runJson<unknown>(STRUCTURE_SYSTEM, user, 4000)
-  if (!out) return null
-  const parsed = StructuredRightBridgeSchema.safeParse(out)
-  return parsed.success ? parsed.data : null
 }

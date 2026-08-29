@@ -26,7 +26,7 @@ Auto-merge only if **all** hold: (1) CI green (type-check → lint → test → 
 
 **No compliance-officer merge gate.** Website content — including legal, privacy,
 terms, and SMS/A2P consent copy — ships **compliant-by-construction**: written
-accurately against the `twilio-a2p-compliance` / `finra-rule-ingestion`
+accurately against the `twilio-a2p-compliance`
 references, with `[[FSA TO PROVIDE]]` placeholders for real business-specific
 values the FSA confirms. No page requires a named individual's prior sign-off to
 deploy — the FSA owns publish. Any residual regulatory/legal/carrier risk is

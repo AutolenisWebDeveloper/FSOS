@@ -150,7 +150,7 @@ Created by exactly **two** migrations, `036_compliance_intelligence.sql` (274) a
 
 **RLS:** all 7 tables `enable row level security` with `<table>_read` / `<table>_write` policies built from `is_super()/has_role()` helpers defined in migration 010 (036:240-274, 037:168-194). Read roles: compliance, supervisor, fsa, licensed_staff, admin, ops. **Migration 010's helpers are PROTECTED and shared.**
 
-**Storage:** `COMPLIANCE_BUCKET` (`lib/compliance/uploads.ts:18`) is an **alias of the shared** `PRIVATE_DOCUMENTS_BUCKET = 'documents'` (`lib/storage/private-documents.ts:15`), created in migration 001 and shared with the knowledge library and other document features. **The bucket itself must not be dropped** — only objects under the feature's prefix are in scope.
+**Storage:** `COMPLIANCE_BUCKET` (`lib/compliance/uploads.ts:18`) is an **alias of the shared** `PRIVATE_DOCUMEN2026-08-29T00:00:24ZUCKET = 'documents'` (`lib/storage/private-documents.ts:15`), created in migration 001 and shared with the knowledge library and other document features. **The bucket itself must not be dropped** — only objects under the feature's prefix are in scope.
 
 ### (g) Background work — PROVEN NEGATIVE
 `vercel.json` read in full: **24 cron entries, NONE of which belong to this feature.** No queue, no webhook, no scheduled job references any intelligence module or table. The workforce orchestrator (`/api/cron/workforce-orchestrator`) and all lifecycle crons are untouched. **There is no intelligence-specific scheduled job to remove.**
@@ -365,5 +365,127 @@ select 1 from pg_extension where extname = 'vector';
 | **D — Drop outright** | New forward migration drops 7 tables (cascade), 3 enums, indexes, triggers, policies; bucket objects deleted by prefix | Smallest surface. **Permanent, irreversible loss** of every NIGO case, drafted response, uploaded document text, and — if the FFS manual/WSPs/FCB bulletins were uploaded per `CORPUS_README.md:21` — firm supervisory material. Would contradict `legacy-port.md:127` and the ≥7yr posture, and would leave `audit_log` referencing rows that no longer exist. **Not advisable without documented owner sign-off and confirmation that no legal hold applies.** |
 
 **Retention of supervision-adjacent records is an owner decision under the FFS WSP, not a code decision. Phase A stops here.**
+
+---
+
+# ═══════════════════════════════ PHASE B ═══════════════════════════════
+
+## Entry 5 — Phase B execution (owner decisions D1–D6 applied) — 2026-08-28T23:59:23Z
+
+**Base:** `6f25013` (Phase A ledger commit). **`main` confirmed at `ab8198f`; branch exactly 1 commit ahead, ledger only.** Clean tree at start.
+
+### Owner decisions as executed
+| ID | Decision | Executed |
+|---|---|---|
+| D1 | Data: **retain in place** | **Zero migrations created; zero migrations modified.** `git diff --name-only -- supabase/` is empty. No table, column, enum, index, FK, RLS policy or grant dropped. |
+| D2 | Legal hold | Moot under D1. |
+| D3 | New superseding ADR | **`docs/adr/ADR-040-compliance-intelligence-excision.md`** (163 lines). ADR-012 marked Superseded and retained; `docs/adr/README.md` index updated. |
+| D4 | Storage: retain | **Zero storage operations performed.** No bucket, object, or policy touched. |
+| D5 | Route: natural 404 | Route file deleted; **no redirect, rewrite, or placeholder added** (`next.config.js` and `src/middleware.ts` contain no `intelligence` reference). |
+| D6 | Remove 3 skills + `docs/compliance/` | Skills removed. **`docs/compliance/` partially retained — see the G4 exceptions below.** |
+
+### G4 RE-VERIFY — two exceptions found and RETAINED
+Every file in `docs/compliance/` was read before deletion, as required.
+
+| File | Verdict | Evidence |
+|---|---|---|
+| `ai-reply-classification.md` | **RETAINED** | Documents the SMS/email **auto-send rule**: consent, quiet hours, DNC, opt-out, TRAIGA disclosure (`:98-99`). **Zero** mentions of NIGO/RightBridge/`compliance_*`. Cited by **live protected code** at `src/lib/comms/reply-classification.ts:29` and by `docs/adr/ADR-019:72,149`. Deleting it would orphan a live code comment and an accepted ADR. |
+| `config-defaults-to-verify.md` | **RETAINED** | Documents `comm_hours_policy` (**quiet hours**, migration 035) and `comm_frequency_policy` (**frequency caps**), for the two-way conversation feature. **Zero** intelligence mentions. Cross-referenced by the file above and by ADR-017/ADR-019. |
+| `CORPUS_README.md`, `FSOS_Compliance_Intelligence_Blueprint.md`, `START_HERE.md`, `objective_standard.md` | Deleted | Intelligence-only: seed corpus, module blueprint, build index, note-hardening standard. |
+
+The 3 skills were also re-read: **zero** protected-topic hits each (send gate / consent / DNC / quiet hours / A2P / CAN-SPAM / template approval / supervision), high intelligence-topic density. All three cleared for deletion.
+
+**Consequence: `docs/compliance/` still exists and must not be removed as a directory.**
+
+### G2 — no directory-level deletes in the mixed directories
+Named files only. Proof by listing after the change:
+- `src/app/api/compliance/` → **only the 7 protected routes remain**: `attestations/route.ts`, `attestations/[id]/route.ts`, `policies/route.ts`, `policies/[id]/route.ts`, `legal-holds/route.ts`, `legal-holds/[id]/route.ts`, `events/[id]/route.ts`. No empty directory left behind (`find -type d -empty` → none).
+- `src/lib/compliance/` → `extract.ts`, `firewall.ts`, `guardrail.ts`, `pipeline.ts`. **`firewall.ts` and `guardrail.ts` untouched.**
+- `src/components/compliance/` → `ComplianceControls.tsx` only (**protected**; consumed by the three `(compliance)` officer pages).
+
+### G3 — knowledge-library collision held at every edit site
+`knowledge_documents` / `knowledge_citations` / `/app/knowledge` / `src/lib/knowledge/**` / `/api/knowledge/**` were **not modified**. Only `compliance_documents` / `compliance_chunks` belonged to the excised feature, and both are retained under D1. The surviving halves of `extract.ts` and `pipeline.ts` exist **specifically** to serve the knowledge library.
+
+### Execution order actually followed
+`pipeline.ts` surgery → (nav + page, together) → components → 10 API routes → `uploads.ts` → `intelligence.ts` (plain delete, as predicted) → `extract.ts` surgery → `schemas.ts` → test trims → corpus + `package.json` → skills + docs → ADR-040 → doc references.
+
+The Phase A prediction held: removing `structureRightBridge` severed the last cross-boundary edge, so **`intelligence.ts` was deleted whole with no surgery**.
+
+---
+
+## Entry 6 — extract.ts per-symbol proof, gates, and Phase A correction — TS_B
+
+### The `extract.ts` per-symbol proof table
+
+Every symbol was scanned **after** the intelligence deletions, repo-wide across `src/`, `tests/`, `scripts/`, `supabase/`. Removals were applied **one at a time with `tsc --noEmit` between each**, never as a sweep.
+
+| Symbol | Remaining refs after deletions | Verdict | Typecheck after removal |
+|---|---|---|---|
+| `renderPagesWithMarkers` | none in `src/`; only the test being trimmed | **REMOVED** | ✓ PASS |
+| `guessKind` | none in `src/`; only the test being trimmed | **REMOVED** | ✓ PASS |
+| `summarizeStructuredReport` | none in `src/`; only the test being trimmed | **REMOVED** | ✓ PASS |
+| `StructuredRightBridgeSchema` / `StructuredRightBridge` | none in `src/`; only the test being trimmed | **REMOVED** | ✓ PASS |
+| `StructuredSectionSchema` / `StructuredSection` | **zero** anywhere | **REMOVED** | ✓ PASS |
+| `StructuredQuestionSchema` / `StructuredQuestion` | **zero** anywhere | **REMOVED** | ✓ PASS |
+| `import { z } from 'zod'` | zero `z.` uses remained (asserted programmatically before removal) | **REMOVED** | ✓ PASS |
+| **`PARSER_VERSION`** | zero code refs — **but persisted** | **RETAINED — exception** | n/a |
+
+**PROOF — `PARSER_VERSION` is persisted, so it was RETAINED per the brief's rule.**
+- The column `parser_version` exists on `compliance_uploads` (`037:73`) and `rightbridge_reports` (`037:129`) — **both retained under D1**, so rows carrying the literal `'fsos-doc-extract-1'` persist.
+- Zero writers/readers remain in `src/`, `scripts/`, `tests/` after the deletions.
+- The **knowledge path never references it at all** (zero hits in `src/lib/knowledge/` and `src/app/api/knowledge/`).
+- The knowledge dedupe key is the **content hash, not the parser version**: `findDuplicateUpload(db, sha256)` (`knowledge/uploads.ts:199`), `.eq('sha256', sha256)` (`:204`), `sha256Hex(buffer)` (`api/knowledge/upload/route.ts:103`). No cache key or dedupe hash includes `PARSER_VERSION`.
+
+It is therefore **knowingly-unused code retained on purpose**: it is the only in-repo record of what the persisted `parser_version` values mean, and removing it would make retained data uninterpretable. It carries an explanatory comment pointing at ADR-040, and ADR-040 documents it. **This is the only retention exception in the code.**
+
+**PROOF — `renderPagesWithMarkers` is unreachable from the knowledge path.**
+The knowledge path imports exactly `extractDocument` (`knowledge/uploads.ts:29`), five named helpers (`:30` — `extOf`, `fileFamily`, `joinPageText`, `ALLOWED_EXTENSIONS`, `MAX_UPLOAD_BYTES`) and `sha256Hex` (`api/knowledge/upload/route.ts:6`). `extractDocument`'s complete call set is `extOf`, `fileFamily`, `extractPlainText`, `extractPdfText`, `extractViaVision`, `pagesFromModelText`, `densityConfidence`, `imageMediaType`, `runGateway` — **`renderPagesWithMarkers` is not among them**. It had **zero internal callers** in `extract.ts` and zero `src/` callers repo-wide. Its only `src/` consumer had been `pipeline.ts:136`, inside `structureRightBridge`, removed in step 1.
+
+`extract.ts`: 291 → 234 lines. `pipeline.ts`: 162 → 115 lines. **Every added line in both files is a comment — zero logic was added** (verified against the diff).
+
+### Gate results
+
+| Gate | Baseline (Phase A) | Post-excision | Result |
+|---|---|---|---|
+| `npm run type-check` | 0 | **0** | PASS |
+| `npm run lint` | 0 | **0** — "No ESLint warnings or errors" | PASS |
+| `npm test` | 0 · **192** files | **0 · 192 files** | PASS |
+| `npm run test:rls` | 0 · **15** files | **0 · 15 files** | PASS |
+| `npm run build` | 0 | **0** | PASS |
+
+**Unit-count reconciliation — expected delta 0, actual delta 0.** No test file was added or deleted; two were **modified** (trimmed): `tests/compliance-extract.test.mjs` (six RightBridge/guessKind assertions removed; 20 assertions still pass) and `tests/workspace-registry.test.mjs` (one stale `LEGACY_FSA_NAV` entry removed). `git diff --diff-filter=AD -- tests/` is empty. Runner discovery reports **192 unit / 15 rls**, matching baseline exactly.
+
+**`test:rls` held at 15/15** — as required under D1, since no policy changed.
+
+**Note on a stale artifact (not a repository defect):** the first typecheck after the deletions failed with four `TS2307` errors from `.next/types/validator.ts`, a **build artifact generated by the Phase A baseline build** that still referenced the deleted routes. `rm -rf .next` cleared it and typecheck passed. All gate results above were produced from a clean `.next`.
+
+### Verification of the removal itself
+- **Route 404:** `src/app/(fsa)/app/compliance/intelligence/page.tsx` no longer exists; the production build manifest contains **zero** `compliance/intelligence` entries and exactly the 7 protected `api/compliance/*` routes. No redirect or rewrite was added (D5 honored).
+- **Nav:** `grep -rn "compliance/intelligence" src/` → **zero hits**. The `compliance-fsa` workspace now lists Overview, Consent, DNC, Securities Firewall, Licenses, Settings, Help.
+- **Residual sweep:** zero code references remain to any removed route, file, or symbol. The only surviving mentions are **deliberate historical annotations** in dated deliverables plus ADR-012 (retained as authorization history) and ADR-040.
+
+### End-to-end upload through `/api/knowledge/upload` — **UNVERIFIED**
+
+**It could not be run.** No `.env.local` exists and every required credential is unset (`NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY`). A genuine route-level test needs a live Supabase database, live Storage, and the AI gateway. **No mock was substituted and no such test is claimed.**
+
+What *was* proven, by executing real code offline (no mocks, no stubs):
+- `src/lib/knowledge/uploads.ts` **bundles cleanly** through the surgically-edited `extract.ts` and `pipeline.ts` — the module graph resolves, which was the actual risk of the surgery.
+- `sha256Hex(Buffer)` **executes** and returns a real digest.
+- `extractDocument(bytes, 'proof-note.txt', 'text/plain')` **executes** and returns `{method:"text", pages:1, chars:66, low_confidence:false}` with correct page text. (The text family never reaches the gateway, so this is a real end-to-end extraction for that path.)
+- All 10 `knowledge/uploads.ts` exports remain present.
+- `tests/knowledge-library-documents.test.mjs` **passes** in the suite.
+
+**Still unproven and requiring live infrastructure:** the HTTP route itself, storage write + signed-URL round trip, DB insert/dedupe against `knowledge_documents`, and the **model-vision OCR fallback** (scanned-PDF path), which is the one branch of `extractDocument` that calls the gateway.
+
+### CORRECTION to Phase A (Entry 2 §f and Entry 3)
+
+Phase A reported that `docs/enterprise-audit.md:123` **falsely asserts** an FK from `nigo_cases` to `cases`, and the Phase B brief accordingly directed that the line be corrected. **That Phase A finding was wrong, and no correction was made.**
+
+The full sentence spans lines 122–123 and reads: *"`nigo_cases` keyed by free-text `work_item`/`client_ref` (**NOT a** FK to `cases`, `036:148-149`)"*. The Phase A grep matched the line-wrapped fragment `FK to \`cases\`` on line 123 without the `(NOT a` that ends line 122. **The document was already correct**; "correcting" it would have introduced an error. The underlying schema fact is unchanged and still verified: `036:148` reads `work_item text, -- free-text work/reference id (NOT a FK)`, and there is no FK into the case spine.
+
+The second Phase A doc-vs-code finding **stands**: the removed `fsos-nigo-intelligence` skill named a `knowledge_chunks` table that has never existed in this repository.
+
+### Self-review of the actual diff
+Reviewed against the diff, not the plan. Confirmed: **zero migrations touched** (`git diff -- supabase/` empty); **zero storage operations**; no file removed outside the accepted manifest; protected modules altered only in the named surgical ways (`schemas.ts` = **149 deletions, 0 insertions**; `registry.ts` = exactly the two named changes; `extract.ts`/`pipeline.ts` added comments only); each `extract.ts` symbol removal individually proven and individually typechecked. **No material findings.**
 
 ---

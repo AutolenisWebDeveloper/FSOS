@@ -1,10 +1,14 @@
 // src/lib/compliance/extract.ts
-// Server-side document extraction for the Compliance Intelligence pipeline
-// (owner-authorized module; CLAUDE.md §5 authorized exception + docs/adr/ADR-012). Turns an uploaded file's BYTES into
-// per-page UTF-8 text so the NIGO / RightBridge engines no longer require the user
-// to copy-and-paste. Nothing here calls a model or the DB — pure, testable
-// functions. The model-vision fallback (scanned PDFs) is driven by the route via
-// the AI gateway; this module decides WHEN that fallback is needed.
+// Server-side document extraction. Turns an uploaded file's BYTES into per-page UTF-8
+// text so a caller never has to ask the user to copy-and-paste. Nothing here calls a
+// model or the DB — pure, testable functions. The model-vision fallback (scanned PDFs)
+// is driven by ./pipeline via the AI gateway; this module decides WHEN that fallback
+// is needed.
+//
+// Consumed by the AI Knowledge Library upload path (src/lib/knowledge/uploads.ts and
+// src/app/api/knowledge/upload). The RightBridge structured-report half of this module
+// was removed with the Compliance Intelligence excision; extraction itself is shared
+// infrastructure and stays.
 //
 // GUARDRAILS honored here:
 //   • Preserve page numbers — every page's text is captured with its 1-based number
@@ -16,10 +20,18 @@
 //     in a field it could not read.
 
 import { createHash } from 'node:crypto'
-import { z } from 'zod'
 import { extractPdfPages, type PdfPage } from '@/lib/import/pdf'
 
-/** Bump when the extraction algorithm changes (stored on every derived record). */
+/**
+ * Bump when the extraction algorithm changes.
+ *
+ * RETAINED DELIBERATELY (Compliance Intelligence excision, Phase B): this value was
+ * stamped into `compliance_uploads.parser_version` and `rightbridge_reports.parser_version`,
+ * and those rows are retained under the owner's retain-in-place decision. No code writes
+ * or reads those columns any more, so this constant has no live caller — but it is the
+ * only in-repo record of what the persisted `parser_version` strings mean. Removing it
+ * would leave retained data uninterpretable. See docs/adr/ADR-040.
+ */
 export const PARSER_VERSION = 'fsos-doc-extract-1'
 
 // ─── Format support ───────────────────────────────────────────────────────────
@@ -213,79 +225,10 @@ export function pagesFromModelText(fullText: string): ExtractedPage[] {
 
 // ─── Page rendering for retrieval / model context ─────────────────────────────
 
-/** Join extracted pages into one page-marked blob so the model can cite page numbers. */
-export function renderPagesWithMarkers(pages: ExtractedPage[]): string {
-  return pages
-    .map((p) => `===== PAGE ${p.page_number} =====\n${p.text}`)
-    .join('\n\n')
-}
-
 /** Plain concatenation of page text (for engines that only need the words). */
 export function joinPageText(pages: { text: string }[]): string {
   return pages
     .map((p) => p.text)
     .filter(Boolean)
     .join('\n\n')
-}
-
-// ─── Document-kind heuristic (a hint; the model/route can override) ───────────
-
-/** Guess the document kind from filename + a text sample (best-effort classifier). */
-export function guessKind(filename: string, sampleText: string): string {
-  const hay = `${filename}\n${sampleText}`.toLowerCase()
-  if (/rightbridge|product profiler|life wizard|profiler score|suitability profiler/.test(hay)) return 'rightbridge'
-  if (/not in good order|nigo|deficien|please provide|in order to process|correction (required|needed)/.test(hay))
-    return 'nigo'
-  if (/illustration|hypothetical/.test(hay)) return 'illustration'
-  if (/disclosure|acknowledg/.test(hay)) return 'disclosure'
-  if (/statement|account value|quarterly|annual statement/.test(hay)) return 'statement'
-  if (/policy|contract|certificate of insurance/.test(hay)) return 'contract'
-  if (/application|form \d|supplement|beneficiary designation/.test(hay)) return 'form'
-  return 'other'
-}
-
-// ─── Structured RightBridge report schema (version-aware) ─────────────────────
-// A report is NOT reduced to one text blob: it is sections → questions → answers,
-// each carrying the source page + an extraction-confidence so a reviewer can inspect
-// the original page beside the extracted value. The shape is deliberately generic so
-// new RightBridge versions / product workflows map without a code rewrite.
-
-export const StructuredQuestionSchema = z.object({
-  number: z.string().trim().max(40).nullable().optional(),
-  label: z.string().trim().max(2000),
-  answer: z.string().trim().max(4000).nullable().optional(),
-  explanation: z.string().trim().max(8000).nullable().optional(),
-  page: z.number().int().nonnegative().nullable().optional(),
-  confidence: z.number().min(0).max(1).nullable().optional(),
-})
-export type StructuredQuestion = z.infer<typeof StructuredQuestionSchema>
-
-export const StructuredSectionSchema = z.object({
-  name: z.string().trim().max(300),
-  page: z.number().int().nonnegative().nullable().optional(),
-  questions: z.array(StructuredQuestionSchema).max(400).default([]),
-})
-export type StructuredSection = z.infer<typeof StructuredSectionSchema>
-
-export const StructuredRightBridgeSchema = z.object({
-  report_version: z.string().trim().max(120).nullable().optional(),
-  sections: z.array(StructuredSectionSchema).max(80).default([]),
-})
-export type StructuredRightBridge = z.infer<typeof StructuredRightBridgeSchema>
-
-/** Count questions across a structured report + how many were left blank. */
-export function summarizeStructuredReport(r: StructuredRightBridge): {
-  section_count: number
-  question_count: number
-  blank_count: number
-} {
-  let question_count = 0
-  let blank_count = 0
-  for (const s of r.sections ?? []) {
-    for (const q of s.questions ?? []) {
-      question_count++
-      if (!q.answer || q.answer.trim() === '') blank_count++
-    }
-  }
-  return { section_count: (r.sections ?? []).length, question_count, blank_count }
 }

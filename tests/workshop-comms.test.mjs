@@ -110,7 +110,7 @@ ok('additive only — no destructive DDL', !/\bdrop\s+table\b/i.test(mig) && !/\
 // ── Part 3: static engine guarantees (comms-engine.ts + send.ts) ──
 console.log('\nEngine wiring (static guarantees)')
 const eng = readFileSync(join(root, 'src/lib/workshops/comms-engine.ts'), 'utf8')
-ok('engine sends ONLY through the existing gate (sendThroughGate), never a raw sender', /sendThroughGate/.test(eng) && !/from '@\/lib\/messaging'/.test(eng) && !/\bsendSms\b/.test(eng) && !/\bsendEmail\b/.test(eng))
+ok('engine sends ONLY through the existing gate (sendMessage), never a raw sender', /sendMessage/.test(eng) && !/from '@\/lib\/messaging'/.test(eng) && !/\bsendSms\b/.test(eng) && !/\bsendEmail\b/.test(eng))
 ok('durable per-channel consent guard is read + fed to the gate', /durableConsentGranted/.test(eng) && /workshop_consent_events/.test(eng) && /action\s*===\s*'granted'/.test(eng))
 ok('no send on a channel without durable granted consent (blocked before dispatch)', /const consent = await durableConsentGranted/.test(eng) && /if \(!consent\)/.test(eng))
 ok('is_security workshops are excluded from selection', /is_security\s*===\s*true\)\s*continue/.test(eng) || /is_security === true/.test(eng))
@@ -119,7 +119,14 @@ ok('placeholder templates cannot activate (approved+active+gate-handle required)
 ok('missing/placeholder template → deferred (template_not_approved), never sent', /template_not_approved/.test(eng))
 ok('atomic claim before dispatch (idempotency): insert sending + guarded deferred retry', /status: 'sending'/.test(eng) && /\.eq\('status', 'deferred'\)/.test(eng))
 
-const send = readFileSync(join(root, 'src/lib/comms/send.ts'), 'utf8')
-ok('send.ts consent is additive OR (member consent OR public-intake grant OR durable grant — never reduces)', /memberConsent \|\| contactConsent \|\| ctx\.durableConsentGranted === true/.test(send))
+// The additive-OR consent rule moved with enforcement: it now lives at the dispatch
+// chokepoint's policy resolver, where it applies to EVERY send rather than only to callers
+// that went through the old wrapper. The invariant is unchanged — a durable domain grant
+// (the workshop registrant's own consent store) can only ADD consent, never remove it.
+const policy = readFileSync(join(root, 'src/lib/comms/dispatch-policy.ts'), 'utf8')
+ok(
+  'dispatch-policy consent is additive OR (member consent OR public-intake grant OR durable grant OR waiver — never reduces)',
+  /memberConsentOk \|\| contactConsentOk \|\| ctx\.durableConsentGranted === true \|\| waiverApplies/.test(policy),
+)
 
 console.log(`\n${passed} checks passed.`)

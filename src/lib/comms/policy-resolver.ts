@@ -8,7 +8,7 @@
 // frequency/collision lookup failure yields "allowed" (an operational cap must not
 // silently drop a compliance-clean send — the other gate steps still protect it).
 
-import { getDb } from '@/lib/supabase/client'
+import { getDb } from '../supabase/client'
 import {
   purposeToConsentPurpose,
   isMarketingPurpose,

@@ -3,7 +3,7 @@
 //   • runReminderPass  — pre-event confirmation + 7d/1d/1h reminders (spec §2.3)
 //   • runNurturePass   — segmented post-event nurture off P1 attendance status (§2.4)
 // Both run from the dedicated Vercel Cron route (/api/cron/workshop-reminders). Every
-// client-facing send goes through the EXISTING dispatcher/gate (sendThroughGate) — there is
+// client-facing send goes through the EXISTING dispatcher/gate (sendMessage) — there is
 // no parallel sender here. Pure decisions live in ./reminders.ts; GHL routing reuses
 // ./server.ts + ghl.ts; the referral spine reuses the same shape as the P1 convert route.
 //
@@ -23,7 +23,7 @@
 
 import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
-import { sendThroughGate } from '@/lib/comms/send'
+import { sendMessage } from '@/lib/comms/send'
 import {
   convertRegistrationToLead,
   type WorkshopLeadContext,
@@ -358,7 +358,7 @@ export async function sendWorkshopMessage(db: Db, args: SendArgs): Promise<LogSt
   // Dispatch through the SAME gate as everything else. durableConsentGranted feeds gate
   // step 1; isSecurity is false here (securities workshops are excluded upstream + route to
   // FFS). templateId is the approved comm_templates handle → gate step 4 passes.
-  const outcome = await sendThroughGate({
+  const outcome = await sendMessage({
     channel,
     to,
     subject,

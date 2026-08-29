@@ -3,7 +3,7 @@ import { getDb } from '@/lib/supabase/client'
 import { readJson, configErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { z } from 'zod'
-import { sendThroughGate } from '@/lib/comms/send'
+import { sendMessage } from '@/lib/comms/send'
 import { runIdempotent } from '@/lib/jobs/runtime'
 import { getOrCreateConversation } from '@/lib/comms/conversations'
 import { resolveAssetPayload } from '@/lib/comms/assets'
@@ -18,7 +18,7 @@ export const runtime = 'nodejs'
 // agent (spec §4). Conversations exist today only from inbound; this is the initiator.
 // Flow (spec §B1): resolve/create the thread → verify the agent is enabled + not the
 // guardrail + the contact is not securities-flagged (firewall §4.1) → build the opening
-// turn from a seed asset or a blank opener → send it through sendThroughGate() (the SAME
+// turn from a seed asset or a blank opener → send it through sendMessage() (the SAME
 // 7-step gate; the opener is aiGenerated so the AI-authority matrix + §12 evaluations run)
 // → on success arm ai_autoreply and bind agent_key/origin; on block, the thread is NOT
 // armed and the reason is surfaced. There is no bypass.
@@ -104,7 +104,7 @@ export async function POST(req: NextRequest) {
 
     // Send the opener through the gate (aiGenerated → AI-authority matrix + §12 evals run).
     const outcome = await runIdempotent(`conv-start:${d.idempotency_key}`, 'comms.conversation.start', async () =>
-      sendThroughGate({
+      sendMessage({
         channel: d.channel,
         to: d.to,
         subject: d.subject,

@@ -9,7 +9,7 @@ export const runtime = 'nodejs'
 
 // FSA-initiated send of an APPROVED appointment communication (§12). This does NOT introduce a new
 // send path: it re-triggers the existing approved appointment template through the ONE dispatcher
-// gate (sendBookingConfirmation → sendThroughGate), which enforces consent, quiet hours, DNC,
+// gate (sendBookingConfirmation → sendMessage), which enforces consent, quiet hours, DNC,
 // approved-template, and the securities firewall. No free-text, no AI-authored content, so there is
 // no red-line surface here. A gate block is a normal outcome (returned as { sent:false, reason }),
 // not a server error.

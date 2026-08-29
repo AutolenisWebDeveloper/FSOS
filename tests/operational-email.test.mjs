@@ -83,11 +83,33 @@ writeFileSync(
 
 // esbuild plugin: stub resend + @/lib/supabase/client, resolve every other @/ import
 // to the real src file so lib/messaging, lib/tokens, lib/http, lib/compliance are real.
+const policyStub = join(out, 'policy-stub.mjs')
+writeFileSync(
+  policyStub,
+  `// Permissive policy stub. This file's subject is the CONTENT and ROUTING of the
+   // transactional notifications, not the gate — the gate is proven against the real
+   // resolver in tests/guardrail-proof.test.mjs and tests/dispatch-chokepoint.test.mjs,
+   // and the per-path declarations are proven in tests/chokepoint-paths.test.mjs.
+   export async function resolveDispatchPolicy(ctx) {
+     return {
+       gate: { allowed: true, escalate: false },
+       allowed: true,
+       timezone: { resolution: { resolved: true, timeZone: 'America/Chicago', method: 'npa', input: 'stub', approximate: false },
+                   zone: 'America/Chicago', localHour: 12, localDay: 3, legacy: true },
+       resolved: { memberId: null, householdId: null, agencyId: null, consent: true, onDNC: false, suppressed: undefined },
+     }
+   }
+   export default { resolveDispatchPolicy }`,
+)
+
 const stubPlugin = {
   name: 'op-email-stubs',
   setup(b) {
     b.onResolve({ filter: /^resend$/ }, () => ({ path: resendStub }))
+    b.onResolve({ filter: /dispatch-policy$/ }, () => ({ path: policyStub }))
+
     b.onResolve({ filter: /^@\/lib\/supabase\/client$/ }, () => ({ path: dbStub }))
+    b.onResolve({ filter: /supabase\/client$/ }, () => ({ path: dbStub }))
     b.onResolve({ filter: /^@\// }, (args) => {
       const rel = args.path.slice(2) // drop "@/"
       for (const ext of ['.ts', '.tsx', '/index.ts', '.mjs']) {

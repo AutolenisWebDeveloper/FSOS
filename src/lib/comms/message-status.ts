@@ -25,7 +25,7 @@
 // PURE — no React, no DB, no env. Imported by both Server and Client Components and
 // exercised directly by tests/comms-message-status.test.mjs.
 
-import type { GateStep } from './gate'
+import { DEFERRAL_GATE_STEPS, type GateStep } from './gate'
 
 /** Badge variants this module is allowed to emit (ui/badge.tsx). */
 export type StatusVariant = 'won' | 'pending' | 'lost' | 'blocked' | 'draft' | 'outline'
@@ -77,12 +77,11 @@ export function deliveryStatus(status: string | null | undefined): MessageStatus
  * `Record<GateStep, boolean>`-shaped set so adding a step to `GateStep` without
  * classifying it here is a type error rather than a silent mis-label.
  */
-const DEFERRAL_STEPS = {
-  sms_live: true,
-  business_hours: true,
-  frequency: true,
-  collision: true,
-} as const satisfies Partial<Record<GateStep, true>>
+// The deferral tier comes from the gate's own DEFERRAL_GATE_STEPS — one source of truth,
+// so the UI cannot classify a step as self-resolving that a schedule owner treats as
+// terminal (or vice versa). `timezone_unresolved` and `window_misconfigured` are
+// deliberately NOT deferrals: both need a human (fix the contact record / fix the hours
+// policy), so they must read as blocked.
 
 export type GateOutcomeTier = 'sent' | 'deferred' | 'blocked'
 
@@ -98,7 +97,10 @@ const STEP_LABEL: Record<GateStep, string> = {
   message_content: 'Invalid message content',
   ownership: 'Ownership unresolved',
   consent: 'No consent',
+  timezone_unresolved: 'Timezone unknown',
   quiet_hours: 'Quiet hours',
+  configured_window: 'Outside send window',
+  window_misconfigured: 'Send window impossible',
   business_hours: 'Outside hours',
   sms_live: 'Awaiting A2P',
   frequency: 'Frequency cap',
@@ -111,6 +113,7 @@ const STEP_LABEL: Record<GateStep, string> = {
   recommendation: 'Recommendation language',
   is_security: 'Securities record',
   data_confidence: 'Unverified claim',
+  ai_authority: 'AI held for review',
   other_rule: 'Rule block',
 }
 
@@ -118,7 +121,10 @@ const STEP_DESCRIPTION: Record<GateStep, string> = {
   message_content: 'No usable body, an unsupported channel, or a channel/content-type mismatch — withheld before dispatch.',
   ownership: 'Ownership could not be resolved — routed to assignment review.',
   consent: 'No valid channel consent on file for this recipient.',
-  quiet_hours: 'Outside the 9:00–20:00 recipient-local TCPA floor (SMS marketing sends).',
+  timezone_unresolved: 'The recipient\u2019s timezone could not be determined from their phone or ZIP, so quiet hours cannot be checked \u2014 withheld. Add a valid phone or address to send.',
+  quiet_hours: 'Outside the 9:00\u201320:00 recipient-local TCPA floor (SMS marketing sends).',
+  configured_window: 'Outside the send window configured for this campaign or worker \u2014 held for the next opening, not suppressed.',
+  window_misconfigured: 'The configured campaign/worker windows never overlap the permitted hours, so nothing can ever send \u2014 fix the hours policy.',
   business_hours: 'Outside your configured hours of operation — retries next cycle.',
   sms_live: 'SMS is staged pending A2P 10DLC approval — held, not dropped.',
   frequency: 'Recipient frequency cap reached — held for a later cycle.',
@@ -131,6 +137,7 @@ const STEP_DESCRIPTION: Record<GateStep, string> = {
   recommendation: 'Contains individualized recommendation or call-to-action language.',
   is_security: 'Securities-flagged record — excluded from automation; route to FFS.',
   data_confidence: 'Rests on unverified or conflicting data — a verification task was raised.',
+  ai_authority: 'This AI message class is not cleared to send on its own — it was drafted for you to review and send.',
   other_rule: 'Blocked by an FFS, Farmers, carrier, state, or federal rule.',
 }
 
@@ -158,7 +165,7 @@ export function gateOutcome(args: {
         description: 'Held by the gate for an unrecognized reason — review before resending.',
       }
     }
-    const deferred = blockedStep in DEFERRAL_STEPS
+    const deferred = DEFERRAL_GATE_STEPS.has(blockedStep)
     return {
       tier: deferred ? 'deferred' : 'blocked',
       // Deferrals are amber (operational, self-resolving); compliance blocks are the

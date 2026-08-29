@@ -43,10 +43,31 @@ writeFileSync(
    export default { Resend }`,
 )
 
+const policyStub = join(out, 'policy-stub.mjs')
+writeFileSync(
+  policyStub,
+  `// Permissive policy stub. This file's subject is the CONTENT and ROUTING of the
+   // transactional notifications, not the gate — the gate is proven against the real
+   // resolver in tests/guardrail-proof.test.mjs and tests/dispatch-chokepoint.test.mjs,
+   // and the per-path declarations are proven in tests/chokepoint-paths.test.mjs.
+   export async function resolveDispatchPolicy(ctx) {
+     return {
+       gate: { allowed: true, escalate: false },
+       allowed: true,
+       timezone: { resolution: { resolved: true, timeZone: 'America/Chicago', method: 'npa', input: 'stub', approximate: false },
+                   zone: 'America/Chicago', localHour: 12, localDay: 3, legacy: true },
+       resolved: { memberId: null, householdId: null, agencyId: null, consent: true, onDNC: false, suppressed: undefined },
+     }
+   }
+   export default { resolveDispatchPolicy }`,
+)
+
 const stubPlugin = {
   name: 'notify-stubs',
   setup(b) {
     b.onResolve({ filter: /^resend$/ }, () => ({ path: resendStub }))
+    b.onResolve({ filter: /dispatch-policy$/ }, () => ({ path: policyStub }))
+
     b.onResolve({ filter: /^@\// }, (args) => {
       const rel = args.path.slice(2)
       for (const ext of ['.ts', '.tsx', '/index.ts', '.mjs']) {

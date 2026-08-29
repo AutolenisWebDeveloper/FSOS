@@ -37,7 +37,7 @@ export async function buildInboundBundle() {
   writeFileSync(
     entry,
     `export { processInbound, classifyKeyword } from '@/lib/comms/inbound'\n` +
-      `export { sendThroughGate } from '@/lib/comms/send'\n` +
+      `export { sendMessage } from '@/lib/comms/send'\n` +
       `export { getOrCreateConversation } from '@/lib/comms/conversations'\n` +
       `export { draftReply } from '@/lib/ai/responder'\n` +
       // The three campaign booking-exit seams, so the e2e suite can prove they behave

@@ -6,10 +6,10 @@
 // touch WITHOUT any dispatch.
 //
 // This drives the REAL fireMessageTouch of each engine (life, cross-sell, pipeline-winback) with a
-// spy in place of sendThroughGate, and asserts:
-//   • null template        → skipped(reason=template_unresolved),      sendThroughGate NEVER called
-//   • empty/whitespace body → skipped(reason=template_body_empty),     sendThroughGate NEVER called
-//   • invalid channel       → skipped(reason=template_channel_invalid), sendThroughGate NEVER called
+// spy in place of sendMessage, and asserts:
+//   • null template        → skipped(reason=template_unresolved),      sendMessage NEVER called
+//   • empty/whitespace body → skipped(reason=template_body_empty),     sendMessage NEVER called
+//   • invalid channel       → skipped(reason=template_channel_invalid), sendMessage NEVER called
 //   • valid template        → advances PAST the guard and DOES dispatch (guard doesn't over-block)
 //
 // Harness: the ticks import via the '@/…' path alias, so they are compiled standalone with the
@@ -51,12 +51,12 @@ for (const eng of engines) {
   }
 }
 
-// The real send-module spy: sendThroughGate counts calls; isTemplateApproved passes so execution
+// The real send-module spy: sendMessage counts calls; isTemplateApproved passes so execution
 // reaches the template fetch + fail-closed guard under test.
 const sendState = { calls: 0, approved: true }
 const sendModuleStub = {
   __esModule: true,
-  sendThroughGate: async () => {
+  sendMessage: async () => {
     sendState.calls++
     return { sent: true, blocked: false, gate: { allowed: true, escalate: false } }
   },
@@ -120,7 +120,7 @@ const NOW = '2026-08-10T16:00:00.000Z'
 // A REACHABLE recipient (email AND phone) is supplied in EVERY case on purpose: it is what makes
 // this a genuine regression test. Pre-fix, a null/empty/invalid template fell through to
 // channel→SMS (or the template's email) with a `tpl?.body ?? ''`, and BECAUSE the member had a
-// phone/email the send reached sendThroughGate with an empty body (calls=1). Post-fix the guard
+// phone/email the send reached sendMessage with an empty body (calls=1). Post-fix the guard
 // skips first (calls=0). If the member had no contact method, BOTH versions would short-circuit on
 // `no_contact_method` (calls=0) and the test would be a false green — so we always give one.
 const REACHABLE_MEMBER = { email: 'client@example.com', phone: '+15550100', full_name: 'Client Name' }
@@ -146,8 +146,10 @@ for (const eng of engines) {
 
   await record(`${eng.key}: null template → skipped(template_unresolved), NO dispatch`, async () => {
     const r = await fire(eng.key, null)
-    assert.equal(r.calls, 0, 'sendThroughGate must NEVER be called')
-    assert.equal(r.ret, false, 'touch not sent')
+    assert.equal(r.calls, 0, 'sendMessage must NEVER be called')
+    // fireMessageTouch now returns a tri-state ('sent'|'blocked'|'deferred') so the tick
+    // loop can hold the cursor on deferrals; a template skip is a terminal 'blocked'.
+    assert.equal(r.ret, 'blocked', 'touch not sent (terminal skip, not a deferral)')
     assert.ok(r.status, 'an execution row was recorded')
     assert.equal(r.status.status, 'skipped')
     assert.equal(r.status.detail.reason, 'template_unresolved')
@@ -155,14 +157,14 @@ for (const eng of engines) {
 
   await record(`${eng.key}: whitespace body → skipped(template_body_empty), NO dispatch`, async () => {
     const r = await fire(eng.key, { channel: 'email', body: '   \n\t ', introduces_sender: false })
-    assert.equal(r.calls, 0, 'sendThroughGate must NEVER be called')
+    assert.equal(r.calls, 0, 'sendMessage must NEVER be called')
     assert.equal(r.status.status, 'skipped')
     assert.equal(r.status.detail.reason, 'template_body_empty')
   })
 
   await record(`${eng.key}: invalid channel → skipped(template_channel_invalid), NO dispatch`, async () => {
     const r = await fire(eng.key, { channel: 'push', body: 'Hello there', introduces_sender: false })
-    assert.equal(r.calls, 0, 'sendThroughGate must NEVER be called')
+    assert.equal(r.calls, 0, 'sendMessage must NEVER be called')
     assert.equal(r.status.status, 'skipped')
     assert.equal(r.status.detail.reason, 'template_channel_invalid')
   })
@@ -173,7 +175,7 @@ for (const eng of engines) {
       { channel: 'email', body: 'Subject: Your review\n\nHello there — a quick note.', introduces_sender: false },
       { email: 'client@example.com', phone: '+15550100', full_name: 'Client Name' },
     )
-    assert.equal(r.calls, 1, 'a valid template must reach sendThroughGate exactly once (guard does not over-block)')
+    assert.equal(r.calls, 1, 'a valid template must reach sendMessage exactly once (guard does not over-block)')
     assert.notEqual(r.status && r.status.detail && r.status.detail.reason, 'template_unresolved')
     assert.notEqual(r.status && r.status.detail && r.status.detail.reason, 'template_body_empty')
     assert.notEqual(r.status && r.status.detail && r.status.detail.reason, 'template_channel_invalid')

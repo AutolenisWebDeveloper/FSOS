@@ -3,7 +3,7 @@ import { getDb } from '@/lib/supabase/client'
 import { readJson, configErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { z } from 'zod'
-import { sendThroughGate } from '@/lib/comms/send'
+import { sendMessage } from '@/lib/comms/send'
 import { runIdempotent } from '@/lib/jobs/runtime'
 import { resolveAssetPayload, adHocTemplateId } from '@/lib/comms/assets'
 import { isTestRecipientUsable, openerClassFor } from '@/lib/comms/console'
@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
       let live: { sent: boolean; blocked: boolean; blocked_step?: string; reason?: string; message_id?: string } | undefined
       if (d.live_ai) {
         const outcome = await runIdempotent(`test-ai:${d.idempotency_key}`, 'comms.test.ai', async () =>
-          sendThroughGate({
+          sendMessage({
             channel: d.channel,
             to,
             subject: asset?.subject ?? undefined,
@@ -136,7 +136,7 @@ export async function POST(req: NextRequest) {
     }
 
     const outcome = await runIdempotent(`test:${d.idempotency_key}`, 'comms.test', async () =>
-      sendThroughGate({
+      sendMessage({
         channel: d.channel,
         to,
         subject: asset?.subject ?? undefined,

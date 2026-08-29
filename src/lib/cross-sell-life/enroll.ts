@@ -7,6 +7,7 @@
 // sends happen in the tick, all through the compliance gate.
 import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
+import { enrollmentTimezoneFor } from '@/lib/comms/recipient-timezone-db'
 import { evaluateEligibility, blockingAfterOverride, type EligibilityReason } from './eligibility'
 import { computeTouchPlan, deferToBusinessDay } from './schedule'
 import { loadCampaign, loadEligibilityInput, primaryMemberForHousehold, type CampaignConfig } from './data'
@@ -86,6 +87,8 @@ export async function enrollContact(input: EnrollInput): Promise<EnrollResult> {
   const plan = computeTouchPlan(baseline)
   const firstDue = `${plan[0].dueDate}T13:00:00.000Z`
 
+  const enrollTz = await enrollmentTimezoneFor(member.id, member.household_id)
+
   const { data: inserted, error } = await db
     .from('xsell_life_campaign_enrollments')
     .insert({
@@ -103,6 +106,9 @@ export async function enrollContact(input: EnrollInput): Promise<EnrollResult> {
       next_touch_at: firstDue,
       lead_score: (gap?.score as number | null) ?? null,
       enrolled_by: input.actor,
+      // Recipient-zone stamp for AUDIT/REPORTING only — dispatch resolves fresh every
+      // send (mig 123). Unresolvable → omit, keeping the column default.
+      ...(enrollTz ? { timezone: enrollTz } : {}),
       enrolled_at: nowISO,
     })
     .select('id')

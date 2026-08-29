@@ -3,7 +3,7 @@ import { getDb } from '@/lib/supabase/client'
 import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { z } from 'zod'
-import { sendThroughGate } from '@/lib/comms/send'
+import { sendMessage } from '@/lib/comms/send'
 import { adHocTemplateId } from '@/lib/comms/assets'
 import { normalizeTestAddress, isValidTestAddress, makeVerificationCode } from '@/lib/comms/console'
 import { writeAudit } from '@/lib/audit/log'
@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
     // Send the code THROUGH THE GATE (is_test). A blocked result is still informative — it
     // proves the gate is enforcing — and the operator can address it (e.g. quiet hours).
     const templateId = await adHocTemplateId(v.data.channel)
-    const outcome = await sendThroughGate({
+    const outcome = await sendMessage({
       channel: v.data.channel,
       to: address,
       subject: v.data.channel === 'email' ? 'Your FSOS test verification code' : undefined,

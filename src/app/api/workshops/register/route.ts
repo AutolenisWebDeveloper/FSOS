@@ -117,7 +117,20 @@ export async function POST(req: NextRequest) {
         calloutHtml("We'll send a reminder before the event — nothing else to do for now."),
       ].join('\n'),
     })
-    const sent = await sendEmail(email, `You're registered — ${w.title}`, confirmationHtml)
+    // GATED. This route has no in-repo caller (both public forms post to
+    // /api/public/workshops/register) but is an unauthenticated, publicly reachable POST,
+    // so it must be gated rather than assumed dead.
+    const sent = await sendEmail(email, `You're registered — ${w.title}`, confirmationHtml, undefined, {
+      policy: {
+        actor: 'system:workshop-register',
+        purpose: 'TRANSACTIONAL',
+        templateKind: 'system_transactional',
+        suppressible: false,
+        // The registration was persisted immediately above and this address was supplied
+        // for its confirmation.
+        durableConsentGranted: true,
+      },
+    })
     if (!sent.ok) {
       console.error('[workshop-register] confirmation email failed (registration kept):', sent.error)
     }

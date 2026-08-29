@@ -2,7 +2,7 @@
 // END-TO-END PROOF of the inbound two-way SMS loop against a REAL Postgres.
 //
 //   api/webhooks/twilio/inbound → processInbound() → tryAutoReply() → draftReply()
-//   → sendThroughGate() → dispatcher → evaluateGate()
+//   → sendMessage() → dispatcher → evaluateGate()
 //
 // Everything below runs the PRODUCTION modules (src/lib/comms/*, src/lib/ai/responder.ts)
 // bundled by esbuild, against an ephemeral Postgres with ALL 104 migrations applied.
@@ -230,7 +230,7 @@ try {
   installFetchStub()
   freezeClock(IN_HOURS)
   const require = createRequire(import.meta.url)
-  const { processInbound, sendThroughGate, exitWinback, exitLife, exitXsell, resumePausedEnrollments, buildQueue, runOutreachAgent, recordMessageEvent, findMessageById } = require(bundlePath)
+  const { processInbound, sendMessage, exitWinback, exitLife, exitXsell, resumePausedEnrollments, buildQueue, runOutreachAgent, recordMessageEvent, findMessageById } = require(bundlePath)
 
   // ── SCENARIO 1: threading, association, inbound row, and the auto-reply attempt ──
   section('1. Inbound message → thread, association, history, auto-reply attempt')
@@ -422,10 +422,12 @@ try {
       assert.equal(killed.autoReplied, false,
         'the kill switch named a thread it could not stop — the reply still went out')
       assert.equal(twilioCalls.length, 0)
-      // Caught at the AI-authority layer rather than gate step 4: hasApprovedAiPolicy(agentKey)
-      // feeds evaluateOutboundMessage as `templateApproved`, and that evaluation runs BEFORE
-      // dispatch. Same switch, one layer earlier — the reason names the policy failure.
-      assert.equal(row, 'blocked|ai_authority|template_or_policy_not_approved',
+      // ONE ordered gate now (dispatch chokepoint): the disabled kill switch fails the
+      // approved-AI-policy read, which is gate step 4 (approved_template) — checked before
+      // the §11/§12 authority step, so the block surfaces there. Same switch, same outcome
+      // (never sent, escalated, attributed); only the step label moved when the two-layer
+      // evaluation was consolidated into one.
+      assert.equal(row, 'blocked|approved_template|Message does not use an approved template or AI policy.',
         `unexpected block: ${row}`)
     })
     check('the conversation responder being ENABLED does not rescue a disabled owner', () => {
@@ -765,7 +767,7 @@ try {
 
     // The canonical send gate must WITHHOLD an automated marketing send to the suppressed contact —
     // this is what makes retries / the AI workforce / any re-enrollment unable to reach them.
-    const gated = await sendThroughGate({
+    const gated = await sendMessage({
       channel: 'sms', to: PHONE, body: 'A quick note about your review.', actor: 'agent:test',
       memberId: IDS.member, householdId: IDS.household, entity: { type: 'contact', id: CONTACT_ID },
       purpose: 'MARKETING', aiGenerated: false, templateId: null,
@@ -1087,7 +1089,7 @@ try {
   // NOTE ON METHOD: driving this through processInbound() would prove nothing, because the
   // AI-authority hold (scenario 1) fires BEFORE the 7-step gate and every outcome would read
   // `ai_authority` regardless of the clock. To get real evidence about hours, the send is
-  // driven through the SAME sendThroughGate() the auto-reply uses, with the ONE thing the
+  // driven through the SAME sendMessage() the auto-reply uses, with the ONE thing the
   // auto-reply is missing supplied — a positively classified auto-send class + a purpose —
   // i.e. exactly what a repaired tryAutoReply() would pass. Nothing in the gate is relaxed.
   section('9. Hours of operation on a live conversation (Phase 4 evidence)')
@@ -1106,7 +1108,7 @@ try {
     const dbA = freshDb({ armed: true })
     const convA = q(dbA, `select id from comm_conversations where contact='${PHONE}'`)
     twilioCalls.length = 0
-    const okOutcome = await sendThroughGate(replyCtx(convA))
+    const okOutcome = await sendMessage(replyCtx(convA))
     console.log(`    → 13:00 local: sent=${okOutcome.sent} step=${okOutcome.gate.blockedStep ?? '-'}`)
     check('13:00 local — a classified AI reply passes the full gate and sends', () => {
       assert.equal(okOutcome.sent, true, `blocked at ${okOutcome.gate.blockedStep}: ${okOutcome.gate.reason}`)
@@ -1119,7 +1121,7 @@ try {
     const dbB = freshDb({ armed: true })
     const convB = q(dbB, `select id from comm_conversations where contact='${PHONE}'`)
     twilioCalls.length = 0
-    const lateOutcome = await sendThroughGate(replyCtx(convB))
+    const lateOutcome = await sendMessage(replyCtx(convB))
     console.log(`    → 19:30 local: sent=${lateOutcome.sent} step=${lateOutcome.gate.blockedStep ?? '-'} escalate=${lateOutcome.gate.escalate}`)
     check('19:30 local — the reply is held at gate step business_hours, NOT quiet_hours', () => {
       assert.equal(lateOutcome.sent, false)
@@ -1154,7 +1156,7 @@ try {
     const dbC2 = freshDb({ armed: true })
     const convC = q(dbC2, `select id from comm_conversations where contact='${PHONE}'`)
     twilioCalls.length = 0
-    const nightOutcome = await sendThroughGate(replyCtx(convC))
+    const nightOutcome = await sendMessage(replyCtx(convC))
     console.log(`    → 21:30 local: sent=${nightOutcome.sent} step=${nightOutcome.gate.blockedStep ?? '-'} escalate=${nightOutcome.gate.escalate}`)
     check('21:30 local — a servicing reply is quiet-hours-exempt and held at business_hours', () => {
       assert.equal(nightOutcome.sent, false)
@@ -1171,7 +1173,7 @@ try {
     const dbD = freshDb({ armed: true })
     const convD = q(dbD, `select id from comm_conversations where contact='${PHONE}'`)
     twilioCalls.length = 0
-    const sundayOutcome = await sendThroughGate(replyCtx(convD))
+    const sundayOutcome = await sendMessage(replyCtx(convD))
     console.log(`    → Sunday 13:00 local: sent=${sundayOutcome.sent} step=${sundayOutcome.gate.blockedStep ?? '-'}`)
     check('Sunday 13:00 local — held at business_hours (the seeded policy is Mon–Sat)', () => {
       assert.equal(sundayOutcome.sent, false)

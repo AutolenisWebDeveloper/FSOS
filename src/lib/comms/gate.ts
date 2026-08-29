@@ -12,7 +12,10 @@ export type GateStep =
   | 'message_content' // 0− — usable body + supported channel + no channel/content-type mismatch (F-2)
   | 'ownership' // 0 — authoritative ownership must resolve; unresolved → assignment review
   | 'consent' // 1
+  | 'timezone_unresolved' // 1b — the recipient's zone could not be resolved; quiet hours is unevaluable
   | 'quiet_hours' // 2 — legal TCPA floor (9–20 recipient-local) on SMS marketing/campaign sends
+  | 'configured_window' // 2g — operator's per-campaign / per-worker window (narrows the floor; deferral)
+  | 'window_misconfigured' // 2h — configured windows cannot overlap the floor/each other; config error, escalates
   | 'business_hours' // 2b — operator's hours of operation (can only tighten the floor)
   | 'sms_live' // 2f — SMS staged pending A2P 10DLC approval (non-escalating hold)
   | 'frequency' // 2d — per-recipient rate caps (operational deferral, §9)
@@ -25,6 +28,7 @@ export type GateStep =
   | 'recommendation' // 5
   | 'is_security' // 6
   | 'data_confidence' // 6b — specific claim on unverified/conflicting data (§13)
+  | 'ai_authority' // 6c — §11/§12: this AI message class may not auto-send; held as a draft
   | 'other_rule' // 7
 
 export interface GateInput {
@@ -68,6 +72,42 @@ export interface GateInput {
   hasConsent: boolean
   /** 2 — recipient-local hour (0–23). */
   recipientLocalHour: number
+  /**
+   * 1b — the recipient's IANA timezone was RESOLVED (recipient-timezone.ts). Defaults to
+   * TRUE so every existing caller — and the whole flag-off path, which evaluates in the
+   * practice's own zone — is unaffected. A false is a HARD, ESCALATING block: quiet hours
+   * is defined in the recipient's local time, so an unresolvable zone makes the control
+   * unevaluable, and an unevaluable control must never be treated as satisfied. Checked
+   * BEFORE step 2 because `recipientLocalHour` is meaningless without a resolved zone.
+   *
+   * This is deliberately a DISTINCT step from `quiet_hours` so reporting can separate
+   * "we could not place this recipient" from "this recipient is asleep" — they need
+   * different operator responses (fix the contact record vs. wait).
+   */
+  timezoneResolved?: boolean
+  /** 1b — why the timezone did not resolve (from recipient-timezone.ts). */
+  timezoneReason?: string
+  /**
+   * 2g — inside the operator's configured per-campaign / per-worker send window, which can
+   * only NARROW the statutory floor (quiet-hours-window.ts intersects; it cannot widen).
+   * Defaults to TRUE (no window configured) so behavior is unchanged until an operator
+   * sets one. A false is a NON-ESCALATING deferral, like business_hours: the send is held
+   * for the next opening, never suppressed and never a compliance event. This is what lets
+   * a purpose with NO statutory floor (POLICY_DEADLINE, APPOINTMENT, email) carry a window
+   * without that window ever becoming a suppression.
+   */
+  configuredWindowOk?: boolean
+  /** 2g — which layer's window excluded this moment, and when it next opens. */
+  configuredWindowReason?: string
+  /**
+   * 2h — the configured windows are UNSATISFIABLE: their intersection with the statutory
+   * floor (and each other) is empty, so no instant can ever send. Defaults to false. This
+   * is a HARD, ESCALATING block, deliberately distinct from `configured_window`: a window
+   * miss is "wait for the opening"; an empty intersection HAS no opening, and deferring it
+   * would retry forever without ever surfacing the misconfiguration to a person. The
+   * operator must fix the hours policy; the send is withheld until they do.
+   */
+  windowMisconfigured?: boolean
   /**
    * 2 — this send is EXEMPT from the quiet-hours floor. Owner-directed scope
    * (2026-08-07): the 9:00–20:00 floor applies to SMS marketing/campaign sends only.
@@ -150,6 +190,16 @@ export interface GateInput {
   dataConfidenceOk?: boolean
   /** 6b — reason data confidence failed (from data-confidence.ts, for the verification task). */
   dataConfidenceReason?: string
+  /**
+   * 6c — §11/§12 AI authority. Defaults to TRUE (not an AI send, or cleared to auto-send).
+   * A false is a HARD, ESCALATING block: the draft is held for the licensed FSA rather than
+   * auto-sent. Evaluated at the chokepoint alongside consent and template approval, because
+   * evaluateAiAuthority needs both and re-reading them in a second layer is how two layers
+   * come to disagree.
+   */
+  aiAuthorityOk?: boolean
+  /** 6c — which §12 checks failed / the resolved authority, for the draft + escalation. */
+  aiAuthorityReason?: string
   /** 7 — any FFS/Farmers/carrier/state/federal rule block. */
   otherRuleBlocked?: boolean
 }
@@ -169,7 +219,10 @@ const BLOCK: Record<GateStep, string> = {
   collision: 'A higher-priority campaign or active conversation is underway — send paused.',
   delegation: 'No active, in-scope delegation to communicate on behalf of the agency owner.',
   consent: 'No valid channel consent on file.',
+  timezone_unresolved: 'Recipient timezone could not be resolved — quiet hours cannot be evaluated; not sent.',
   quiet_hours: 'Outside permitted quiet hours (9:00–20:00 recipient-local).',
+  configured_window: 'Outside the configured send window — held for the next opening.',
+  window_misconfigured: 'The configured send windows never overlap the permitted hours — nothing can ever send; fix the hours policy.',
   business_hours: 'Outside configured hours of operation — held for the next in-hours cycle.',
   sms_live: 'SMS is staged pending A2P 10DLC approval — held until the campaign is approved.',
   dnc: 'Recipient is on the do-not-contact list.',
@@ -179,6 +232,7 @@ const BLOCK: Record<GateStep, string> = {
   recommendation: 'Message contains individualized recommendation / call-to-action language.',
   is_security: 'Securities-flagged record — excluded from automation; route to FFS-supervised handling.',
   data_confidence: 'Specific claim rests on unverified/conflicting data — excluded; verification task raised.',
+  ai_authority: 'AI message is not cleared to auto-send — drafted for the licensed FSA.',
   other_rule: 'Blocked by an FFS/Farmers/carrier/state/federal rule.',
 }
 
@@ -227,6 +281,14 @@ export function evaluateGate(input: GateInput): GateResult {
   // delegation / data-confidence trip evaluated outside operating hours still surfaces as
   // its own escalating block and is not masked as a benign "held for hours" deferral
   // (§13.9: never silently downgrade a compliance control).
+  // 1b — an unresolvable recipient timezone makes the quiet-hours floor UNEVALUABLE.
+  // Fail closed and escalate: never treat an uncheckable control as satisfied. Checked
+  // before step 2 because recipientLocalHour carries no meaning without a resolved zone.
+  // Skipped for a send the floor does not reach AND that carries no configured window —
+  // there is nothing a zone would be used for there (see quiet-hours-window.ts).
+  if (input.timezoneResolved === false) {
+    return blocked('timezone_unresolved', true, input.timezoneReason)
+  }
   if (input.quietHoursExempt !== true && !withinQuietHours(input.recipientLocalHour)) {
     return blocked('quiet_hours')
   }
@@ -262,6 +324,10 @@ export function evaluateGate(input: GateInput): GateResult {
   // 6b — a specific claim on unverified/conflicting data (§13). Escalates: exclude the
   // contact + raise a verification task; never send on a guess.
   if (input.dataConfidenceOk === false) return blocked('data_confidence', true, input.dataConfidenceReason)
+  // 6c — §11/§12: an AI message whose class is not cleared to auto-send is HELD as a draft
+  // for the licensed FSA. Checked after the firewall and the red line so a securities or
+  // recommendation trip still surfaces as its own block rather than a generic AI hold.
+  if (input.aiAuthorityOk === false) return blocked('ai_authority', true, input.aiAuthorityReason)
   if (input.otherRuleBlocked) return blocked('other_rule')
   // 2b/2f/2d/2e — operational deferrals (SMS-A2P hold, business hours, rate caps, priority
   // collision) are checked LAST, so they only ever defer a COMPLIANCE-CLEAN send: a message
@@ -274,7 +340,40 @@ export function evaluateGate(input: GateInput): GateResult {
   // retried each cycle, activating automatically when the A2P flag flips true (§12).
   if (input.smsLive === false) return blocked('sms_live', false)
   if (input.withinBusinessHours === false) return blocked('business_hours', false)
+  // 2h — an EMPTY window intersection is a configuration error, not a deferral: there is no
+  // "next opening" to hold for, so deferring would silently retry forever. Escalates so an
+  // operator fixes the policy. Checked before the configured_window deferral so an
+  // unsatisfiable config never masquerades as an ordinary hold.
+  if (input.windowMisconfigured === true) return blocked('window_misconfigured', true, input.configuredWindowReason)
+  // 2g — the operator's per-campaign / per-worker window. A DEFERRAL, never a suppression:
+  // it is an operator preference narrowing the floor, not a regulatory control, so a miss
+  // holds the send for the next opening exactly like business_hours.
+  if (input.configuredWindowOk === false) return blocked('configured_window', false, input.configuredWindowReason)
   if (input.withinFrequencyCaps === false) return blocked('frequency', false, input.frequencyReason)
   if (input.collisionPaused === true) return blocked('collision', false, input.collisionReason)
   return { allowed: true, escalate: false }
+}
+
+/**
+ * The NON-ESCALATING gate steps: operational deferrals, not compliance verdicts. A send
+ * withheld on one of these is a HOLD — the condition clears on its own (the clock reaches
+ * the window, A2P approval lands, the frequency day rolls over) — so the caller that owns
+ * the message's schedule must RE-ATTEMPT it rather than terminally marking it. This set is
+ * the single source of truth for that retry decision; the campaign ticks, the workforce
+ * queue, the workshop engine, and the message-status UI all key off it, so a new deferral
+ * step added to the union cannot silently become terminal in one consumer and retryable in
+ * another. NOTE: `suppression` is escalate=false but is NOT here — a business exclusion is
+ * an intentional operator decision, not a self-clearing hold.
+ */
+export const DEFERRAL_GATE_STEPS: ReadonlySet<GateStep> = new Set<GateStep>([
+  'sms_live',
+  'business_hours',
+  'frequency',
+  'collision',
+  'configured_window',
+])
+
+/** True when a blocked step is an operational deferral the schedule owner should retry. */
+export function isDeferralGateStep(step: string | null | undefined): boolean {
+  return !!step && DEFERRAL_GATE_STEPS.has(step as GateStep)
 }

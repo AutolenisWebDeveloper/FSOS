@@ -405,3 +405,79 @@ Rollback: revert commit; Playwright is dev-only tooling.
   only to the extent Batch 8's state work requires.
 - Securities-flagged workshops keep their firewall exactly as-is (PROVEN sound — WS-035,
   §2 WS-018); nothing in this plan touches that boundary.
+
+---
+
+## AMENDMENT 1 (2026-08-29 — owner directive at Gate 1): BATCH 0 — TEST INTEGRITY
+
+Ordered **ahead of every feature batch**. Rationale: WS-058/§11a — the suite contains
+assertions that cannot fail, so "suite green" is void as behavioral evidence (§11b);
+the foundation must be trustworthy before any feature work is "proven" by it.
+
+**Scope (tests + test harness only; zero production-code changes):**
+1. **Tautology repairs (§11a pattern A):** every instance replaced with an assertion that
+   fails on a wrong value — the America/Chicago offset pinned per fixture date (July
+   fixture ⇒ exactly −5, January fixture ⇒ exactly −6) plus a DST-boundary pair
+   (2026-03-08 / 2026-11-01 America/Chicago) asserting the offset CHANGES across the
+   boundary; same treatment for every other §11a-A instance.
+2. **Comment-coupled guarantee rewrites (§11a pattern B):** each rewritten to assert
+   observable behavior, per the owner's list:
+   - *send-once key uniqueness under repeated cron runs* — ephemeral-Postgres proof:
+     the real migrations applied, the engine's claim path executed repeatedly, exactly
+     one `workshop_message_log` row per (reg, channel, kind);
+   - *dispatch-time suppression blocks a send the gate would have allowed* — executed
+     against the compiled send path with a suppression row present;
+   - *quiet-hours deferral* — engine run at an out-of-window fixture instant produces
+     `deferred`, never a dispatch;
+   - *absorbing termination that does not resume* — a terminated cadence
+     (STOP/DNC-backed block) stays terminated across subsequent engine runs.
+3. **Removal-guard test:** a test that FAILS when a delivery guarantee's implementation
+   is removed — the engine compiled with a shimmed `@/lib/comms/send`, executed, and the
+   shim's recorded invocation asserted (context fields: templateId, durableConsentGranted,
+   utcOffsetHours). Deleting or bypassing the `sendThroughGate` call fails this test;
+   editing a comment cannot satisfy it.
+4. Migration-DDL text assertions (§11a-legitimate class) are kept as-is.
+
+**Honest sequencing constraint, stated for approval:** the four behavioral guarantee
+tests in item 2 execute the engine, which WS-001 currently kills. Authored in Batch 0 as
+ordered, they are **RED against the unmodified engine** — they are precisely Batch 1's
+TDD reds. Batch 0's exit gate is therefore: full suite green EXCEPT the four named
+guarantee tests, each red with the documented WS-001 signature; Batch 1 must follow
+immediately and turns them green. (Alternative if a fully-green Batch 0 exit is required:
+the four tests land in Batch 0 behind an explicit `WORKSHOP_GUARANTEE_TESTS=1` flag that
+Batch 1 removes — same code, deferred redness. Default is the visible-red option.)
+
+**Tests that PROVE Batch 0 itself:** the repaired assertions demonstrably fail when the
+behavior is broken — each repair is committed with a one-line note showing the mutation
+that now fails (e.g. offset forced to −6 in July ⇒ assertion fails; `sendThroughGate`
+call removed ⇒ removal-guard fails). Rollback: revert the commit (test files only).
+
+---
+
+## AMENDMENT 1a — D-9 added to the decision list
+
+**D-9 · Workshop test-coverage strategy for `workshop-delivery.test.mjs`.** The file's
+first-hand composition (held): ~30 genuinely behavioral assertions (compiled
+`delivery.ts`/`webhook.ts` executed with pinned values — webhook parse, precedence,
+thresholds, duplicate-idempotence, reconnect, replay gate, CRC, HMAC incl. fail-closed),
+~11 legitimate migration-DDL text checks, and **~24 regex-on-source assertions
+(lines 198–247)** — the §11a pattern-B class.
+  **(a) Repair in place** — rewrite the ~24 suspect assertions into invocation-guard /
+  behavioral forms inside the existing file; keep everything else.
+  *Batch cost: ~1 focused session inside Batch 0; one file touched; reuses the file's
+  existing compiled-module harness; 2–3 assertions need a small route-invocation shim.
+  Residual risk: the file keeps its mixed structure, and each rewritten assertion gets a
+  bespoke mini-harness.*
+  **(b) Rebuild from the guarantee list** — enumerate the delivery guarantees (CRC echo,
+  signature verify + production fail-closed, correlation by registrant token never name,
+  `capture_method='webhook'`, manual precedence, best-effort provisioning, replay
+  recording-consent gate, no-securities-fields-to-Zoom), write a fresh
+  `tests/workshop-delivery.test.mjs` that EXECUTES each (compiled modules + route-handler
+  invocation with a mocked request + ephemeral PG where rows matter); port the ~30
+  behavioral and ~11 DDL assertions unchanged; delete the regex tail.
+  *Batch cost: ~2 focused sessions in Batch 0; builds the route-execution harness that
+  every later batch's tests (Batches 1–8) then reuse; zero pattern-B residue.*
+  Recommendation: **(b)** — Batch 0 is the foundation; the harness pays for itself from
+  Batch 1 onward. The owner decides.
+
+**Batch order after this amendment:** Batch 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8.

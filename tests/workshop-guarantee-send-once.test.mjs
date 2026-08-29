@@ -38,6 +38,10 @@ try {
     phone: '+12145550188',
     registeredIso: '2026-08-04T12:00:00Z',
     kinds: ['reminder_1h'],
+    // D-1(b) dropped the 1h touch from the DEFAULT offsets; this fixture pins the
+    // RETAINED capability path by configuring it explicitly.
+    extraSql: `insert into workshop_comms_config (id, reminder_offsets_minutes) values ('global', '{60}')
+                 on conflict (id) do update set reminder_offsets_minutes = '{60}';`,
   })
 
   const require = createRequire(import.meta.url)

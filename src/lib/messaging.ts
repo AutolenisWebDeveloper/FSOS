@@ -21,6 +21,14 @@ export function smsConfigured(): boolean {
   return !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER)
 }
 
+/** One email attachment (base64 content — e.g. the workshop .ics calendar file). */
+export interface EmailAttachment {
+  filename: string
+  /** Base64-encoded file content. */
+  content: string
+  contentType?: string
+}
+
 /** Optional per-send email delivery options (deliverability: reply routing + headers). */
 export interface EmailSendOptions {
   /**
@@ -33,6 +41,8 @@ export interface EmailSendOptions {
   replyTo?: string
   /** Extra SMTP headers, e.g. RFC 8058 List-Unsubscribe / List-Unsubscribe-Post. */
   headers?: Record<string, string>
+  /** File attachments (WS-022: the .ics on the workshop instant ack). */
+  attachments?: EmailAttachment[]
 }
 
 export async function sendEmail(
@@ -61,6 +71,7 @@ export async function sendEmail(
       text,
       ...(replyTo ? { replyTo } : {}),
       ...(opts?.headers ? { headers: opts.headers } : {}),
+      ...(opts?.attachments?.length ? { attachments: opts.attachments } : {}),
     })
     if (error) return { ok: false, error: error.message || String(error) }
     return { ok: true, id: data?.id }

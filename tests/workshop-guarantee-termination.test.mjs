@@ -36,7 +36,9 @@ try {
     phone: PHONE,
     registeredIso: '2026-08-04T12:00:00Z',
     kinds: ['reminder_1h'],
-    extraSql: `insert into dnc_entries (contact, channel, scope, reason)
+    extraSql: `insert into workshop_comms_config (id, reminder_offsets_minutes) values ('global', '{60}')
+                 on conflict (id) do update set reminder_offsets_minutes = '{60}';
+               insert into dnc_entries (contact, channel, scope, reason)
                  values ('${PHONE}', 'sms', 'internal', 'test: STOP');`,
   })
 

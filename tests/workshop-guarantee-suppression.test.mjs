@@ -37,7 +37,9 @@ try {
     kinds: ['reminder_1h'],
     // The registrant consented to SMS and every gate precondition passes — but the phone
     // is on the DNC list. Dispatch must fail closed on the number.
-    extraSql: `insert into dnc_entries (contact, channel, scope, reason)
+    extraSql: `insert into workshop_comms_config (id, reminder_offsets_minutes) values ('global', '{60}')
+                 on conflict (id) do update set reminder_offsets_minutes = '{60}';
+               insert into dnc_entries (contact, channel, scope, reason)
                  values ('${PHONE}', 'sms', 'internal', 'test: STOP received elsewhere');`,
   })
 

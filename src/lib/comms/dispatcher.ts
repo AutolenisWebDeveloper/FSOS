@@ -12,7 +12,7 @@
 import { evaluateGate, type GateInput, type GateResult } from './gate'
 import { SMS_OPT_OUT_FOOTER } from '../compliance'
 import type { AuditEntry } from '../audit/log'
-import type { SendResult } from '../messaging'
+import type { SendResult, EmailAttachment } from '../messaging'
 import type { EmailStream } from './senders'
 import type { SuppressionSubject, SuppressionDecision } from './suppression'
 
@@ -24,6 +24,8 @@ export interface DispatchRequest {
   body: string
   /** email only — the stored plaintext part (multipart). Absent → single-part HTML send. */
   bodyText?: string
+  /** email only — file attachments (WS-022: the workshop instant-ack .ics). */
+  attachments?: EmailAttachment[]
   /** Gate context (computed by the caller/job from consents/DNC/state rules). */
   gate: Omit<GateInput, 'draft' | 'channel'>
   /** Who/what initiated (user id, "agent:pipeline", "system"). */
@@ -92,6 +94,7 @@ export interface DispatchDeps {
     bodyText?: string,
     messageClass?: EmailStream,
     correlationId?: string,
+    attachments?: EmailAttachment[],
   ): Promise<SendResult>
 }
 
@@ -149,7 +152,7 @@ export const defaultDeps: DispatchDeps = {
     const { resolveEffectiveSuppression } = await import('./suppression')
     return resolveEffectiveSuppression(subject)
   },
-  async send(channel, to, body, subject, bodyText, messageClass, correlationId) {
+  async send(channel, to, body, subject, bodyText, messageClass, correlationId, attachments) {
     const { sendSms, sendEmail } = await import('../messaging')
     // FSOS-030: echo the message id so the provider returns it on every status callback.
     if (channel === 'sms') return sendSms(to, body, correlationId)
@@ -171,6 +174,7 @@ export const defaultDeps: DispatchDeps = {
         // FSOS-030: deterministic callback correlation key echoed on Resend email.* events.
         ...(correlationId ? { 'X-FSOS-Message-Id': correlationId } : {}),
       },
+      attachments,
     })
   },
 }
@@ -240,8 +244,15 @@ export async function dispatch(req: DispatchRequest, deps: DispatchDeps = defaul
     }
   }
 
-  // Passed the gate + boundary re-check → send. SMS carries the carrier-required opt-out footer.
-  const body = req.channel === 'sms' ? `${req.body}\n\n${SMS_OPT_OUT_FOOTER}` : req.body
+  // Passed the gate + boundary re-check → send. SMS carries the carrier-required opt-out
+  // footer — appended ONCE (WS-069): a template whose body already instructs "Reply STOP"
+  // (the six booking bodies) is authoritative, so the dispatcher no longer stacks a
+  // second STOP line onto it. Bodies without it (the workshop templates) keep the
+  // auto-appended footer exactly as before.
+  const body =
+    req.channel === 'sms' && !/reply\s+stop/i.test(req.body)
+      ? `${req.body}\n\n${SMS_OPT_OUT_FOOTER}`
+      : req.body
   // Email multipart: pass the stored plaintext part when present (SMS is single-part).
   const result = await deps.send(
     req.channel,
@@ -251,6 +262,7 @@ export async function dispatch(req: DispatchRequest, deps: DispatchDeps = defaul
     req.channel === 'email' ? req.bodyText : undefined,
     req.messageClass,
     req.correlationId,
+    req.channel === 'email' ? req.attachments : undefined,
   )
 
   await deps.writeAudit({

@@ -1,8 +1,11 @@
 // src/lib/workshops/comms-engine.ts
-// P2 Workshop/Seminar comms ENGINE (impure orchestration). Two passes:
-//   • runReminderPass  — pre-event confirmation + 7d/1d/1h reminders (spec §2.3)
-//   • runNurturePass   — segmented post-event nurture off P1 attendance status (§2.4)
-// Both run from the dedicated Vercel Cron route (/api/cron/workshop-reminders). Every
+// P2 Workshop/Seminar comms ENGINE (impure orchestration). Three passes:
+//   • runReminderPass  — pre-event cadence (D-1(b)): 7d · 3d · 1d · day-of-AM ·
+//     starting (virtual/hybrid). The engine 'confirmation' kind is DELETED (D-8): the
+//     register route's instant transactional ack is the single confirmation of record.
+//   • runChangePass    — reschedule/venue-change notices + event cancellations (WS-007/008)
+//   • runNurturePass   — segmented post-event nurture + the T+2/3d follow-up (§2.4, D-1)
+// All run from the dedicated Vercel Cron route (/api/cron/workshop-reminders). Every
 // client-facing send goes through the EXISTING dispatcher/gate (sendThroughGate) — there is
 // no parallel sender here. Pure decisions live in ./reminders.ts; GHL routing reuses
 // ./server.ts + ghl.ts; the referral spine reuses the same shape as the P1 convert route.
@@ -35,6 +38,9 @@ import {
   isReminderClass,
   claimGeneration,
   dueReminderKinds,
+  unmappedOffsets,
+  isFollowupDue,
+  toPlainText,
   segmentFor,
   nurtureKindForSegment,
   segmentTag,
@@ -68,17 +74,21 @@ const NURTURE_LOOKBACK_MS = 14 * 24 * 60 * 60 * 1000
 export interface EngineConfig {
   enabled: boolean
   reminder_offsets_minutes: number[]
-  confirmation_enabled: boolean
   nurture_delay_minutes: number
+  /** T+2/3d follow-up delay after the session anchor (D-1 pairing; default 2 days). */
+  nurture_followup_delay_minutes: number
   sender_physical_address: string
   scores: ScoreConfig
 }
 
 const CONFIG_DEFAULTS: EngineConfig = {
   enabled: true,
-  reminder_offsets_minutes: [10080, 1440, 60],
-  confirmation_enabled: true,
+  // D-1(b) cadence offsets: 7d · 3d · 1d · starting (0 — virtual/hybrid only, gated in
+  // dueReminderKinds). Day-of-AM is wall-clock, not an offset. The engine 'confirmation'
+  // kind is DELETED (D-8): the register route's instant ack is the confirmation of record.
+  reminder_offsets_minutes: [10080, 4320, 1440, 0],
   nurture_delay_minutes: 180,
+  nurture_followup_delay_minutes: 2880,
   sender_physical_address: '[PLACEHOLDER - set the FSA business mailing address]',
   scores: { score_attended: 15, score_engaged: 25, score_no_show: -5, score_registered_no_show: -2, score_replay_viewed: 10 },
 }
@@ -91,8 +101,8 @@ async function loadConfig(db: Db): Promise<EngineConfig> {
     return {
       enabled: data.enabled !== false,
       reminder_offsets_minutes: Array.isArray(data.reminder_offsets_minutes) ? data.reminder_offsets_minutes : CONFIG_DEFAULTS.reminder_offsets_minutes,
-      confirmation_enabled: data.confirmation_enabled !== false,
       nurture_delay_minutes: Number(data.nurture_delay_minutes ?? CONFIG_DEFAULTS.nurture_delay_minutes),
+      nurture_followup_delay_minutes: Number(data.nurture_followup_delay_minutes ?? CONFIG_DEFAULTS.nurture_followup_delay_minutes),
       sender_physical_address: data.sender_physical_address ?? CONFIG_DEFAULTS.sender_physical_address,
       scores: {
         score_attended: Number(data.score_attended ?? CONFIG_DEFAULTS.scores.score_attended),
@@ -149,6 +159,7 @@ interface SessionRow {
   starts_at: string
   ends_at: string | null
   timezone: string | null
+  delivery_mode: string | null
   venue_name: string | null
   venue_address: string | null
   status: string | null
@@ -376,6 +387,14 @@ export async function sendWorkshopMessage(db: Db, args: SendArgs): Promise<LogSt
 
   // Build the body (workshop tokens substituted here; name tokens left for personalize).
   const base = appBase()
+  // WS-034 (fail closed): with no configured app URL, every URL this email carries —
+  // the CAN-SPAM one-click unsubscribe above all — degrades to a relative, non-working
+  // link. That is a deployment-config error, not a reason to ship broken mail: DEFER
+  // (retryable the moment the env var exists), audited like its siblings.
+  if (channel === 'email' && !base) {
+    await writeAudit({ actor: ACTOR, action: 'comms.deferred', entity: 'workshop_registration', entityId: reg.reg_id, diff: { kind, channel, reason: 'app_url_unconfigured' } })
+    return finalize('deferred', { reason: 'app_url_unconfigured' })
+  }
   const tokens: Record<string, string> = {
     name: (reg.name ?? '').trim().split(/\s+/)[0] || 'there',
     workshop_title: workshop.title ?? 'the workshop',
@@ -407,6 +426,9 @@ export async function sendWorkshopMessage(db: Db, args: SendArgs): Promise<LogSt
     to,
     subject,
     body,
+    // WS-067: every workshop email carries a real text/plain part (deliverability +
+    // the repo's own email-QA standard). Derived from the final HTML, footer included.
+    bodyText: channel === 'email' ? toPlainText(body) : undefined,
     actor: ACTOR,
     templateId: tpl.comm_template_id,
     isSecurity: false,
@@ -447,13 +469,20 @@ export async function runReminderPass(db: Db = getDb()): Promise<PassResult> {
   const windowEnd = new Date(nowMs + REMINDER_LOOKAHEAD_MS).toISOString()
   const windowStart = new Date(nowMs - 60 * 60 * 1000).toISOString() // include just-started (grace)
 
+  // A configured offset the cadence does not model is a VISIBLE config defect (logged
+  // once per pass), never a silent drop.
+  const stray = unmappedOffsets(config.reminder_offsets_minutes)
+  if (stray.length) {
+    console.warn('[workshop-reminders] config offsets with no cadence kind (skipped):', stray.join(', '))
+  }
+
   // Upcoming, non-cancelled sessions on PUBLISHED, NON-securities workshops.
   // WS-064: every engine query reads its error — a selection failure is a FAILED pass,
   // never a silent { ok:true, handled:0 }.
   const errors: string[] = []
   const { data: sessions, error: sessionsErr } = await db
     .from('workshop_sessions')
-    .select('id, workshop_id, starts_at, ends_at, timezone, venue_name, venue_address, status, cadence_generation, workshop:workshops!inner(workshop_id, title, slug, is_security, status)')
+    .select('id, workshop_id, starts_at, ends_at, timezone, delivery_mode, venue_name, venue_address, status, cadence_generation, workshop:workshops!inner(workshop_id, title, slug, is_security, status)')
     .gte('starts_at', windowStart)
     .lte('starts_at', windowEnd)
     .neq('status', 'cancelled')
@@ -492,7 +521,8 @@ export async function runReminderPass(db: Db = getDb()): Promise<PassResult> {
         nowMs,
         registeredMs,
         offsetsMinutes: config.reminder_offsets_minutes,
-        confirmationEnabled: config.confirmation_enabled,
+        venueZone: s.timezone,
+        deliveryMode: s.delivery_mode,
       })
       for (const kind of kinds) {
         for (const channel of channelsForReminder(kind, reg)) {
@@ -541,14 +571,16 @@ async function releaseStrandedClaim(db: Db, regId: string, channel: Channel, kin
 
 /**
  * Channels to attempt for a reminder kind — SETTLED model: registering IS consent for
- * reminders, so the only per-registrant filter is which contact details exist. Cadence
- * (spec §2.3): confirmation/7d = email; 1d/1h = email + SMS; starting = SMS.
+ * reminders, so the only per-registrant filter is which contact details exist. D-1(b)
+ * cadence: 7d = email · 3d = email+SMS · 1d = email+SMS · day-of-AM = SMS · starting =
+ * SMS (virtual/hybrid only — gated upstream in dueReminderKinds). The legacy 1h
+ * capability keeps email+SMS.
  */
 function channelsForReminder(kind: ReminderKind, reg: RegRow): Channel[] {
   const wants: Channel[] =
-    kind === 'reminder_starting'
+    kind === 'reminder_starting' || kind === 'reminder_day_of'
       ? ['sms']
-      : kind === 'reminder_1d' || kind === 'reminder_1h'
+      : kind === 'reminder_3d' || kind === 'reminder_1d' || kind === 'reminder_1h'
         ? ['email', 'sms']
         : ['email']
   return wants.filter((c) => (c === 'email' ? !!reg.email : !!reg.phone))
@@ -600,7 +632,7 @@ export async function runChangePass(db: Db = getDb()): Promise<PassResult> {
   // One query covers both triggers; classified per row below. WS-064: error surfaced.
   const { data: sessions, error: sessionsErr } = await db
     .from('workshop_sessions')
-    .select('id, workshop_id, starts_at, ends_at, timezone, venue_name, venue_address, status, cadence_generation, change_kind, change_recorded_at, workshop:workshops!inner(workshop_id, title, slug, is_security, status)')
+    .select('id, workshop_id, starts_at, ends_at, timezone, delivery_mode, venue_name, venue_address, status, cadence_generation, change_kind, change_recorded_at, workshop:workshops!inner(workshop_id, title, slug, is_security, status)')
     .gte('starts_at', horizon)
     .or('status.eq.cancelled,change_kind.not.is.null')
   if (sessionsErr) {
@@ -684,7 +716,7 @@ export async function runNurturePass(db: Db = getDb()): Promise<PassResult> {
   const errors: string[] = []
   const { data: sessions, error: sessionsErr } = await db
     .from('workshop_sessions')
-    .select('id, workshop_id, starts_at, ends_at, timezone, venue_name, venue_address, status, cadence_generation, workshop:workshops!inner(workshop_id, title, slug, is_security, status)')
+    .select('id, workshop_id, starts_at, ends_at, timezone, delivery_mode, venue_name, venue_address, status, cadence_generation, workshop:workshops!inner(workshop_id, title, slug, is_security, status)')
     .gte('starts_at', lookbackStart)
     .lte('starts_at', nurtureCutoff)
     .neq('status', 'cancelled')
@@ -772,6 +804,45 @@ export async function runNurturePass(db: Db = getDb()): Promise<PassResult> {
         const msg = err instanceof Error ? err.message : String(err)
         errors.push(`nurture(${reg.reg_id}): ${msg}`)
         await writeAudit({ actor: ACTOR, action: 'comms.error', entity: 'workshop_registration', entityId: reg.reg_id, diff: { pass: 'nurture', error: msg } })
+      }
+    }
+
+    // ── T+2/3d follow-up (D-1 pairing): ONE more claimed touch for registrants who
+    //    already received the same-day nurture (nurtured_at set). MARKETING tier like
+    //    every nurture send — the row's marketing_opt_in gates it inside
+    //    sendWorkshopMessage; the generation-0 claim is the once-ever idempotency
+    //    (no extra bookkeeping column). Securities-routed rows carry segment 'ffs'
+    //    and are skipped with the status filter below.
+    if (isFollowupDue({ anchorMs, nowMs, followupDelayMinutes: config.nurture_followup_delay_minutes })) {
+      const { data: fups, error: fupErr } = await db
+        .from('workshop_registrations')
+        .select(`${REG_COLS}, nurture_segment`)
+        .eq('session_id', s.id)
+        .not('nurtured_at', 'is', null)
+        .not('status', 'in', '("cancelled","ffs_referred")')
+      if (fupErr) {
+        await writeAudit({ actor: ACTOR, action: 'comms.error', entity: 'workshop_session', entityId: s.id, diff: { query: 'followup_registrations', error: fupErr.message } })
+        errors.push(`followup_registrations(${s.id}): ${fupErr.message}`)
+      } else {
+        for (const reg of (fups ?? []) as (RegRow & { nurture_segment: string | null })[]) {
+          const seg = reg.nurture_segment
+          if (seg !== 'attended' && seg !== 'left_early' && seg !== 'no_show' && seg !== 'registered_no_show') continue
+          for (const channel of channelsForNurture(seg as Segment, reg)) {
+            handled++
+            try {
+              const status = await sendWorkshopMessage(db, { reg, workshop, session: s, kind: 'nurture_followup', channel, config })
+              if (status === 'sent') sends++
+              else if (status === 'deferred') deferred++
+              else if (status === 'blocked') blocked++
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err)
+              errors.push(`followup(${reg.reg_id},${channel}): ${msg}`)
+              await writeAudit({ actor: ACTOR, action: 'comms.error', entity: 'workshop_registration', entityId: reg.reg_id, diff: { kind: 'nurture_followup', channel, error: msg } })
+              await releaseStrandedClaim(db, reg.reg_id, channel, 'nurture_followup', claimGeneration('nurture_followup', s.cadence_generation))
+              deferred++
+            }
+          }
+        }
       }
     }
   }
@@ -964,7 +1035,7 @@ export async function sendCancelAcknowledgment(db: Db, regId: string): Promise<L
   if (regRow.session_id) {
     const { data: s } = await db
       .from('workshop_sessions')
-      .select('id, workshop_id, starts_at, ends_at, timezone, venue_name, venue_address, status, cadence_generation')
+      .select('id, workshop_id, starts_at, ends_at, timezone, delivery_mode, venue_name, venue_address, status, cadence_generation')
       .eq('id', regRow.session_id)
       .maybeSingle()
     session = (s ?? null) as SessionRow | null

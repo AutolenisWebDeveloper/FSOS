@@ -6,7 +6,9 @@ import { rateLimit, clientIp } from '@/lib/http/rate-limit'
 import { WorkshopRegisterSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
 import { provisionZoomForRegistration } from '@/lib/workshops/server'
-import { notifyFsa, sendVisitorAck } from '@/lib/notifications/transactional'
+import { notifyFsa, renderHtml, renderText, type EmailContent } from '@/lib/notifications/transactional'
+import { sendThroughGate } from '@/lib/comms/send'
+import { buildIcs } from '@/lib/booking/ics'
 import { BUSINESS } from '@/lib/site'
 import {
   SIGNUP_FORM_VERSION,
@@ -14,6 +16,10 @@ import {
   MARKETING_OPT_IN_LABEL,
   EMAIL_REMINDER_BASIS,
 } from '@/lib/workshops/consent-copy'
+
+// Gate step-4 handle for the instant ack (seeded approved in migration 131 — the
+// pre-existing live production receipt, brought under sendThroughGate by D-8).
+const ACK_GATE_TEMPLATE_ID = 'eeee0000-0000-4000-8000-00000000ac01'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -222,12 +228,14 @@ export async function POST(req: NextRequest) {
     // a missing session never blocks the confirmation (the cron cadence carries the details).
     let whenLocal: string | null = null
     let venue: string | null = null
+    let sessionForIcs: { starts_at: string; ends_at: string | null; venue_name: string | null; venue_address: string | null; ics_uid: string | null } | null = null
     if (sessionId) {
       const { data: s } = await db
         .from('workshop_sessions')
-        .select('starts_at, timezone, venue_name, venue_address')
+        .select('starts_at, ends_at, timezone, venue_name, venue_address, ics_uid')
         .eq('id', sessionId)
         .maybeSingle()
+      sessionForIcs = s ?? null
       if (s?.starts_at) {
         try {
           whenLocal = new Intl.DateTimeFormat('en-US', {
@@ -242,23 +250,53 @@ export async function POST(req: NextRequest) {
       venue = s?.venue_name || s?.venue_address || null
     }
 
-    // TRANSACTIONAL notifications (best-effort — the registration is already persisted). The
-    // registrant gets an immediate "you're registered" receipt; the FSA gets a "new
-    // registration" ops alert. This is the immediate acknowledgement — the templated
-    // reminder/nurture cadence (comms-engine cron) remains the consent-gated marketing layer.
+    // TRANSACTIONAL receipt (best-effort — the registration is already persisted). D-8:
+    // the instant ack IS the single confirmation of record (the engine 'confirmation'
+    // kind is deleted) and it now rides sendThroughGate like every other client-facing
+    // send — one send path per channel; DNC/suppression enforced even on the receipt.
+    // The .ics calendar file attaches here (WS-022). The FSA ops alert is internal.
     const displayName = v.data.name?.trim() || 'there'
+    const ackContent: EmailContent = {
+      heading: `You're registered, ${displayName}.`,
+      lede: `Thanks for registering for “${w.title}” with ${BUSINESS.agent}. This is an educational event — no product recommendation. Your details are below.`,
+      rows: [
+        { label: 'Workshop', value: w.title },
+        { label: 'When', value: whenLocal },
+        { label: 'Where', value: venue },
+      ],
+      note: 'We\'ll send a reminder before the event. If you did not register, you can ignore this email.',
+    }
+    // Calendar attachment — DTEND falls back to +60min when the session has no end time.
+    let attachments: { filename: string; content: string; contentType: string }[] | undefined
+    if (sessionForIcs?.starts_at) {
+      const endsAt = sessionForIcs.ends_at ?? new Date(Date.parse(sessionForIcs.starts_at) + 60 * 60_000).toISOString()
+      const ics = buildIcs({
+        uid: sessionForIcs.ics_uid ?? `fsos-workshop-${sessionId}`,
+        title: w.title,
+        description: 'Educational workshop — no product recommendation.',
+        location: sessionForIcs.venue_name || sessionForIcs.venue_address || undefined,
+        startsAt: sessionForIcs.starts_at,
+        endsAt,
+      })
+      attachments = [{ filename: 'workshop.ics', content: Buffer.from(ics, 'utf8').toString('base64'), contentType: 'text/calendar' }]
+    }
     await Promise.allSettled([
-      sendVisitorAck({
+      sendThroughGate({
+        channel: 'email',
         to: v.data.email,
         subject: `You're registered — ${w.title}`,
-        heading: `You're registered, ${displayName}.`,
-        lede: `Thanks for registering for “${w.title}” with ${BUSINESS.agent}. This is an educational event — no product recommendation. Your details are below.`,
-        rows: [
-          { label: 'Workshop', value: w.title },
-          { label: 'When', value: whenLocal },
-          { label: 'Where', value: venue },
-        ],
-        note: 'We\'ll send a reminder before the event. If you did not register, you can ignore this email.',
+        body: renderHtml(ackContent),
+        bodyText: renderText(ackContent),
+        actor: 'system:workshop-register',
+        // Registration receipt: servicing-class, and registering IS its basis (D-3).
+        purpose: 'TRANSACTIONAL',
+        durableConsentGranted: true,
+        isSecurity: false,
+        // Gate step 4 handle (mig 131) — the pre-existing live receipt brought under the gate.
+        templateId: ACK_GATE_TEMPLATE_ID,
+        entity: { type: 'workshop_registration', id: reg.reg_id },
+        recipientContext: { full_name: v.data.name },
+        attachments,
       }),
       notifyFsa({
         subject: `New workshop registration — ${w.title}`,

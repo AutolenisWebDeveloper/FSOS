@@ -99,10 +99,8 @@ try {
   ok('reminder_1d RE-ARMED: fresh generation-2 claims sent (4 rows total: 2×gen1 + 2×gen2)',
     r1d.length === 4 && r1d.filter((r) => r.cadence_generation === 2 && r.status === 'sent').length === 2,
     JSON.stringify(r1d))
-  const conf = rowsFor(name, IDS.reg, 'confirmation')
-  ok('confirmation stays ONE-TIME: still generation-0 rows only, never re-armed by the reschedule',
-    conf.length > 0 && conf.every((r) => r.cadence_generation === 0),
-    JSON.stringify(conf))
+  ok('the engine produces NO confirmation rows at all (D-8: the instant ack is the confirmation of record)',
+    rowsFor(name, IDS.reg, 'confirmation').length === 0)
 
   // ── 4. A SECOND reschedule (generation 3, recorded AFTER Larry registered) now
   //       includes him — his registration predates THIS change. ──
@@ -179,6 +177,81 @@ try {
   ok('no unaccounted provider traffic in the cancellation phase',
     providerCalls.resend.length + providerCalls.twilio.length === 2, // event_cancelled email+sms only
     `resend=${providerCalls.resend.length} twilio=${providerCalls.twilio.length}`)
+
+  // ── 9. Batch 5 — D-1(b) cadence: day-of-AM (wall-clock) + 3d, both mode-correct. ──
+  // Session TODAY at 18:00Z (1:00 PM CDT); frozen now = 11:00 AM CDT ⇒ past the 9 AM
+  // venue fire-time and before start. Registered Aug 3 ⇒ 3d (fireAt Aug 3 18:00Z) due.
+  console.log('D-1(b) cadence — day-of-AM + 3d')
+  const A = freshWorkshopDb({
+    startsAtIso: '2026-08-06T18:00:00Z',
+    endsAtIso: '2026-08-06T19:00:00Z',
+    timezone: 'America/Chicago',
+    phone: '+12145550188',
+    registeredIso: '2026-08-03T12:00:00Z',
+    kinds: ['reminder_day_of', 'reminder_3d'],
+  })
+  resetProviderCalls()
+  await engine.runReminderPass()
+  const dayOf = rowsFor(A.name, IDS.reg, 'reminder_day_of')
+  ok('day-of-AM fires after 9:00 venue-local, as SMS ONLY (no email row)',
+    dayOf.length === 1 && dayOf[0].channel === 'sms' && dayOf[0].status === 'sent',
+    JSON.stringify(dayOf))
+  const r3d = rowsFor(A.name, IDS.reg, 'reminder_3d')
+  ok('reminder_3d rides email + SMS (D-1(b) matrix)',
+    r3d.length === 2 && r3d.every((r) => r.status === 'sent'), JSON.stringify(r3d))
+  ok('and still ZERO confirmation rows on a fresh cadence (D-8)',
+    rowsFor(A.name, IDS.reg, 'confirmation').length === 0)
+
+  // ── 10. Batch 5 — WS-071: reminder_starting is VIRTUAL/HYBRID only. ──
+  console.log('WS-071 — starting SMS mode gate')
+  const REGB = 'bbbb3333-4444-5555-6666-777777777777'
+  const SESSB = 'bbbb4444-5555-6666-7777-888888888888'
+  const B = freshWorkshopDb({
+    startsAtIso: '2026-08-06T15:55:00Z', // started 5 min before the frozen now (grace window)
+    endsAtIso: '2026-08-06T17:00:00Z',
+    timezone: 'America/Chicago',
+    phone: '+12145550188',
+    registeredIso: '2026-08-06T15:00:00Z', // after every offset fire-time → only 'starting' can fire
+    kinds: ['reminder_starting'],
+    extraSql: `
+      update workshop_sessions set delivery_mode='virtual' where id='${IDS.session}';
+      insert into workshop_sessions (id, workshop_id, starts_at, ends_at, delivery_mode, timezone, venue_name, status)
+        values ('${SESSB}', '${IDS.workshop}', '2026-08-06T15:55:00Z', '2026-08-06T17:00:00Z', 'in_person', 'America/Chicago', 'Hall B', 'scheduled');
+      insert into workshop_registrations (reg_id, workshop_id, session_id, name, email, phone, consent_channels, status, registered_at)
+        values ('${REGB}', '${IDS.workshop}', '${SESSB}', 'Walk In Wanda', 'wanda@example.com', '+12145550166', '{email,sms}', 'registered', '2026-08-06T15:00:00Z');`,
+  })
+  await engine.runReminderPass()
+  const startVirtual = rowsFor(B.name, IDS.reg, 'reminder_starting')
+  ok('the VIRTUAL registrant gets the starting SMS',
+    startVirtual.length === 1 && startVirtual[0].channel === 'sms' && startVirtual[0].status === 'sent',
+    JSON.stringify(startVirtual))
+  ok('the IN-PERSON registrant gets NO starting touch (WS-071 — nothing to tap)',
+    rowsFor(B.name, REGB, 'reminder_starting').length === 0)
+
+  // ── 11. Batch 5 — the T+2/3d follow-up: once-ever, marketing-gated. ──
+  console.log('D-1 pairing — nurture follow-up')
+  const REGC = 'bbbb5555-6666-7777-8888-999999999999'
+  const C = freshWorkshopDb({
+    startsAtIso: '2026-08-03T17:00:00Z',
+    endsAtIso: '2026-08-03T18:00:00Z', // anchor + 2d = Aug 5 18:00Z < frozen now ⇒ due
+    timezone: 'America/Chicago',
+    phone: '+12145550188',
+    registeredIso: '2026-08-01T12:00:00Z',
+    kinds: ['nurture_followup'],
+    extraSql: `
+      update workshop_registrations set nurture_segment='attended', nurtured_at='2026-08-03T21:00:00Z', marketing_opt_in=true
+        where reg_id='${IDS.reg}';
+      insert into workshop_registrations (reg_id, workshop_id, session_id, name, email, phone, consent_channels, status, registered_at, nurture_segment, nurtured_at, marketing_opt_in)
+        values ('${REGC}', '${IDS.workshop}', '${IDS.session}', 'No Marketing Nia', 'nia@example.com', '+12145550177', '{email}', 'registered', '2026-08-01T12:00:00Z', 'attended', '2026-08-03T21:00:00Z', false);`,
+  })
+  await engine.runNurturePass()
+  await engine.runNurturePass()
+  const fup = rowsFor(C.name, IDS.reg, 'nurture_followup')
+  ok('the opted-in attendee gets ONE follow-up per channel at generation 0 (re-tick absorbed)',
+    fup.length === 2 && fup.every((r) => r.status === 'sent' && r.cadence_generation === 0),
+    JSON.stringify(fup))
+  ok('the NON-opted registrant gets no follow-up at all (marketing basis is the ROW — no claim minted)',
+    rowsFor(C.name, REGC, 'nurture_followup').length === 0)
 
   console.log(`\n${passed} checks passed.`)
 } catch (err) {

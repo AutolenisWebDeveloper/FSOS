@@ -58,6 +58,9 @@ export interface SendContext {
    * email is single-part HTML (existing behavior). Ignored for SMS.
    */
   bodyText?: string
+  /** Email file attachments (WS-022: the workshop instant-ack .ics). Dispatched only
+   *  when the gate clears the send; ignored for SMS. */
+  attachments?: import('../messaging').EmailAttachment[]
   actor: string
   /** The member this send targets (for consent lookup). */
   memberId?: string | null
@@ -1033,6 +1036,7 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
     suppressionSubject,
     // Plaintext part is NOT instrumented (open/click tracking is HTML-only).
     bodyText: ctx.channel === 'email' ? identityText : undefined,
+    attachments: ctx.channel === 'email' ? ctx.attachments : undefined,
     // Reputation stream for the envelope From (email): marketing/workshop → mail.,
     // everything else → notify. Absent purpose → marketing (this is the campaign path).
     messageClass: streamForPurpose(ctx.purpose),

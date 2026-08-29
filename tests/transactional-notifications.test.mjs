@@ -167,10 +167,15 @@ t('contact route sends a visitor ack + FSA alert', () => {
   assert.ok(/notifyFsa\(/.test(src), 'alerts the FSA')
 })
 
-t('workshop public register route sends a visitor ack + FSA alert', () => {
+t('workshop public register route acks through the GATE (D-8) + FSA alert', () => {
+  // Batch 5 (D-8): the registrant receipt is the confirmation of record and now rides
+  // sendThroughGate (one send path per channel) with the mig-131 approval handle —
+  // executed end-to-end in tests/workshop-lifecycle-routes.test.mjs. The route still
+  // renders the shared transactional shell and still alerts the FSA internally.
   const src = read('src/app/api/public/workshops/register/route.ts')
-  assert.ok(/from '@\/lib\/notifications\/transactional'/.test(src), 'imports the shared helpers')
-  assert.ok(/sendVisitorAck\(/.test(src), 'acknowledges the registrant')
+  assert.ok(/from '@\/lib\/notifications\/transactional'/.test(src), 'renders the shared transactional shell')
+  assert.ok(/sendThroughGate\(\{/.test(src), 'acknowledges the registrant THROUGH the gate (allSettled member)')
+  assert.ok(!/sendVisitorAck\(/.test(src), 'the direct-send ack path is gone (exactly one send path)')
   assert.ok(/notifyFsa\(/.test(src), 'alerts the FSA')
 })
 

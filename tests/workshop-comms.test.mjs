@@ -44,7 +44,12 @@ const require = createRequire(import.meta.url)
 const R = require(join(out, 'reminders.js'))
 
 console.log('\nReminder scheduling (isReminderDue / dueReminderKinds)')
-ok('offset→kind map is exact', R.reminderKindForOffset(10080) === 'reminder_7d' && R.reminderKindForOffset(1440) === 'reminder_1d' && R.reminderKindForOffset(60) === 'reminder_1h' && R.reminderKindForOffset(0) === 'reminder_starting' && R.reminderKindForOffset(999) === null)
+ok('offset→kind map is exact (D-1(b): 3d added; 60 retained as capability only)',
+  R.reminderKindForOffset(10080) === 'reminder_7d' && R.reminderKindForOffset(4320) === 'reminder_3d' &&
+  R.reminderKindForOffset(1440) === 'reminder_1d' && R.reminderKindForOffset(60) === 'reminder_1h' &&
+  R.reminderKindForOffset(0) === 'reminder_starting' && R.reminderKindForOffset(999) === null)
+ok('unmappedOffsets surfaces exactly the stray values (never silently dropped)',
+  JSON.stringify(R.unmappedOffsets([10080, 999, 4320, 120])) === JSON.stringify([999, 120]))
 const now = 1_800_000_000_000
 ok('7d reminder DUE when registered before its fire-time and now in [fireAt,start]',
   R.isReminderDue({ offsetMinutes: 10080, startMs: now + 3 * D, nowMs: now, registeredMs: now - 5 * D }) === true)
@@ -53,9 +58,43 @@ ok('7d reminder SKIPPED when booked <7d out (registered after fire-time — spec
 ok('1h reminder DUE inside its window', R.isReminderDue({ offsetMinutes: 60, startMs: now + 30 * MIN, nowMs: now, registeredMs: now - 2 * D }) === true)
 ok('1h reminder NOT due too early', R.isReminderDue({ offsetMinutes: 60, startMs: now + 3 * H, nowMs: now, registeredMs: now - 2 * D }) === false)
 ok('before-start reminder NOT due after the event started', R.isReminderDue({ offsetMinutes: 60, startMs: now - 10 * MIN, nowMs: now, registeredMs: now - 2 * D }) === false)
-ok('confirmation due while the event is still upcoming', R.isConfirmationDue({ startMs: now + D, nowMs: now }) === true && R.isConfirmationDue({ startMs: now - D, nowMs: now }) === false)
-const kinds = R.dueReminderKinds({ startMs: now + 30 * MIN, nowMs: now, registeredMs: now - 10 * D, offsetsMinutes: [10080, 1440, 60], confirmationEnabled: true })
-ok('dueReminderKinds includes confirmation first + the due 1h reminder', kinds[0] === 'confirmation' && kinds.includes('reminder_1h'))
+// D-8: the engine 'confirmation' kind is DELETED — the register route's instant ack is
+// the single confirmation of record. dueReminderKinds can no longer produce it.
+ok('the engine cannot produce a confirmation (D-8: isConfirmationDue is gone; dueReminderKinds never yields it)',
+  R.isConfirmationDue === undefined &&
+  !R.dueReminderKinds({ startMs: now + 30 * MIN, nowMs: now, registeredMs: now - 10 * D, offsetsMinutes: [10080, 4320, 1440, 60, 0], venueZone: 'America/Chicago', deliveryMode: 'virtual' }).includes('confirmation'))
+const kinds = R.dueReminderKinds({ startMs: now + 30 * MIN, nowMs: now, registeredMs: now - 10 * D, offsetsMinutes: [10080, 1440, 60], venueZone: 'America/Chicago', deliveryMode: 'in_person' })
+ok('dueReminderKinds includes the due 1h reminder (capability offset)', kinds.includes('reminder_1h'))
+
+console.log('\nDay-of-AM (WALL-CLOCK kind) + WS-071 mode gate + T+2/3d follow-up')
+// 2026-08-07 session at 19:00Z = 2:00 PM CDT; 9:00 AM CDT that day = 14:00Z.
+const START = Date.UTC(2026, 7, 7, 19, 0)
+ok('dayOfNineAmMs resolves 9:00 AM on the VENUE calendar date (CDT: 14:00Z)',
+  R.dayOfNineAmMs(START, 'America/Chicago') === Date.UTC(2026, 7, 7, 14, 0))
+// January (CST): 9:00 AM = 15:00Z — the DST pair pins a real zone computation.
+ok('…and is DST-correct (CST January: 15:00Z)',
+  R.dayOfNineAmMs(Date.UTC(2026, 0, 20, 19, 0), 'America/Chicago') === Date.UTC(2026, 0, 20, 15, 0))
+ok('day-of due inside [9AM venue, start]; not before; never after start; skipped for same-morning registrants',
+  R.isDayOfDue({ startMs: START, nowMs: Date.UTC(2026, 7, 7, 15, 0), registeredMs: START - 3 * D, venueZone: 'America/Chicago' }) === true &&
+  R.isDayOfDue({ startMs: START, nowMs: Date.UTC(2026, 7, 7, 13, 0), registeredMs: START - 3 * D, venueZone: 'America/Chicago' }) === false &&
+  R.isDayOfDue({ startMs: START, nowMs: Date.UTC(2026, 7, 7, 20, 0), registeredMs: START - 3 * D, venueZone: 'America/Chicago' }) === false &&
+  R.isDayOfDue({ startMs: START, nowMs: Date.UTC(2026, 7, 7, 15, 0), registeredMs: Date.UTC(2026, 7, 7, 14, 30), venueZone: 'America/Chicago' }) === false)
+ok('a session STARTING before 9 AM venue-local never gets a day-of touch (empty window)',
+  R.isDayOfDue({ startMs: Date.UTC(2026, 7, 7, 12, 0), nowMs: Date.UTC(2026, 7, 7, 12, 0), registeredMs: 0, venueZone: 'America/Chicago' }) === false)
+const dueVirtual = R.dueReminderKinds({ startMs: now + 10 * MIN, nowMs: now, registeredMs: now - 10 * D, offsetsMinutes: [0], venueZone: 'America/Chicago', deliveryMode: 'virtual' })
+const dueHybrid = R.dueReminderKinds({ startMs: now + 10 * MIN, nowMs: now + 11 * MIN, registeredMs: now - 10 * D, offsetsMinutes: [0], venueZone: 'America/Chicago', deliveryMode: 'hybrid' })
+const dueInPerson = R.dueReminderKinds({ startMs: now + 10 * MIN, nowMs: now + 11 * MIN, registeredMs: now - 10 * D, offsetsMinutes: [0], venueZone: 'America/Chicago', deliveryMode: 'in_person' })
+ok('reminder_starting fires for VIRTUAL and HYBRID only (WS-071 — walk-ins have no link to tap)',
+  !dueVirtual.includes('reminder_starting') /* pre-start */ && dueHybrid.includes('reminder_starting') && !dueInPerson.includes('reminder_starting'))
+ok('the follow-up trigger is a distinct delay (due at anchor+delay, not before)',
+  R.isFollowupDue({ anchorMs: now, nowMs: now + 2 * D, followupDelayMinutes: 2880 }) === true &&
+  R.isFollowupDue({ anchorMs: now, nowMs: now + D, followupDelayMinutes: 2880 }) === false)
+
+console.log('\nPlaintext part (WS-067)')
+const PLAIN = R.toPlainText('<h1>Hi {{name}}</h1><p>Your seat is saved.</p><hr /><p style="x">Visit <a href="https://x.test/w">the page</a> &amp; reply STOP to opt out.</p>')
+ok('toPlainText strips tags, keeps link targets, decodes entities',
+  PLAIN.includes('Hi {{name}}') && PLAIN.includes('Your seat is saved.') &&
+  PLAIN.includes('the page (https://x.test/w)') && PLAIN.includes('& reply STOP') && !/[<>]/.test(PLAIN.replace(/&lt;|&gt;/g, '')))
 
 console.log('\nReminder-class allowlist (SETTLED consent model — the closed enum)')
 // Batch 4 widened the class by exactly the four LIFECYCLE service kinds (a change/

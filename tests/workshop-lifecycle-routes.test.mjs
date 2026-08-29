@@ -315,4 +315,66 @@ console.log('WS-040 — a PATCH attendance mark writes the attendance TABLE')
     res.status === 200 && !!up && up.payload.status === 'no_show' && up.payload.capture_method === 'manual')
 }
 
+console.log('D-8 / WS-022 — the instant ack rides sendThroughGate with the .ics attached')
+{
+  globalThis.__ackGateCalls = []
+  const sendStub = join(stubDir, 'send-stub.mjs')
+  writeFileSync(sendStub, `
+export async function sendThroughGate(ctx) {
+  globalThis.__ackGateCalls.push(ctx)
+  return { sent: true, gate: { allowed: true, blockedStep: null }, messageId: 'cm-ack', reason: null }
+}
+`)
+  const regRouteGate = await bundle('src/app/api/public/workshops/register/route.ts', { aliases: { '@/lib/comms/send': sendStub } })
+  const db = fakeDb({
+    workshops: [{ workshop_id: W, title: 'Retirement Readiness', status: 'published', max_attendees: 50, disclosure_config_id: null }],
+    workshop_sessions: [
+      { starts_at: '2026-09-01T18:00:00Z', ends_at: null, timezone: 'America/Chicago', venue_name: 'Hall', venue_address: null, ics_uid: 'uid-123@fsos' },
+    ],
+  })
+  db.rpc = async () => ({ data: { ok: true, reg_id: 'reg-ack-1' }, error: null })
+  installDb(db)
+  const res = await regRouteGate.POST(makeReq('/api/public/workshops/register', {
+    body: { workshop_id: W, session_id: S1, name: 'Alex', email: 'alex@example.com', marketing_opt_in: false },
+    headers: { 'x-forwarded-for': '198.51.100.30' },
+  }))
+  installDb(null)
+  ok('the registration succeeds', res.status === 200)
+  const ack = globalThis.__ackGateCalls.find((c) => c.entity?.type === 'workshop_registration')
+  ok('the ack goes THROUGH sendThroughGate (one send path per channel — D-8)', !!ack && globalThis.__ackGateCalls.length === 1)
+  ok('…as a TRANSACTIONAL email on the registration basis, under the mig-131 gate handle',
+    ack.channel === 'email' && ack.purpose === 'TRANSACTIONAL' && ack.durableConsentGranted === true &&
+      ack.templateId === 'eeee0000-0000-4000-8000-00000000ac01' && ack.entity.id === 'reg-ack-1')
+  ok('…with a real plaintext part (WS-067 applies to the ack too)',
+    typeof ack.bodyText === 'string' && ack.bodyText.includes('registered') && !/[<][a-z]/i.test(ack.bodyText))
+  const att = ack.attachments?.[0]
+  const ics = att ? Buffer.from(att.content, 'base64').toString('utf8') : ''
+  ok('…and the .ics calendar attachment (WS-022): VCALENDAR with the session start + stable UID',
+    !!att && att.filename === 'workshop.ics' && att.contentType === 'text/calendar' &&
+      ics.includes('BEGIN:VCALENDAR') && ics.includes('DTSTART:20260901T180000Z') && ics.includes('UID:uid-123@fsos') &&
+      ics.includes('DTEND:20260901T190000Z'), ics.slice(0, 200))
+}
+
+console.log('WS-069 — the dispatcher appends the STOP footer exactly once')
+{
+  const dispatcherMod = await bundle('src/lib/comms/dispatcher.ts')
+  const sent = []
+  const deps = {
+    recordComplianceEvent: async () => {},
+    createEscalation: async () => {},
+    writeAudit: async () => {},
+    verifyNotSuppressed: async () => ({ suppressed: false, resolved: true }),
+    send: async (channel, to, body) => { sent.push({ channel, to, body }); return { ok: true, id: 'sm-1' } },
+  }
+  const gate = { hasConsent: true, recipientLocalHour: 12, withinBusinessHours: true, usesApprovedTemplateOrPolicy: true }
+  await dispatcherMod.dispatch({ channel: 'sms', to: '+12145550100', body: 'See you at 6 PM.', gate, actor: 'test' }, deps)
+  await dispatcherMod.dispatch({ channel: 'sms', to: '+12145550100', body: 'Rebook anytime: link Reply STOP to opt out.', gate, actor: 'test' }, deps)
+  ok('a body WITHOUT opt-out language gets the footer appended (workshop templates unchanged)',
+    sent.length === 2 && /Reply STOP to opt out\.$/.test(sent[0].body) && sent[0].body.startsWith('See you at 6 PM.'),
+    JSON.stringify(sent[0]))
+  const stopCount = (sent[1].body.match(/reply\s+stop/gi) ?? []).length
+  ok('a body ALREADY carrying "Reply STOP" (the booking templates) is NOT double-footered',
+    stopCount === 1, JSON.stringify(sent[1]))
+}
+
 console.log(`\n${passed} checks passed.`)

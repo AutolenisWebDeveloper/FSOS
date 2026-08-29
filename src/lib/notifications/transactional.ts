@@ -42,7 +42,7 @@ export interface DetailRow {
   value: string | null | undefined
 }
 
-interface EmailContent {
+export interface EmailContent {
   /** Preheader / H1 line (plain text; escaped by the renderer). */
   heading: string
   /** Lead paragraph (plain text; escaped by the renderer). */
@@ -58,7 +58,7 @@ interface EmailContent {
  * premium shell (email-shell.ts) so it matches the campaign templates + DESIGN.md.
  * All dynamic text is HTML-escaped inside the shell helpers (§13.8).
  */
-function renderHtml(content: EmailContent): string {
+export function renderHtml(content: EmailContent): string {
   const contentHtml = [
     paragraphHtml(content.lede),
     detailTableHtml((content.rows ?? []).map((r) => ({ label: r.label, value: r.value }))),
@@ -71,7 +71,7 @@ function renderHtml(content: EmailContent): string {
 }
 
 /** A plaintext part mirroring the HTML (deliverability + accessible fallback). */
-function renderText(content: EmailContent): string {
+export function renderText(content: EmailContent): string {
   const rows = (content.rows ?? [])
     .filter((r) => r.value != null && String(r.value).trim() !== '')
     .map((r) => `${r.label}: ${r.value}`)

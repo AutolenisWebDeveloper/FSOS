@@ -59,6 +59,11 @@ function phoneWithLocalHour(inWindow) {
 // The venue zone stays a fixture detail; SMS decisions must IGNORE it entirely.
 function venueZone() { return 'America/Chicago' }
 
+// WS-034 (fail closed): with no app URL every email link (unsubscribe above all) would
+// be relative and broken, so the engine DEFERS emails. The suite configures the URL the
+// way a real deployment does; the explicit WS-034 check below unsets it deliberately.
+process.env.NEXT_PUBLIC_APP_URL = 'https://app.example.test'
+
 const REG = {
   reg_id: 'reg-1', session_id: 'sess-1', workshop_id: 'w-1', name: 'Alex Rivera',
   email: 'alex@example.com', phone: '+12145550188', consent_channels: ['email', 'sms'],
@@ -105,6 +110,25 @@ console.log('\nsendWorkshopMessage — the gate invocation IS the guarantee (rem
   const finalize = db.calls.find((c) => c.table === 'workshop_message_log' && c.method === 'update')
   ok('the claim row is finalized sent with the dispatched message id',
     !!finalize && finalize.payload.status === 'sent' && finalize.payload.comm_message_id === 'cm-1')
+}
+
+console.log('\nWS-034 — no app URL ⇒ email DEFERS before the gate (broken unsubscribe never ships)')
+{
+  const saved = process.env.NEXT_PUBLIC_APP_URL
+  delete process.env.NEXT_PUBLIC_APP_URL
+  globalThis.__gateCalls = []
+  const db = fakeDb({
+    workshop_message_log: [null, { id: 'log-x' }, null],
+    workshop_message_templates: [TPL],
+  })
+  const status = await engine.sendWorkshopMessage(db, {
+    reg: REG, workshop: WORKSHOP, session: session(venueZone()), kind: 'reminder_1h', channel: 'email', config: CONFIG,
+  })
+  process.env.NEXT_PUBLIC_APP_URL = saved
+  ok('the email send DEFERS (retryable once the env exists)', status === 'deferred')
+  ok('…BEFORE the gate (no dispatch attempted)', globalThis.__gateCalls.length === 0)
+  const fin = db.calls.filter((c) => c.table === 'workshop_message_log' && c.method === 'update').pop()
+  ok('…with the app_url_unconfigured reason on the claim', !!fin && fin.payload.reason === 'app_url_unconfigured')
 }
 
 console.log('\nQuiet-hours defers SMS in the RECIPIENT zone, BEFORE the gate (WS-005/WS-065)')

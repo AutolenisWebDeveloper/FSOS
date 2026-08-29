@@ -911,3 +911,72 @@ referring_agency_id half is N/A-by-design for direct workshop signups). D-2(b) s
 with "Contacted" mapped to the native entry stage `'prospect'` — the native CHECK has no
 Contacted value and the owner mandated native stages; flagged for the owner in the
 batch report.
+
+---
+
+## BATCH 5 — EXECUTION RECORD (2026-08-29)
+
+**The D-1(b) cadence is complete and the confirmation is singular (D-8).**
+(WS-005 was finished in Batch 1; this batch closes WS-011, WS-014, WS-022, WS-034,
+WS-041, WS-067, WS-069, WS-071.)
+
+- **Migration 131**: D-1(b) default offsets `{10080, 4320, 1440, 0}` (column default +
+  a guarded move of a config row still on the OLD shipped default — operator-edited
+  sets untouched); `nurture_followup_delay_minutes` (default 2880 = T+2d, config-driven
+  per D-1's "T+2/3d"); placeholder seeds for `reminder_3d` (email+sms),
+  `reminder_day_of` (sms), `nurture_followup` (email+sms) — all drafts (D-5); and the
+  instant-ack GATE HANDLE: one comm_templates row seeded APPROVED deliberately — it is
+  the PRE-EXISTING live production receipt being brought UNDER the gate (the 040
+  pattern: approval handle in comm_templates, copy with the sender), not a new kind.
+- **Cadence (reminders.ts + engine)**: offset map gains 4320→3d (60→1h retained as
+  CAPABILITY only — pinned by the three guarantee fixtures configuring it explicitly);
+  `reminder_day_of` is a WALL-CLOCK kind — 9:00 AM on the session's VENUE calendar
+  date, derived per tick via Intl (DST-correct; a session starting before 9 AM local
+  has an empty window; same registered-before-fire skip as the offsets); WS-071:
+  `reminder_starting` fires for VIRTUAL/HYBRID sessions only (the pass now selects
+  delivery_mode); channel matrix per D-1(b): 7d email · 3d email+SMS · 1d email+SMS ·
+  day-of SMS · starting SMS. Stray config offsets are LOGGED once per pass
+  (unmappedOffsets), never silently dropped. The engine 'confirmation' kind is DELETED
+  (D-8 — resolves WS-014's double confirmation and WS-041's T-8d lateness): nothing
+  produces it; the kind string stays legal for historical log rows.
+- **D-8 + WS-022**: the register route's instant ack now rides `sendThroughGate`
+  (TRANSACTIONAL, registration basis, the mig-131 handle for step 4) — DNC/suppression
+  now enforced even on the receipt; `sendVisitorAck` is gone from the route (exactly
+  one send path per channel); the `.ics` (REUSED pure builder `booking/ics.ts`; the
+  session's stable `ics_uid`; DTEND falls back to +60min) attaches to that ack.
+  Attachments are a NEW capability of the single path (SendContext → DispatchRequest →
+  sendEmail → Resend), email-only, dispatched only when the gate clears.
+- **WS-067**: every workshop email now carries a real text/plain part — the engine
+  derives it from the final HTML (footer included) via `toPlainText`; the ack passes
+  the shared renderer's own text part.
+- **WS-034 (fail closed)**: with no configured app URL every link in a workshop email —
+  the CAN-SPAM one-click unsubscribe above all — degrades to a relative, broken URL.
+  The engine now DEFERS email sends (`app_url_unconfigured`, audited, retryable the
+  moment the env exists) instead of shipping broken mail.
+- **T+2/3d follow-up (D-1 pairing)**: a second nurture leg — registrants who received
+  the same-day nurture (`nurtured_at` set, real segment) get ONE `nurture_followup`
+  per channel once anchor+delay elapses; the generation-0 claim is the once-ever
+  idempotency; marketing basis stays the ROW (`marketing_opt_in` — no claim is even
+  minted without it); securities-routed rows (segment 'ffs') are excluded.
+- **WS-069 (adjacent, booking)**: the dispatcher appends `SMS_OPT_OUT_FOOTER` only
+  when the body does not already carry "Reply STOP" — the six booking bodies (inline
+  STOP) stop double-footering; workshop templates (no inline STOP) keep the appended
+  footer byte-for-byte.
+
+**Proofs**: `workshop-lifecycle.test.mjs` grew to 30 checks — three new REAL-PG
+fixtures: day-of fires after 9:00 venue-local as SMS ONLY + 3d rides both channels +
+zero confirmation rows (D-8); starting SMS reaches the VIRTUAL registrant and never the
+in-person one (WS-071); the follow-up sends once per channel at generation 0, re-tick
+absorbed, and mints NOTHING for a non-opted registrant. `workshop-lifecycle-routes`
+grew to 43 — the ack executed through a recording gate stub (TRANSACTIONAL + handle +
+plaintext + the decoded VCALENDAR with DTSTART/UID/DTEND), and the dispatcher executed
+for the WS-069 dedupe both ways. `workshop-comms` 68 checks (day-of DST pair CDT/CST,
+mode gate, follow-up delay, toPlainText, offset map + unmappedOffsets, D-8 absence);
+`workshop-engine-invocation` 40 (WS-034 defers BEFORE the gate with the audited
+reason). Fixture updates pinned deliberately: the three 1h guarantee fixtures now
+configure the retained capability offset explicitly; `transactional-notifications`
+pins the route's gate call and the ABSENCE of the direct-send ack. Full gates green:
+196 unit files, 21 RLS files, type-check, lint, build. Manifest: EMPTY.
+
+Findings closed: WS-011, WS-014, WS-022, WS-034, WS-041 (superseded by D-8 — the late
+engine confirmation no longer exists), WS-067, WS-069, WS-071.

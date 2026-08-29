@@ -49,9 +49,32 @@ jobs:
       - name: Build
         run: npm run build
 
-      # The RLS proof stands up an ephemeral Postgres via initdb + runuser -u
-      # postgres + chown, which require root. GitHub-hosted runners execute steps
-      # as the non-root `runner` user, so run this one step under sudo — preserving
+      # The RLS + migration proofs stand up an ephemeral Postgres via initdb +
+      # runuser -u postgres + chown, which require root. GitHub-hosted runners execute
+      # steps as the non-root `runner` user, so run this one step under sudo — preserving
       # PATH (for node/npm) and CI_REQUIRE_INFRA so it hard-fails rather than skips.
-      - name: RLS firewall proof
+      # This set also carries tests/migration-chain.test.mjs, which applies the WHOLE
+      # supabase/migrations chain to an empty database through the real scripts/migrate.mjs
+      # — so a migration that cannot apply, or that breaks the chain's ordering, fails the
+      # PR instead of the deploy.
+      - name: RLS firewall + migration chain proofs
         run: sudo env "PATH=$PATH" CI_REQUIRE_INFRA=1 npm run test:rls
+
+      # Deploy-side guard: does the DEPLOYED database actually carry every migration on
+      # main? This is the check whose absence let 123/124 merge and deploy while production
+      # still lacked their columns — a failure that was invisible because the send path
+      # writes those columns through PostgREST, which reports a missing column in an
+      # unchecked `error` field rather than throwing.
+      #
+      # Read-only: it applies nothing. Runs on main only — on a PR the migration is
+      # legitimately not applied yet, so it would report drift on every migration PR.
+      #
+      # NOT YET ARMED: with no DATABASE_URL secret configured this prints
+      # "SKIP ... drift NOT verified" and passes. To arm it, add a read-capable
+      # DATABASE_URL secret and set MIGRATION_DRIFT_REQUIRE=1 so an unverifiable
+      # schema becomes a hard failure instead of a silent skip.
+      - name: Migration drift check (production schema vs main)
+        if: github.ref == 'refs/heads/main'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npm run check:drift

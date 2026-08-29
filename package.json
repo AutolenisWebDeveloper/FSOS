@@ -10,6 +10,7 @@
     "lint": "next lint",
     "type-check": "tsc --noEmit",
     "migrate": "node scripts/migrate.mjs",
+    "check:drift": "node scripts/check-migration-drift.mjs",
     "create-user": "node scripts/create-user.mjs",
     "seed:demo": "node scripts/seed-demo.mjs",
     "templates:build": "npx tsx scripts/build-email-templates.ts",

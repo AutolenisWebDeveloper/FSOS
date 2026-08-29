@@ -697,3 +697,55 @@ time-trap signal and log honeypot hits for monitoring instead of silently succee
 
 This closes the nine-surface trace sweep (A–I all traced). Adversarial verify verdicts
 append below as they complete.
+
+---
+
+## §12 — Adversarial verify round: Surface B verdicts (2026-08-29)
+
+The independent evidence-checker re-opened every Surface B citation: **13 of 14 findings
+CONFIRMED at their stated severity** (legacy route, duplicates, consent-tier reuse,
+missing two-tier model, reminder-vs-consent promise break, /events disclosure evidence,
+waitlist CTAs, guest count, capacity atomicity + hardcoded 50, consent silo, throttle,
+ack-bypasses-suppression).
+
+**CORRECTION to WS-013 (frequency caps) — the checker's dispute is upheld.** The claim
+“frequency caps are a guaranteed no-op for workshop sends” was over-broad: `sendThroughGate`
+resolves `convMemberId` from the conversation (`send.ts:512-529` —
+`getOrCreateConversation(channel, to)` can attach an existing member by contact), and
+`resolveSendPolicy({ memberId: convMemberId, … })` (`send.ts:747-755`) then applies caps.
+Accurate statement: **frequency caps apply only when the recipient's phone/email resolves
+to an existing member-linked conversation; a net-new workshop registrant (no member — the
+common case for a public seminar lead) has no per-recipient caps.** Epistemic grade for
+the no-cap case: PROVEN for null-member; the original universal claim is WITHDRAWN.
+
+**Checker misses, verified first-hand and adopted:**
+
+**WS-059 · B · RISK · PROVEN — Zoom provisioning runs inside the public POST with no
+timeout.** Neither Zoom fetch carries an `AbortSignal`/timeout (`zoom/client.ts:35,85` —
+grep empty), and `provisionZoomForRegistration` is awaited inside the public register
+handler (`register/route.ts:158-162`) — a hung Zoom API stalls every public registration
+response for the platform's default fetch timeout.
+
+**WS-060 · B/A · BROKEN · PROVEN — Capacity is counted workshop-wide but registration
+binds per-session.** The capacity count is `.eq('workshop_id', …)` (`register/route.ts:60-63`)
+while the insert carries the resolved `session_id` (`:107`) — for a multi-session workshop
+the sessions share one global cap; per-session fullness is unrepresentable. Refines
+WS-004; Batch 2's claim function must count per-session.
+
+**WS-061 · B · RISK · PROVEN — Guardrail ordering: the honeypot short-circuit precedes the
+rate limiter.** `register/route.ts:25-27` returns fake-success before `rateLimit` at
+`:29-32` — honeypot traffic never consumes the per-IP window (free probing), and an
+autofill-victim's drop (WS-057) is invisible to throttle telemetry too.
+
+**Also adopted (small, PROVEN):** the legacy route's GET is equally unauthenticated and
+returns title/schedule/seat-math for ANY workshop id including drafts (extends WS-002 —
+already in its evidence); registrant email is stored un-normalized
+(`register/route.ts:109`; the schema never lowercases — the legacy route did; Batch 2's
+`lower(email)` unique index must normalize on write too); the register page's “Online —
+join link emailed after you register” (`register/page.tsx:49`) is a second unconditional
+promise defeated by the consent gate (WS-012); `clientIp` trusts `x-forwarded-for` with no
+trusted-proxy handling (`rate-limit.ts:40-47`) — whether a client-supplied XFF can rotate
+the limiter key on Vercel is platform behavior, NOT VERIFIED. **Verified-OK adopted:** the
+`/unsubscribe` page path is sound end-to-end (posts to the opt-out API which writes the
+enforced store) — WS-034's relative-URL-in-email defect stands, but the surface it points
+at works.

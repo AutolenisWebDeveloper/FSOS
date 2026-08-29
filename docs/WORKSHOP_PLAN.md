@@ -80,14 +80,19 @@ Scope:
     status not in ('cancelled')` — duplicate prevention at the DB (WS-003).
   - Capacity claim function `workshop_claim_seat(p_workshop uuid, p_session uuid)` —
     `security definer` counting inside the same statement with the insert (or a
-    constraint-trigger equivalent) so the last seat cannot double-fill (WS-004);
-    walk-in path counts too, but never blocks a walk-in (overflow allowed, flagged).
+    constraint-trigger equivalent) so the last seat cannot double-fill (WS-004); counts
+    PER-SESSION, not workshop-wide (WS-060); walk-in path counts too, but never blocks a
+    walk-in (overflow allowed, flagged).
   - Backfill note: existing duplicate rows (if any in prod) must be deduped before the
     index — the migration uses the FSOS-032 serialization pattern from migration 122's
     backfill (already proven in this repo).
 - `src/app/api/public/workshops/register/route.ts` — on unique violation, return the
   distinct `already_registered` response (200-with-state, not an error leak); atomic
-  capacity via the claim function; capture `guest_count` if Decision D-6 says yes.
+  capacity via the claim function; normalize email to lowercase on write (§12); run the
+  rate limiter BEFORE the honeypot short-circuit and log honeypot hits (WS-061/WS-057);
+  move Zoom provisioning off the response path or give it an AbortSignal timeout (WS-059);
+  verify a client-supplied session_id belongs to the workshop (WS-048); capture
+  `guest_count` if Decision D-7 says yes.
 - `src/lib/validation/schemas.ts` — `WorkshopPatchSchema` gains `max_attendees` (and
   session capacity when Decision D-7 chooses per-mode); `WorkshopForm.tsx` sends it.
 - `src/components/public/site/WorkshopRegisterFormSite.tsx` + `WorkshopRegisterForm.tsx` —

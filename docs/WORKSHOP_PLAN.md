@@ -518,3 +518,19 @@ thresholds, duplicate-idempotence, reconnect, replay gate, CRC, HMAC incl. fail-
   directs otherwise.
 - Adjacent, outside this plan's scope (recorded in §12): booking SMS STOP-footer
   duplication (WS-069); ADR-014 D4 GHL schema retirement never executed.
+
+---
+
+## AMENDMENT 3 (2026-08-29): final §12 fold-ins
+
+- **Batch 0 addition (WS-077):** per-file assertion-count contract in
+  `scripts/run-tests.mjs` — each test reports its executed-assertion count and the runner
+  enforces a recorded per-file floor, so an all-vacuous file can no longer read as a pass.
+  §11a total revised to 42 instances (7A/35B) including `workshop-delivery.test.mjs:227`.
+- **Batch 4 additions:** `/approve` gains a status precondition (draft/pending_review
+  only — WS-074); approval-time disclosure edits create a NEW disclosure version row
+  instead of rewriting the shared one in place (WS-075); PATCH validates the publish gate
+  BEFORE applying presenter/material side effects (WS-076).
+- **Batch 8 note:** WS-052 re-graded (structure PROVEN / trigger HYPOTHESIS) — fix
+  unchanged; funnel `<a href>` → `next/link`; hub timestamp rendered server-side in venue
+  TZ (WS-051 hydration refinement).

@@ -1056,3 +1056,73 @@ step was never executed — `049_ghl_schema_retirement.sql` exists only under
 **Batch-1 test-churn note:** `tests/operational-email.test.mjs:243-259` asserts on the
 legacy register route's SOURCE — removing that route (Batch 1) breaks those blocks; Batch
 1 rewrites them alongside the removal.
+
+---
+
+## §12 (concluded) — Verify verdicts: Surfaces G, H, I (2026-08-29). All nine rounds complete.
+
+**Surface G: 13/13 CONFIRMED** (including the check-in tap claim in its narrow reading —
+reconciled with §9/WS-049: the "silently lost" reading stays refuted [3-attempt retry,
+revert + toast]; the no-offline-queue GAP stands). **Surface H: 22/23 CONFIRMED, one
+downgrade upheld** (below). **Surface I: 9/10 CONFIRMED, one dispute upheld** (below).
+Every verdict adopted here was checked against the §11b basis (rests on quoted source,
+not green tests) and re-verified first-hand.
+
+**WS-052 CORRECTION (H-round downgrade upheld).** The invisible-failure structure is
+PROVEN verbatim (general error suppressed when `fieldErr` is set; only name/email/phone
+render field errors), but the user-reachable trigger is HYPOTHESIS: the non-rendered
+schema fields (`workshop_id`, `session_id`, `chosen_delivery`) are page-supplied values,
+not user-typed. Re-graded **RISK (structure PROVEN / trigger HYPOTHESIS)**. Batch 8 still
+fixes it (render the general error whenever the named field has no rendered slot).
+
+**WS-058 refinement (I-round dispute upheld).** The zoom-provision `start_url` slice
+assertion (`workshop-zoom-provision.test.mjs:196`) is fragile, not vacuous as first
+described: `split('EnsureMeetingOutcome')[1]` lands on the type-definition region
+(server.ts:623-644), so the negative `/startUrl/` check does inspect a meaningful slice;
+a rename still empties it via the `?? ''` fallback. Graded POLISH.
+
+**WS-074 · G · GAP · PROVEN — `/approve` has no status precondition.** It loads only
+`workshop_id, disclosure_config_id` (approve/route.ts:36-43) and approves or rejects from
+ANY status — cancelled and completed included.
+
+**WS-075 · G · RISK · PROVEN — Approving with a supplied `disclosure_body` rewrites the
+shared disclosure row in place** under the same version number
+(approve/route.ts:79-96: updates `workshop_disclosure_configs.body`,
+`is_assumption=false`, `approved_by`) — other workshops referencing that disclosure id
+silently show new text without re-approval; the version contract is broken. Mitigation
+held: past consent evidence is safe (`workshop_consent_events.disclosure_text` snapshots
+at registration).
+
+**WS-076 · G · RISK · PROVEN — PATCH applies side effects before the publish gate can
+reject.** `syncPresenters` + `recordMaterial` run at `[id]/route.ts:46-51`; the gate 422s
+at `:54-67` — a rejected publish still mutated presenters/materials (and presenter sync
+recomputes `is_security`). Related (PROVEN mechanism, not API-reachable today): the
+publish trigger is `BEFORE UPDATE` only (038:316-318) — a direct INSERT with
+`status='published'` would bypass it.
+
+**H-round adoptions (refinements under existing IDs):** `WorkshopStatusControl` renders
+NO action for `status='cancelled'` — no un-cancel path in the UI while the API allows
+unguarded un-cancel (WS-070b inconsistency; POLISH). WS-051 refinement: `WorkshopHubFilters`
+is `'use client'` and `formatWhen` runs on server (UTC) AND client (viewer TZ) — a React
+hydration mismatch, after which the hub shows VIEWER-timezone times (still not venue
+time). Raw `<a href>` instead of `next/link` across the public funnel
+(HubFilters:107; [slug]/page.tsx:88,205,227) — full page reloads on the conversion path
+(POLISH). Scope-correction accepted with no ledger change: `(fsa)/loading.tsx` covers the
+authenticated tree; WS-056's no-loading-boundary claim was already public-only. Session
+UUIDs are public by design (`public.ts:113`) — amplifier noted under WS-048.
+`requirePermission` after `requireApiRole('fsa')` is redundant on 3 routes (POLISH).
+
+**WS-077 · I · GAP · PROVEN — The test runner has no assertion-count contract.**
+`scripts/run-tests.mjs:46-54` passes/fails on the child exit code alone — a file whose
+assertions are all §11a-class (or that asserts nothing) is indistinguishable from a real
+pass. This is the structural enabler of the false-green class; Batch 0 adds a per-file
+minimum-assertion contract (each test prints its count; the runner enforces a floor
+recorded per file).
+
+**§11a addendum (I-round):** `workshop-delivery.test.mjs:227` — the alternation
+`/kind', 'recording'|kind.*recording/` parses as two alternatives, the second satisfiable
+by any "kind…recording" text; today its only match is the executable
+`.eq('kind', 'recording')` (replay.ts:50 — grep verified), so it is currently anchored
+but comment-satisfiable in principle. Sweep total revised: **42 instances**
+(7 pattern A, 35 pattern B). Also noted: no test file references the workshop cron route
+at all (`rg 'cron/workshop-reminders' tests/` is empty).

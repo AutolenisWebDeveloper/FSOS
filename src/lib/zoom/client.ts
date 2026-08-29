@@ -15,6 +15,10 @@
 const OAUTH_URL = 'https://zoom.us/oauth/token'
 const API_BASE = 'https://api.zoom.us/v2'
 
+// WS-059: every Zoom fetch is bounded — provisioning runs inside the public register
+// request, so a hung Zoom API must never stall a registrant's response.
+const ZOOM_FETCH_TIMEOUT_MS = 5000
+
 /** True only when all three provisioning credentials are present. */
 export function zoomEnabled(): boolean {
   return !!(process.env.ZOOM_ACCOUNT_ID && process.env.ZOOM_CLIENT_ID && process.env.ZOOM_CLIENT_SECRET)
@@ -33,6 +37,7 @@ async function getAccessToken(): Promise<string | null> {
   const url = `${OAUTH_URL}?grant_type=account_credentials&account_id=${encodeURIComponent(process.env.ZOOM_ACCOUNT_ID as string)}`
   try {
     const res = await fetch(url, {
+      signal: AbortSignal.timeout(ZOOM_FETCH_TIMEOUT_MS),
       method: 'POST',
       headers: { Authorization: `Basic ${basic}` },
     })
@@ -83,6 +88,7 @@ export async function addZoomRegistrant(inp: ZoomRegistrantInput): Promise<ZoomR
   const path = inp.kind === 'webinar' ? `webinars/${inp.meetingId}/registrants` : `meetings/${inp.meetingId}/registrants`
   try {
     const res = await fetch(`${API_BASE}/${path}`, {
+      signal: AbortSignal.timeout(ZOOM_FETCH_TIMEOUT_MS),
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       // Name + email ONLY — never any securities/financial data (guardrail 1).
@@ -147,6 +153,7 @@ export async function createZoomMeeting(inp: ZoomMeetingInput): Promise<ZoomMeet
   const startIso = new Date(inp.startTime).toISOString().replace(/\.\d{3}Z$/, 'Z')
   try {
     const res = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}/meetings`, {
+      signal: AbortSignal.timeout(ZOOM_FETCH_TIMEOUT_MS),
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -205,6 +212,7 @@ export async function updateZoomMeeting(
   const startIso = new Date(inp.startTime).toISOString().replace(/\.\d{3}Z$/, 'Z')
   try {
     const res = await fetch(`${API_BASE}/meetings/${encodeURIComponent(meetingId)}`, {
+      signal: AbortSignal.timeout(ZOOM_FETCH_TIMEOUT_MS),
       method: 'PATCH',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -232,6 +240,7 @@ export async function deleteZoomMeeting(meetingId: string | null | undefined): P
   if (!token) return { ok: false, error: 'no_access_token' }
   try {
     const res = await fetch(`${API_BASE}/meetings/${encodeURIComponent(meetingId)}`, {
+      signal: AbortSignal.timeout(ZOOM_FETCH_TIMEOUT_MS),
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
     })

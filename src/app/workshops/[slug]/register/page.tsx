@@ -40,13 +40,12 @@ export default async function WorkshopRegisterPage(props: { params: Promise<{ sl
     confirm_url: `/workshops/${w.slug}/confirmed`,
   }
 
-  const when = w.scheduled_at
-    ? new Date(w.scheduled_at).toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' })
-    : 'Date to be announced'
+  // WS-051: venue-zone string from the loader (server-formatted).
+  const when = w.when_local ?? 'Date to be announced'
   const DeliveryIcon = w.delivery_mode === 'virtual' ? Video : w.delivery_mode === 'hybrid' ? Users : MapPin
   const place =
     w.delivery_mode === 'virtual'
-      ? 'Online — join link emailed after you register'
+      ? 'Online — joining details arrive with your confirmation'
       : w.delivery_mode === 'hybrid'
         ? `${w.venue_address ?? 'In person'} · or online`
         : w.venue_address ?? w.location ?? 'Location shared after you register'

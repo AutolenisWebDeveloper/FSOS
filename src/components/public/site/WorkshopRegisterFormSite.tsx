@@ -23,6 +23,8 @@ export function WorkshopRegisterFormSite({ workshop }: { workshop: PublicWorksho
   )
   const [consentEmail, setConsentEmail] = React.useState(false)
   const [consentSms, setConsentSms] = React.useState(false)
+  const [guests, setGuests] = React.useState(0)
+  const [alreadyRegistered, setAlreadyRegistered] = React.useState(false)
   const [company, setCompany] = React.useState('') // honeypot
   const [busy, setBusy] = React.useState(false)
   const [done, setDone] = React.useState(false)
@@ -30,6 +32,9 @@ export function WorkshopRegisterFormSite({ workshop }: { workshop: PublicWorksho
   const [fieldErr, setFieldErr] = React.useState<string | undefined>()
 
   const isHybrid = workshop.delivery_mode === 'hybrid'
+  // D-7: guests consume IN-PERSON seats only — the field renders only when the registrant
+  // is attending in person.
+  const attendingInPerson = isHybrid ? delivery === 'in_person' : workshop.delivery_mode !== 'virtual'
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -41,7 +46,7 @@ export function WorkshopRegisterFormSite({ workshop }: { workshop: PublicWorksho
       return
     }
     setBusy(true)
-    const res = await postJson<{ join_token?: string }>('/api/public/workshops/register', {
+    const res = await postJson<{ join_token?: string; already_registered?: boolean }>('/api/public/workshops/register', {
       workshop_id: workshop.workshop_id,
       session_id: workshop.session_id ?? undefined,
       name,
@@ -50,6 +55,7 @@ export function WorkshopRegisterFormSite({ workshop }: { workshop: PublicWorksho
       chosen_delivery: isHybrid ? delivery : workshop.delivery_mode === 'virtual' ? 'virtual' : 'in_person',
       consent_email: consentEmail,
       consent_sms: consentSms,
+      guest_count: attendingInPerson ? guests : 0,
       lead_source: 'workshop',
       company,
     })
@@ -60,11 +66,28 @@ export function WorkshopRegisterFormSite({ workshop }: { workshop: PublicWorksho
       setError(fe.message)
       return
     }
+    if (res.data && res.data.already_registered) {
+      // WS-024: a duplicate submit is a STATE, not an error — and never a second seat.
+      setAlreadyRegistered(true)
+      return
+    }
     if (workshop.confirm_url) {
       window.location.assign(workshop.confirm_url)
       return
     }
     setDone(true)
+  }
+
+  if (alreadyRegistered) {
+    return (
+      <div className="form">
+        <h3>You&apos;re already registered</h3>
+        <div className="formstatus" role="status" aria-live="polite">
+          This email already holds a seat for this workshop — you&apos;re all set, and no second
+          seat was taken. Your original confirmation and reminders still apply.
+        </div>
+      </div>
+    )
   }
 
   if (done) {
@@ -124,6 +147,20 @@ export function WorkshopRegisterFormSite({ workshop }: { workshop: PublicWorksho
         <p className="hintline">{consentSms ? 'Required to receive text reminders.' : 'Optional — only needed for text reminders.'}</p>
         {fieldErr === 'phone' && error ? <p className="err" role="alert" style={{ margin: '6px 0 0' }}>{error}</p> : null}
       </div>
+
+      {attendingInPerson ? (
+        <div className="field">
+          <label htmlFor="w-guests">Guests you&apos;re bringing</label>
+          <select id="w-guests" className="wselect" style={{ width: '100%' }} value={guests} onChange={(e) => setGuests(Number(e.target.value))}>
+            <option value={0}>Just me</option>
+            <option value={1}>+1 guest</option>
+            <option value={2}>+2 guests</option>
+            <option value={3}>+3 guests</option>
+            <option value={4}>+4 guests</option>
+          </select>
+          <p className="hintline">Guests share your reservation and count toward the room&apos;s seats.</p>
+        </div>
+      ) : null}
 
       {isHybrid ? (
         <div className="field">

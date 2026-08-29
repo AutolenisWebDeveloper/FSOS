@@ -706,3 +706,51 @@ controls (the owner's structural-disable invariant, satisfied by atomicity).
 
 Findings closed: WS-001, WS-005, WS-026, WS-027, WS-032, WS-038, WS-047, WS-064, WS-065,
 WS-068 (WS-016's runtime annotation resolves — the overlap guarantee is now EXECUTED).
+
+---
+
+## BATCH 2 — EXECUTION RECORD (2026-08-29)
+
+**Migration 128** (`workshop_registration_integrity`): `guest_count` column (D-7); stored
+emails normalized to lowercase; existing duplicates collapsed SOFTLY (later rows →
+status 'cancelled', earliest kept — nothing deleted) before the partial unique index
+`(workshop_id, lower(email)) where active` (WS-003 — cancelled rows don't block a
+re-registration); `workshop_claim_registration(...)` SECURITY DEFINER claim: locks the
+session row, verifies workshop↔session (WS-048), published-only, refuses started
+(WS-037) and cancelled sessions, counts PER-SESSION PER-MODE (WS-060: in-person cap =
+session capacity_in_person with legacy max_attendees fallback, guests consume seats;
+virtual cap nullable = unbounded, D-7), inserts in the same transaction, and maps a
+unique-violation to a distinct 'duplicate' outcome. Execute revoked from anon/authed;
+service-role only.
+
+**Route** (`/api/public/workshops/register`): rate limiter now counts BEFORE the honeypot
+(WS-061) and honeypot hits are logged (WS-057); the read-then-insert is replaced by the
+atomic claim rpc; outcomes map to distinct responses — duplicate → 200
+`already_registered` STATE (WS-024), full → 409 + `seats_left`, past/cancelled → 409,
+mismatch → 422; session fallback selects only upcoming, non-cancelled sessions.
+
+**WS-059**: all five Zoom fetches carry `AbortSignal.timeout(5000)` — a hung Zoom API can
+no longer stall a registrant's response.
+
+**WS-051**: every public-funnel date now renders in the VENUE zone, formatted SERVER-side
+(`formatInVenueZone` incl. zone abbreviation): detail + register pages use loader-provided
+`when_local`/`time_local`; hub cards receive pre-formatted strings so the client never
+re-formats (the hydration viewer-zone swap is gone); hub + detail loaders consider only
+upcoming, non-cancelled sessions.
+
+**D-4**: all three waitlist CTAs removed — capacity-reached copy points at the workshops
+page/other dates; no false promise remains (WS-010 resolved by removal; build deferred).
+
+**Forms**: both registration forms handle the `already_registered` state distinctly
+(role=status, no error, "no second seat was taken"), capture guests (0–4, in-person
+contexts only) posting `guest_count`, and the register page's unconditional
+"join link emailed after you register" promise is softened to match reality.
+
+**Proofs**: `workshop-registration-claim.test.mjs` (rls) — 13 checks on real Postgres
+incl. the overlapping LAST-SEAT RACE (lock-holder wins, waiter refused, final count =
+cap) and migration-on-dirty-data safety (re-applying 128 over seeded duplicates keeps
+the earliest, cancels the later, rebuilds the index). `workshop-register-route.test.mjs`
+(unit) — 16 checks incl. the rate-limit-counts-honeypot order and outcome mapping.
+
+Findings closed: WS-003, WS-004, WS-010 (per D-4), WS-024, WS-037, WS-048, WS-051,
+WS-057 (mitigated: logged), WS-059, WS-060, WS-061.

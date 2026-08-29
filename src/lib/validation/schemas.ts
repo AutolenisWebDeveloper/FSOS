@@ -1013,6 +1013,8 @@ export const WorkshopRegisterSchema = z
     email: z.string().trim().email('Enter a valid email').max(200),
     phone: optionalPhone,
     chosen_delivery: z.enum(['in_person', 'virtual']).optional(),
+    // D-7: plus-ones consume IN-PERSON capacity only (the claim function enforces).
+    guest_count: z.number().int().min(0).max(10).optional().default(0),
     consent_email: z.boolean().optional().default(false),
     consent_sms: z.boolean().optional().default(false),
   })

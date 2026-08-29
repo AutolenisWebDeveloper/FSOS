@@ -44,6 +44,7 @@ const RLS = new Set([
   'workshop-guarantee-quiet-hours.test.mjs',
   'workshop-guarantee-suppression.test.mjs',
   'workshop-guarantee-termination.test.mjs',
+  'workshop-registration-claim.test.mjs',
 ])
 
 const mode = process.argv[2] === 'rls' ? 'rls' : 'unit'

@@ -21,14 +21,18 @@ export async function POST(req: NextRequest) {
   const parsed = await readJson<Record<string, unknown>>(req)
   if ('error' in parsed) return parsed.error
 
-  // Honeypot — bots fill `company`; silently accept without writing.
-  if (typeof parsed.data.company === 'string' && parsed.data.company.trim() !== '') {
-    return NextResponse.json({ ok: true })
-  }
-
+  // WS-061: the rate limiter runs FIRST so honeypot traffic consumes the per-IP window
+  // (previously the fake-success short-circuit let bots probe without ever being counted).
   const ip = clientIp(req)
   if (!rateLimit(`workshop-reg:${ip}`, 5, 60_000)) {
     return NextResponse.json({ error: 'Too many attempts. Please try again shortly.' }, { status: 429 })
+  }
+
+  // Honeypot — bots fill `company`; accept without writing, but LOG the hit (WS-057:
+  // an autofill victim's silent drop must at least be visible in monitoring).
+  if (typeof parsed.data.company === 'string' && parsed.data.company.trim() !== '') {
+    console.warn('[workshop-register] honeypot hit (no row written)', { ip })
+    return NextResponse.json({ ok: true })
   }
 
   const v = WorkshopRegisterSchema.safeParse(parsed.data)
@@ -57,25 +61,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'This workshop is not open for registration.' }, { status: 404 })
     }
 
-    const { count } = await db
-      .from('workshop_registrations')
-      .select('*', { count: 'exact', head: true })
-      .eq('workshop_id', v.data.workshop_id)
-    if (w.max_attendees && (count ?? 0) >= w.max_attendees) {
-      return NextResponse.json({ error: 'This workshop is full.' }, { status: 409 })
-    }
-
-    // Resolve the session (provided, else the workshop's default 1:1 session).
+    // Resolve the session (provided, else the workshop's next UPCOMING session — the
+    // claim function re-verifies it belongs to this workshop and has not started).
     let sessionId = v.data.session_id ?? null
     if (!sessionId) {
       const { data: s } = await db
         .from('workshop_sessions')
         .select('id')
         .eq('workshop_id', v.data.workshop_id)
+        .neq('status', 'cancelled')
+        .gte('starts_at', new Date().toISOString())
         .order('starts_at', { ascending: true })
         .limit(1)
         .maybeSingle()
       sessionId = s?.id ?? null
+    }
+    if (!sessionId) {
+      return NextResponse.json({ error: 'This workshop has no upcoming session to register for.' }, { status: 409 })
     }
 
     // The approved disclosure the registrant is shown (evidence for consent capture).
@@ -100,23 +102,48 @@ export async function POST(req: NextRequest) {
     ) as ('email' | 'sms')[]
     const joinToken = randomUUID()
 
-    const { data: reg, error: regErr } = await db
-      .from('workshop_registrations')
-      .insert({
-        workshop_id: v.data.workshop_id,
-        session_id: sessionId,
-        name: v.data.name,
-        email: v.data.email,
-        phone: v.data.phone ?? null,
-        chosen_delivery: v.data.chosen_delivery ?? null,
-        consent_channels: channels,
-        lead_source: leadSource,
-        join_token: joinToken,
-        status: 'registered',
-      })
-      .select('reg_id')
-      .single()
-    if (regErr) return NextResponse.json({ error: 'Could not complete registration.' }, { status: 500 })
+    // Atomic seat claim (migration 128): session-locked per-mode capacity count + insert
+    // in ONE transaction — concurrent last-seat claims serialize, duplicates surface as a
+    // distinct outcome, past/mismatched/cancelled sessions are refused (WS-003/004/037/
+    // 048/060, D-7). Email is normalized to lowercase inside the claim.
+    const { data: claim, error: claimErr } = await db.rpc('workshop_claim_registration', {
+      p_workshop: v.data.workshop_id,
+      p_session: sessionId,
+      p_name: v.data.name,
+      p_email: v.data.email,
+      p_phone: v.data.phone ?? null,
+      p_chosen_delivery: v.data.chosen_delivery ?? null,
+      p_consent_channels: channels,
+      p_lead_source: leadSource,
+      p_join_token: joinToken,
+      p_guest_count: v.data.guest_count ?? 0,
+    })
+    if (claimErr) return dbErrorResponse('public/workshops/register', claimErr)
+    const outcome = (claim ?? {}) as { ok?: boolean; reason?: string; reg_id?: string; seats_left?: number }
+    if (!outcome.ok) {
+      switch (outcome.reason) {
+        case 'duplicate':
+          // WS-024: already registered is a STATE, not an error — and never a second row.
+          return NextResponse.json({ ok: true, already_registered: true, workshop: w.title })
+        case 'full':
+          return NextResponse.json(
+            { error: 'This session is full.', code: 'full', seats_left: outcome.seats_left ?? 0 },
+            { status: 409 },
+          )
+        case 'past_event':
+          return NextResponse.json({ error: 'This session has already started.', code: 'past_event' }, { status: 409 })
+        case 'session_cancelled':
+          return NextResponse.json({ error: 'This session has been cancelled.', code: 'session_cancelled' }, { status: 409 })
+        case 'session_not_found':
+        case 'session_mismatch':
+          return NextResponse.json({ error: 'Please pick a valid session for this workshop.' }, { status: 422 })
+        case 'not_published':
+          return NextResponse.json({ error: 'This workshop is not open for registration.' }, { status: 404 })
+        default:
+          return NextResponse.json({ error: 'Could not complete registration.' }, { status: 500 })
+      }
+    }
+    const reg = { reg_id: outcome.reg_id as string }
 
     // Durable TCPA/A2P consent evidence — one row per consented channel.
     if (channels.length > 0) {

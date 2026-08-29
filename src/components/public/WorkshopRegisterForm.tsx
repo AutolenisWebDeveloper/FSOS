@@ -41,12 +41,17 @@ export function WorkshopRegisterForm({ workshop }: { workshop: PublicWorkshop })
     workshop.delivery_mode === 'virtual' ? 'virtual' : 'in_person',
   )
   const [company, setCompany] = React.useState('')
+  const [guests, setGuests] = React.useState(0)
+  const [alreadyRegistered, setAlreadyRegistered] = React.useState(false)
   const [busy, setBusy] = React.useState(false)
   const [done, setDone] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [fieldErr, setFieldErr] = React.useState<string | undefined>()
 
   const isHybrid = workshop.delivery_mode === 'hybrid'
+  // D-7: guests consume IN-PERSON seats only — the field renders only when the registrant
+  // is attending in person.
+  const attendingInPerson = isHybrid ? delivery === 'in_person' : workshop.delivery_mode !== 'virtual'
   const when = workshop.scheduled_at
     ? new Date(workshop.scheduled_at).toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' })
     : 'Date to be announced'
@@ -61,7 +66,7 @@ export function WorkshopRegisterForm({ workshop }: { workshop: PublicWorkshop })
       return
     }
     setBusy(true)
-    const res = await postJson<{ join_token?: string }>('/api/public/workshops/register', {
+    const res = await postJson<{ join_token?: string; already_registered?: boolean }>('/api/public/workshops/register', {
       workshop_id: workshop.workshop_id,
       session_id: workshop.session_id ?? undefined,
       name,
@@ -70,6 +75,7 @@ export function WorkshopRegisterForm({ workshop }: { workshop: PublicWorkshop })
       chosen_delivery: isHybrid ? delivery : workshop.delivery_mode === 'virtual' ? 'virtual' : 'in_person',
       consent_email: consentEmail,
       consent_sms: consentSms,
+      guest_count: attendingInPerson ? guests : 0,
       lead_source: 'workshop',
       company,
     })
@@ -78,6 +84,11 @@ export function WorkshopRegisterForm({ workshop }: { workshop: PublicWorkshop })
       const fe = firstFieldError(res.error)
       setFieldErr(fe.field)
       setError(fe.message)
+      return
+    }
+    if (res.data && res.data.already_registered) {
+      // WS-024: a duplicate submit is a STATE, not an error — and never a second seat.
+      setAlreadyRegistered(true)
       return
     }
     if (workshop.confirm_url) {
@@ -108,7 +119,16 @@ export function WorkshopRegisterForm({ workshop }: { workshop: PublicWorkshop })
         </div>
       </div>
 
-      {done ? (
+      {alreadyRegistered ? (
+        <div className="mt-6 rounded-lg border border-border bg-muted p-6 text-center" role="status" aria-live="polite">
+          <CheckCircle2 className="mx-auto h-9 w-9 text-muted-foreground" aria-hidden />
+          <p className="mt-2 font-medium text-foreground">You&apos;re already registered</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            This email already holds a seat for this workshop — no second seat was taken. Your
+            original confirmation and reminders still apply.
+          </p>
+        </div>
+      ) : done ? (
         <div className="mt-6 rounded-lg border border-status-won/20 bg-status-won/10 p-6 text-center">
           <CheckCircle2 className="mx-auto h-9 w-9 text-status-won" aria-hidden />
           <p className="mt-2 font-medium text-foreground">You&apos;re registered!</p>
@@ -129,6 +149,24 @@ export function WorkshopRegisterForm({ workshop }: { workshop: PublicWorkshop })
           <Field id="phone" label="Phone" hint={consentSms ? 'Required for SMS reminders.' : 'Optional.'} error={fieldErr === 'phone' ? error ?? undefined : undefined}>
             <Input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="tel" aria-invalid={fieldErr === 'phone'} />
           </Field>
+
+          {attendingInPerson ? (
+            <Field id="guests" label="Guests you're bringing">
+              <select
+                id="guests"
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={guests}
+                onChange={(e) => setGuests(Number(e.target.value))}
+              >
+                <option value={0}>Just me</option>
+                <option value={1}>+1 guest</option>
+                <option value={2}>+2 guests</option>
+                <option value={3}>+3 guests</option>
+                <option value={4}>+4 guests</option>
+              </select>
+            </Field>
+          ) : null}
+
 
           {isHybrid ? (
             <fieldset className="space-y-2">

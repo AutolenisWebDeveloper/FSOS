@@ -7,6 +7,30 @@
 import { getDb } from '@/lib/supabase/client'
 import { signedAssetUrl } from './server'
 
+// WS-051: every public-funnel date renders in the VENUE's IANA zone, formatted on the
+// SERVER so client hydration cannot swap it to the viewer's zone. The zone abbreviation
+// is included so a distant reader knows whose 6:00 PM it is.
+export function formatInVenueZone(
+  iso: string | null | undefined,
+  timeZone: string | null | undefined,
+  style: 'full' | 'short' | 'time' = 'full',
+): string | null {
+  if (!iso) return null
+  const tz = timeZone || 'America/Chicago'
+  try {
+    if (style === 'time') {
+      return new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(iso))
+    }
+    if (style === 'short') {
+      return new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(iso))
+    }
+    return new Intl.DateTimeFormat('en-US', { timeZone: tz, dateStyle: 'full', timeStyle: 'short' }).format(new Date(iso)) +
+      ' ' + (new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'short' }).formatToParts(new Date(iso)).find((p) => p.type === 'timeZoneName')?.value ?? '')
+  } catch {
+    return new Date(iso).toUTCString()
+  }
+}
+
 export interface PublicPresenter {
   name: string
   title: string | null
@@ -32,6 +56,10 @@ export interface PublicWorkshopFull {
   venue_name: string | null
   venue_address: string | null
   timezone: string | null
+  /** Server-formatted session start in the VENUE zone (WS-051). */
+  when_local: string | null
+  /** Server-formatted start TIME (venue zone, with zone abbreviation). */
+  time_local: string | null
   presenters: PublicPresenter[]
   sms_disclosure: string | null
   seats_remaining: number | null
@@ -49,11 +77,13 @@ export async function loadPublicWorkshop(slug: string): Promise<PublicWorkshopFu
     .maybeSingle()
   if (!w || w.status !== 'published') return null
 
-  // Earliest session.
+  // Earliest UPCOMING session (a past one must not present as registerable — WS-037).
   const { data: session } = await db
     .from('workshop_sessions')
     .select('id, starts_at, timezone, venue_name, venue_address, delivery_mode')
     .eq('workshop_id', w.workshop_id)
+    .neq('status', 'cancelled')
+    .gte('starts_at', new Date().toISOString())
     .order('starts_at', { ascending: true })
     .limit(1)
     .maybeSingle()
@@ -114,6 +144,8 @@ export async function loadPublicWorkshop(slug: string): Promise<PublicWorkshopFu
     venue_name: session?.venue_name ?? null,
     venue_address: session?.venue_address ?? w.location ?? null,
     timezone: session?.timezone ?? null,
+    when_local: formatInVenueZone(session?.starts_at ?? w.scheduled_at, session?.timezone),
+    time_local: formatInVenueZone(session?.starts_at ?? w.scheduled_at, session?.timezone, 'time'),
     presenters,
     sms_disclosure: smsDisclosure,
     seats_remaining: seatsRemaining,
@@ -142,6 +174,8 @@ export interface PublicWorkshopCard {
   host_name: string | null
   /** Earliest upcoming session start (UTC ISO), or the workshop's scheduled_at fallback. */
   starts_at: string | null
+  /** Server-formatted start in the VENUE zone (WS-051 — never re-format client-side). */
+  when_local: string | null
   venue_city: string | null
   location: string | null
   /** Presenter labels for display + filtering (name, and firm/fund when present). */
@@ -180,11 +214,13 @@ export async function loadPublicWorkshops(): Promise<PublicWorkshopCard[]> {
   // Earliest session per workshop.
   const { data: sessions } = await db
     .from('workshop_sessions')
-    .select('workshop_id, starts_at, delivery_mode, venue_name, venue_address')
+    .select('workshop_id, starts_at, timezone, delivery_mode, venue_name, venue_address')
     .in('workshop_id', ids)
+    .neq('status', 'cancelled')
+    .gte('starts_at', new Date().toISOString())
     .order('starts_at', { ascending: true })
-  const earliest = new Map<string, { starts_at: string; delivery_mode: string | null; venue_name: string | null; venue_address: string | null }>()
-  for (const s of (sessions ?? []) as { workshop_id: string; starts_at: string; delivery_mode: string | null; venue_name: string | null; venue_address: string | null }[]) {
+  const earliest = new Map<string, { starts_at: string; timezone: string | null; delivery_mode: string | null; venue_name: string | null; venue_address: string | null }>()
+  for (const s of (sessions ?? []) as { workshop_id: string; starts_at: string; timezone: string | null; delivery_mode: string | null; venue_name: string | null; venue_address: string | null }[]) {
     if (!earliest.has(s.workshop_id)) earliest.set(s.workshop_id, s)
   }
 
@@ -222,6 +258,7 @@ export async function loadPublicWorkshops(): Promise<PublicWorkshopCard[]> {
       delivery_mode: (s?.delivery_mode ?? w.delivery_mode ?? 'in_person') as PublicWorkshopCard['delivery_mode'],
       host_name: w.host_name,
       starts_at: s?.starts_at ?? w.scheduled_at,
+      when_local: formatInVenueZone(s?.starts_at ?? w.scheduled_at, s?.timezone),
       venue_city: s?.venue_name ?? null,
       location: s?.venue_address ?? w.location,
       presenters: presByWorkshop.get(w.workshop_id) ?? [],

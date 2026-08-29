@@ -42,6 +42,16 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
 
     const { presenter_ids, hero_image_ref, ...rest } = v.data
 
+    // WS-047 (approval-gate integrity, D-5): 'compliance_approved' is minted ONLY by the
+    // /approve route, which records the approver + snapshot (FINRA 2210). A bare PATCH
+    // status flip would fabricate compliance standing with no approval record.
+    if (rest.status === 'compliance_approved') {
+      return NextResponse.json(
+        { error: 'Compliance approval is recorded through the approval workflow, not a status change.' },
+        { status: 422 },
+      )
+    }
+
     // Presenter attach/detach recomputes the securities firewall flag.
     if (presenter_ids) {
       await syncPresenters(db, params.id, presenter_ids)

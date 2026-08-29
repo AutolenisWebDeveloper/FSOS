@@ -663,3 +663,46 @@ recipient-local quiet-hours defer-then-retry (venue Chicago vs +1907 Anchorage);
 dispatch-time DNC suppression (SMS blocked, email still sent); absorbing termination
 (3 extra runs — no resume, no attempt growth). All four red today with the WS-001
 signature; manifest says green by Batch 1.
+
+---
+
+## BATCH 1 — EXECUTION RECORD (2026-08-29)
+
+**The engine is alive, and every send-integrity control landed with it — one atomic
+commit,** so no commit exists where a send-capable engine lacks any of the five reassigned
+controls (the owner's structural-disable invariant, satisfied by atomicity).
+
+- **WS-001**: `created_at` → `registered_at` in both pass selects + the row type; the four
+  pinned guarantee tests flipped green against real Postgres (send-once ×3 runs;
+  recipient-local defer-then-retry; dispatch-time DNC block with email unaffected;
+  absorbing termination across 4 runs) and the manifest is EMPTY.
+- **WS-005**: SMS quiet hours are RECIPIENT-local via the new NPA→IANA module
+  (`src/lib/comms/recipient-timezone.ts`, dominant-zone table, DST-correct via Intl);
+  venue timezone is never consulted for the decision; unresolved NPA (toll-free/non-NANP)
+  FAILS CLOSED as an audited deferral. Proven at both layers: unit (venue-ignored +
+  in-window mirror + gate receives the recipient offset) and real-PG (Anchorage 07:00
+  deferred while venue Chicago 10:00; retry sends at 11:00 recipient-local).
+- **WS-068**: an unreadable config row now DISABLES the engine for the tick (fail closed).
+- **WS-032**: unknown merge tokens pass through UNRESOLVED so the gate's personalization
+  step blocks them (fail-closed personalization restored; known tokens still substitute).
+- **WS-047**: a bare PATCH can no longer mint `compliance_approved` (422 naming the
+  approval workflow; executed route test proves no write happens) — only /approve, which
+  records approver + snapshot, can.
+- **WS-065**: quiet-hours + tz-unresolved deferrals write audit rows like their siblings.
+- **WS-064**: all six engine queries read their errors — selection failures return
+  `{ ok:false, errors[] }` and the cron route returns 500 (a failed pass can never again
+  read as an invisible `{ ok:true, handled:0 }`); an attendance READ ERROR skips the
+  registrant instead of misclassifying them as a no-show.
+- **WS-027**: every per-slot send is exception-isolated; a throw releases the stranded
+  `'sending'` claim to a retryable `deferred/send_exception` (guarded on status).
+- **WS-026**: `classifySendOutcome` now defers the OPERATIONAL HOLDS (`sms_live` A2P
+  staging, `frequency`, `collision`, quiet/business hours) and bounds provider-failure
+  retries (`PROVIDER_RETRY_MAX` = 4 attempts, then terminal) — pinned in the pure table
+  tests.
+- **WS-038**: `/api/events` lists PUBLISHED workshops only.
+- **`comms.error`** added to the audit action taxonomy (additive).
+- Ledger corrections: FSOS-072 was stale (the cron IS scheduled — vercel.json:28);
+  recorded in §12/§0 already.
+
+Findings closed: WS-001, WS-005, WS-026, WS-027, WS-032, WS-038, WS-047, WS-064, WS-065,
+WS-068 (WS-016's runtime annotation resolves — the overlap guarantee is now EXECUTED).

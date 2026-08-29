@@ -24,6 +24,7 @@
 import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
 import { sendThroughGate } from '@/lib/comms/send'
+import { ianaZoneForPhone, utcOffsetHoursForZone } from '@/lib/comms/recipient-timezone'
 import {
   convertRegistrationToLead,
   type WorkshopLeadContext,
@@ -97,7 +98,10 @@ async function loadConfig(db: Db): Promise<EngineConfig> {
       },
     }
   } catch {
-    return CONFIG_DEFAULTS
+    // WS-068 (fail closed): a config READ ERROR must not resurrect a possibly-disabled
+    // engine — CONFIG_DEFAULTS has enabled:true, so returning it on error silently
+    // re-enabled a deliberately-thrown kill switch. An unreadable config disables.
+    return { ...CONFIG_DEFAULTS, enabled: false }
   }
 }
 
@@ -116,7 +120,9 @@ interface RegRow {
   phone: string | null
   consent_channels: string[] | null
   join_url: string | null
-  created_at: string | null
+  /** Registration timestamp — the base table's column is registered_at (WS-001: the
+   *  engine previously selected a nonexistent created_at and silently handled nobody). */
+  registered_at: string | null
   status: string | null
   workshop_id: string
   session_id: string | null
@@ -170,9 +176,12 @@ function renderLocal(startsAt: string, timezone: string | null): string {
 function substituteTokens(body: string, tokens: Record<string, string>): string {
   return body.replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (m, token: string) => {
     const key = token.toLowerCase()
-    // Leave the dispatcher-personalize name tokens for send.ts; substitute the rest.
+    // Leave the dispatcher-personalize name tokens for send.ts; substitute the known rest.
     if (key === 'first_name' || key === 'full_name' || key === 'last_name') return m
-    return key in tokens ? tokens[key] : ''
+    // WS-032 (fail closed): an UNKNOWN token stays unresolved so the gate's
+    // personalization step blocks the message — blanking it here disabled that check and
+    // could ship a sentence with a silent hole.
+    return key in tokens ? tokens[key] : m
   })
 }
 
@@ -263,14 +272,19 @@ export async function sendWorkshopMessage(db: Db, args: SendArgs): Promise<LogSt
   const to = channel === 'email' ? reg.email : reg.phone
   if (!to) return 'skipped'
 
-  // Existing log → claim decision.
-  const { data: existing } = await db
+  // Existing log → claim decision. WS-064: a read error must not claim blind — skip
+  // this tick (audited) rather than risking a duplicate insert race on unknown state.
+  const { data: existing, error: existingErr } = await db
     .from('workshop_message_log')
     .select('id, status, attempts')
     .eq('registration_id', reg.reg_id)
     .eq('channel', channel)
     .eq('kind', kind)
     .maybeSingle()
+  if (existingErr) {
+    await writeAudit({ actor: ACTOR, action: 'comms.error', entity: 'workshop_registration', entityId: reg.reg_id, diff: { kind, channel, query: 'message_log', error: existingErr.message } })
+    return 'skipped'
+  }
   const decision = decideClaim((existing?.status as LogStatus | undefined) ?? null)
   if (decision === 'skip') return (existing?.status as LogStatus) ?? 'skipped'
 
@@ -322,15 +336,30 @@ export async function sendWorkshopMessage(db: Db, args: SendArgs): Promise<LogSt
     return finalize('blocked', { gate_blocked_step: 'consent', reason: 'no_channel_consent' })
   }
 
-  // Quiet-hours scheduling pre-check (recipient-local), SMS ONLY. The quiet-hours floor
-  // is scoped to SMS marketing sends (workshop = marketing class; gate step 2 mirrors
-  // this via purpose.ts quietHoursApply — email is exempt). Outside → defer (retry next
-  // tick), do NOT dispatch (avoids a compliance-event escalation for a time-based hold).
+  // Quiet-hours scheduling pre-check, SMS ONLY — computed in the RECIPIENT's timezone
+  // resolved from the phone's NPA (WS-005; Gate 1 decision: never venue TZ, never a
+  // hardcoded default; unresolved → fail closed, no send). Email is exempt from the
+  // quiet-hours floor (purpose.ts quietHoursApply) and keeps the venue offset for the
+  // gate's context. Outside the window → defer (retry next tick); the deferral is
+  // audited like its template/consent siblings (WS-065).
   const nowMs = Date.now()
-  const utcOffset = utcOffsetHoursForTimezone(session?.timezone, nowMs)
-  const localHour = recipientLocalHour(nowMs, utcOffset)
-  if (channel === 'sms' && !withinQuietHours(localHour)) {
-    return finalize('deferred', { gate_blocked_step: 'quiet_hours', reason: 'outside_quiet_hours' })
+  let utcOffset = utcOffsetHoursForTimezone(session?.timezone, nowMs)
+  if (channel === 'sms') {
+    const recipientZone = ianaZoneForPhone(to)
+    const recipientOffset = recipientZone ? utcOffsetHoursForZone(recipientZone, nowMs) : null
+    if (recipientOffset === null) {
+      // Fail closed: no resolvable recipient zone → no send. Deferred (not blocked) so a
+      // corrected phone number can still deliver before the event; the reminder window
+      // itself bounds the retries.
+      await writeAudit({ actor: ACTOR, action: 'comms.deferred', entity: 'workshop_registration', entityId: reg.reg_id, diff: { kind, channel, reason: 'recipient_tz_unresolved' } })
+      return finalize('deferred', { gate_blocked_step: 'quiet_hours', reason: 'recipient_tz_unresolved' })
+    }
+    utcOffset = recipientOffset
+    const localHour = recipientLocalHour(nowMs, utcOffset)
+    if (!withinQuietHours(localHour)) {
+      await writeAudit({ actor: ACTOR, action: 'comms.deferred', entity: 'workshop_registration', entityId: reg.reg_id, diff: { kind, channel, reason: 'outside_quiet_hours', recipient_zone: recipientZone, local_hour: localHour } })
+      return finalize('deferred', { gate_blocked_step: 'quiet_hours', reason: 'outside_quiet_hours' })
+    }
   }
 
   // Build the body (workshop tokens substituted here; name tokens left for personalize).
@@ -372,7 +401,7 @@ export async function sendWorkshopMessage(db: Db, args: SendArgs): Promise<LogSt
     recipientContext: { full_name: reg.name },
   })
 
-  const status = classifySendOutcome(outcome.sent, outcome.gate.blockedStep)
+  const status = classifySendOutcome(outcome.sent, outcome.gate.blockedStep, (existing?.attempts ?? 0) + 1)
   return finalize(status, { gate_blocked_step: outcome.gate.blockedStep ?? null, reason: outcome.reason ?? null, comm_message_id: outcome.messageId ?? null })
 }
 
@@ -381,6 +410,8 @@ export async function sendWorkshopMessage(db: Db, args: SendArgs): Promise<LogSt
 export interface PassResult {
   ok: boolean
   note?: string
+  /** WS-064: query/send failures surfaced from the pass — non-empty means ok:false. */
+  errors?: string[]
   handled: number
   sends: number
   deferred: number
@@ -397,12 +428,19 @@ export async function runReminderPass(db: Db = getDb()): Promise<PassResult> {
   const windowStart = new Date(nowMs - 60 * 60 * 1000).toISOString() // include just-started (grace)
 
   // Upcoming, non-cancelled sessions on PUBLISHED, NON-securities workshops.
-  const { data: sessions } = await db
+  // WS-064: every engine query reads its error — a selection failure is a FAILED pass,
+  // never a silent { ok:true, handled:0 }.
+  const errors: string[] = []
+  const { data: sessions, error: sessionsErr } = await db
     .from('workshop_sessions')
     .select('id, workshop_id, starts_at, ends_at, timezone, venue_name, venue_address, status, workshop:workshops!inner(workshop_id, title, slug, is_security, status)')
     .gte('starts_at', windowStart)
     .lte('starts_at', windowEnd)
     .neq('status', 'cancelled')
+  if (sessionsErr) {
+    await writeAudit({ actor: ACTOR, action: 'comms.error', entity: 'workshop_session', entityId: 'reminder_pass', diff: { query: 'sessions', error: sessionsErr.message } })
+    return { ok: false, errors: [`sessions: ${sessionsErr.message}`], handled: 0, sends: 0, deferred: 0, blocked: 0 }
+  }
   const rows = (sessions ?? []) as unknown as (SessionRow & { workshop: WorkshopRow })[]
 
   let handled = 0
@@ -414,16 +452,21 @@ export async function runReminderPass(db: Db = getDb()): Promise<PassResult> {
     const workshop = s.workshop
     if (!workshop || workshop.status !== 'published' || workshop.is_security === true) continue
 
-    const { data: regs } = await db
+    const { data: regs, error: regsErr } = await db
       .from('workshop_registrations')
-      .select('reg_id, name, email, phone, consent_channels, join_url, created_at, status, workshop_id, session_id, lead_converted_at, referral_id')
+      .select('reg_id, name, email, phone, consent_channels, join_url, registered_at, status, workshop_id, session_id, lead_converted_at, referral_id')
       .eq('session_id', s.id)
       .not('status', 'in', '("cancelled","ffs_referred")')
+    if (regsErr) {
+      await writeAudit({ actor: ACTOR, action: 'comms.error', entity: 'workshop_session', entityId: s.id, diff: { query: 'registrations', error: regsErr.message } })
+      errors.push(`registrations(${s.id}): ${regsErr.message}`)
+      continue
+    }
     const regList = (regs ?? []) as RegRow[]
 
     for (const reg of regList) {
       const startMs = Date.parse(s.starts_at)
-      const registeredMs = reg.created_at ? Date.parse(reg.created_at) : 0
+      const registeredMs = reg.registered_at ? Date.parse(reg.registered_at) : 0
       const kinds = dueReminderKinds({
         startMs,
         nowMs,
@@ -434,16 +477,45 @@ export async function runReminderPass(db: Db = getDb()): Promise<PassResult> {
       for (const kind of kinds) {
         for (const channel of channelsForReminder(kind, reg)) {
           handled++
-          const status = await sendWorkshopMessage(db, { reg, workshop, session: s, kind, channel, config })
-          if (status === 'sent') sends++
-          else if (status === 'deferred') deferred++
-          else if (status === 'blocked') blocked++
+          // WS-027: one send's exception must not abort the whole pass (and must not
+          // strand its claim in 'sending' — release it to a retryable deferral).
+          try {
+            const status = await sendWorkshopMessage(db, { reg, workshop, session: s, kind, channel, config })
+            if (status === 'sent') sends++
+            else if (status === 'deferred') deferred++
+            else if (status === 'blocked') blocked++
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err)
+            errors.push(`send(${reg.reg_id},${channel},${kind}): ${msg}`)
+            await writeAudit({ actor: ACTOR, action: 'comms.error', entity: 'workshop_registration', entityId: reg.reg_id, diff: { kind, channel, error: msg } })
+            await releaseStrandedClaim(db, reg.reg_id, channel, kind)
+            deferred++
+          }
         }
       }
     }
   }
 
-  return { ok: true, handled, sends, deferred, blocked }
+  return { ok: errors.length === 0, errors, handled, sends, deferred, blocked }
+}
+
+/**
+ * WS-027: a throw between the atomic claim and finalize would strand the slot in
+ * 'sending' forever (decideClaim skips it). Release it to 'deferred' so the next tick
+ * retries; guarded on status='sending' so a concurrent finalize is never clobbered.
+ */
+async function releaseStrandedClaim(db: Db, regId: string, channel: Channel, kind: MessageKind): Promise<void> {
+  try {
+    await db
+      .from('workshop_message_log')
+      .update({ status: 'deferred', reason: 'send_exception', updated_at: new Date().toISOString() })
+      .eq('registration_id', regId)
+      .eq('channel', channel)
+      .eq('kind', kind)
+      .eq('status', 'sending')
+  } catch {
+    /* release is best-effort; the claim row remains visible for a manual sweep */
+  }
 }
 
 /**
@@ -473,12 +545,17 @@ export async function runNurturePass(db: Db = getDb()): Promise<PassResult> {
   const lookbackStart = new Date(nowMs - NURTURE_LOOKBACK_MS).toISOString()
   const nurtureCutoff = new Date(nowMs - config.nurture_delay_minutes * 60_000).toISOString()
 
-  // Recently-ended sessions whose nurture-delay has elapsed.
-  const { data: sessions } = await db
+  // Recently-ended sessions whose nurture-delay has elapsed (WS-064: error surfaced).
+  const errors: string[] = []
+  const { data: sessions, error: sessionsErr } = await db
     .from('workshop_sessions')
     .select('id, workshop_id, starts_at, ends_at, timezone, venue_name, venue_address, status, workshop:workshops!inner(workshop_id, title, slug, is_security, status)')
     .gte('starts_at', lookbackStart)
     .lte('starts_at', nurtureCutoff)
+  if (sessionsErr) {
+    await writeAudit({ actor: ACTOR, action: 'comms.error', entity: 'workshop_session', entityId: 'nurture_pass', diff: { query: 'sessions', error: sessionsErr.message } })
+    return { ok: false, errors: [`sessions: ${sessionsErr.message}`], handled: 0, sends: 0, deferred: 0, blocked: 0 }
+  }
   const rows = (sessions ?? []) as unknown as (SessionRow & { workshop: WorkshopRow })[]
 
   let handled = 0
@@ -493,55 +570,73 @@ export async function runNurturePass(db: Db = getDb()): Promise<PassResult> {
     const anchorMs = s.ends_at ? Date.parse(s.ends_at) : Date.parse(s.starts_at)
     if (!isNurtureDue({ anchorMs, nowMs, delayMinutes: config.nurture_delay_minutes })) continue
 
-    const { data: regs } = await db
+    const { data: regs, error: regsErr } = await db
       .from('workshop_registrations')
-      .select('reg_id, name, email, phone, consent_channels, join_url, created_at, status, workshop_id, session_id, lead_converted_at, referral_id')
+      .select('reg_id, name, email, phone, consent_channels, join_url, registered_at, status, workshop_id, session_id, lead_converted_at, referral_id')
       .eq('session_id', s.id)
       .is('nurtured_at', null)
       .not('status', 'in', '("cancelled","ffs_referred")')
+    if (regsErr) {
+      await writeAudit({ actor: ACTOR, action: 'comms.error', entity: 'workshop_session', entityId: s.id, diff: { query: 'nurture_registrations', error: regsErr.message } })
+      errors.push(`nurture_registrations(${s.id}): ${regsErr.message}`)
+      continue
+    }
     const regList = (regs ?? []) as RegRow[]
 
     for (const reg of regList) {
       handled++
-      // ── is_security firewall: never enter automated segments; route to FFS. ──
-      if (workshop.is_security === true) {
-        await routeSecuritiesToFfs(db, reg, workshop)
-        await db.from('workshop_registrations').update({ nurture_segment: 'ffs', nurtured_at: new Date().toISOString() }).eq('reg_id', reg.reg_id)
-        continue
+      // WS-027: one registrant's failure must not abort the nurture pass.
+      try {
+        // ── is_security firewall: never enter automated segments; route to FFS. ──
+        if (workshop.is_security === true) {
+          await routeSecuritiesToFfs(db, reg, workshop)
+          await db.from('workshop_registrations').update({ nurture_segment: 'ffs', nurtured_at: new Date().toISOString() }).eq('reg_id', reg.reg_id)
+          continue
+        }
+
+        // Segment from attendance status. WS-064: an attendance READ ERROR must not
+        // misclassify a real attendee as registered_no_show — skip them this tick.
+        const { data: att, error: attErr } = await db
+          .from('workshop_attendance')
+          .select('status')
+          .eq('registration_id', reg.reg_id)
+          .eq('session_id', s.id)
+          .maybeSingle()
+        if (attErr) {
+          await writeAudit({ actor: ACTOR, action: 'comms.error', entity: 'workshop_registration', entityId: reg.reg_id, diff: { query: 'attendance', error: attErr.message } })
+          errors.push(`attendance(${reg.reg_id}): ${attErr.message}`)
+          continue
+        }
+        const segment = segmentFor((att?.status as 'registered' | 'attended' | 'no_show' | 'left_early' | undefined) ?? null)
+        const kind = nurtureKindForSegment(segment)
+
+        // 1) Segment nurture message (gated per consented channel).
+        for (const channel of channelsForNurture(segment, reg)) {
+          const status = await sendWorkshopMessage(db, { reg, workshop, session: s, kind, channel, config })
+          if (status === 'sent') sends++
+          else if (status === 'deferred') deferred++
+          else if (status === 'blocked') blocked++
+        }
+
+        // 2) Route into the consult spine + lead-score delta.
+        const delta = scoreDeltaForSegment(segment, config.scores)
+        await routeSegmentToSpine(db, reg, workshop, segment, delta)
+
+        // 3) Mark nurtured (idempotency at the segment level).
+        await db
+          .from('workshop_registrations')
+          .update({ nurture_segment: segment, nurtured_at: new Date().toISOString(), lead_score_delta: delta })
+          .eq('reg_id', reg.reg_id)
+        await writeAudit({ actor: ACTOR, action: 'entity.updated', entity: 'workshop_registration', entityId: reg.reg_id, diff: { nurture_segment: segment, lead_score_delta: delta } })
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        errors.push(`nurture(${reg.reg_id}): ${msg}`)
+        await writeAudit({ actor: ACTOR, action: 'comms.error', entity: 'workshop_registration', entityId: reg.reg_id, diff: { pass: 'nurture', error: msg } })
       }
-
-      // Segment from attendance status.
-      const { data: att } = await db
-        .from('workshop_attendance')
-        .select('status')
-        .eq('registration_id', reg.reg_id)
-        .eq('session_id', s.id)
-        .maybeSingle()
-      const segment = segmentFor((att?.status as 'registered' | 'attended' | 'no_show' | 'left_early' | undefined) ?? null)
-      const kind = nurtureKindForSegment(segment)
-
-      // 1) Segment nurture message (gated per consented channel).
-      for (const channel of channelsForNurture(segment, reg)) {
-        const status = await sendWorkshopMessage(db, { reg, workshop, session: s, kind, channel, config })
-        if (status === 'sent') sends++
-        else if (status === 'deferred') deferred++
-        else if (status === 'blocked') blocked++
-      }
-
-      // 2) Route into the consult spine (GHL) + lead-score delta.
-      const delta = scoreDeltaForSegment(segment, config.scores)
-      await routeSegmentToSpine(db, reg, workshop, segment, delta)
-
-      // 3) Mark nurtured (idempotency at the segment level).
-      await db
-        .from('workshop_registrations')
-        .update({ nurture_segment: segment, nurtured_at: new Date().toISOString(), lead_score_delta: delta })
-        .eq('reg_id', reg.reg_id)
-      await writeAudit({ actor: ACTOR, action: 'entity.updated', entity: 'workshop_registration', entityId: reg.reg_id, diff: { nurture_segment: segment, lead_score_delta: delta } })
     }
   }
 
-  return { ok: true, handled, sends, deferred, blocked }
+  return { ok: errors.length === 0, errors, handled, sends, deferred, blocked }
 }
 
 /** SMS/email channels to attempt for a nurture segment, intersected with consent. */

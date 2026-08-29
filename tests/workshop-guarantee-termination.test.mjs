@@ -46,7 +46,7 @@ try {
   resetProviderCalls()
   await engine.runReminderPass()
   const rows1 = logRows(name)
-  const sms1 = rows1.filter((r) => r.channel === 'sms')
+  const sms1 = rows1.filter((r) => r.channel === 'sms' && r.kind === 'reminder_1h')
   const sig = ws001Signature(shim)
 
   ok('run 1: the STOP/DNC-backed SMS lands terminally blocked',
@@ -60,7 +60,7 @@ try {
   await engine.runReminderPass()
   await engine.runReminderPass()
   const rows4 = logRows(name)
-  const sms4 = rows4.filter((r) => r.channel === 'sms')
+  const sms4 = rows4.filter((r) => r.channel === 'sms' && r.kind === 'reminder_1h')
 
   ok('runs 2-4: still exactly one SMS row (nothing re-enqueued)', sms4.length === 1, JSON.stringify(rows4))
   ok('runs 2-4: the block never flips or resumes (status stays blocked)', sms4[0].status === 'blocked')

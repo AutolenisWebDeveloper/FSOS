@@ -80,8 +80,16 @@ ok('deferred → retry (only retryable state)', R.decideClaim('deferred') === 'r
 ok('sent/blocked/sending/skipped → skip (never resend)', ['sent', 'blocked', 'sending', 'skipped'].every((s) => R.decideClaim(s) === 'skip'))
 ok('overlapping ticks resolve to one send: 2nd tick sees "sending" → skip', R.decideClaim('sending') === 'skip')
 ok('retry of a sent row is a skip (retry === one send)', R.decideClaim('sent') === 'skip')
-ok('gate outcome: sent→sent, quiet_hours→deferred, business_hours→deferred, consent→blocked',
+ok('outcome classes — sent / operational-hold deferrals / terminal blocks (WS-026 table)',
   R.classifySendOutcome(true, null) === 'sent' && R.classifySendOutcome(false, 'quiet_hours') === 'deferred' && R.classifySendOutcome(false, 'business_hours') === 'deferred' && R.classifySendOutcome(false, 'consent') === 'blocked' && R.classifySendOutcome(false, 'is_security') === 'blocked')
+ok('WS-026: the A2P staging hold (sms_live) defers — it clears on approval, never burns the slot',
+  R.classifySendOutcome(false, 'sms_live') === 'deferred')
+ok('WS-026: frequency + collision holds defer (they roll over / end on their own)',
+  R.classifySendOutcome(false, 'frequency') === 'deferred' && R.classifySendOutcome(false, 'collision') === 'deferred')
+ok('WS-026: a provider failure (no gate block) retries bounded, then parks terminally',
+  R.classifySendOutcome(false, null, 1) === 'deferred' && R.classifySendOutcome(false, null, R.PROVIDER_RETRY_MAX - 1) === 'deferred' && R.classifySendOutcome(false, null, R.PROVIDER_RETRY_MAX) === 'blocked')
+ok('terminal steps stay terminal (dnc/suppression/template/personalization)',
+  R.classifySendOutcome(false, 'dnc') === 'blocked' && R.classifySendOutcome(false, 'suppression') === 'blocked' && R.classifySendOutcome(false, 'approved_template') === 'blocked' && R.classifySendOutcome(false, 'personalization') === 'blocked')
 
 console.log('\nSegmentation + lead-score deltas')
 ok('attended→attended, left_early→left_early, no_show→no_show, null/registered→registered_no_show',

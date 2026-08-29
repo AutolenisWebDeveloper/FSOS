@@ -197,16 +197,30 @@ export function decideClaim(existingStatus: LogStatus | null): ClaimDecision {
   return 'skip'
 }
 
+/** Gate steps that are OPERATIONAL HOLDS — they clear on their own, so retry next tick.
+ *  quiet/business hours (time), sms_live (A2P approval pending — WS-026: previously
+ *  terminal, burning every slot until approval), frequency (caps roll over), collision
+ *  (the colliding conversation/campaign ends). */
+const RETRYABLE_STEPS = new Set(['quiet_hours', 'business_hours', 'sms_live', 'frequency', 'collision'])
+
+/** Bounded retries for a PROVIDER failure (sent=false with no gate block): transient
+ *  Twilio/Resend errors retry a few ticks, then park terminally for a human. */
+export const PROVIDER_RETRY_MAX = 4
+
 /**
  * Map a dispatch outcome to the terminal (or retryable) send-log status.
- *   • sent                                   → 'sent' (terminal)
- *   • blocked on a TIME step (quiet/business) → 'deferred' (retry next tick)
+ *   • sent                                    → 'sent' (terminal)
+ *   • blocked on an OPERATIONAL HOLD          → 'deferred' (quiet/business hours,
+ *     sms_live A2P staging, frequency, collision — they clear on their own; WS-026)
+ *   • not sent with NO gate block (provider failure) → 'deferred' while attempts <
+ *     PROVIDER_RETRY_MAX, else 'blocked' (bounded — WS-026)
  *   • blocked on any other step               → 'blocked' (terminal — consent/DNC/
- *     recommendation/securities/template/other-rule do not fix themselves on retry)
+ *     suppression/recommendation/securities/template do not fix themselves on retry)
  */
-export function classifySendOutcome(sent: boolean, blockedStep: string | null | undefined): LogStatus {
+export function classifySendOutcome(sent: boolean, blockedStep: string | null | undefined, attempts = 1): LogStatus {
   if (sent) return 'sent'
-  if (blockedStep === 'quiet_hours' || blockedStep === 'business_hours') return 'deferred'
+  if (blockedStep != null && RETRYABLE_STEPS.has(blockedStep)) return 'deferred'
+  if (blockedStep == null) return attempts < PROVIDER_RETRY_MAX ? 'deferred' : 'blocked'
   return 'blocked'
 }
 

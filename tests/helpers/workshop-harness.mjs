@@ -154,7 +154,11 @@ export function fakeDb(script = {}) {
     from(table) {
       const call = { table, method: 'select', filters: [], payload: null, selected: null }
       calls.push(call)
-      const next = () => (remaining[table]?.length ? remaining[table].shift() : null)
+      const next = () => {
+        const v = remaining[table]?.length ? remaining[table].shift() : null
+        if (v && typeof v === 'object' && v.__throw) throw new Error(String(v.__throw))
+        return v
+      }
       const chain = {
         select(cols) { call.selected = cols; return chain },
         insert(p) { call.method = 'insert'; call.payload = p; return chain },

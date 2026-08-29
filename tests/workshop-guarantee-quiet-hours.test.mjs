@@ -28,16 +28,19 @@ try {
   installProviderEnv()
   installFetchStub()
   // 2026-08-06T15:00Z: venue (Chicago) 10:00 — in window; recipient (Anchorage, from the
-  // +1907 NPA) 07:00 — OUTSIDE. Session starts 15:30Z → the 1h reminder is due now.
+  // +1907 NPA) 07:00 — OUTSIDE. The session starts NEXT morning (Aug 7 05:00Z), so the
+  // 1-DAY reminder window [Aug 6 05:00Z, start] contains BOTH the deferral instant and
+  // the 19:00Z retry instant — a reminder never fires after start, so the defer-retry
+  // gap must fit inside the kind's own window (it cannot fit in the 1h kind's).
   freezeClock('2026-08-06T15:00:00.000Z')
 
   const { name, shim } = freshWorkshopDb({
-    startsAtIso: '2026-08-06T15:30:00Z',
-    endsAtIso: '2026-08-06T16:30:00Z',
+    startsAtIso: '2026-08-07T05:00:00Z',
+    endsAtIso: '2026-08-07T06:00:00Z',
     timezone: 'America/Chicago',
     phone: '+19075550123',
     registeredIso: '2026-08-04T12:00:00Z',
-    kinds: ['reminder_1h'],
+    kinds: ['reminder_1d'],
   })
 
   const require = createRequire(import.meta.url)
@@ -46,7 +49,7 @@ try {
   resetProviderCalls()
   await engine.runReminderPass()
   const rows1 = logRows(name)
-  const smsRows1 = rows1.filter((r) => r.channel === 'sms')
+  const smsRows1 = rows1.filter((r) => r.channel === 'sms' && r.kind === 'reminder_1d')
   const sig = ws001Signature(shim)
 
   ok('recipient-local 07:00 → the SMS is DEFERRED (not sent, not blocked)',
@@ -60,7 +63,7 @@ try {
   freezeClock('2026-08-06T19:00:00.000Z')
   await engine.runReminderPass()
   const rows2 = logRows(name)
-  const smsRows2 = rows2.filter((r) => r.channel === 'sms')
+  const smsRows2 = rows2.filter((r) => r.channel === 'sms' && r.kind === 'reminder_1d')
 
   ok('after the window opens recipient-local, the SAME slot flips deferred → sent (no new row)',
     smsRows2.length === 1 && smsRows2[0].status === 'sent', JSON.stringify(rows2))

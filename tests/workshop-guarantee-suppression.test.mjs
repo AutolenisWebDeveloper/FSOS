@@ -47,8 +47,8 @@ try {
   resetProviderCalls()
   await engine.runReminderPass()
   const rows = logRows(name)
-  const sms = rows.filter((r) => r.channel === 'sms')
-  const email = rows.filter((r) => r.channel === 'email')
+  const sms = rows.filter((r) => r.channel === 'sms' && r.kind === 'reminder_1h')
+  const email = rows.filter((r) => r.channel === 'email' && r.kind === 'reminder_1h')
   const sig = ws001Signature(shim)
 
   ok('the DNC-listed SMS is terminally BLOCKED at dispatch (never deferred, never sent)',

@@ -19,6 +19,7 @@ export const AUDIT_ACTIONS = [
   'comms.blocked',
   'comms.deferred',
   'comms.suppressed',
+  'comms.error',
   'consent.captured',
   'consent.revoked',
   'firewall.blocked',

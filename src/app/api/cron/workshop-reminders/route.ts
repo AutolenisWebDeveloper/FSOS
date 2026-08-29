@@ -34,7 +34,13 @@ export async function GET(req: NextRequest) {
     // Reminders first, then nurture. Each pass is independently idempotent.
     const reminders = await runReminderPass()
     const nurture = await runNurturePass()
-    return NextResponse.json({ job: 'workshop-reminders', reminders, nurture })
+    // WS-064: a pass that surfaced query/send errors is a FAILED cron run — return 500
+    // so cron dashboards alert instead of reading an invisible { ok:true, handled:0 }.
+    const failed = reminders.ok === false || nurture.ok === false
+    return NextResponse.json(
+      { job: 'workshop-reminders', reminders, nurture },
+      failed ? { status: 500 } : undefined,
+    )
   } catch (err) {
     return NextResponse.json(
       { job: 'workshop-reminders', error: err instanceof Error ? err.message : String(err) },

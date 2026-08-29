@@ -670,3 +670,30 @@ gets the fake-success response (`register/route.ts:25-27`) and the confirmation 
 with no record created. Mechanism proven in code; real-world autofill frequency not
 verifiable statically. Mitigation (Batch 2): the field already sets `autocomplete="off"`; add a
 time-trap signal and log honeypot hits for monitoring instead of silently succeeding.
+
+---
+
+## §11 — Appended findings (2026-08-29, Surface I tests round; graded first-hand — WS-019 refined)
+
+**WS-058 · I · BROKEN · PROVEN — Specific false-green assertions, held verbatim.**
+- Tautology: `ok('America/Chicago resolves to CDT/CST (−5 or −6)', chi === -5 || chi === -6)`
+  (`tests/workshop-comms.test.mjs:67-68`) — America/Chicago is ALWAYS one of the two, so a
+  wrong-offset regression (e.g. returning −6 in July) still passes; the correct pin for the
+  July fixture is −5.
+- Comment-matching “guarantees”: `tests/workshop-delivery.test.mjs:207` asserts
+  `/never by display name/` and `:223-224` asserts `/non-fatal|Never blocks registration/`
+  — these match COMMENT text, so deleting the behavior while keeping the comment stays
+  green (same class as `workshop-comms.test.mjs:112-120`, recorded in WS-019).
+- The workshop tests compile production TS with explicit CLI flags
+  (`npx tsc src/... --module commonjs ...`, `workshop-comms.test.mjs:38-42`), which
+  bypasses `tsconfig.json` — strict mode is NOT applied in the tests' compile step (RISK:
+  a strict-only type error would pass the test compile and fail `npm run type-check`,
+  which still catches it at the gate — mitigated, recorded for accuracy).
+- Confirmed absences (WS-019 restated with the sweep's evidence): no test executes
+  `comms-engine.ts`, any workshop route, or the cron; reminder idempotency is asserted
+  only as a truth table + a regex on the migration text — never against a database
+  (`workshop-comms.test.mjs:103,120`); no concurrency, cancellation-notice, or waitlist
+  test exists (the features themselves are absent — WS-004/008/010).
+
+This closes the nine-surface trace sweep (A–I all traced). Adversarial verify verdicts
+append below as they complete.

@@ -320,6 +320,10 @@ Scope:
   capacity-full → waitlist → promotion · registrant cancel → cadence terminates · agency
   reschedule → notification captured · admin check-in at mobile viewport · post-event
   no-show branch.
+- Test-debt repairs (WS-058): replace the tautological timezone assertion with a pinned
+  −5 July fixture; replace comment-matching regex "guarantees" in
+  `workshop-delivery.test.mjs`/`workshop-comms.test.mjs` with executed behavior (the
+  engine-executing tests added in Batches 1–7 supersede most of them).
 - Correctness suite (RLS set, from prior batches, re-run as a whole): cron 3× → one row
   per key · quiet-hours deferral · dispatch-time suppression blocks a gate-passed send ·
   STOP mid-cadence terminates durably (DNC + no auto-resume) · concurrent last seat ·

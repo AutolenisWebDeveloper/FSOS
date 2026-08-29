@@ -481,3 +481,40 @@ thresholds, duplicate-idempotence, reconnect, replay gate, CRC, HMAC incl. fail-
   Batch 1 onward. The owner decides.
 
 **Batch order after this amendment:** Batch 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8.
+
+---
+
+## AMENDMENT 2 (2026-08-29): §11a/§11b/§12-continuation fold-ins
+
+- **Batch 0 scope is now sized by §11a:** 41 instances (7 tautologies, 34
+  comment/absence-coupled) across 10 files — the repairs cover ALL of them, not only the
+  workshop-* files; 8 files are clean and untouched. D-9's options apply to
+  `workshop-delivery.test.mjs`'s 14; the remaining 27 are repaired in place in either
+  option.
+- **Batch 1 additions:** read + surface the error object on ALL SIX engine queries
+  (WS-064); rewrite `tests/operational-email.test.mjs:243-259` alongside the legacy-route
+  removal (they assert on its source).
+- **Batch 3 REUSE note:** the platform already defines the `WORKSHOP` message purpose
+  mapping to the `WORKSHOP_COMMUNICATIONS` consent purpose (`purpose.ts:98-124`) — Batch 3
+  declares the EXISTING purpose on engine sends rather than inventing new strings; the
+  transactional reminder tier maps to the servicing/transactional class per D-3.
+- **Batch 4 additions:** add the missing CHECK constraints (`workshops.status` — WS-070a;
+  `workshop_message_log.kind` — WS-066) and terminal-state enforcement
+  (cancelled/completed are re-openable only via an explicit reopen action that re-runs the
+  publish gate and re-provisions Zoom — WS-070b/c); clear registrant Zoom columns when
+  their session's meeting is deleted (WS-070c); write `workshop_consent_events`
+  revocations when STOP/unsubscribe arrives from a workshop registrant (WS-062).
+- **Batch 5 addition:** build the plaintext part for every workshop email (WS-067);
+  enable/decide `reminder_starting` per D-1 (WS-071).
+- **Batch 7 additions:** kill switch fails CLOSED on a config read error (WS-068);
+  audit row on quiet-hours deferral (WS-065); referral seeding carries
+  `referring_agency_id` and dedupes by contact across registrations (WS-072).
+- **Batch 8 addition:** fix the consult-conversion metric to count actual consult signals
+  (feedback consult_requested / booked appointments), not the automation's
+  `lead_converted_at` stamp (WS-073).
+- **D-2 sharpened:** the `pipelines.ts` stage-ID taxonomy is dead code (zero importers);
+  the native `opportunities.stage` CHECK (mig 009) is the live taxonomy — option wording
+  updated accordingly: any workshop opportunity uses the NATIVE stages unless the owner
+  directs otherwise.
+- Adjacent, outside this plan's scope (recorded in §12): booking SMS STOP-footer
+  duplication (WS-069); ADR-014 D4 GHL schema retirement never executed.

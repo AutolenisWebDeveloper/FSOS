@@ -749,3 +749,310 @@ the limiter key on Vercel is platform behavior, NOT VERIFIED. **Verified-OK adop
 `/unsubscribe` page path is sound end-to-end (posts to the opt-out API which writes the
 enforced store) — WS-034's relative-URL-in-email defect stands, but the surface it points
 at works.
+
+---
+
+## §11a — False-green sweep, all 18 workshop-touching test files (2026-08-29, owner directive)
+
+Method: one analyst per file (18 subagents), each required to open the production source
+and name the exact comment/import/declaration line satisfying every flagged regex; the
+coordinating auditor personally re-held every instance in the five `workshop-*` files and
+sampled the rest (`operational-email`, `quiet-hours-scope`, `comms-policy`,
+`comms-console` instances all re-opened first-hand). Pattern definitions per the owner's
+directive: **A** = true for every legal input; **B** = coupled to comments, imports, or
+the absence of declarations rather than behavior. Migration-DDL text assertions were
+excluded as legitimate (the DDL text IS the artifact).
+
+**TOTAL: 41 instances — 7 pattern A, 34 pattern B — across 10 of 18 files.
+8 files are fully clean** (every assertion executes compiled production code with pinned
+expectations): `comms-campaign-config`, `comms-email-senders`, `comms-suppression`,
+`comms-template-filters`, `cron-activation`, `public-intake`, `social-engagement`,
+`workshops-gate`.
+
+
+**`tests/comms-console.test.mjs`** — 1 instance(s):
+
+- **L123** · `short GSM body is one segment; >160 GSM chars split; unicode shortens the budget` · **A (tautology)**
+  - Purports: That a UCS-2 (unicode) body uses the shortened per-segment budget (70 single / 67 multi UTF-16 code units instead of GSM-7's 160/153), i.e. that unicode content actually changes the segment math.
+  - Cannot fail because: smsSegmentInfo (src/lib/comms/console.ts lines 160-181) returns segments >= 1 for every possible input by construction: units === 0 returns 1 explicitly (lines 177, 180), the UCS-2 <= 70 branch is Math.max(1, 1) = 1 (line 176), and both Math.ceil branches yield >= 2. So `segments >= 1` is true for the function's entire output range. The fixture 'emoji 😀 here' is 13 UTF-16 code units, pinning the correct answer to exa
+
+**`tests/comms-policy.test.mjs`** — 1 instance(s):
+
+- **L33** · `all 10 message purposes map to a consent purpose for both channels` · **A (tautology)**
+  - Purports: That every one of the 10 message purposes resolves to its (correct) required consent purpose on both SMS and email — i.e., the purpose→consent mapping in purposeToConsentPurpose is total and meaningful for the whole purpose enum.
+  - Cannot fail because: purposeToConsentPurpose (src/lib/comms/purpose.ts:98-124) is a switch whose `default:` branch (purpose.ts:121-122, verified by grep) returns 'TRANSACTIONAL_SMS'/'TRANSACTIONAL_EMAIL', and every ConsentPurpose union member is a non-empty string literal — so the assertion `typeof cp === 'string' && cp.length > 0` is true for every input in every legal state of the function, even with the entire purpose-specific mapping
+
+**`tests/operational-email.test.mjs`** — 6 instance(s):
+
+- **L229** · `forms.ts routes email through lib/messaging sendEmail (no direct new Resend)` · **B (comment/absence-coupled)**
+  - Purports: That forms.ts actually routes its transactional email through the shared guarded sender in lib/messaging (the test's routing claim).
+  - Cannot fail because: The regex's only possible satisfier is an import statement: grep shows its sole match in src/lib/forms.ts is line 9, `import { sendEmail } from '@/lib/messaging'`. Delete the sendEmail call at forms.ts:137 (or route the send elsewhere) and leave the now-unused import, and this assertion stays green — an import line alone satisfies it. The sibling assert on test line 230 (/sendEmail\(/, matching only the executable ca
+- **L236** · `briefing/send routes through lib/messaging sendEmail (no direct new Resend)` · **B (comment/absence-coupled)**
+  - Purports: That the briefing/send route sends through the shared lib/messaging sender.
+  - Cannot fail because: Grep of src/app/api/briefing/send/route.ts shows the regex's sole match is line 6, `import { sendEmail } from '@/lib/messaging'` — an import line. Remove or bypass the sendEmail call at route.ts:122 while leaving the unused import and this assertion still passes; only the sibling /sendEmail\(/ assert (test line 237, matching the executable call at route.ts:122) binds to actual usage.
+- **L245** · `workshops/register confirmation goes through the shared sender and logs failures` · **B (comment/absence-coupled)**
+  - Purports: That the workshop-registration confirmation email goes through the shared lib/messaging sender.
+  - Cannot fail because: Grep of src/app/api/workshops/register/route.ts shows the regex's sole match is line 5, `import { sendEmail, emailConfigured } from '@/lib/messaging'` — an import line. Delete the send at route.ts:120, keep the import, and this assertion stays green; the executable binding lives in the sibling assert at test line 246 (/const sent = await sendEmail\(/, matching only route.ts:120).
+- **L248** · `workshops/register confirmation goes through the shared sender and logs failures` · **B (comment/absence-coupled)**
+  - Purports: That a failed confirmation-email send is logged rather than silently dropped.
+  - Cannot fail because: The regex matches ANY console.error/warn anywhere in the file, and grep shows three matches in src/app/api/workshops/register/route.ts: line 96 (`console.error('[workshop-register] insert error:', regErr)` — the registration-insert error log, unrelated to email), line 122 (the actual email-failure log), and line 125. Delete the email-failure log at 122, leaving `if (!sent.ok) { /* ignore */ }` — the sibling assert /i
+- **L258** · `no operational send gates on the marketing consent table` · **B (comment/absence-coupled)**
+  - Purports: That transactional sends (forms link, workshop confirmation, briefing) always go out regardless of marketing consent — i.e. no consent gating exists in these three files.
+  - Cannot fail because: Negative-only text assertion: grep confirms zero occurrences of 'consents' in all three files today, and the guarantee holds vacuously for an emptied file. It pins one literal spelling only — consent gating added via `.from("consents")` (double quotes), a table-name constant, or a consent-check helper import stays green while the purported behavior is broken. Only the forms.ts leg has real behavioral backup (the exec
+- **L264** · `no hardcoded from-address — all senders resolve RESEND_FROM_EMAIL` · **B (comment/absence-coupled)**
+  - Purports: That no sender hardcodes a from-address — every sender resolves it from RESEND_FROM_EMAIL.
+  - Cannot fail because: Presence of the token anywhere in src/lib/messaging.ts satisfies it: grep shows matches at messaging.ts:16 (`const from = process.env.RESEND_FROM_EMAIL` inside emailConfigured()) and :46 (inside sendEmail). Hardcode the from in sendEmail (e.g. `const from = 'me@gmail.com'`) and the assertion stays green via the unrelated read in emailConfigured() at line 16; a comment containing `process.env.RESEND_FROM_EMAIL` would 
+
+**`tests/quiet-hours-scope.test.mjs`** — 1 instance(s):
+
+- **L146** · `invalid timezone falls back to the default zone; default is America/Chicago` · **A (tautology)**
+  - Purports: That the zero-argument call path of localHourInTimeZone() resolves the current hour in the default America/Chicago zone (the block's label claims default-zone fallback behavior; this assert is the only coverage of the no-arg defaults).
+  - Cannot fail because: 0-23 is the entire legal output range of an hour-of-day function, so the assertion is true for every wrong-but-legal answer: the old hardcoded CST fallback `(at.getUTCHours() - 6 + 24) % 24` (src/lib/comms/local-time.ts line 186), a bug returning the raw UTC hour, or the hour in any other timezone all yield an integer in 0-23 and pass. Only a NaN/non-integer return could trip it — it checks shape, not the default-zon
+
+**`tests/transactional-notifications.test.mjs`** — 2 instance(s):
+
+- **L81** · `FSA inbox resolves env → reply-to → CONTACT.email (precedence)` · **A (tautology)**
+  - Purports: With FSOS_NOTIFY_EMAIL and RESEND_REPLY_TO both unset, fsaNotificationInbox() falls back to the specific CONTACT.email default — the third leg of the documented env → reply-to → CONTACT.email precedence (src/lib/notifications/transactional.ts lines 32-38).
+  - Cannot fail because: The regex /@/ is satisfied by every email-shaped string, i.e. every legal output of fsaNotificationInbox(). The fixture state pins exactly one right answer — CONTACT.email is 'mathelus@farmersagent.com' (src/lib/site.ts line 42) — but the assertion accepts any address: if the fallback were broken to return RESEND_FROM_EMAIL, BUSINESS mail, or a hardcoded placeholder like 'onboarding@resend.dev', it still contains '@'
+- **L191** · `no transactional intake send gates on the marketing consent table` · **B (comment/absence-coupled)**
+  - Purports: The transactional intake sends (visitor acks and FSA alerts from the contact route, workshop register route, and the shared helper) are never gated on the marketing `consents` table — the regression class behind the original 'no emails' outage the file header 
+  - Cannot fail because: It is a negative-only absence check for one exact textual spelling in three files, but the repo's actual consent gating lives in called modules the regex never reads: src/lib/comms/policy-resolver.ts line 49 (`db.from('consents').select('status')...`), simulation.ts line 36, and consent-population-run.ts lines 91/137. Re-introducing the outage the realistic way — routing the route's send through the marketing dispatc
+
+**`tests/workshop-comms.test.mjs`** — 6 instance(s):
+
+- **L68** · `America/Chicago resolves to CDT/CST (−5 or −6)` · **A (tautology)**
+  - Purports: utcOffsetHoursForTimezone resolves a real IANA zone to the correct UTC offset at the pinned instant (Date.UTC(2026, 6, 20, 18, 0), i.e. July 20 2026, when America/Chicago is unambiguously CDT = −5).
+  - Cannot fail because: The disjunction covers America/Chicago's entire legal output range: the zone is always −5 or −6, so any DST-handling bug that returns standard time in July still passes. Worse, −6 is also the function's total-failure fallback (src/lib/workshops/reminders.ts:154 'const DEFAULT = -6' returned from the catch at lines 174–176), so an implementation whose Intl resolution throws for every zone also passes. The July fixture
+- **L113** · `engine sends ONLY through the existing gate (sendThroughGate), never a raw sender` · **B (comment/absence-coupled)**
+  - Purports: Every client-facing dispatch in the engine goes through the compliance gate (sendThroughGate), and no raw sender is used.
+  - Cannot fail because: /sendThroughGate/ is satisfied by the header comment at src/lib/workshops/comms-engine.ts:6 ('goes through the EXISTING dispatcher/gate (sendThroughGate)') and by the import at line 26, independent of the one real call at line 361 — delete the gated dispatch, keep the comment/import, stay green. The three negative conjuncts only ban two specific identifiers and one import path; a raw fetch() to Twilio/Resend or any s
+- **L114** · `durable per-channel consent guard is read + fed to the gate` · **B (comment/absence-coupled)**
+  - Purports: At send time the engine reads the durable per-channel consent state from workshop_consent_events and passes that fact to the gate (durableConsentGranted: consent at the sendThroughGate call).
+  - Cannot fail because: /durableConsentGranted/ matches the header comment at src/lib/workshops/comms-engine.ts:15 (and the JSDoc at 231 and the comment at 358); /workshop_consent_events/ matches the header comment at line 14 (and JSDoc at 229); /action\s*===\s*'granted'/ matches only line 242, which sits inside the exported helper's declaration (lines 233–243). None of the three conjuncts anchors to the send-path usage: delete the gate-fee
+- **L116** · `is_security workshops are excluded from selection` · **B (comment/absence-coupled)**
+  - Purports: The reminder pass's selection skips securities workshops (the filter 'workshop.is_security === true) continue' at comms-engine.ts:415), so securities registrants never enter the automated reminder cadence.
+  - Cannot fail because: The assertion is a DISJUNCTION and its second arm /is_security === true/ matches ANY occurrence of that text in the file for any purpose: grep shows it matches src/lib/workshops/comms-engine.ts:507 (the nurture-pass FFS branch) and line 613 (constructing the lead-context object), in addition to the actual selection filter at line 415. Delete the selection exclusion at line 415 entirely — securities workshops now flow
+- **L117** · `is_security registrants route to FFS (not the automated segments)` · **B (comment/absence-coupled)**
+  - Purports: During the nurture pass, registrants of securities workshops are actually routed to the FFS-supervised path (the call at comms-engine.ts:508) instead of entering automated nurture segments.
+  - Cannot fail because: Both regexes are satisfied entirely by the uncalled function declaration: /routeSecuritiesToFfs/ matches the declaration at src/lib/workshops/comms-engine.ts:557 (grep: only lines 508 call, 557 declaration) and /is_security: true/ matches line 558 inside that same function body. Delete the call site at line 508 — securities registrants then fall through into the automated segment path — and the declaration alone keep
+- **L119** · `missing/placeholder template → deferred (template_not_approved), never sent` · **B (comment/absence-coupled)**
+  - Purports: When no approved+active template exists for a (kind, channel) slot, the engine records the slot as deferred with reason template_not_approved and dispatches nothing (the block at comms-engine.ts:313–316).
+  - Cannot fail because: /template_not_approved/ matches the header comment at src/lib/workshops/comms-engine.ts:20 ('(reason template_not_approved) and nothing is sent.') and the JSDoc at line 192, in addition to the real code at lines 314–315. Delete the entire template gate (lines 311–316) so unapproved slots proceed straight to dispatch, keep the comments, and the single-regex assertion stays green — it never checks the deferral, the fin
+
+**`tests/workshop-delivery.test.mjs`** — 14 instance(s):
+
+- **L198** · `answers CRC challenge (zoomCrcResponse)` · **B (comment/absence-coupled)**
+  - Purports: The Zoom webhook route responds to Zoom's URL-validation CRC challenge event
+  - Cannot fail because: Both regexes are satisfied by the route's import lines alone: src/app/api/webhooks/zoom/route.ts:4 `import { verifyZoomSignature, zoomCrcResponse } from '@/lib/zoom/webhook'` matches /zoomCrcResponse/, and line 5 `import { parseZoomParticipantEvent, ZOOM_CRC_EVENT } from '@/lib/workshops/delivery'` matches /ZOOM_CRC_EVENT/. Delete the CRC handling block (lines 48-50), keep the imports, and the test stays green.
+- **L199** · `verifies HMAC signature on events` · **B (comment/absence-coupled)**
+  - Purports: The webhook route actually verifies the HMAC signature before processing events
+  - Cannot fail because: /verifyZoomSignature/ is satisfied by the import at src/app/api/webhooks/zoom/route.ts:4. Delete the verification call and reject branch (lines 62-63) so every event is processed unsigned, keep the import, and the assertion still passes.
+- **L202** · `correlates by token then writes attendance` · **B (comment/absence-coupled)**
+  - Purports: The webhook route resolves the registrant by token and writes an attendance row
+  - Cannot fail because: Both identifiers appear in the import statement at src/app/api/webhooks/zoom/route.ts:7-8 (`resolveWebhookTarget,` / `applyWebhookAttendance,`). Delete the calls at lines 77 and 85 (so no attendance is ever written), keep the import, and both regexes still match.
+- **L207** · `resolveWebhookTarget correlates by zoom_registrant_id (token), not name` · **B (comment/absence-coupled)**
+  - Purports: Webhook correlation matches registrants by the Zoom registrant token and never by display name
+  - Cannot fail because: The load-bearing half, /never by display name/, matches ONLY a JSDoc comment: src/lib/workshops/server.ts:517 `* registrant TOKEN — never by display name (§5). Resolution order:`. /zoom_registrant_id/ is also satisfied by comments (lines 519 and 740) independent of the executable .eq() at line 541. Rewrite resolveWebhookTarget to match on user_name, keep the doc comment, and the test stays green — the 'not name' guar
+- **L210** · `provisioning skips cleanly when zoom disabled` · **B (comment/absence-coupled)**
+  - Purports: provisionZoomForRegistration is a clean no-op when Zoom credentials are not configured
+  - Cannot fail because: /zoom_disabled/ matches the JSDoc comment at src/lib/workshops/server.ts:634 (`*   - Zoom unconfigured → skip (zoom_disabled) — a clean no-op, booking/register still succeed`) independently of the executable guard at line 767. Delete the `if (!zoomEnabled()) return ...` guard, keep the comment, stay green.
+- **L214** · `writes workshop_feedback` · **B (comment/absence-coupled)**
+  - Purports: The feedback route persists submissions to the workshop_feedback table
+  - Cannot fail because: /workshop_feedback/ matches the header comment at src/app/api/public/workshops/feedback/route.ts:13 (`// registrant's join_token. Writes workshop_feedback (rating 1–5, most_useful,`) independently of the upsert at line 51. Delete the upsert, keep the comment, and the assertion still passes.
+- **L215** · `consult request reuses convertRegistrationToLead (firewalls is_security → FFS)` · **B (comment/absence-coupled)**
+  - Purports: Consult requests route through convertRegistrationToLead so is_security workshops are firewalled to the FFS-supervised path
+  - Cannot fail because: /convertRegistrationToLead/ is satisfied by the import at src/app/api/public/workshops/feedback/route.ts:7 and the comment at line 16, independent of the call at line 78. Delete the call (or replace it with a direct lead insert that bypasses the securities firewall), keep the import, and the test stays green. Note the regex never inspects is_security handling at all — the firewall claim in the label is entirely unins
+- **L216** · `honeypot on company field` · **B (comment/absence-coupled)**
+  - Purports: Bot submissions that fill the hidden company field are silently dropped
+  - Cannot fail because: A single comment satisfies both conjuncts: src/app/api/public/workshops/feedback/route.ts:25 `// Honeypot — bots fill \`company\`; silently accept without writing.` matches /honeypot/i and /company/ (line 20's `// Guardrails: honeypot, ...` also matches the second half). Delete the executable check at line 26, keep the comments, stay green.
+- **L217** · `per-IP rate limited` · **B (comment/absence-coupled)**
+  - Purports: The public feedback route enforces a per-IP rate limit
+  - Cannot fail because: /rateLimit/ is satisfied by the import at src/app/api/public/workshops/feedback/route.ts:4 (`import { rateLimit, clientIp } from '@/lib/http/rate-limit'`). Delete the enforcement at line 31, keep the import, and the assertion still passes.
+- **L218** · `resolves registration by join_token (never name)` · **B (comment/absence-coupled)**
+  - Purports: Feedback is tied to a registration via the personal join token, never by name/email
+  - Cannot fail because: /join_token/ matches comments at src/app/api/public/workshops/feedback/route.ts:13 and 42 (`// Resolve the registration by its personal join_token (never by name/email).`) independently of the .eq() at line 46. Switch the lookup to email or name, keep the comments, stay green — and the 'never name' half of the label is not checked by any regex at all.
+- **L222** · `provisions Zoom best-effort after registration` · **B (comment/absence-coupled)**
+  - Purports: The register route actually triggers Zoom registrant provisioning after creating a registration
+  - Cannot fail because: /provisionZoomForRegistration/ is satisfied by the import at src/app/api/public/workshops/register/route.ts:8. Delete the call at line 159 so no registrant is ever provisioned, keep the import, and the test stays green.
+- **L223** · `provisioning failure is non-fatal (registration still succeeds)` · **B (comment/absence-coupled)**
+  - Purports: A Zoom provisioning failure never fails the registration request
+  - Cannot fail because: The second alternative matches the comment at src/app/api/public/workshops/register/route.ts:153 (`// Best-effort per-registrant Zoom provisioning (spec §A). Never blocks registration:`), and the first matches log copy inside the catch at line 161. Remove the try/catch so a provisioning error propagates and fails registration, keep the line-153 comment, and the assertion still passes — it asserts prose, not the error
+- **L228** · `uses evaluateReplayAccess (consent-first order)` · **B (comment/absence-coupled)**
+  - Purports: The replay loader gates access through the shared evaluateReplayAccess function in consent-first order
+  - Cannot fail because: /evaluateReplayAccess/ matches the header comment at src/lib/workshops/replay.ts:3 and the import at line 11, independent of the call at line 70. Delete the gate call and serve the recording unconditionally, keep the comment/import, and the test stays green; the 'consent-first order' claim is never checked textually or behaviorally here (it is only proven for the pure function in Part 1).
+- **L247** · `workshop detail renders the delivery panel` · **B (comment/absence-coupled)**
+  - Purports: The staff workshop detail page loads the delivery summary and renders the delivery panel
+  - Cannot fail because: Both regexes are satisfied by the import lines at src/app/(fsa)/app/workshops/[id]/page.tsx:12 (`import { WorkshopDeliveryPanel } from ...`) and 13 (`import { loadDeliverySummary, type DeliverySummary } from ...`). Delete the data load at line 79 and the JSX render at line 160, keep the imports, and the test stays green.
+
+**`tests/workshop-ops.test.mjs`** — 5 instance(s):
+
+- **L198** · `non-securities convert routes through convertRegistrationToLead` · **B (comment/absence-coupled)**
+  - Purports: The non-securities convert_to_lead path actually calls the convertRegistrationToLead service helper (route -> service layering, native conversion marking).
+  - Cannot fail because: In src/app/api/workshops/registrations/[id]/route.ts the regex is satisfied by the import at line 7 (`import { convertRegistrationToLead } from '@/lib/workshops/server'`) and by the comment at line 125 (`//    referral seeded above is the FSOS-native lead artifact; convertRegistrationToLead`). Delete both call sites (lines 67 and 128) — i.e. remove the routing behavior entirely — and the import/comment keep the test 
+- **L200** · `check-in uses resolveCheckIn for idempotent no-op` · **B (comment/absence-coupled)**
+  - Purports: The server check-in flow consults resolveCheckIn so a second scan of an already-attended registrant is an idempotent no-op.
+  - Cannot fail because: In src/lib/workshops/server.ts the regex is satisfied by the import at line 8 (`import { resolveCheckIn, type AttendanceStatus } from './attendance'`). The sole call is at line 204; delete it (e.g. always write an attendance row, breaking idempotency) while keeping the import and the assertion stays green. Nothing here executes the check-in flow to prove the no-op — Part 1 only tests the pure function in isolation, n
+- **L204** · `convert helper marks the native conversion (lead_converted_at), no GHL` · **B (comment/absence-coupled)**
+  - Purports: convertRegistrationToLead stamps lead_converted_at on the registration and returns routed:'native', with no external GHL push.
+  - Cannot fail because: Every conjunct is satisfiable without the behavior. /lead_converted_at/ matches the comment at server.ts line 413 (`// Non-securities: mark the registration as a converted FSOS lead (lead_converted_at).`) and the compile-time-erased type field at line 435, independent of the executable uses at lines 480/486. /routed: 'native'/ matches the type-union member at line 439 (`| { ok: true; routed: 'native'; converted: bool
+- **L206** · `check-in route supports token + walk-in` · **B (comment/absence-coupled)**
+  - Purports: The kiosk check-in route handles both a join-token scan and a walk-in registration path.
+  - Cannot fail because: In src/app/api/workshops/[id]/check-in/route.ts a single import line satisfies BOTH conjuncts: line 8 (`import { checkInByToken, addWalkIn } from '@/lib/workshops/server'`). The actual calls are at lines 51 and 82; delete either or both branches (removing token or walk-in support entirely) and the import alone keeps the test green.
+- **L208** · `attendance reconcile route is staff-gated + audited` · **B (comment/absence-coupled)**
+  - Purports: The attendance reconcile route enforces staff RBAC before reconciling, and audits the mutation.
+  - Cannot fail because: In src/app/api/workshops/[id]/attendance/route.ts both conjuncts are satisfied by import lines: /requirePermission/ by line 4 (`import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'`) and /reconcileAttendance/ by line 7 (`import { reconcileAttendance } from '@/lib/workshops/server'`). Delete the gate call at line 22 and the reconcile call at line 36 and the imports keep it green. Additionally th
+
+**`tests/workshop-zoom-provision.test.mjs`** — 4 instance(s):
+
+- **L126** · `no securities/financial data in the create body` · **A (tautology)**
+  - Purports: The securities firewall: createZoomMeeting never leaks securities/financial data into the Zoom meeting-create request body.
+  - Cannot fail because: The body under test is built by src/lib/zoom/client.ts (lines 148-160) exclusively from the test's own input — {topic: 'Retirement 101', startTime, durationMinutes: 45, timezone: 'America/Chicago'} — plus fixed literal keys (topic, type, start_time, duration, timezone, settings.join_before_host/waiting_room/approval_type). No securities or financial data exists anywhere in the test's scope, so there is no data path b
+- **L179** · `meeting creation is non-fatal (does not block workshop create)` · **B (comment/absence-coupled)**
+  - Purports: A Zoom meeting-creation failure never blocks the workshop-create route from succeeding.
+  - Cannot fail because: Verified by grep against src/app/api/workshops/route.ts: /non-fatal/ matches only the console.error MESSAGE STRINGS at lines 89 and 92 ('[workshop] zoom meeting creation (non-fatal, retryable):') — descriptive log text, not control flow. /catch/ matches line 91 but also the route-wide outer '} catch (e) {' at line 112, which exists in every route regardless of the zoom wiring. Change line 91's catch to rethrow, or re
+- **L195** · `start_url column flagged HOST-ONLY (never returned/logged)` · **B (comment/absence-coupled)**
+  - Purports: The Zoom host start_url is never returned to a client or written to a log.
+  - Cannot fail because: Verified by grep against src/lib/workshops/server.ts: the regex matches exactly one place — the trailing comment on line 682: 'zoom_start_url: meeting.startUrl ?? null, // HOST-ONLY column; never returned to a client or logged'. It is a verbatim comment match. Add 'console.log(meeting.startUrl)' or return startUrl from ensureSessionZoomMeeting while keeping the comment, and the assertion still passes; delete the enti
+- **L196** · `EnsureMeetingOutcome does NOT return start_url to callers` · **B (comment/absence-coupled)**
+  - Purports: The outcome ensureSessionZoomMeeting returns to callers never carries the host-only startUrl.
+  - Cannot fail because: Negative-only source-text check with a vacuous fallback, and it inspects the wrong slice. 'EnsureMeetingOutcome' occurs twice in src/lib/workshops/server.ts (line 623 'export type EnsureMeetingOutcome =' and line 644 '): Promise<EnsureMeetingOutcome> {'), so split(...)[1] is only the text BETWEEN those two occurrences — the type union, doc comment, and function signature. 'export type ProvisionOutcome' (line 734) is 
+
+**`tests/workspace-registry.test.mjs`** — 1 instance(s):
+
+- **L168** · `registry-covers-legacy-nav (all portals): no fan-out destination dropped` · **A (tautology)**
+  - Purports: That the workspace fan-out shifted no portal boundary — each legacy href resolves to a workspace in the SAME portal (per the comment on line 167: 'And the boundary did not shift: it resolves to a workspace in the same portal.').
+  - Cannot fail because: activeWorkspace(portal, pathname) is portal-filtered by construction: src/lib/workspaces/registry.ts:758 does `const list = portalWorkspaces(portal)`, portalWorkspaces is `WORKSPACES.filter((w) => w.portal === portal)` (registry.ts:727), and the function returns `winner ?? list[0]` (registry.ts:768). Every workspace it can return therefore has .portal === portal for ANY pathname — even '/admin/xyz' passed with portal
+
+
+CLEAN FILES (8): `tests/comms-campaign-config.test.mjs`, `tests/comms-email-senders.test.mjs`, `tests/comms-suppression.test.mjs`, `tests/comms-template-filters.test.mjs`, `tests/cron-activation.test.mjs`, `tests/public-intake.test.mjs`, `tests/social-engagement.test.mjs`, `tests/workshops-gate.test.mjs`
+
+TOTALS: pattern A = 7, pattern B = 34, TOTAL = 41 across 18 files (10 files with instances)
+
+---
+
+## §11b — Baseline re-grade (2026-08-29, owner directive)
+
+**The void:** because §11a proves the suite contains assertions that cannot fail, the
+Phase 0 result "existing test suite green" (§0.1) is **not evidence of behavior**. §0.1's
+"no REPOSITORY failures at baseline" is hereby restated as: *the repository's gates exit
+zero* — a statement about exit codes (command output), warranting nothing about runtime
+correctness. WS-001 is the constructive proof of the gap: 192 green files with a dead
+engine.
+
+**Re-grade scan:** every finding WS-001…WS-061 was checked for evidence that consists of
+a passing test rather than traced code or command output. **Result: zero findings
+re-graded** — every ledger entry's evidence is quoted source at file:line, executed
+command output (the WS-001 Postgres proof, the §0.1 gate runs), or both. Test files are
+cited only (a) as the SUBJECT of findings (WS-019, WS-058, §11a) or (b) as reusable
+patterns (booking's idempotency harness), never as proof of a behavioral claim.
+
+**Two honesty annotations recorded in the same spirit (unexecuted runtime assumptions,
+not test-derived, but held to the same bar):**
+- **WS-016 (send-once idempotency):** the static layers are PROVEN (unique DDL 040:184;
+  the guarded-update SQL semantics). The RUNTIME claim "two overlapping ticks can never
+  both win" additionally assumes supabase-js/PostgREST surfaces a 23505 unique violation
+  as `ins.error` rather than throwing — its documented contract, but unexecuted here.
+  Annotated **PROVEN (static) / NOT VERIFIED (runtime)** until Batch 0/1's DB-level proof
+  executes the claim path. (Independently flagged by the Surface D checker.)
+- **WS-028 / WS-027 consequence clauses** (duplicate referrals under overlap; stranded
+  `'sending'` on a thrown send): the missing-guard claims are PROVEN static; the
+  runtime-overlap/exception consequences are HYPOTHESIS pending the same proofs. The §12
+  checker rounds reached the same grades independently.
+
+**§12 grading basis:** the adversarial verify rounds were launched before this directive,
+so the re-grade filter is applied at transcription: each verdict adopted into §12 was
+checked to rest on quoted source (all Surface A/B/C/D/E/F verdicts do — none cites a
+green test as evidence). The same filter applies to the G/H/I rounds when they land.
+Verdicts already issued in §12 (Surface B) were re-checked on this basis: all stand.
+
+---
+
+## §12 (continued) — Verify verdicts: Surfaces A, C, D, E, F (2026-08-29)
+
+**Surface A: 10/10 CONFIRMED** at stated grades. **Surface C: 10/10 CONFIRMED** (the
+strand-forever consequence softened to HYPOTHESIS on the runtime basis — §11b). **Surface
+D: 14/14 CONFIRMED** (grade adjustments: WS-014 double-confirmation and WS-028's overlap
+consequence → HYPOTHESIS as runtime consequences; long-offset DST drift → severity NONE,
+matching the §5 WS-006 amendment; venue-TZ quiet-hours severity graded RISK/GAP by
+checkers vs BROKEN in this ledger — the ledger keeps BROKEN for the TCPA exposure and
+records the spread). **Surface E: 15/15 CONFIRMED.** **Surface F: 9/9 CONFIRMED.**
+Checker misses adopted below were each re-verified first-hand before adoption.
+
+**WS-062 · A/B · GAP · PROVEN — Workshop consent revocation has no writer.**
+`workshop_consent_events.action` supports `'revoked'` (038:221) and the engine's durable
+guard reads latest-action (comms-engine.ts:233-243), but nothing anywhere writes a
+revocation (STOP writes `dnc_entries` only) — workshop-tier consent is grant-only in its
+own evidence store. DNC still blocks sends (WS-035), but the consent record cannot
+reflect withdrawal.
+
+**WS-063 · A · RISK · HYPOTHESIS — `ics_uid` is a per-workshop constant under a UNIQUE
+constraint.** `ics_uid: 'wshop-${workshopId}@fsos'` (route:73) with `ics_uid text unique`
+(038:144) — inserting a second session for the same workshop violates the constraint. No
+multi-session create path exists in the product today, hence HYPOTHESIS on trigger.
+
+**WS-064 · D · BROKEN · PROVEN — All six engine queries discard their error objects.**
+Beyond WS-001's two: `comms-engine.ts:267, :400, :417, :477, :496, :514` all destructure
+only `{ data }` — any query failure silently reads as empty and both passes report
+success. (Batch 1's scope already reads every engine query's error.)
+
+**WS-065 · D · POLISH · PROVEN — The quiet-hours deferral writes no audit row** while its
+template and consent siblings do (comms-engine.ts:311-334) — audit-trail inconsistency.
+
+**WS-066 · A · POLISH · PROVEN — `workshop_message_log.kind` has no CHECK constraint**
+despite the adjacent comment claiming the same value-set as `templates.kind`
+(040:172-173).
+
+**WS-067 · C · GAP · PROVEN — Workshop email has no plaintext part.** The engine passes
+no `bodyText` (comms-engine.ts:361-373) though the send path and dispatcher support
+multipart (send.ts:601; dispatcher.ts:245-246) — every workshop email is HTML-only
+(deliverability/spam-signal defect per the repo's own email-QA standards).
+
+**WS-068 · C/D · BROKEN · PROVEN — The DB kill switch fails OPEN.** `loadConfig`'s
+`catch { return CONFIG_DEFAULTS }` with `CONFIG_DEFAULTS.enabled = true`
+(comms-engine.ts:72, :99-101) — a transient/RLS config-read error resurrects a
+deliberately disabled engine; only the env kill switch survives.
+
+**WS-069 · adjacent (booking) · BROKEN · PROVEN — Booking SMS ships the STOP line
+twice.** `sms-templates.ts:9-10` asserts "the dispatcher does NOT append an SMS footer —
+the body is authoritative" while `dispatcher.ts:244` appends `SMS_OPT_OUT_FOOTER`
+unconditionally with no dedupe; the six booking bodies already carry "Reply STOP" inline.
+Code wins over the comment. Outside workshop scope (workshop seeds assume the dispatcher
+footer — consistent); recorded and suggested as a separate task.
+
+**WS-070 · A/E/G · BROKEN · PROVEN — Workshop status has no CHECK, terminality is false,
+and cancel-then-republish strands registrants on dead Zoom links.**
+(a) `workshops.status` is bare text (018:86 — no CHECK anywhere). (b) The publish trigger
+gates only the transition INTO `'published'` (038:296); the schema comment's
+"completed/cancelled are terminal" (schemas.ts:915-916) is enforced nowhere — a bare
+PATCH can take cancelled→published or completed→draft. (c) Chain: cancel deletes the
+sessions' Zoom meetings but never clears `workshop_registrations.join_url` /
+`zoom_registrant_id` (server.ts:717-728 touches sessions only) — republish, and every
+existing registrant holds a join link to a deleted meeting.
+
+**WS-071 · D · GAP (documented opt-in) · PROVEN — `reminder_starting` is disabled in the
+shipped default config.** DB default offsets `'{10080,1440,60}'` exclude 0, with the
+comment "add it here to enable it" (040:46-51); the seeded `reminder_starting` template
+targets a stage that never fires by default. D-1 resolves.
+
+**WS-072 · F · GAP · PROVEN — Workshop referral seeding loses attribution and dedupes
+per-registration only.** The inserts omit `referring_agency_id` (comms-engine.ts:591-599;
+registrations/[id] route) — the staff referral route sets it — and dedupe is
+`if (!reg.referral_id)` per registration: one person attending three workshops seeds
+three `referrals` rows with no cross-registration match.
+
+**WS-073 · F/G · BROKEN · PROVEN — The report's consult-conversion metric measures the
+automation, not consults.** `converted := !!referral_id || !!lead_converted_at`
+(attendance.ts:150-151) and the nurture pass auto-stamps `lead_converted_at` for every
+qualified attendee — once the engine runs, "consults booked" ≈ attendance count.
+
+**WS-044 sharpened (D-2 input):** `pipelineSummary` is live (7 importers), but the
+stage-ID helper subset (`stageAt`, `findStageById`, `isApplicationSubmittedStage`,
+`isIssuedStage`, `APPLICATION_SUBMITTED_STAGE_IDS`) has ZERO importers — the GHL-era
+stage taxonomy in `pipelines.ts` is dead code; the native `opportunities.stage` CHECK
+(mig 009) is the live taxonomy. **Adjacent (recorded):** ADR-014's D4 schema-retirement
+step was never executed — `049_ghl_schema_retirement.sql` exists only under
+`docs/comms-ghl-migration/prepared/`, and the `ghl_*` tables/indexes remain live schema.
+
+**Batch-1 test-churn note:** `tests/operational-email.test.mjs:243-259` asserts on the
+legacy register route's SOURCE — removing that route (Batch 1) breaks those blocks; Batch
+1 rewrites them alongside the removal.

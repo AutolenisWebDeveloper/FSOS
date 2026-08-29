@@ -559,3 +559,54 @@ attribution, in-person/virtual split: `report/page.tsx:81-109`), but no CSV/XLSX
 report export exists anywhere in the workshop admin surface (grep across
 `WorkshopRegistrations.tsx` + the admin pages; the repo has `exceljs` available). Sign-in
 sheets and carrier/compliance requests need a manual DB pull today. (Plan: Batch 8.)
+
+---
+
+## §9 — Appended findings (2026-08-29, Surface G admin round; graded first-hand)
+
+**WS-046 · G · GAP · PROVEN — There is no edit-workshop UI at all.** The only caller of
+`PATCH /api/workshops/[id]` in the entire frontend is `WorkshopStatusControl`, and it sends
+`{ status }` alone (`WorkshopStatusControl.tsx:21`); `WorkshopForm` is mounted only at
+`/app/workshops/new`. Title, description, agenda, location, presenters, disclosure
+selection, and `budget_spend` (so the report's cost-per-lead is permanently blank —
+`report/page.tsx:83-88`) have no write path after creation. Together with WS-007 (schema
+forbids date/venue/capacity), a created workshop is effectively immutable through the
+product.
+
+**WS-047 · G · GAP · PROVEN — A bare PATCH can set `status='compliance_approved'` without
+an approval record.** `WorkshopPatchSchema` accepts every `WORKSHOP_STATUS` value
+(schemas.ts:956); the route hard-gates only `'published'` (`[id]/route.ts:54-67`) — the
+schema's own comment ("never a bare status flip", schemas.ts:915-916) is contradicted by
+the code. Publish stays safe (trigger + route re-check the approval ref), but the
+intermediate state misrepresents compliance standing. Related: content edits after
+approval/publish never invalidate the stored approval (`compliance_approval_ref` is
+untouched by the PATCH handler — held in full) — an approved workshop's description can be
+freely rewritten (via API today, via WS-046's future UI tomorrow) while retaining its
+approval. Re-approval-on-material-edit belongs in Batch 7.
+
+**WS-048 · B · RISK · PROVEN — A client-supplied `session_id` is never verified to belong
+to the workshop.** `register/route.ts:69` uses `v.data.session_id` directly (schema checks
+UUID shape only) — a crafted registration binds to another workshop's session: its
+reminders would quote the other event's venue/time, and it lands on the other session's
+roster.
+
+**WS-049 · G · GAP/POLISH · PROVEN (mixed) — Check-in door-operations gaps.**
+- REFUTED from the trace round: “a failed tap is discarded after ~1.5 s” — in fact
+  `retryPost` makes 3 attempts with backoff and a final failure reverts the tile AND
+  toasts (`WorkshopCheckIn.tsx:32-41` + header comment) — nothing is silently lost.
+- CONFIRMED gaps: no undo for a mis-tap (the server no-ops a re-scan; un-checking requires
+  the separate roster reconcile), no no-show marking at the door, no offline queue (each
+  tap needs network within the retry window), and the walk-in consent checkboxes are
+  16 px targets (`h-4 w-4`, `:295-299`) below the 24 px WCAG 2.2 floor the rest of the
+  surface meets.
+- The approval queue (`/app/workshops/review`) is absent from global nav but IS linked
+  in-context from a pending workshop's status control (`WorkshopStatusControl.tsx:45`) —
+  POLISH, not a gap. Role mismatch is real: the review PAGE admits any fsa-portal role
+  (`requireRole('fsa')`, session.ts:83-87) while the approve POST denies `licensed_staff`
+  (`approve/route.ts:25` — fsa/super_admin only): staff can open a queue they cannot act
+  on.
+
+**WS-050 · G · RISK · HYPOTHESIS — Asset upload trusts the client Content-Type.**
+`assets/upload/route.ts:44-46` stores the client-supplied MIME (route is role-gated;
+exploitation needs a staff account). Not verified end-to-end; graded honestly as
+HYPOTHESIS for the Batch 7 hardening list.

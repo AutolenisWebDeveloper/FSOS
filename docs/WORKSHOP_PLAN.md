@@ -242,7 +242,9 @@ capacity-full state.
 ## Batch 7 — Correctness & compliance hardening
 
 **Fixes:** WS-025, WS-032, WS-034, WS-033 (code side), WS-030, WS-028, WS-020, WS-031,
-WS-039 (no-show derivation), WS-040 (attended duality), WS-042 (session-status writer).
+WS-039 (no-show derivation), WS-040 (attended duality), WS-042 (session-status writer),
+WS-047 (bare status flip + approval invalidation on material edit), WS-048 (session_id
+must belong to the workshop), WS-050 (server-side MIME validation on asset upload).
 
 Scope:
 - Fail-closed context guards (WS-025/WS-032/WS-034): the engine DEFERS (never sends) when
@@ -294,6 +296,10 @@ Rollback: revert commit (no schema change).
 Scope:
 - Roster CSV export on the admin registrations panel (server-generated via the existing
   `exceljs` dependency; role-gated like its page) (WS-045).
+- Edit-workshop UI (WS-046): mount `WorkshopForm` in edit mode on the admin detail page,
+  wired to the PATCH route (which Batch 4 already extends with date/venue) — including
+  `budget_spend` so cost-per-lead works; check-in door polish (WS-049): 24px consent
+  targets, an undo affordance, door no-show marking.
 - Public surfaces complete-state matrix: already-registered, waitlisted, cancelled-event,
   past-event, server-error retry on both register forms + hub + detail; `/events/[id]`
   passes `sms_disclosure`/`session_id` (or 302s — per Batch 1); a11y pass (labels/

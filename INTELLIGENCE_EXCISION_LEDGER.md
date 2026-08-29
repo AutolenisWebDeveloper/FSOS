@@ -150,7 +150,7 @@ Created by exactly **two** migrations, `036_compliance_intelligence.sql` (274) a
 
 **RLS:** all 7 tables `enable row level security` with `<table>_read` / `<table>_write` policies built from `is_super()/has_role()` helpers defined in migration 010 (036:240-274, 037:168-194). Read roles: compliance, supervisor, fsa, licensed_staff, admin, ops. **Migration 010's helpers are PROTECTED and shared.**
 
-**Storage:** `COMPLIANCE_BUCKET` (`lib/compliance/uploads.ts:18`) is an **alias of the shared** `PRIVATE_DOCUMEN2026-08-29T00:00:24ZUCKET = 'documents'` (`lib/storage/private-documents.ts:15`), created in migration 001 and shared with the knowledge library and other document features. **The bucket itself must not be dropped** — only objects under the feature's prefix are in scope.
+**Storage:** `COMPLIANCE_BUCKET` (`lib/compliance/uploads.ts:18`) is an **alias of the shared** `PRIVATE_DOCUMENTS_BUCKET = 'documents'` (`lib/storage/private-documents.ts:15`), created in migration 001 and shared with the knowledge library and other document features. **The bucket itself must not be dropped** — only objects under the feature's prefix are in scope.
 
 ### (g) Background work — PROVEN NEGATIVE
 `vercel.json` read in full: **24 cron entries, NONE of which belong to this feature.** No queue, no webhook, no scheduled job references any intelligence module or table. The workforce orchestrator (`/api/cron/workforce-orchestrator`) and all lifecycle crons are untouched. **There is no intelligence-specific scheduled job to remove.**
@@ -413,7 +413,7 @@ The Phase A prediction held: removing `structureRightBridge` severed the last cr
 
 ---
 
-## Entry 6 — extract.ts per-symbol proof, gates, and Phase A correction — TS_B
+## Entry 6 — extract.ts per-symbol proof, gates, and Phase A correction — 2026-08-29T00:00:24Z
 
 ### The `extract.ts` per-symbol proof table
 
@@ -487,5 +487,118 @@ The second Phase A doc-vs-code finding **stands**: the removed `fsos-nigo-intell
 
 ### Self-review of the actual diff
 Reviewed against the diff, not the plan. Confirmed: **zero migrations touched** (`git diff -- supabase/` empty); **zero storage operations**; no file removed outside the accepted manifest; protected modules altered only in the named surgical ways (`schemas.ts` = **149 deletions, 0 insertions**; `registry.ts` = exactly the two named changes; `extract.ts`/`pipeline.ts` added comments only); each `extract.ts` symbol removal individually proven and individually typechecked. **No material findings.**
+
+---
+
+# ═══════════════════════════════ PHASE C ═══════════════════════════════
+
+## Entry 7 — Verify + rebase (no merge) — 2026-08-29T00:31:31Z
+
+**Precondition confirmed.** Branch HEAD `d94e420`, tree clean, local == `origin/…` == `d94e420`.
+**`origin/main` is still `ab8198f`** — unchanged since the Phase A baseline; nothing has landed in the interim.
+
+### STEP 1 — PDF branch of `extractDocument`: **VERIFIED**
+
+Real PDFs recovered from history (`git show main:data/regulatory_sources/…`) and run through the
+post-excision `extractDocument`. No mocks, no credentials, no network.
+
+| PDF | bytes | method | pages | chars | ordering | boundaries |
+|---|---|---|---|---|---|---|
+| `07_FINRA_2024_Oversight_Report.pdf` | 1,340,208 | **`native_pdf`** | **90** | 269,657 | strictly 1..90, no gaps/repeats | Σ per-page == `char_count` exactly |
+| `08_SEC_Regulation_Best_Interest_34-86031.pdf` | — | **`native_pdf`** | **770** | 1,399,226 | strictly 1..770 | Σ per-page == `char_count` exactly |
+
+`page_count === pages.length` in both. Zero empty pages, zero low-confidence pages, confidence 0.99,
+90/90 and 770/770 page texts **distinct**. Page boundaries independently corroborated by content: page 45's
+text begins `"FINRA Annual Regulatory Oversight Report | January 2024**45**…"` — the document's own printed
+page number matches the array index, and the last page is the copyright page. Extraction of the 90-page
+document took ~1.05 s.
+
+**Regression check vs pre-excision `main`.** The `main` versions of `pipeline.ts` (162 lines) and
+`extract.ts` (291 lines) were reconstructed from git, bundled, and run against the same four PDFs.
+**Results are identical on every file** — `native_pdf`/90, `native_pdf`/770, `none`/0, `none`/0.
+**The excision changed PDF behavior not at all.** (The temporary comparison files were staged inside the
+repo to resolve the `@/` alias and were deleted immediately; the working tree was verified clean after.)
+
+Two 2–3 KB stub PDFs (`01_FINRA_Rule_2330.pdf`, `02_FINRA_Rule_2111.pdf`) return `method: 'none'` — **on
+`main` as well as on HEAD**. This is pre-existing and correct-by-design: a PDF whose native text layer
+yields nothing is exactly the scanned/low-text case that routes to vision OCR, which is unavailable here
+without a gateway key. Not a regression, not in scope, not repaired.
+
+*A first attempt reported `method: 'none'` on the 1.3 MB PDF. That was a **harness** fault, not a code
+fault: the bundle was written to `/tmp` with `--external:pdf2json`, where Node cannot resolve `pdf2json`.
+Re-bundling inside the repo's module-resolution path produced the results above. Recorded because the
+first number was wrong and the correction matters.*
+
+### STEP 1b — vision-OCR fallback: reachable, unchanged, **UNVERIFIED**
+
+- **Structurally unchanged:** `git diff main...HEAD -- src/lib/compliance/pipeline.ts` contains **zero**
+  lines touching `extractViaVision`, `OCR_SYSTEM`, `runGateway`, `GatewayAttachment`, `attachments`,
+  `pagesFromModelText`, `densityConfidence`, `maxTokens`, or `model:`.
+- **Reachable from two call sites:** `pipeline.ts:73` (PDF whose native extraction is `low_confidence`)
+  and `pipeline.ts:84` (`family === 'image'`). Both survive.
+- Its dependencies `pagesFromModelText`, `densityConfidence`, `PIPELINE_MODEL` and `runGateway` were all
+  retained by the excision.
+
+**It remains UNVERIFIED. It cannot be executed without live AI-gateway credentials, which this environment
+does not have. No mock was substituted and no claim of proof is made.**
+
+### STEP 2 — Rebase onto `origin/main`: **no-op, zero conflicts**
+
+`merge-base(HEAD, origin/main)` was already `ab8198f` == `origin/main`, so `git rebase origin/main`
+reported *"Current branch … is up to date"* and exited 0. HEAD is unchanged at **`d94e420`**; both commits
+remain (`6f25013` Phase A ledger, `d94e420` Phase B excision). **No conflicts arose, so no protected module
+required a resolution, and no force-push was needed or performed.** Nothing's meaning changed under rebase.
+
+### STEP 3 — Post-rebase gates (run after `rm -rf .next`)
+
+| Gate | Expected | Actual | |
+|---|---|---|---|
+| `npm run type-check` | 0 | **0** | PASS |
+| `npm run lint` | 0 | **0** — "No ESLint warnings or errors" | PASS |
+| `npm test` | 192 files | **192 files** | PASS |
+| `npm run test:rls` | 15 files | **15 files** | PASS |
+| `npm run build` | 0 | **0** | PASS |
+
+**5/5 green. Count reconciliation: expected delta 0, actual delta 0 — nothing to explain.** No TS2307s
+appeared; clearing `.next` first was sufficient, as in Phase B.
+
+### Constraints re-confirmed against `git diff origin/main...HEAD`
+- **Migrations: 0 files differ** under `supabase/`.
+- **Storage: zero operations** performed in this phase.
+- **Surviving `src/` files altered: exactly four** — `compliance/pipeline.ts`, `compliance/extract.ts`,
+  `validation/schemas.ts`, `workspaces/registry.ts`. Every other `src/` path in the diff is a deletion from
+  the accepted manifest.
+- Final diffstat vs `origin/main`: **62 files changed, 711 insertions(+), 6,806 deletions(-)**.
+  (Per-commit: `6f25013` = 369 insertions; `d94e420` = 343 insertions / 6,807 deletions. The combined range
+  is one lower on each side because a single line added in Phase A was rewritten in Phase B — see the defect
+  below, now repaired.)
+
+### DEFECT FOUND AND REPAIRED — Phase B corrupted one line of the Phase A ledger
+
+**What happened.** Phase B appended Entry 6 using a placeholder token `TS_B`, substituted afterwards via
+`s.replace('TS_B', <timestamp>, 1)`. The string `TS_B` also occurs **inside the identifier
+`PRIVATE_DOCUMENTS_BUCKET`** (`PRIVATE_DOCUMEN` + `TS_B` + `UCKET`). Because `replace(..., 1)` takes the
+*first* occurrence in the file, it hit **Entry 4, line 153** — inside the Phase A record — instead of the
+Entry 6 heading. That line was left reading `PRIVATE_DOCUMEN2026-08-29T00:00:24ZUCKET`, and the Entry 6
+heading kept the literal placeholder `TS_B`.
+
+**Impact.** Cosmetic but real, and a violation of the append-only rule: prior ledger content was altered.
+It was committed in `d94e420`. Exactly **one** line was affected — verified by scanning the whole file for
+mid-word timestamps (one hit) and by a byte-level comparison of the first 369 lines against `6f25013`.
+No code, test, migration, or gate result was affected; the corrupted text is prose inside a documentation
+file.
+
+**Repair.** Line 153 was restored **byte-exactly** from `git show 6f25013:INTELLIGENCE_EXCISION_LEDGER.md`,
+and the Entry 6 heading received its correct timestamp via an anchored match on the heading line rather
+than a bare substring. Re-verified: `cmp` now reports the Phase A 369 lines **byte-identical** as a prefix
+of the current file — **append-only is restored**. Repairing corrupted prior content is a restoration of the
+record, not a rewrite of it; the incident is disclosed here rather than silently fixed.
+
+**Lesson for any future phase:** never substitute a placeholder token that can occur as a substring of real
+content. Anchor the match (line prefix/suffix) or use a token that cannot collide.
+
+### Not done, by instruction
+No merge to `main`. No PR opened in this phase (PR #306, opened at the end of Phase B, still points at this
+branch). No deploy.
 
 ---

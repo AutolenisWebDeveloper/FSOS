@@ -980,3 +980,60 @@ pins the route's gate call and the ABSENCE of the direct-send ack. Full gates gr
 
 Findings closed: WS-011, WS-014, WS-022, WS-034, WS-041 (superseded by D-8 — the late
 engine confirmation no longer exists), WS-067, WS-069, WS-071.
+
+---
+
+## MID-POINT CHECKPOINT (2026-08-29, after Batch 5) — Batches 7–8 RE-SCOPED
+
+Held per Gate 1; re-graded against Batch 0–5 runtime evidence. HOLDING — nothing below
+is implemented.
+
+**Batch 7 items now CLOSED by earlier batches (dropped from scope):**
+- WS-032 fail-closed personalization — Batch 1 (unknown tokens pass through to the gate).
+- WS-034 URL-context guard — Batch 5 (email defers on missing app URL, audited).
+- WS-040 attended duality — Batch 4 (reconcileAttendance from the PATCH).
+- WS-042 cancel→session cascade half — Batch 4 (DB trigger, route-independent).
+- WS-047 bare-status-flip half — Batch 1 route guard + Batch 4 WS-074/075.
+- WS-048 session-ownership — Batch 2 (claim RPC session_mismatch) + Batch 4 PATCH check.
+- Amendment-2 additions WS-065/WS-068 (Batch 1) and WS-072 (Batch 4, dedupe half).
+- WS-050 remains owner-DEFERRED (not dropped).
+
+**Batch 7 REMAINING scope (shrunk):**
+1. WS-025 — defer commercial email while `sender_physical_address` still carries the
+   placeholder marker (engine guard; PROVEN open: no guard in comms-engine.ts today).
+2. WS-033 — HELP in the SMS footer + inbound HELP auto-response (copy per D-5);
+   carrier Advanced Opt-Out stays a go-live checklist item.
+3. WS-030 — cron auth: Bearer required whenever CRON_SECRET is set (PROVEN open:
+   `x-vercel-cron` header alone still authorizes).
+4. WS-028 (narrowed) — claim `nurtured_at` BEFORE side effects; Batch 4's email-dedupe
+   + referral-keyed opportunity already bound the duplicate blast radius, so the
+   remaining exposure is concurrent passes over a NO-EMAIL registrant.
+5. WS-031 — bound per-tick work + batch the per-registration log lookups.
+6. WS-039 — derive durable no_show attendance rows (adds 'derived' capture_method);
+   segmentation already treats null as registered_no_show, so this is REPORTING truth.
+7. WS-042 residue — recording_url writer (or drop it from the replay contract).
+8. WS-043 — consult request fires notifyFsa.
+9. WS-020 residue — graceful UI refusal on delete (DB already RESTRICTs since Batch 3).
+10. WS-047 residue — material edits after approval do not invalidate compliance_approved
+    (approval-snapshot staleness guard).
+
+**Batch 8 items now CLOSED (dropped):**
+- WS-021 core — the legacy /events/[id] page renders the SHARED settled-model form
+  (SMS_REMINDER_DISCLOSURE at the phone field; claim RPC handles capacity/duplicate);
+  residue: its workshop-wide seats display is cosmetic vs the per-session claim.
+- WS-019/WS-058 test debt — Batch 0 (§11a 42/42; manifest; rebuilt suites).
+- WS-024 form-state residue — Batch 2 (already-registered + full states shipped).
+- WS-051 hydration + funnel `<a href>` — Batch 2 rewrite (no `<a href` remains in
+  HubFilters / [slug] page; hub renders venue-TZ server strings).
+- The "correctness suite re-run" bullet — now IS the standing RLS gate (send-once,
+  quiet-hours, suppression, termination, lifecycle × 30, claim × 13).
+- E2E waitlist scenario — collapsed by D-4 (no waitlist); becomes full→next-session.
+
+**Batch 8 REMAINING scope (shrunk):** roster CSV export (WS-045 — the D-2 reporting
+need); edit-workshop UI mount incl. budget_spend (WS-046) + check-in door polish
+(WS-049); complete-state matrix + a11y pass + 375px proof on the public funnel
+(WS-052/053/054/055/056 incl. stale docs/routes.md); WS-073 consult-conversion metric;
+Playwright E2E (captured-transport, no real sends) over the owner's scenario list minus
+waitlist; final full-gates run.
+
+Deferred-not-dropped (unchanged): WS-050, WS-063, WS-B13.

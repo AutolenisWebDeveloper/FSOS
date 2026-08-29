@@ -449,6 +449,34 @@ console.log('WS-042 — the recording writer (replay finally has a data source)'
   ok('…and is NEVER material: no generation bump, no change notice queued',
     !('cadence_generation' in sUpd.payload) && !('change_kind' in sUpd.payload))
 }
+{
+  // THE EXPLICIT-TARGET PATH. The block above exercises the FALLBACK (no session_id →
+  // most recent non-cancelled session), which is exactly why the original coverage
+  // missed the defect a review bot caught: WorkshopPatchSchema's session_id refine
+  // listed only the schedule/venue fields, so a recording-only PATCH that NAMED its
+  // session was rejected 400 "session_id was provided without any session change" and
+  // the route's session_id branch was unreachable. Multi-session workshops take this
+  // path. Both directions are pinned so the refine can never drift from the field list
+  // again.
+  const db = installDb(fakeDb({
+    workshops: [{ workshop_id: W, status: 'completed', compliance_approval_ref: 'a', disclosure_config_id: 'd' }, [{ workshop_id: W, status: 'completed' }]],
+    workshop_sessions: [{ ...TARGET, status: 'completed' }, null],
+  }))
+  const res = await patchRoute.PATCH(req({ session_id: S1, recording_url: 'https://vimeo.example/w-202' }), props)
+  installDb(null)
+  ok('a recording-only PATCH that NAMES its session is accepted (the explicit-target path is reachable)',
+    res.status === 200, `status=${res.status} body=${JSON.stringify(await res.clone().json().catch(() => ({})))}`)
+  const sUpd = db.calls.find((c) => c.table === 'workshop_sessions' && c.method === 'update')
+  ok('…and writes the recording to THAT session', !!sUpd && sUpd.payload.recording_url === 'https://vimeo.example/w-202')
+  ok('…still without a generation bump or change notice',
+    !!sUpd && !('cadence_generation' in sUpd.payload) && !('change_kind' in sUpd.payload))
+
+  installDb(fakeDb({ workshops: [{ workshop_id: W, status: 'published', compliance_approval_ref: 'a', disclosure_config_id: 'd' }] }))
+  const bare = await patchRoute.PATCH(req({ session_id: S1 }), props)
+  installDb(null)
+  ok('a bare session_id with NO session field is STILL rejected (the guard did not go slack)',
+    bare.status === 400)
+}
 
 console.log('WS-043 — a consult request alerts the FSA')
 {

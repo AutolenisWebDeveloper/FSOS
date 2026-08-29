@@ -1002,9 +1002,23 @@ export const WorkshopPatchSchema = z
     recording_expires_at: z.string().datetime({ offset: true }).nullable().optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'No changes provided' })
-  .refine((v) => !(v.session_id && !v.starts_at && v.ends_at === undefined && !v.timezone && v.venue_name === undefined && v.venue_address === undefined), {
-    message: 'session_id was provided without any session change',
-  })
+  // Every SESSION-targeted field must be listed here, or targeting a session by id for
+  // that field alone is rejected as "no session change" and its route path becomes
+  // unreachable (WS-042's recording fields were missed when they were added).
+  .refine(
+    (v) =>
+      !(
+        v.session_id &&
+        !v.starts_at &&
+        v.ends_at === undefined &&
+        !v.timezone &&
+        v.venue_name === undefined &&
+        v.venue_address === undefined &&
+        v.recording_url === undefined &&
+        v.recording_expires_at === undefined
+      ),
+    { message: 'session_id was provided without any session change' },
+  )
 export type WorkshopPatch = z.infer<typeof WorkshopPatchSchema>
 
 // Presenter (reusable across workshops — wholesaler / fund-family model). No securities

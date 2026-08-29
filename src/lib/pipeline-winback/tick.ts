@@ -7,12 +7,12 @@
 //      no auto catch-up, §5a), recomputing eligibility BEFORE every touch so a newly opened/reopened
 //      opportunity, a booked appointment, a reply, or an opt-out immediately pauses/exits it
 //      (advisor-ownership precedence, ADR-031).
-// Every client-facing send goes through sendThroughGate() — consent, quiet-hours (9am–8pm local),
+// Every client-facing send goes through sendMessage() — consent, quiet-hours (9am–8pm local),
 // DNC, approved-template, recommendation red-line, and the securities firewall are all enforced
 // there. Per-touch execution rows make each touch idempotent: a touch is never sent twice.
 import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
-import { sendThroughGate, isTemplateApproved } from '@/lib/comms/send'
+import { sendMessage, isTemplateApproved } from '@/lib/comms/send'
 import { campaignDispatchContext, campaignIdentityContext } from '@/lib/comms/campaign'
 import { smsA2pApproved } from '@/lib/comms/a2p'
 import { getOrCreateConversation } from '@/lib/comms/conversations'
@@ -195,7 +195,7 @@ async function enrollSweep(db: ReturnType<typeof getDb>, cfg: WinbackCampaignCon
 }
 
 // Exported for the fail-closed regression proof (tests/campaign-template-failclosed.test.mjs),
-// which drives this function with a stubbed sendThroughGate and asserts a null/empty/invalid
+// which drives this function with a stubbed sendMessage and asserts a null/empty/invalid
 // template is skipped WITHOUT any dispatch. Not part of the module's runtime API otherwise.
 export async function fireMessageTouch(
   db: ReturnType<typeof getDb>,
@@ -261,7 +261,7 @@ export async function fireMessageTouch(
     .eq('enrollment_id', e.id)
     .eq('touch_no', touchNo)
 
-  const outcome = await sendThroughGate({
+  const outcome = await sendMessage({
     channel,
     to,
     subject: parseSubjectFromBody(tpl.body),

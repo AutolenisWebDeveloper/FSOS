@@ -7,12 +7,12 @@
 //   2. Advance sweep: advance each active enrollment by AT MOST ONE due touch per run (no burst /
 //      no auto catch-up), recomputing eligibility BEFORE every touch so an opt-out, a terminated
 //      agency, or a live conversation immediately pauses/exits it.
-// Every message send goes through sendThroughGate() — message-content, consent, quiet-hours
+// Every message send goes through sendMessage() — message-content, consent, quiet-hours
 // (9am-8pm recipient-local), DNC, approved-template, recommendation red-line, securities firewall,
 // and the SMS A2P hold are all enforced there. Per-touch execution rows make each touch idempotent.
 import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
-import { sendThroughGate, isTemplateApproved } from '@/lib/comms/send'
+import { sendMessage, isTemplateApproved } from '@/lib/comms/send'
 import { campaignDispatchContext, campaignIdentityContext } from '@/lib/comms/campaign'
 import { smsA2pApproved } from '@/lib/comms/a2p'
 import { parseSubjectFromBody } from '@/lib/comms/template-subject'
@@ -274,7 +274,7 @@ export async function fireMessageTouch(
     .eq('touch_no', touchNo)
 
   const firstName = (recipient.full_name ?? '').trim().split(/\s+/)[0] || null
-  const outcome = await sendThroughGate({
+  const outcome = await sendMessage({
     channel,
     to,
     subject: parseSubjectFromBody(tpl.body),

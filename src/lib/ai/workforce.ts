@@ -12,7 +12,7 @@
 //   runOutreachAgent() — the DURABLE agent run (finally wiring jobs/agent-runner.ts):
 //                   for each queued item, draft a green-zone message via the gateway,
 //                   reject any recommendation language, then send ONLY through
-//                   sendThroughGate() (consent / quiet-hours / DNC / template-or-AI-
+//                   sendMessage() (consent / quiet-hours / DNC / template-or-AI-
 //                   policy / recommendation / securities all re-checked at send time).
 //                   Every item ends sent | blocked | escalated | skipped — never
 //                   silently dropped.
@@ -23,7 +23,7 @@
 
 import { getDb } from '@/lib/supabase/client'
 import { runAgent } from '@/jobs/agent-runner'
-import { sendThroughGate } from '@/lib/comms/send'
+import { sendMessage } from '@/lib/comms/send'
 import { resolveEffectiveSuppression } from '@/lib/comms/suppression'
 import { isWithinOperatingHours } from '@/lib/comms/hours'
 import { searchKnowledge, renderKnowledgeContext } from '@/lib/knowledge/library'
@@ -474,7 +474,7 @@ export async function runOutreachAgent(agentKey: OutreachAgentKey): Promise<{ se
         // authority on every send. SMS opt-out footer is still appended by the dispatcher.
         const body = draft
 
-        const outcome = await sendThroughGate({
+        const outcome = await sendMessage({
           channel: item.channel,
           to: rec.contact,
           subject: item.channel === 'email' ? 'A quick note from Markist' : undefined,

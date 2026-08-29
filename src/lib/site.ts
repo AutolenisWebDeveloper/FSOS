@@ -159,7 +159,7 @@ export const SIGNATURE_FOOTPRINT = {
 
 /**
  * The advisor + agency identity merge tokens shared by every outbound message (§13/§17).
- * These are single-FSA constants, so the send path (sendThroughGate) injects them as
+ * These are single-FSA constants, so the send path (sendMessage) injects them as
  * CALLER-OVERRIDABLE defaults — a campaign or booking send inherits correct advisor identity,
  * agency identity, and an ABSOLUTE scheduling link without each call site re-specifying them,
  * while a caller that needs a different value (e.g. an on-behalf-of send naming a partner

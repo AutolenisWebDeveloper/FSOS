@@ -1,15 +1,15 @@
 // P1-A FAIL-CLOSED PROOF — an empty/whitespace EMAIL body must be WITHHELD on the real
-// sendThroughGate path, before the branded-shell wrap, on EVERY caller (broadcast / drip / legacy).
+// sendMessage path, before the branded-shell wrap, on EVERY caller (broadcast / drip / legacy).
 //
 // Root cause (audit P1-A, the email sibling of F-2): the gate's `message_content` backstop
-// validates req.body, but for EMAIL sendThroughGate wraps the authored body in the branded shell
+// validates req.body, but for EMAIL sendMessage wraps the authored body in the branded shell
 // (Farmers logo + CAN-SPAM footer) BEFORE dispatch — so the gate never sees an empty body, and an
 // empty template shipped as a signature-only "near-empty" email. The campaign ticks guard upstream;
 // dispatchCampaign / dripAdvance / legacy campaigns/run did not. The fix adds a fail-closed guard on
 // the AUTHORED body at the single send choke-point (send.ts, before the wrap).
 //
 // tests/comms-message-validation.test.mjs already proves the GATE blocks an empty body when the body
-// reaches it directly. THIS test proves the deeper guarantee in the REAL sendThroughGate: an empty
+// reaches it directly. THIS test proves the deeper guarantee in the REAL sendMessage: an empty
 // EMAIL is withheld before the wrap can mask it, and the dispatcher/provider is never reached — while
 // a valid email (and a valid SMS) still dispatch, so the guard blocks ONLY on the emptiness it exists
 // for.
@@ -103,7 +103,7 @@ Module._load = function (request, ...rest) {
   if (request.startsWith('@/') || request.startsWith('./') || request.startsWith('../')) return modProxy()
   return origLoad.call(this, request, ...rest)
 }
-const { sendThroughGate } = require(join(out, 'comms/send.js'))
+const { sendMessage } = require(join(out, 'comms/send.js'))
 
 const emailBase = {
   channel: 'email', to: 'client@example.com', subject: 'Your Farmers review',
@@ -117,11 +117,11 @@ const record = (name, fn) => Promise.resolve().then(fn).then(
   (e) => { results.push({ name, pass: false, err: e.message }); console.log(`  ✗ ${name}: ${e.message}`) },
 )
 
-console.log('P1-A fail-closed proof (real sendThroughGate, spy dispatcher, real branded-shell mask)\n')
+console.log('P1-A fail-closed proof (real sendMessage, spy dispatcher, real branded-shell mask)\n')
 
 // 1. Empty EMAIL body → withheld before the wrap; dispatcher NEVER reached.
 dispatchCalls.length = 0
-const emptyEmail = await sendThroughGate({ ...emailBase, body: '' })
+const emptyEmail = await sendMessage({ ...emailBase, body: '' })
 await record('empty email body → outcome.sent === false', () => assert.equal(emptyEmail.sent, false))
 await record('empty email body → outcome.blocked === true', () => assert.equal(emptyEmail.blocked, true))
 await record('empty email body → dispatcher/provider NEVER invoked (wrap could not mask it)', () =>
@@ -133,7 +133,7 @@ await record('empty email body → escalating block, reason names emptiness', ()
 
 // 2. Whitespace-only EMAIL body → same.
 dispatchCalls.length = 0
-const wsEmail = await sendThroughGate({ ...emailBase, body: '   \n\t  ' })
+const wsEmail = await sendMessage({ ...emailBase, body: '   \n\t  ' })
 await record('whitespace-only email body → blocked, never dispatched', () => {
   assert.equal(wsEmail.sent, false)
   assert.equal(dispatchCalls.length, 0)
@@ -141,7 +141,7 @@ await record('whitespace-only email body → blocked, never dispatched', () => {
 
 // 3. Control: a REAL email body → the send reaches the dispatcher (guard blocks only on emptiness).
 dispatchCalls.length = 0
-const okEmail = await sendThroughGate({ ...emailBase, body: 'Hi {{first_name}}, ready to book your review?' })
+const okEmail = await sendMessage({ ...emailBase, body: 'Hi {{first_name}}, ready to book your review?' })
 await record('control — non-empty email body → dispatcher IS invoked exactly once', () =>
   assert.equal(dispatchCalls.length, 1))
 await record('control — non-empty email body → outcome.sent === true', () =>
@@ -149,7 +149,7 @@ await record('control — non-empty email body → outcome.sent === true', () =>
 
 // 4. Control: a REAL SMS body still dispatches (no regression to the SMS path).
 dispatchCalls.length = 0
-const okSms = await sendThroughGate({
+const okSms = await sendMessage({
   channel: 'sms', to: '+15550100', body: 'Your review is confirmed for tomorrow at 10am.',
   actor: 'system:test', entity: { type: 'life_campaign_enrollment', id: 'enr2' },
   sourceKind: 'campaign_asset', sourceCampaignKey: 'life_conversion',

@@ -21,7 +21,7 @@ import {
 } from './conversations'
 import { recordMessageEvent } from './events'
 import { draftReply } from '@/lib/ai/responder'
-import { sendThroughGate } from './send'
+import { sendMessage } from './send'
 import { classifyKeyword, type Intent } from './keywords'
 import { classifyReply } from './reply-classification'
 import { checkTurnLimit, type TurnLimitDecision } from './turn-limit'
@@ -544,7 +544,7 @@ async function tryAutoReply(conv: Conversation, input: InboundInput, inboundMess
   // Route the AI draft through the SAME gate as everything else. No approved
   // template id → gate step 4 requires an approved AI policy; the gateway kill
   // switch + approved-AI-policy check govern whether this can send.
-  const outcome = await sendThroughGate({
+  const outcome = await sendMessage({
     channel: conv.channel,
     to,
     subject: input.subject ? `Re: ${input.subject}` : undefined,

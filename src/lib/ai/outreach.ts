@@ -171,7 +171,7 @@ export function selectForQuota(candidates: OutreachCandidate[], dailyTarget: num
 // Every prompt is constrained to the green zone: identify/educate/invite/schedule/
 // remind/follow-up ONLY. None may recommend a product/policy/investment/carrier,
 // make a suitability/replacement determination, or issue a securities call-to-action.
-// The draft is still sent ONLY through sendThroughGate(), which re-checks all of this.
+// The draft is still sent ONLY through sendMessage(), which re-checks all of this.
 
 const GREEN_ZONE_RULES = `You operate strictly in the GREEN ZONE. You MAY: warmly reach out, educate at a product-CATEGORY level (e.g. "life insurance", "coverage review"), and INVITE the person to a no-obligation review or to schedule a call. You MUST NEVER: recommend a specific product/policy/investment/carrier, state or imply a specific product is right for them, make a suitability or replacement determination, quote a rate, give individualized financial/investment advice, or issue any securities call-to-action. Do not add signatures, disclaimers, or opt-out footers — the system appends required footers. Keep SMS under 300 characters and email to a few short sentences. Output ONLY the message text.`
 
@@ -189,7 +189,7 @@ export const OUTREACH_PROMPTS: Record<OutreachAgentKey, string> = {
 // `missing_purpose_classification` and the send is held — which is exactly what silently
 // blocked ALL workforce outreach. This pure module stays import-free (so it unit-compiles
 // in isolation); the literal values below are checked against the real MessagePurpose type
-// at the workforce.ts call site, where they feed sendThroughGate's typed `purpose` field.
+// at the workforce.ts call site, where they feed sendMessage's typed `purpose` field.
 //
 // • cross_sell / referral_followup / win_back — proactive growth outreach ⇒ MARKETING
 //   (the compliance-conservative classification: requires MARKETING consent + applies

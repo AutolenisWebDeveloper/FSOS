@@ -82,6 +82,12 @@ const DEFERRAL_STEPS = {
   business_hours: true,
   frequency: true,
   collision: true,
+  // A configured per-campaign / per-worker window is an operator preference narrowing the
+  // statutory floor, not a regulatory control — missing it HOLDS the send for the next
+  // opening. It reads amber (self-resolving), never as a compliance block. Note that
+  // `timezone_unresolved` is deliberately NOT here: an unresolvable recipient zone needs a
+  // human to fix the contact record, so it must read as blocked.
+  configured_window: true,
 } as const satisfies Partial<Record<GateStep, true>>
 
 export type GateOutcomeTier = 'sent' | 'deferred' | 'blocked'
@@ -98,7 +104,9 @@ const STEP_LABEL: Record<GateStep, string> = {
   message_content: 'Invalid message content',
   ownership: 'Ownership unresolved',
   consent: 'No consent',
+  timezone_unresolved: 'Timezone unknown',
   quiet_hours: 'Quiet hours',
+  configured_window: 'Outside send window',
   business_hours: 'Outside hours',
   sms_live: 'Awaiting A2P',
   frequency: 'Frequency cap',
@@ -111,6 +119,7 @@ const STEP_LABEL: Record<GateStep, string> = {
   recommendation: 'Recommendation language',
   is_security: 'Securities record',
   data_confidence: 'Unverified claim',
+  ai_authority: 'AI held for review',
   other_rule: 'Rule block',
 }
 
@@ -118,7 +127,9 @@ const STEP_DESCRIPTION: Record<GateStep, string> = {
   message_content: 'No usable body, an unsupported channel, or a channel/content-type mismatch — withheld before dispatch.',
   ownership: 'Ownership could not be resolved — routed to assignment review.',
   consent: 'No valid channel consent on file for this recipient.',
-  quiet_hours: 'Outside the 9:00–20:00 recipient-local TCPA floor (SMS marketing sends).',
+  timezone_unresolved: 'The recipient\u2019s timezone could not be determined from their phone or ZIP, so quiet hours cannot be checked \u2014 withheld. Add a valid phone or address to send.',
+  quiet_hours: 'Outside the 9:00\u201320:00 recipient-local TCPA floor (SMS marketing sends).',
+  configured_window: 'Outside the send window configured for this campaign or worker \u2014 held for the next opening, not suppressed.',
   business_hours: 'Outside your configured hours of operation — retries next cycle.',
   sms_live: 'SMS is staged pending A2P 10DLC approval — held, not dropped.',
   frequency: 'Recipient frequency cap reached — held for a later cycle.',
@@ -131,6 +142,7 @@ const STEP_DESCRIPTION: Record<GateStep, string> = {
   recommendation: 'Contains individualized recommendation or call-to-action language.',
   is_security: 'Securities-flagged record — excluded from automation; route to FFS.',
   data_confidence: 'Rests on unverified or conflicting data — a verification task was raised.',
+  ai_authority: 'This AI message class is not cleared to send on its own — it was drafted for you to review and send.',
   other_rule: 'Blocked by an FFS, Farmers, carrier, state, or federal rule.',
 }
 

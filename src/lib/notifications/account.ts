@@ -11,7 +11,7 @@
 // is credential-equivalent, so it is delivered ONLY over email to the account owner —
 // never returned to the API caller or written to logs.
 
-import { sendEmail, emailConfigured, type SendResult } from '@/lib/messaging'
+import { sendEmail, emailConfigured, type SendResult, type SendPolicyOptions } from '@/lib/messaging'
 import { BUSINESS, CONTACT } from '@/lib/site'
 import { renderEmailShell, paragraphHtml, buttonHtml, detailTableHtml, calloutHtml, fineHtml } from './email-shell'
 
@@ -104,7 +104,18 @@ export async function sendPasswordSetupEmail(input: PasswordSetupEmailInput): Pr
     return { ok: false, error: 'email_not_configured', skipped: true }
   }
   const { subject, html, text } = buildPasswordSetupEmail(input)
-  const result = await sendEmail(input.email, subject, html, text)
+  // GATED at the chokepoint like every other send. The basis is account provisioning: an
+  // operator just created this user, and the address is the login identity itself — there is
+  // no marketing relationship to consent to. The declaration below satisfies content
+  // approval and marks the send non-suppressible; DNC and the red line still apply.
+  const policy: SendPolicyOptions = {
+    actor: 'system:provisioning',
+    purpose: 'TRANSACTIONAL',
+    templateKind: 'system_transactional',
+    suppressible: false,
+    consentWaived: true,
+  }
+  const result = await sendEmail(input.email, subject, html, text, { policy })
   if (!result.ok) {
     // eslint-disable-next-line no-console
     console.error(`[notify] password-setup → ${input.email} failed (user still created):`, result.error)

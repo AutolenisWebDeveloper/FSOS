@@ -8,7 +8,7 @@
 //
 //   • assets.ts resolveAssetPayload() returned `subject: null` for every comm_template-backed
 //     asset, which is what the Communications Command Console's individual/AI/test sends use.
-//   • sendThroughGate() passed the caller's ctx.subject straight through, so ANY caller that
+//   • sendMessage() passed the caller's ctx.subject straight through, so ANY caller that
 //     did not parse the header — the console, the test-send route, an agent seed — shipped an
 //     empty subject even though the body had one.
 //
@@ -16,7 +16,7 @@
 //   1. parseSubjectFromBody — the real compiled helper — on the header shapes that occur.
 //   2. Every email template in the live campaign copy (migrations 106/107/108) yields a
 //      non-empty subject through that helper. A body that loses its header can never ship.
-//   3. sendThroughGate resolves the subject ONCE and uses that resolved value for the stored
+//   3. sendMessage resolves the subject ONCE and uses that resolved value for the stored
 //      row, the rendered preheader, and the dispatch envelope — never the raw ctx.subject.
 //   4. resolveAssetPayload derives an email asset's subject from its body.
 //
@@ -100,7 +100,7 @@ console.log('\nsend-path wiring')
 const send = readFileSync('src/lib/comms/send.ts', 'utf8')
 const assets = readFileSync('src/lib/comms/assets.ts', 'utf8')
 
-t('sendThroughGate resolves the subject from the body when the caller supplies none', () => {
+t('sendMessage resolves the subject from the body when the caller supplies none', () => {
   assert.match(
     send,
     /const resolvedSubject\s*=[\s\S]{0,200}parseSubjectFromBody\(ctx\.body\)/,

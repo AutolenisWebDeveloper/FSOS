@@ -192,6 +192,8 @@ export async function POST(req: NextRequest) {
     const displayName = v.data.name?.trim() || 'there'
     await Promise.allSettled([
       sendVisitorAck({
+        // The registration was persisted immediately above.
+        transactionalBasis: true,
         to: v.data.email,
         subject: `You're registered — ${w.title}`,
         heading: `You're registered, ${displayName}.`,

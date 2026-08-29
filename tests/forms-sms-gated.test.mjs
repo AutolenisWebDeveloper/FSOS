@@ -3,7 +3,7 @@
 // DNC/STOP, consent, the securities firewall, and the message-of-record. This proves the fix:
 //
 //   Part A — no raw Twilio path remains reachable in src/lib/forms.ts (source invariant).
-//   Part B — sendForm(channel:'sms') routes through sendThroughGate with the correct context:
+//   Part B — sendForm(channel:'sms') routes through sendMessage with the correct context:
 //            channel=sms, purpose=TRANSACTIONAL, humanAuthored=true, consent NOT waived, the
 //            form_submission entity, an E.164 recipient, and NO self-appended STOP footer (the
 //            dispatcher adds it). A gate-accepted send records form_sends; a gate BLOCK does not.
@@ -39,11 +39,11 @@ await record('forms.ts contains no api.twilio.com call', () =>
   assert.ok(!/api\.twilio\.com/.test(formsSrc), 'raw Twilio REST endpoint still present'))
 await record('forms.ts reads no TWILIO_* env for sending', () =>
   assert.ok(!/TWILIO_ACCOUNT_SID|TWILIO_AUTH_TOKEN|TWILIO_PHONE_NUMBER/.test(formsSrc), 'raw Twilio creds still read'))
-await record('forms.ts routes SMS through sendThroughGate', () =>
-  assert.ok(/sendThroughGate\(/.test(formsSrc) && /@\/lib\/comms\/send/.test(formsSrc), 'not wired to the gate'))
+await record('forms.ts routes SMS through sendMessage', () =>
+  assert.ok(/sendMessage\(/.test(formsSrc) && /@\/lib\/comms\/send/.test(formsSrc), 'not wired to the gate'))
 
 // ── Part B — sendForm(sms) executes through the gate with the right context ───
-console.log('\nPart B — sendForm(channel:"sms") flows through sendThroughGate with the correct context')
+console.log('\nPart B — sendForm(channel:"sms") flows through sendMessage with the correct context')
 const outForms = mkdtempSync(join(tmpdir(), 'fsos-forms-'))
 try {
   execSync(
@@ -59,7 +59,7 @@ const formsSubmissionsInserts = []
 const formSendsInserts = []
 const sendStub = {
   __esModule: true,
-  sendThroughGate: async (ctx) => { gateCtx = ctx; return { sent: true, blocked: false, reason: undefined } },
+  sendMessage: async (ctx) => { gateCtx = ctx; return { sent: true, blocked: false, reason: undefined } },
 }
 const mockDb = {
   from: (table) => {
@@ -101,8 +101,8 @@ const res = await sendForm({
   // no customer_id → skips the dedupe branch; keeps the test focused on the send path
 })
 
-await record('sendThroughGate was invoked for the forms SMS (no raw path)', () =>
-  assert.ok(gateCtx, 'sendThroughGate was never called'))
+await record('sendMessage was invoked for the forms SMS (no raw path)', () =>
+  assert.ok(gateCtx, 'sendMessage was never called'))
 await record('gate ctx: channel = sms', () => assert.equal(gateCtx.channel, 'sms'))
 await record('gate ctx: purpose = TRANSACTIONAL (quiet-hours- & marketing-consent-exempt)', () =>
   assert.equal(gateCtx.purpose, 'TRANSACTIONAL'))
@@ -128,7 +128,7 @@ await record('a gate-accepted send records form_sends and reports sms_sent', () 
 
 // A gate BLOCK must NOT record a form_send and must surface the reason.
 gateCtx = null
-sendStub.sendThroughGate = async (ctx) => { gateCtx = ctx; return { sent: false, blocked: true, reason: 'No valid channel consent on file.' } }
+sendStub.sendMessage = async (ctx) => { gateCtx = ctx; return { sent: false, blocked: true, reason: 'No valid channel consent on file.' } }
 formSendsInserts.length = 0
 const blockedRes = await sendForm({ form_id: 'customer-questionnaire', channel: 'sms', phone: '5551234567', client_name: 'Dana' })
 await record('a gate BLOCK writes no form_send and surfaces the reason', () => {

@@ -79,14 +79,20 @@ t('null status renders an em dash, not "null"', () => {
 console.log('message-status — gate outcome tiers')
 
 // The four non-escalating steps in gate.ts: held and retried, no compliance event.
-const DEFERRALS = ['sms_live', 'business_hours', 'frequency', 'collision']
+// `configured_window` joins the deferrals: a per-campaign / per-worker send window is an
+// operator preference NARROWING the statutory floor, so missing it holds the send for the
+// next opening rather than suppressing it. `timezone_unresolved` deliberately does NOT
+// join them — an unplaceable recipient needs a human to fix the contact record.
+const DEFERRALS = ['sms_live', 'business_hours', 'frequency', 'collision', 'configured_window']
 // Everything else surfaces as a BLOCKED tier. Most escalate to a human; `suppression` is a
 // non-escalating BUSINESS exclusion (agent-level/individual) that is still a hard withhold.
 const BLOCKS = [
   'message_content',
   'ownership',
   'consent',
+  'timezone_unresolved',
   'quiet_hours',
+  'ai_authority',
   'delegation',
   'dnc',
   'suppression',

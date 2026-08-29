@@ -1,6 +1,6 @@
 // src/lib/comms/campaign.ts
 // Campaign dispatch. Iterates a campaign's audience and, FOR EACH recipient, runs
-// the 7-step gate at send time via sendThroughGate(): consent, quiet-hours, DNC,
+// the 7-step gate at send time via sendMessage(): consent, quiet-hours, DNC,
 // approved template, recommendation, is_security, other rule. Pass → send; fail →
 // suppressed + reason recorded + escalated (never silently dropped). No bypass.
 //
@@ -11,7 +11,7 @@
 //   • broadcast (one send) and drip (multi-step sequence) campaign types.
 // Used by the activate API and the campaign-dispatch cron job.
 import { getDb } from '@/lib/supabase/client'
-import { sendThroughGate } from './send'
+import { sendMessage } from './send'
 import { isTemplateApproved } from './send'
 import { writeAudit } from '@/lib/audit/log'
 import type { RecipientContext } from './personalize'
@@ -265,7 +265,7 @@ export async function dispatchCampaign(campaignId: string, actor: string): Promi
     // field excludes the send (gate data_confidence) + raises a verification task (§13).
     const claims = declaredClaims.length > 0 ? await resolveClaimFields(campaign.claim_fields, { householdId: r.household_id }) : []
 
-    const outcome = await sendThroughGate({
+    const outcome = await sendMessage({
       channel,
       to,
       subject: channel === 'email' ? variant.subject ?? campaign.subject ?? 'A note from your Farmers FSA' : undefined,

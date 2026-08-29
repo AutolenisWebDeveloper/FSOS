@@ -46,7 +46,7 @@ export interface RecipientContext {
   /** Agency identity. Blocking-tier. */
   agency_name?: string | null
   /**
-   * Per-recipient unsubscribe URL (CAN-SPAM). Injected by the email send path (sendThroughGate)
+   * Per-recipient unsubscribe URL (CAN-SPAM). Injected by the email send path (sendMessage)
    * so every marketing email carries a working, recipient-specific opt-out link. Blocking-tier:
    * a relative or missing value stops the send rather than shipping a broken/relative opt-out.
    */

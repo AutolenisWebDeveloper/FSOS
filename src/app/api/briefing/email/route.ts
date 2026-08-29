@@ -70,6 +70,14 @@ export async function POST(_req: NextRequest) {
     // Route through the dispatcher gate. This is an operator's own approved internal
     // digest: consent by nature, approved template, no securities, no recommendation.
     // Quiet hours + DNC are still evaluated honestly (a block escalates, never sends).
+    // This used to hand the dispatcher HARDCODED gate booleans — hasConsent: true,
+    // onDNC: false, usesApprovedTemplateOrPolicy: true — which asserted away three checks
+    // rather than passing them. Those fields are no longer forwarded by the dispatcher at
+    // all: consent, DNC and suppression are resolved fresh at the chokepoint from the
+    // recipient address. What remains here is an honest declaration of what this send IS.
+    //
+    // The recipient is the AUTHENTICATED OPERATOR'S OWN address (getCurrentUserEmail), so
+    // the consent waiver applies and stays opt-out-safe.
     const result = await dispatch({
       channel: 'email',
       to,
@@ -78,11 +86,17 @@ export async function POST(_req: NextRequest) {
       actor,
       entity: { type: 'briefing', id: auth.session.userId },
       escalationNote: 'Self-directed daily briefing email blocked by the comms gate.',
+      templateKind: 'system_transactional',
+      policy: {
+        purpose: 'TRANSACTIONAL',
+        suppressible: false,
+        consentWaived: true,
+      },
       gate: {
-        hasConsent: true,
+        hasConsent: false,
         recipientLocalHour: operatorLocalHour(),
         onDNC: false,
-        usesApprovedTemplateOrPolicy: true,
+        usesApprovedTemplateOrPolicy: false,
         isSecurity: false,
       },
     })

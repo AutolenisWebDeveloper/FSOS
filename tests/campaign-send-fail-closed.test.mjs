@@ -2,7 +2,7 @@
 // (docs/audit/outbound-campaigns-2026-08-07.md, Finding 1 / main-audit F-1).
 //
 // The behavioral proofs live in tests/comms-message-of-record-failclosed.test.mjs (real
-// sendThroughGate + spy dispatcher: a failed pre-insert withholds the send) and
+// sendMessage + spy dispatcher: a failed pre-insert withholds the send) and
 // tests/campaign-template-failclosed.test.mjs (engine ticks skip unusable templates without
 // dispatching). THIS file pins the source-level wiring those proofs assume, so a refactor
 // cannot quietly reintroduce the silent-swallow shape while the behavioral mocks still pass:

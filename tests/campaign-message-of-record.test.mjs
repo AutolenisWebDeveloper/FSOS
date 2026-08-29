@@ -8,7 +8,7 @@
 // The fix: pass campaignId=null (never a World-2 id into the World-1 FK) and attribute the campaign
 // via source provenance (source_kind='campaign_asset', source_campaign_key=<family>) + the entity
 // linkage (entity → <engine>_enrollment → campaign). This drives the REAL fireMessageTouch of each
-// engine with a spy that CAPTURES the sendThroughGate context and asserts the corrected attribution.
+// engine with a spy that CAPTURES the sendMessage context and asserts the corrected attribution.
 //
 // Pre-fix, ctx.campaignId === the enrollment's campaign_id ('c1' here); post-fix it is null. That is
 // the exact difference that broke (and now restores) the message-of-record.
@@ -44,7 +44,7 @@ for (const eng of engines) {
 let captured = null
 const sendModuleStub = {
   __esModule: true,
-  sendThroughGate: async (ctx) => { captured = ctx; return { sent: true, blocked: false } },
+  sendMessage: async (ctx) => { captured = ctx; return { sent: true, blocked: false } },
   isTemplateApproved: async () => true,
 }
 const makeStub = () => new Proxy(function () {}, {
@@ -60,7 +60,7 @@ Module._load = function (request, ...rest) {
 const impls = {}
 for (const eng of engines) impls[eng.key] = require(join(eng.out, 'tick.js')).fireMessageTouch
 
-// Reachable member so a valid template reaches sendThroughGate (see the fail-closed test for why).
+// Reachable member so a valid template reaches sendMessage (see the fail-closed test for why).
 const MEMBER = { email: 'client@example.com', phone: '+15550100', full_name: 'Client Name' }
 function makeDb() {
   const from = (table) => {
@@ -100,7 +100,7 @@ for (const eng of engines) {
   captured = null
   await impls[eng.key](makeDb(), cfg, { ...baseE }, 1, { ...touch }, dispatchCtx, NOW)
 
-  await record(`${eng.key}: sendThroughGate was invoked`, () => assert.ok(captured, 'no dispatch captured'))
+  await record(`${eng.key}: sendMessage was invoked`, () => assert.ok(captured, 'no dispatch captured'))
   await record(`${eng.key}: campaignId is NULL (never the World-2 id 'c1' into the comm_campaigns FK)`, () => {
     assert.notEqual(captured.campaignId, 'c1', 'still passing the per-campaign-table id — FK would fail')
     assert.equal(captured.campaignId ?? null, null)

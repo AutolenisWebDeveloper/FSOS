@@ -119,7 +119,26 @@ export async function POST(req: NextRequest) {
   // Internal operator digest (not marketing) → transactional, ungated. Send through
   // the shared, guarded sender so the Resend wrapper, reply-to routing, and the
   // never-throw { ok, error } contract match the rest of the app.
-  const result = await sendEmail(to, `FSOS Morning Briefing — ${today}`, html, body)
+  // GATED. This previously reached Resend with raw gateway output and no checks at all.
+  // NOTE (surfaced, not fixed here — out of scope by decision): `to` is still
+  // caller-supplied via the request body, so an internally-authenticated caller can direct
+  // this digest at an arbitrary address. Consolidation gates the SEND; validating the
+  // recipient input is a separate defect and is reported, not repaired, in this change.
+  const result = await sendEmail(to, `FSOS Morning Briefing — ${today}`, html, body, {
+    policy: {
+      actor: 'system:briefing',
+      purpose: 'TRANSACTIONAL',
+      templateKind: 'system_transactional',
+      suppressible: false,
+      consentWaived: true,
+      // Deliberately NOT flagged aiGenerated: the §11/§12 authority matrix governs
+      // CLIENT-FACING autonomous AI, and its fail-safe holds an unclassified draft "for the
+      // licensed FSA" — which is circular for a digest ADDRESSED to that FSA's own inbox
+      // (it would hold every briefing forever). The control that matters for raw gateway
+      // output still runs: with no approved human template, the recommendation red line
+      // (gate step 5) screens this body at the chokepoint like any other unapproved copy.
+    },
+  })
   if (!result.ok) {
     console.error('[briefing] send failed:', result.error)
     return NextResponse.json({ error: result.error || 'Email send failed' }, { status: 502 })

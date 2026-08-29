@@ -8,7 +8,7 @@ import { writeAudit } from '@/lib/audit/log'
 import { dispatchCampaign, refreshCampaignMetrics, campaignDispatchContext, type CampaignDispatchContext } from '@/lib/comms/campaign'
 import { buildDataConfidence } from '@/lib/comms/claims'
 import { resolveClaimFields } from '@/lib/comms/claim-resolver'
-import { sendThroughGate, isTemplateApproved } from '@/lib/comms/send'
+import { sendMessage, isTemplateApproved } from '@/lib/comms/send'
 import { evaluateResume } from '@/lib/comms/conversation-mode'
 import { smsA2pApproved } from '@/lib/comms/a2p'
 import type { JobResult } from './index'
@@ -213,7 +213,7 @@ export async function dripAdvance(): Promise<JobResult> {
       // Slice 8 §18 — resolve declared claims for this recipient; unverified/conflicting
       // excludes the step + raises a verification task (§13). Absent claim_fields → no-op.
       const claims = await resolveClaimFields(camp.claim_fields, { householdId: e.household_id })
-      await sendThroughGate({
+      await sendMessage({
         channel: camp.channel as 'sms' | 'email',
         to,
         subject: step.subject,
@@ -352,7 +352,7 @@ export async function resumePausedEnrollments(): Promise<JobResult> {
 // workforce-orchestrator — the AI workforce's daily run. Builds the prioritized
 // outreach queue from detection signals, then dispatches every enabled outreach agent
 // up to its daily quota. Each send is drafted via the gateway and routes ONLY through
-// sendThroughGate (consent/quiet-hours/DNC/recommendation/securities enforced). The
+// sendMessage (consent/quiet-hours/DNC/recommendation/securities enforced). The
 // whole thing is kill-switch-gated per agent + globally; a disabled agent contributes
 // zero sends. Idempotent by queue_date (unique key) + per-agent dedupe in runAgent.
 export async function workforceOrchestrator(): Promise<JobResult> {

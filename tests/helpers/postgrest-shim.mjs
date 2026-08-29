@@ -3,7 +3,7 @@
 //
 // A minimal PostgREST-compatible query builder backed by a real local Postgres
 // (via psql). It exists so the REAL FSOS code path — processInbound() → tryAutoReply()
-// → draftReply() → sendThroughGate() → dispatcher → gate — can be executed against a
+// → draftReply() → sendMessage() → dispatcher → gate — can be executed against a
 // real database with real rows, real constraints, real unique indexes and real triggers,
 // instead of being asserted against mocks.
 //

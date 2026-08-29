@@ -3,13 +3,13 @@
 // each running enrollment by AT MOST ONE due touch per run (no burst / no auto catch-up, §6),
 // recomputing eligibility BEFORE every touch so a newly opened life opportunity, an opt-out, a new
 // appointment, or a securities flag immediately pauses/exits the enrollment. Every client-facing
-// send goes through sendThroughGate() — consent, quiet-hours (9am-8pm local), DNC, approved-
+// send goes through sendMessage() — consent, quiet-hours (9am-8pm local), DNC, approved-
 // template, recommendation, and the securities firewall are all enforced there, not re-implemented.
 // Per-touch execution rows + a deterministic idempotency key make each touch idempotent: a touch is
 // never sent twice, even after an outage replay (§6/§22).
 import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
-import { sendThroughGate, isTemplateApproved } from '@/lib/comms/send'
+import { sendMessage, isTemplateApproved } from '@/lib/comms/send'
 import { campaignDispatchContext, campaignIdentityContext } from '@/lib/comms/campaign'
 import { smsA2pApproved } from '@/lib/comms/a2p'
 import { getOrCreateConversation } from '@/lib/comms/conversations'
@@ -156,7 +156,7 @@ export async function crossSellLifeTick(): Promise<TickResult> {
 }
 
 // Exported for the fail-closed regression proof (tests/campaign-template-failclosed.test.mjs),
-// which drives this function with a stubbed sendThroughGate and asserts a null/empty/invalid
+// which drives this function with a stubbed sendMessage and asserts a null/empty/invalid
 // template is skipped WITHOUT any dispatch. Not part of the module's runtime API otherwise.
 export async function fireMessageTouch(
   db: ReturnType<typeof getDb>,
@@ -216,7 +216,7 @@ export async function fireMessageTouch(
     .eq('enrollment_id', e.id)
     .eq('touch_no', touchNo)
 
-  const outcome = await sendThroughGate({
+  const outcome = await sendMessage({
     channel,
     to,
     subject: channel === 'email' ? parseSubjectFromBody(tpl.body) : undefined,

@@ -6,6 +6,7 @@
 
 import { getDb } from '@/lib/supabase/client'
 import { signedAssetUrl } from './server'
+import { usableZone } from './reminders'
 
 // WS-051: every public-funnel date renders in the VENUE's IANA zone, formatted on the
 // SERVER so client hydration cannot swap it to the viewer's zone. The zone abbreviation
@@ -16,7 +17,13 @@ export function formatInVenueZone(
   style: 'full' | 'short' | 'time' = 'full',
 ): string | null {
   if (!iso) return null
-  const tz = timeZone || 'America/Chicago'
+  // FAIL CLOSED on the zone, not just on a missing date. The old `|| 'America/Chicago'`
+  // printed a Central wall clock for a venue that may not be Central, and the catch below
+  // printed a UTC string — both stated a time the reader would act on. Every caller of this
+  // function already handles null (the pages render "Date to be announced" or drop the
+  // block), so an unresolvable zone degrades into that existing empty state instead.
+  const tz = usableZone(timeZone)
+  if (!tz) return null
   try {
     if (style === 'time') {
       return new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(iso))
@@ -27,7 +34,7 @@ export function formatInVenueZone(
     return new Intl.DateTimeFormat('en-US', { timeZone: tz, dateStyle: 'full', timeStyle: 'short' }).format(new Date(iso)) +
       ' ' + (new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'short' }).formatToParts(new Date(iso)).find((p) => p.type === 'timeZoneName')?.value ?? '')
   } catch {
-    return new Date(iso).toUTCString()
+    return null
   }
 }
 

@@ -54,6 +54,7 @@ import {
   withinQuietHours,
   buildCanSpamFooter,
   appendCanSpamFooter,
+  usableZone,
   type MessageKind,
   type Channel,
   type ChangeKind,
@@ -194,15 +195,31 @@ function appBase(): string {
   return raw.replace(/\/$/, '')
 }
 
-function renderLocal(startsAt: string, timezone: string | null): string {
+/**
+ * The session start rendered in the VENUE's local wall clock, or null when that cannot be
+ * done honestly. Two things used to be papered over here: an unusable zone fell back to
+ * America/Chicago, and a bad start instant fell back to `toUTCString()`. Both put a
+ * DIFFERENT time than the venue's in front of a registrant — a reminder's whole payload —
+ * and Central is only right for a venue that happens to be Central.
+ *
+ * Null propagates to the token map, which then omits `starts_local` entirely, so the
+ * template's `{{starts_local}}` survives into the body and the send path's
+ * unresolvedBlockingTokens() hard-blocks + escalates to the FSA (the same WS-032 route an
+ * unknown token takes). A reminder is never delivered stating the wrong hour, or a blank
+ * one; a human is told instead.
+ */
+function renderLocal(startsAt: string, timezone: string | null): string | null {
+  const zone = usableZone(timezone)
+  if (!zone) return null
   try {
-    return new Intl.DateTimeFormat('en-US', {
-      timeZone: timezone || 'America/Chicago',
+    const out = new Intl.DateTimeFormat('en-US', {
+      timeZone: zone,
       dateStyle: 'full',
       timeStyle: 'short',
     }).format(new Date(startsAt))
+    return out || null
   } catch {
-    return new Date(startsAt).toUTCString()
+    return null
   }
 }
 
@@ -439,7 +456,6 @@ export async function sendWorkshopMessage(db: Db, args: SendArgs): Promise<LogSt
   const tokens: Record<string, string> = {
     name: (reg.name ?? '').trim().split(/\s+/)[0] || 'there',
     workshop_title: workshop.title ?? 'the workshop',
-    starts_local: session ? renderLocal(session.starts_at, session.timezone) : '',
     join_url: reg.join_url ?? (session ? `${base}/workshops/${workshop.slug ?? ''}/confirmed` : ''),
     venue: session?.venue_name || session?.venue_address || '',
     ics_url: base && workshop.slug ? `${base}/workshops/${workshop.slug}/confirmed` : '',
@@ -449,6 +465,20 @@ export async function sendWorkshopMessage(db: Db, args: SendArgs): Promise<LogSt
     // WS-009: the registrant's own cancel link (token-addressed manage flow). Available
     // to every template; the copy decides where it appears (FFS approval owns copy).
     cancel_url: base && reg.join_token ? `${base}/workshops/cancel?token=${encodeURIComponent(reg.join_token)}` : '',
+  }
+  // Two different absences, two different answers:
+  //  • NO session (cancel-ack on a session-less registration) → '' , unchanged. There is no
+  //    time to state, the acknowledgment still has to reach the registrant, and the
+  //    template reads "…on  at  is released". An absent date is not a hidden one.
+  //  • A session EXISTS but its start cannot be rendered in the venue's zone → omit the
+  //    token. `{{starts_local}}` then survives into the body and the send path's
+  //    unresolvedBlockingTokens() blocks + escalates. A real start time is being withheld
+  //    because it cannot be stated correctly, so a human decides — never a guessed hour.
+  if (session) {
+    const startsLocal = renderLocal(session.starts_at, session.timezone)
+    if (startsLocal !== null) tokens.starts_local = startsLocal
+  } else {
+    tokens.starts_local = ''
   }
   let body = substituteTokens(tpl.body, tokens)
   let subject = tpl.subject ? substituteTokens(tpl.subject, tokens) : undefined

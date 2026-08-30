@@ -2,6 +2,7 @@ import { requireRole } from '@/lib/auth/session'
 import { SettingsShell, SettingsSection, ErrorState } from '@/components/archetypes'
 import { IntegrationShell } from '@/components/archetypes'
 import { getDb } from '@/lib/supabase/client'
+import { smsConfigured } from '@/lib/messaging'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -37,7 +38,7 @@ export default async function SuperHealthPage() {
   const supa = await probeSupabase()
   const ai = !!process.env.ANTHROPIC_API_KEY
   const email = !!process.env.RESEND_API_KEY
-  const twilio = !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER)
+  const twilio = smsConfigured()
 
   const supaStatus: 'connected' | 'disconnected' | 'degraded' | 'error' = !supa.reachable
     ? 'error'

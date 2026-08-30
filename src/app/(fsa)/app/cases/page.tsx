@@ -30,7 +30,7 @@ export default async function CasesPage() {
     { label: 'Cases', value: caseRows.length, hint: 'Open in your book', icon: Briefcase, accent: 'brand' },
     { label: 'In progress', value: active, hint: 'Working requirements', href: '/app/cases/board', icon: Workflow, accent: 'neutral' },
     { label: 'Issued', value: issued, hint: 'Placed & in service', icon: CheckCircle2, accent: 'positive' },
-    { label: 'Securities-flagged', value: securities, hint: 'FFS-managed · firewall', href: '/app/compliance/firewall', icon: ShieldAlert, accent: 'security' },
+    { label: 'Securities-flagged', value: securities, hint: 'FFS-managed', icon: ShieldAlert, accent: 'security' },
   ]
 
   return (

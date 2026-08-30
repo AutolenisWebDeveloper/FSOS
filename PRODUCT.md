@@ -31,7 +31,7 @@ those agencies' existing clients. A **B2B2C referral/wholesale model**.
 |---|---|---|---|
 | **FSA** | `/app/*` | The FSA + delegated licensed staff | Run the whole book: agencies, referrals, households, reviews, pipeline, cases, commissions, comms, AI ops |
 | **Admin / Back-office** | `/admin/*` | Assistants, case managers, ops | Data imports, document verification, support requests, user management |
-| **Compliance & Supervisory** | `/compliance/*` | Reviewers / supervisors | Firewall monitoring, consent, attestations, audit, legal holds — *supplemental to FFS, never a replacement* |
+| **Compliance & Supervisory** | `/compliance/*` | Reviewers / supervisors | Consent, attestations, audit (incl. firewall blocks), legal holds — *supplemental to FFS, never a replacement* |
 | **Agency-Owner** | `/partner/*` | Farmers agency owners | Refer clients, watch production/commissions, training, materials |
 | **Client-facing** | `/client/*` | End clients | Intake, consent, case status, appointments, education — *non-securities, non-advice only* |
 | **Super Admin** | `/super/*` | Platform owner | AI policies + kill switch, config defaults, integrations, roles, health |

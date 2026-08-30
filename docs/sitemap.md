@@ -142,7 +142,8 @@ Shell: top bar (global search, notifications, AI-priorities bell, profile, porta
 
 ### OS-16 Compliance (FSA subset)
 - `/app/compliance` — Dashboard **[A1]** *(P1)*
-- `/app/compliance/firewall` **[A2]** *(P0)* · `/licenses` **[A2]** *(P0)* · `/consent` **[A2]** *(P0)* · `/dnc` **[A2]** *(P0)* · `/exceptions` **[A2]** *(P1)*
+- `/licenses` **[A2]** *(P0)* · `/consent` **[A2]** *(P0)* · `/dnc` **[A2]** *(P0)* · `/exceptions` **[A2]** *(P1)*
+- ~~`/app/compliance/firewall`~~ — **removed** (ADR-041). The securities-firewall guardrail is unchanged; its events read from `/app/executive/alerts`.
 
 ### OS-17 Reporting & Analytics
 - `/app/reports` — Library **[A2]** *(P1)* · `/app/reports/builder` **[A5/A11]** *(P2)* · `/app/reports/[id]` **[A11]** *(P1)* · `/app/reports/scheduled` **[A2]** *(P2)*
@@ -169,7 +170,8 @@ Shell: top bar (global search, notifications, AI-priorities bell, profile, porta
 - `/compliance` — Overview **[A1]** *(P1)*
 - `/compliance/audit` **[A2]** *(P0)* · `/compliance/audit/[id]` **[A3]** *(P1)*
 - `/compliance/communications` — Flagged comms **[A2]** *(P1)* · `/compliance/approvals` **[A2]** *(P1)*
-- `/compliance/consent` **[A2]** *(P0)* · `/compliance/licenses` **[A2]** *(P0)* · `/compliance/firewall` **[A2]** *(P0)*
+- `/compliance/consent` **[A2]** *(P0)* · `/compliance/licenses` **[A2]** *(P0)*
+- ~~`/compliance/firewall`~~ — **removed** (ADR-041). Firewall blocks are recorded in `audit_log` and read from `/compliance/audit`.
 - `/compliance/violations` **[A2]** *(P1)* · `/compliance/exceptions` **[A2]** *(P1)* · `/compliance/escalations` **[A2]** *(P1)*
 - `/compliance/incidents` — Breach-response workflow **[A3/A6]** *(P1)*
 - `/compliance/legal-holds` **[A2]** *(P2)* · `/compliance/retention` **[A10]** *(P1)* · `/compliance/attestations` **[A2]** *(P2)* · `/compliance/policies` **[A2]** *(P2)*

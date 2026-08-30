@@ -11,7 +11,6 @@ import {
   Sparkles,
   Activity as ActivityIcon,
   Send,
-  ArrowRight,
 } from 'lucide-react'
 import { PageHeader, Section, ErrorState, AssumptionBadge } from '@/components/archetypes'
 import { Button } from '@/components/ui/button'
@@ -246,9 +245,6 @@ export default async function ConversionsPage() {
             <p className="mt-3 text-xs text-muted-foreground">
               Securities-flagged policies are routed to the human FSA / FFS and never receive automated educational sends.
             </p>
-            <Link href="/app/compliance/firewall" className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
-              Firewall <ArrowRight className="h-3.5 w-3.5" aria-hidden />
-            </Link>
           </Panel>
           <Panel title="AI outreach" description="Green-zone, gated" icon={Sparkles}>
             <div className="grid grid-cols-3 gap-3">

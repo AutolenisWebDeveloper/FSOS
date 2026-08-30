@@ -63,5 +63,6 @@
 | 036 | Contact Import: Field Recognition & Mapping Model | Accepted | [`ADR-036-contact-import-mapping-model.md`](./ADR-036-contact-import-mapping-model.md) |
 | 037 | Communication Template Version History (database-enforced copy retention) | Accepted | [`ADR-037-comm-template-version-history.md`](./ADR-037-comm-template-version-history.md) |
 | 040 | Compliance Intelligence Excision (supersedes 012; retained schema map) | Accepted | [`ADR-040-compliance-intelligence-excision.md`](./ADR-040-compliance-intelligence-excision.md) |
+| 041 | Compliance Firewall Page Removal (ledger pages only; ADR-004 guardrail retained) | Accepted | [`ADR-041-compliance-firewall-page-removal.md`](./ADR-041-compliance-firewall-page-removal.md) |
 
 **Note:** ADR-011 has no file (the sequence skips it). `CLAUDE.md` §19 indexes all 41 ADRs including both documents of each colliding pair; cite a colliding ADR by filename slug, never by bare number.

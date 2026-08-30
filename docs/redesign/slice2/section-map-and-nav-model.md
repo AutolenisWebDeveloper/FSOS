@@ -66,7 +66,7 @@ route already exists; the drill-in simply surfaces the registry's `nav` for that
 | Section (Level 1) | Home | Sub-pages (Level 2) |
 |---|---|---|
 | **Workspace** | `/app/tasks` | Tasks, Calendar, Booking, Workflows, Documents, Client Forms, Workshops, Knowledge Library, Sales Calculator, Reports |
-| **Compliance** | `/app/compliance` | Overview, **Compliance Intelligence** (ADR-012, the only authorized compliance surface), Consent, DNC, Securities Firewall, Licenses, Settings, Help & Support |
+| **Compliance** | `/app/compliance` | Overview, **Compliance Intelligence** (ADR-012, the only authorized compliance surface), Consent, DNC, Licenses, Settings, Help & Support |
 
 ## One behavior to confirm
 

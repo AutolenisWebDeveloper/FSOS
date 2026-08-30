@@ -131,9 +131,106 @@ Required order:
 Approving first and editing after silently destroys the approval and the receipt stops
 sending again.
 
-Migration 132's update is guarded on `body not like 'PROVENANCE:%'`, so once the body no
-longer starts with that marker, a re-run of the migration chain leaves the approved row
-alone. Proven in the RLS suite.
+### 1f. The runbook, rehearsed against a real Postgres
+
+The sequence below was executed against an ephemeral Postgres carrying the full
+133-migration chain, modelling each route's exact writes. **No production database was
+touched — this environment holds no database credentials at all.** These are the row
+states production will show.
+
+| Step | Action | Resulting row | Gate step 4 |
+|---|---|---|---|
+| — | as shipped by mig 132 | `submitted` · v1 · approver NULL · body `PROVENANCE:…` | **BLOCKS** |
+| 1 | PATCH body (the approved copy) | `draft` · **v2** · approver NULL · `updated_by` set | **BLOCKS** |
+| 2 | `action:"submit"` | `submitted` · v2 · `submitted_at` stamped | **BLOCKS** |
+| 3 | `action:"approve"` | `approved` · v2 · **`approved_by` = acting user UUID** · `approved_at` stamped | **PASSES — the receipt sends** |
+| ⚠️ | any edit AFTER step 3 | `draft` · v3 · approver NULL again | **BLOCKS** |
+
+Step 2 is guarded on `approval_status='draft'` and affected exactly 1 row; run out of order
+it returns 409 `invalid_state` rather than silently succeeding.
+
+Retention evidence writes itself — `comm_template_versions` gained a snapshot of the
+superseded body on each edit, trigger-written, append-only.
+
+**The body to put in at step 1** is the compliance record of the copy the route renders
+(`renderHtml(ackContent)` in the register route); it is never the text a registrant
+receives, so the merge tokens below are documentation of the rendered fields:
+
+```
+You're registered, {{name}}.
+
+Thanks for registering for "{{workshop_title}}" with Markist Athelus, Farmers Financial Services.
+This is an educational event - no product recommendation.
+
+Workshop: {{workshop_title}}
+When: {{starts_local}}
+Where: {{venue}}
+
+We'll send a reminder before the event. If you did not register, you can ignore this email.
+A calendar file (workshop.ics) is attached.
+```
+
+### 1g. Proving the receipt actually sends — without a live send
+
+Gate step 4 is the only thing the approval changes, and no existing test exercises it with
+a real approved handle: `workshop-lifecycle-routes.test.mjs` proves the route calls
+`sendThroughGate` with the right handle and a decoded `.ics`, but it **stubs the gate**.
+
+The smallest sufficient proof, in order of cost:
+
+1. **Seeded non-production Supabase + the existing E2E suite.** Approve the handle there by
+   the same three steps, then run with `FSOS_E2E_SUPABASE=1` and `FSOS_E2E_SLUG=<slug>`.
+   That unskips the happy-path journey, which registers through the real route.
+2. **Assert on the capture file, not the inbox.** The E2E server runs with
+   `COMMS_CAPTURE_TRANSPORT` active — and the guard spec now proves that in the server
+   process over HTTP before any test runs. A successful receipt appears as one JSON line:
+   `channel:"email"`, `to:` the address registered with, `subject:"You're registered — <title>"`,
+   `attachments:["workshop.ics"]`.
+3. **Nothing can reach Resend.** `captureActive()` short-circuits before the provider call,
+   and a capture-write failure fails the send rather than falling through — both proven by
+   execution in `comms-capture-transport.test.mjs`.
+
+What this proves: the real route, the real gate with a real approved handle, template
+selection, personalization, and the exact payload including the calendar attachment.
+What it does **not** prove: delivery, inbox placement, or `.ics` rendering in a real
+calendar client — that stays item 9, and only a controlled live send closes it.
+
+### ⚠️ CORRECTION — migration 132's guard does the OPPOSITE of what its comment claims
+
+An earlier revision of this document stated that migration 132's guard leaves an approved
+row alone on a chain re-run. **That is false, and rehearsing the approval against a real
+Postgres proved it.** The guard is:
+
+```sql
+where id = 'eeee0000-…-00000000ac01'
+  and body not like 'PROVENANCE:%';
+```
+
+It skips rows that **already carry** the marker — migration idempotency — and therefore
+**fires on exactly the rows an approval has cleaned up**. Rehearsal result, re-applying 132
+over the approved row:
+
+```
+approved/v3  →  submitted/v3     (CHANGED — the guard did not hold)
+```
+
+**Operational consequence: any migration replay after go-live silently un-approves the ack
+handle and restores the placeholder body. The registration receipt stops sending, with no
+error anywhere** — gate step 4 blocking is the route working as designed. A rebuilt
+environment, a restored branch database, or a re-run chain all trigger it.
+
+**Proposed fix — NOT applied, reported for your decision.** One added condition, which
+reverses only an approval that has no approver (the WS-047 defect 132 exists to undo) and
+never a principal's:
+
+```sql
+where id = 'eeee0000-…-00000000ac01'
+  and body not like 'PROVENANCE:%'
+  and approved_by is null;          -- never touch a row a principal has approved
+```
+
+The comment above the statement also needs correcting; it asserts the protection that is
+missing.
 
 ### 1e. What goes live the moment these flip
 
@@ -219,10 +316,42 @@ Read directly from the send path — `src/lib/messaging.ts:111-144`, `src/lib/co
 | `TWILIO_MESSAGING_SERVICE_SID` **or** `TWILIO_PHONE_NUMBER` | **One of the two** | `Twilio env not set`. The Messaging Service is *preferred* when set (`messaging.ts:121-122`) — it carries the number pool and carrier opt-out handling |
 | `NEXT_PUBLIC_APP_URL` (or `APP_URL`) | Effectively yes | Used to build the Twilio `StatusCallback` URL; without it delivery/failure callbacks never come back. Separately, WS-034 makes the engine defer **email** with no app URL |
 
-Note `smsConfigured()` (`messaging.ts:20`) checks SID + TOKEN + **`TWILIO_PHONE_NUMBER`
-specifically** — so `/api/health` and the super-admin health page report SMS as
-unconfigured on a Messaging-Service-only setup even though sending works. A reporting
-discrepancy, not a send-path failure.
+### 5c. Health surfaces report SMS unconfigured on a Messaging-Service-only setup
+
+**Reported, NOT fixed.** `sendSms()` requires SID + TOKEN + (`TWILIO_MESSAGING_SERVICE_SID`
+**or** `TWILIO_PHONE_NUMBER`) — `messaging.ts:123`. Three readiness surfaces use a
+narrower predicate that demands `TWILIO_PHONE_NUMBER` specifically, so a working
+Messaging-Service-only deployment reports SMS as unconfigured:
+
+| Surface | Line | Predicate |
+|---|---|---|
+| `/api/health` | `route.ts:29` | `SID && TOKEN && PHONE_NUMBER` |
+| Super-admin health page | `super/health/page.tsx:40` | `SID && TOKEN && PHONE_NUMBER` |
+| `/api/forms/send` (`ready`) | `route.ts:26-33` | `SID && TOKEN && PHONE_NUMBER` |
+
+**`smsConfigured()` in `messaging.ts:20` has ZERO callers** — it is dead code, and each of
+the three surfaces inlines its own copy of the predicate. So correcting only
+`smsConfigured()` would change nothing anyone sees; it is the three inlined copies that
+produce the false signal.
+
+Proposed change (one shared predicate, matching what `sendSms` actually requires):
+
+```ts
+export function smsConfigured(): boolean {
+  return !!(
+    process.env.TWILIO_ACCOUNT_SID &&
+    process.env.TWILIO_AUTH_TOKEN &&
+    (process.env.TWILIO_MESSAGING_SERVICE_SID || process.env.TWILIO_PHONE_NUMBER)
+  )
+}
+```
+
+…then have all three surfaces import and call it instead of inlining. `/api/forms/send`
+additionally reports `phone_number_set` as a separate field, which stays accurate as-is
+and can remain alongside a corrected `ready`.
+
+Scope note: `/api/health` and `/api/forms/send` are outside the workshop subsystem. The
+change is small and local but touches three files beyond this branch's remit.
 
 **Environments that must carry these:** whichever environments run the engine. The
 workshop cron is a `vercel.json` entry (`*/15 * * * *`), and Vercel runs cron jobs against
@@ -278,9 +407,31 @@ cron-jobs page. So the following is stated as risk, not fact.
   reminders, no change notices, no nurture — and *no error surfaces to the app*, because a
   401 is the route working as designed.
 
-**Verify before relying on it**, cheaply and directly: after deploying, check the Vercel
-cron invocation log for `/api/cron/workshop-reminders`. A 200 means the header arrives; a
-401 means it does not.
+**The exact check that settles it.** The route's auth failure is uniquely identifiable —
+`401` with body `{"error":"unauthorized"}` is returned from **one place only**, the
+`authorized()` check at `route.ts:35-37`. Every other failure path returns `500` with a
+`{"job":"workshop-reminders", …}` payload, and success returns `200` with that same
+payload. So the status code alone is decisive:
+
+| Observed | Means |
+|---|---|
+| `200` + `{"job":"workshop-reminders","changes":…,"reminders":…,"nurture":…}` | Vercel sent the Bearer header. Nothing to change. |
+| `401` + `{"error":"unauthorized"}` | It did not. The engine has never run. Pick an option below. |
+| `500` + `{"job":…,"error":…}` | Auth passed; a pass failed. A different problem (WS-064). |
+
+Where to look, in the Vercel dashboard for the `fsos` project: the cron job's invocation
+history (Observability → Crons, or the Cron Jobs view in project settings) shows the most
+recent runs and their status codes; Observability → Logs filtered to the path
+`/api/cron/workshop-reminders` shows the same per-invocation. `vercel logs <production
+deployment url>` gives it from the CLI.
+
+Two conditions on the check: **Vercel runs cron against Production only**, so this cannot
+be settled on a preview deployment; and the schedule is `*/15`, so a result is available
+within 15 minutes of deploying rather than immediately.
+
+(The dashboard navigation above is stated from general familiarity, not from the docs —
+vercel.com is blocked by this environment's egress proxy. The status-code discriminator is
+read directly from the route source and is exact.)
 
 **If it turns out to be a 401**, the change and its cost:
 

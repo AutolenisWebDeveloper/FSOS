@@ -28,8 +28,12 @@ const PORT = Number(process.env.FSOS_E2E_PORT ?? 3737)
 // its own evidence (and lets two runs interleave lines); a run-scoped name cannot.
 // The guard compares the server's reported target against THIS value, so the variable is
 // also exported to the runner — but the server's own report is what the assertion reads.
+// `||`, not `??`: an EMPTY COMMS_CAPTURE_TRANSPORT is not nullish, so `??` kept it and
+// handed the server a blank path — captureTarget() then returned null and capture was
+// off. The guard caught that loudly (the run fails), but the correct behaviour is to
+// treat an empty value the same as an unset one and generate the run's own file.
 const CAPTURE_FILE =
-  process.env.COMMS_CAPTURE_TRANSPORT ??
+  process.env.COMMS_CAPTURE_TRANSPORT ||
   join(tmpdir(), 'fsos-e2e-captures', `run-${process.pid}-${Date.now()}.jsonl`)
 try {
   mkdirSync(join(tmpdir(), 'fsos-e2e-captures'), { recursive: true })

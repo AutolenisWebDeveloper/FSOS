@@ -47,7 +47,7 @@ export default async function OpportunitiesPage(props: { searchParams: Promise<{
       { label: 'Opportunities', value: opps.data.length, hint: 'In view', icon: Target, accent: 'brand' },
       { label: 'Open pipeline', value: open.length, hint: 'Active stages', href: '/app/opportunities/board', icon: TrendingUp, accent: 'neutral' },
       { label: 'Open premium', value: openPremium, currency: true, hint: 'Un-weighted', href: '/app/forecasts', icon: Wallet, accent: 'positive' },
-      { label: 'Securities-flagged', value: securities, hint: 'FFS-managed · firewall', href: '/app/compliance/firewall', icon: ShieldAlert, accent: 'security' },
+      { label: 'Securities-flagged', value: securities, hint: 'FFS-managed', icon: ShieldAlert, accent: 'security' },
     ]
 
     body = (

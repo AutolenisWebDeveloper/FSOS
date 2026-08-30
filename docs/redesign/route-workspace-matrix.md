@@ -96,7 +96,7 @@ three FSA roles are entitled to `/app` (see §7 on why back-nav is portal-scoped
 | 18 | **Cases** | `/app/cases` | `/app/cases/*` (new, board, requirements, service-requests, [id], [id]/checklist) | Pipeline (Cases) |
 | 19 | **Commissions** | `/app/commissions` | `/app/commissions/*` (expected, pending, received, splits, statements, trails, gdc, reconciliation, discrepancies, adjustments, chargebacks, [id]) | Pipeline (Commissions) |
 | 20 | **Workspace & Tools** | `/app/tasks` | `/app/tasks`, `/app/tasks/[id]`, `/app/calendar`, `/app/booking`, `/app/workflows`, `/app/workflows/builder`, `/app/workflows/[id]`, `/app/documents`, `/app/documents/*`, `/app/forms`, `/app/forms/[id]`, `/app/workshops`, `/app/workshops/*`, `/app/knowledge`, `/app/tools/calculator`, `/app/contacts/upload`, `/app/reports`, `/app/reports/*`, `/app/search` | Engage (Tasks, Calendar, Booking, Workflows, Documents, Client Forms, Workshops, Workshop Approvals, Knowledge Library, Sales Calculator) + Operate (Reports) |
-| 21 | **Compliance (FSA lens)** | `/app/compliance` | `/app/compliance/*` (consent, dnc, firewall, licenses, intelligence), `/app/settings`, `/app/help` | Operate (Compliance, Compliance Intelligence, Settings, Help & Support) |
+| 21 | **Compliance (FSA lens)** | `/app/compliance` | `/app/compliance/*` (consent, dnc, licenses, intelligence), `/app/settings`, `/app/help` | Operate (Compliance, Compliance Intelligence, Settings, Help & Support) |
 
 > **Note on the FSA `/app/compliance/*` subtree (workspace 21):** this is the FSA-portal
 > compliance *lens* (still `portalOf → fsa`, still guarded by `requireRole('fsa', …)`). It is a
@@ -126,7 +126,7 @@ RBAC segment for every row: `admin · ops · case_manager · super_admin`. Back-
 
 ---
 
-## 3. Compliance portal (`/compliance`) — 10 routes
+## 3. Compliance portal (`/compliance`) — 9 routes
 
 RBAC segment for every row: `compliance · supervisor · super_admin`. Back-nav target: `/compliance`.
 
@@ -134,13 +134,17 @@ RBAC segment for every row: `compliance · supervisor · super_admin`. Back-nav 
 |---|---|---|
 | Compliance Home | `/compliance` | `/compliance` |
 | Supervision | `/compliance/communications` | `/compliance/communications`, `/compliance/audit`, `/compliance/incidents` |
-| Consent & Firewall | `/compliance/consent` | `/compliance/consent`, `/compliance/firewall`, `/compliance/dnc`* |
+| Consent | `/compliance/consent` | `/compliance/consent`, `/compliance/dnc`* |
 | Registrations | `/compliance/licenses` | `/compliance/licenses`, `/compliance/attestations`, `/compliance/policies` |
 | Legal Holds | `/compliance/legal-holds` | `/compliance/legal-holds` |
 
 `*` `/compliance/dnc` not present as a page in this checkout under `(compliance)`; DNC lives at
 `/app/compliance/dnc` (FSA lens) and is **not** cross-listed here. Removed from the row above at
 implementation time if still absent — flagged so the fan-out doesn't invent a route.
+
+The workspace was "Consent & Firewall" until `/compliance/firewall` was removed (ADR-041). The
+securities-firewall guardrail itself is unchanged; firewall blocks are recorded in `audit_log` and
+read from `/compliance/audit` under Supervision.
 
 ---
 

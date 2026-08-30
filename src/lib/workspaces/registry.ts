@@ -444,12 +444,11 @@ const FSA: Workspace[] = [
     icon: 'ShieldCheck',
     home: '/app/compliance',
     match: ['/app/compliance', '/app/settings', '/app/help'],
-    description: 'Consent, DNC, the securities firewall, and licenses.',
+    description: 'Consent, DNC, and licenses.',
     nav: [
       { href: '/app/compliance', label: 'Overview', icon: 'ShieldCheck', exact: true },
       { href: '/app/compliance/consent', label: 'Consent', icon: 'ClipboardCheck' },
       { href: '/app/compliance/dnc', label: 'DNC', icon: 'ShieldCheck' },
-      { href: '/app/compliance/firewall', label: 'Securities Firewall', icon: 'ShieldCheck' },
       { href: '/app/compliance/licenses', label: 'Licenses', icon: 'ClipboardList' },
       { href: '/app/settings', label: 'Settings', icon: 'Settings' },
       { href: '/app/help', label: 'Help & Support', icon: 'LifeBuoy' },
@@ -521,13 +520,10 @@ const COMPLIANCE: Workspace[] = [
     ],
   },
   {
-    id: 'comp-consent', label: 'Consent & Firewall', portal: 'compliance', section: 'Controls', icon: 'ClipboardCheck',
-    home: '/compliance/consent', match: ['/compliance/consent', '/compliance/firewall'],
-    description: 'Consent ledger and the securities firewall.',
-    nav: [
-      { href: '/compliance/consent', label: 'Consent', icon: 'ClipboardCheck' },
-      { href: '/compliance/firewall', label: 'Securities Firewall', icon: 'ShieldCheck' },
-    ],
+    id: 'comp-consent', label: 'Consent', portal: 'compliance', section: 'Controls', icon: 'ClipboardCheck',
+    home: '/compliance/consent', match: ['/compliance/consent'],
+    description: 'Consent ledger.',
+    nav: [{ href: '/compliance/consent', label: 'Consent', icon: 'ClipboardCheck' }],
   },
   {
     id: 'comp-registrations', label: 'Registrations', portal: 'compliance', section: 'Controls', icon: 'ClipboardList',

@@ -123,13 +123,27 @@ Where the autonomous system is observed and controlled. Every agent run and acti
 ### Compliance Dashboard
 - **Route/Archetype/Roles:** `/app/compliance` · A1 · fsa, licensed_staff
 - **Widgets:** firewall events, license/appointment status (expiring badges), consent coverage, DNC size, open exceptions, blocked-action count.
-- **Acceptance:** each tile links to detail; expiring license within N days badged.
+- **Acceptance:** each tile links to detail; expiring license within N days badged. The firewall-events tile links to `/app/executive/alerts` since ADR-041.
 
 ### Securities Firewall
-- **Route/Archetype:** `/app/compliance/firewall` · A2
-- **Data:** `compliance_events` where firewall triggered (a securities record excluded from automation, a securities send blocked, a pointer created).
-- **Compliance:** demonstrates the firewall is working; no securities substantive data shown, only that it was correctly excluded/pointed to FFS.
-- **Audit:** view logged. **Acceptance:** every is_security auto-send attempt appears here as blocked+routed; zero securities auto-sends succeed.
+> **The dedicated firewall pages were removed (ADR-041).** The guardrail and every gate it
+> feeds are unchanged — only the two read-only ledger pages
+> (`/app/compliance/firewall`, `/compliance/firewall`) are gone. This section now
+> describes where the same evidence is read.
+
+- **Enforcement (unchanged):** `src/lib/compliance/firewall.ts` asserts at every guarded write;
+  the `is_security` hard gate runs in the communications dispatcher and the AI action validator;
+  the purple `SecuritiesChip` / `securitiesRowClass` marker stays on every flagged row.
+- **Data:** `compliance_events` where the firewall triggered (a securities record excluded from
+  automation, a securities send blocked, a pointer created) — written exactly as before.
+- **Read surfaces:** `/app/executive/alerts` (FSA — the same `compliance_events` feed, all kinds,
+  `blocked` badge on `kind='firewall'`) and `/compliance/audit` (supervisor — the append-only
+  `audit_log`, action `firewall.blocked`).
+- **Compliance:** no securities substantive data is shown on either surface — only that a record was
+  correctly excluded and pointed to FFS.
+- **Audit:** every block writes both a `compliance_events` row and an `audit_log` entry.
+  **Acceptance:** every `is_security` auto-send attempt appears on both surfaces as blocked+routed;
+  zero securities auto-sends succeed.
 
 ### Licenses / Consent / DNC / Exceptions
 - **Routes/Archetype:** A2

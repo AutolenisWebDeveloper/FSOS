@@ -11,7 +11,7 @@ export const runtime = 'nodejs'
 const QUICK_LINKS = [
   { href: '/app/notifications', label: 'Notifications', description: 'Alerts, escalations, and reminders.', icon: Bell },
   { href: '/app', label: 'Dashboard layout', description: 'Arrange the widgets on your command center.', icon: LayoutGrid },
-  { href: '/app/compliance', label: 'Compliance center', description: 'Consent, DNC, licenses, and the firewall.', icon: ShieldCheck },
+  { href: '/app/compliance', label: 'Compliance center', description: 'Consent, DNC, and licenses.', icon: ShieldCheck },
   { href: '/app/help', label: 'Help & support', description: 'Guides and how to reach a person.', icon: LifeBuoy },
 ]
 

@@ -138,8 +138,11 @@ const LEGACY_NAV = {
   },
   compliance: {
     root: '/compliance',
+    // '/compliance/firewall' was retired with the Compliance Firewall page removal
+    // (ADR-041). The securities firewall GUARDRAIL is untouched; only the ledger
+    // page is gone, and its evidence now reads from '/compliance/audit'.
     hrefs: ['/compliance', '/compliance/audit', '/compliance/communications', '/compliance/consent',
-      '/compliance/firewall', '/compliance/incidents', '/compliance/licenses', '/compliance/legal-holds',
+      '/compliance/incidents', '/compliance/licenses', '/compliance/legal-holds',
       '/compliance/attestations', '/compliance/policies'],
   },
   partner: {

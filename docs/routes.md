@@ -143,7 +143,7 @@ workflows/page.tsx  workflows/builder/page.tsx  workflows/[id]/page.tsx
 ai/page.tsx  ai/agents/page.tsx  ai/agents/[id]/page.tsx  ai/runs/page.tsx  ai/runs/[id]/page.tsx
 ai/escalations/page.tsx  ai/escalations/[id]/page.tsx  ai/errors/page.tsx  ai/evaluations/page.tsx
 
-compliance/page.tsx  compliance/firewall/page.tsx  compliance/licenses/page.tsx
+compliance/page.tsx  compliance/licenses/page.tsx
 compliance/consent/page.tsx  compliance/dnc/page.tsx  compliance/exceptions/page.tsx
 
 reports/page.tsx  reports/builder/page.tsx  reports/[id]/page.tsx  reports/scheduled/page.tsx
@@ -163,7 +163,7 @@ config/[section]/page.tsx        (tags|statuses|loss-reasons|appointment-types|r
 ## P-3 Compliance → `app/(compliance)/compliance/`
 ```
 page.tsx  audit/page.tsx  audit/[id]/page.tsx  communications/page.tsx  approvals/page.tsx
-consent/page.tsx  licenses/page.tsx  firewall/page.tsx  violations/page.tsx  exceptions/page.tsx
+consent/page.tsx  licenses/page.tsx  violations/page.tsx  exceptions/page.tsx
 escalations/page.tsx  incidents/page.tsx  legal-holds/page.tsx  retention/page.tsx
 attestations/page.tsx  policies/page.tsx
 ```

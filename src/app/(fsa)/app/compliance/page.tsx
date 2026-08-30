@@ -24,7 +24,7 @@ export default async function CompliancePage() {
 
   return (
     <DashboardShell title="Compliance" description="Firewall, consent, licensing, and do-not-contact status.">
-      <StatTile label="Firewall events" value={firewall} href="/app/compliance/firewall" hint="Securities firewall & comms blocks" />
+      <StatTile label="Firewall events" value={firewall} href="/app/executive/alerts" hint="Securities firewall & comms blocks" />
       <StatTile label="Consent records" value={consents} href="/app/compliance/consent" hint="Channel consent on file" />
       <StatTile label="Licenses" value={licenses} href="/app/compliance/licenses" hint="Licensing status" />
       <StatTile label="DNC entries" value={dnc} href="/app/compliance/dnc" hint="Do-not-contact list" />

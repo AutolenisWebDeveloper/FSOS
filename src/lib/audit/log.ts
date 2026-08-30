@@ -14,11 +14,15 @@ export const AUDIT_ACTIONS = [
   'entity.updated',
   'entity.deleted',
   'entity.viewed',
+  // A PII EXPORT (roster CSV, report download) — attributable by design: who pulled
+  // the list, of what, and how many rows.
+  'entity.exported',
   'stage.changed',
   'comms.sent',
   'comms.blocked',
   'comms.deferred',
   'comms.suppressed',
+  'comms.error',
   'consent.captured',
   'consent.revoked',
   'firewall.blocked',

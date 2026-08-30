@@ -110,6 +110,21 @@ export default async function WorkshopsPage(props: { searchParams: Promise<Recor
           }
         />
       )
+    } else if (filtered.length === 0) {
+      // WS-054: an active filter with no matches used to render column headers over a
+      // headerless void — no message, no way back. Name the filter and offer the exit.
+      body = (
+        <EmptyState
+          icon={GraduationCap}
+          title="No workshops match these filters"
+          description={`${allWorkshops.length} workshop${allWorkshops.length === 1 ? '' : 's'} in ${year} — none match the current status or format filter.`}
+          action={
+            <Button asChild variant="outline">
+              <Link href="/app/workshops">Clear filters</Link>
+            </Button>
+          }
+        />
+      )
     } else {
       body = (
         <Table>

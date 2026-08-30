@@ -38,6 +38,29 @@ function ident(name) {
   return `"${name}"`
 }
 
+/**
+ * Explicit FK registry for the ONE supported embed shape (`alias:table!inner(cols)`).
+ * Keyed `${baseTable}.${refTable}` → [localCol, foreignCol]. Unknown embeds fail loud —
+ * add the pair here (with the real FK) rather than guessing a join.
+ */
+const EMBED_FKS = {
+  'workshop_sessions.workshops': ['workshop_id', 'workshop_id'],
+}
+
+/** Split a PostgREST select list on top-level commas (embed parens kept intact). */
+function splitTopLevel(s) {
+  const parts = []
+  let depth = 0
+  let cur = ''
+  for (const ch of s) {
+    if (ch === '(') depth++
+    if (ch === ')') depth--
+    if (ch === ',' && depth === 0) { parts.push(cur.trim()); cur = '' } else cur += ch
+  }
+  if (cur.trim()) parts.push(cur.trim())
+  return parts
+}
+
 export function makeShim({ host, port, db, user = 'postgres', asRole = null }) {
   const queries = []
 
@@ -137,6 +160,21 @@ export function makeShim({ host, port, db, user = 'postgres', asRole = null }) {
     not(c, opName, v) {
       if (opName === 'is') { this.filters.push(`${ident(c)} is not ${v === null ? 'null' : lit(v)}`); return this }
       if (opName === 'eq') { this.filters.push(`${ident(c)} <> ${lit(v)}`); return this }
+      if (opName === 'in') {
+        // PostgREST list-literal form: .not('status', 'in', '("a","b")') — used by the
+        // workshop comms engine. Parse the ("v1","v2") literal; anything else fails loud.
+        const m = typeof v === 'string' && v.match(/^\((.*)\)$/)
+        if (!m) throw new HarnessError(`.not(_, 'in', ${JSON.stringify(v)}) — expected a ("a","b") list literal`)
+        const vals = m[1].length === 0 ? [] : m[1].split(',').map((s) => {
+          const t = s.trim()
+          const q = t.match(/^"(.*)"$/)
+          if (!q) throw new HarnessError(`.not(_, 'in') list item ${t} is not double-quoted`)
+          return q[1]
+        })
+        if (vals.length === 0) return this // not-in-empty-set matches everything
+        this.filters.push(`${ident(c)} not in (${vals.map(lit).join(',')})`)
+        return this
+      }
       throw new HarnessError(`.not(_, '${opName}') not implemented`)
     }
     textSearch(c, q, opts = {}) {
@@ -147,7 +185,24 @@ export function makeShim({ host, port, db, user = 'postgres', asRole = null }) {
     }
     overlaps(c, vals) { this.filters.push(`${ident(c)} && ${lit(vals)}::text[]`); return this }
     contains(c, vals) { this.filters.push(`${ident(c)} @> ${lit(vals)}::jsonb`); return this }
-    or() { throw new HarnessError('.or() not implemented — add it if the path under test needs it') }
+    or(expr) {
+      // PostgREST disjunction — the subset the engine actually issues (eq / neq /
+      // is.null / not.is.null terms, comma-joined). Anything else still fails loud so a
+      // new operator can't silently translate wrong.
+      const parts = String(expr).split(',').map((term) => {
+        let m = term.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\.not\.is\.null$/)
+        if (m) return `${ident(m[1])} is not null`
+        m = term.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\.is\.null$/)
+        if (m) return `${ident(m[1])} is null`
+        m = term.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\.eq\.(.+)$/)
+        if (m) return `${ident(m[1])} = ${lit(m[2])}`
+        m = term.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\.neq\.(.+)$/)
+        if (m) return `${ident(m[1])} <> ${lit(m[2])}`
+        throw new HarnessError(`.or(): unsupported term '${term}' — extend the translator`)
+      })
+      this.filters.push(`(${parts.join(' or ')})`)
+      return this
+    }
     filter() { throw new HarnessError('.filter() not implemented') }
     rpc() { throw new HarnessError('.rpc() not implemented') }
 
@@ -172,12 +227,40 @@ export function makeShim({ host, port, db, user = 'postgres', asRole = null }) {
       else if (this._limit != null) s += ` limit ${this._limit}`
       return s
     }
-    /** PostgREST's select list ("id, conversation_id") → SQL; embedded selects unsupported. */
+    /**
+     * PostgREST's select list ("id, conversation_id") → SQL. ONE embed shape is supported —
+     * `alias:table!inner(cols)` — against an explicit FK registry (EMBED_FKS below); every
+     * other embedded/aggregate form fails loud. The embed renders as a nested jsonb object
+     * (like PostgREST) and !inner adds an EXISTS so parentless rows are excluded.
+     */
     get colSql() {
       const c = String(this.cols).trim()
       if (c === '*' || c === '') return '*'
-      if (/[()]/.test(c)) throw new HarnessError(`embedded/aggregate select not implemented: ${c}`)
-      return c.split(',').map((s) => ident(s.trim())).join(', ')
+      if (!/[()]/.test(c)) return c.split(',').map((s) => ident(s.trim())).join(', ')
+      const parts = splitTopLevel(c)
+      const cols = []
+      for (const part of parts) {
+        const m = part.match(/^(\w+):(\w+)!inner\(([^)]*)\)$/)
+        if (!m) {
+          if (/[()]/.test(part)) throw new HarnessError(`embedded/aggregate select not implemented: ${part}`)
+          cols.push(ident(part))
+          continue
+        }
+        const [, alias, refTable, refColsRaw] = m
+        const fk = EMBED_FKS[`${this.table}.${refTable}`]
+        if (!fk) throw new HarnessError(`embed ${this.table} → ${refTable} not in EMBED_FKS registry — add the FK pair`)
+        const [localCol, foreignCol] = fk
+        const refCols = refColsRaw.split(',').map((s) => ident(s.trim())).join(', ')
+        cols.push(
+          `(select to_jsonb(__e) from (select ${refCols} from ${ident(refTable)} ` +
+            `where ${ident(refTable)}.${ident(foreignCol)} = ${ident(this.table)}.${ident(localCol)} limit 1) __e) as ${ident(alias)}`,
+        )
+        // !inner semantics: the base row is excluded when the embedded parent is absent.
+        this.filters.push(
+          `exists (select 1 from ${ident(refTable)} where ${ident(refTable)}.${ident(foreignCol)} = ${ident(this.table)}.${ident(localCol)})`,
+        )
+      }
+      return cols.join(', ')
     }
     rowsPayload() { return Array.isArray(this.payload) ? this.payload : [this.payload] }
     insertSql() {

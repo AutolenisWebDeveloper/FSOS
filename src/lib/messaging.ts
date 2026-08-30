@@ -81,10 +81,20 @@ export function smsConfigured(): boolean {
 }
 
 /** Optional per-send email delivery options (deliverability: reply routing + headers). */
+/** One email attachment (base64 content — e.g. the workshop .ics calendar file). */
+export interface EmailAttachment {
+  filename: string
+  /** Base64-encoded file content. */
+  content: string
+  contentType?: string
+}
+
 export interface EmailSendOptions {
   from?: string
   replyTo?: string
   headers?: Record<string, string>
+  /** File attachments (WS-022: the .ics on the workshop instant ack). */
+  attachments?: EmailAttachment[]
   /** Dispatch policy context. Absent → everything is resolved from the address. */
   policy?: SendPolicyOptions
 }
@@ -106,6 +116,7 @@ export interface MessagingDeps {
   deliverEmail(args: {
     to: string; from: string; subject: string; html: string; text?: string
     replyTo?: string; headers?: Record<string, string>; apiKey: string
+    attachments?: EmailAttachment[]
   }): Promise<SendResult>
   deliverSms(args: {
     to: string; body: string; sid: string; token: string
@@ -139,7 +150,26 @@ export const defaultMessagingDeps: MessagingDeps = {
   },
   escalate: (ctx, outcome, extra) => escalateBlockedSend(ctx, outcome, extra),
   auditSent: (ctx, result) => auditSentMessage(ctx, result),
-  async deliverEmail({ to, from, subject, html, text, replyTo, headers, apiKey }) {
+  async deliverEmail({ to, from, subject, html, text, replyTo, headers, apiKey, attachments }) {
+    // CAPTURED TRANSPORT (test-only). Placed HERE, inside the delivery seam, so every
+    // step above it still runs — policy resolution, the gate, quiet hours, escalation —
+    // and only the provider call itself is replaced. A capture-write failure FAILS THE
+    // SEND; it never falls through to Resend. Refuses to activate in production.
+    {
+      const { captureActive, captureMessage } = await import('./comms/capture-transport')
+      if (captureActive()) {
+        const ok = captureMessage({
+          at: new Date().toISOString(),
+          channel: 'email',
+          to,
+          subject,
+          body: html,
+          bodyText: text,
+          attachments: attachments?.map((a) => a.filename),
+        })
+        return ok ? { ok: true, id: `captured_${Date.now()}` } : { ok: false, error: 'capture_write_failed' }
+      }
+    }
     try {
       // Lazily imported so THIS FILE stays loadable without the provider SDK. That matters
       // now that it is the chokepoint: the offline test harness compiles and requires this
@@ -155,6 +185,7 @@ export const defaultMessagingDeps: MessagingDeps = {
         text,
         ...(replyTo ? { replyTo } : {}),
         ...(headers ? { headers } : {}),
+        ...(attachments?.length ? { attachments } : {}),
       })
       if (error) return { ok: false, error: error.message || String(error) }
       return { ok: true, id: data?.id }
@@ -163,6 +194,15 @@ export const defaultMessagingDeps: MessagingDeps = {
     }
   },
   async deliverSms({ to, body, sid, token, from, messagingServiceSid, statusCallback }) {
+    // CAPTURED TRANSPORT — same contract as deliverEmail above: last step before the
+    // provider, fails the send on a capture-write failure, inert in production.
+    {
+      const { captureActive, captureMessage } = await import('./comms/capture-transport')
+      if (captureActive()) {
+        const ok = captureMessage({ at: new Date().toISOString(), channel: 'sms', to, body })
+        return ok ? { ok: true, id: `SMcaptured${Date.now()}` } : { ok: false, error: 'capture_write_failed' }
+      }
+    }
     try {
       const params: Record<string, string> = { To: to, Body: body }
       if (messagingServiceSid) params.MessagingServiceSid = messagingServiceSid
@@ -314,6 +354,7 @@ export async function sendEmail(
   const replyTo = opts?.replyTo || process.env.RESEND_REPLY_TO || undefined
   const result = await deps.deliverEmail({
     to, from, subject, html, text, replyTo, headers: opts?.headers, apiKey,
+    attachments: opts?.attachments,
   })
   await deps.auditSent(ctx, result)
   return { ...result, sentBody: result.ok ? html : undefined, timezone: decision.timezone, resolved: decision.resolved }
@@ -400,7 +441,11 @@ export async function sendSms(
 
   // ── FOOTER LAST. Every content check above saw the authored body; the carrier-required
   //    opt-out keyword is appended only once the message is cleared to send. ──
-  const wireBody = `${body}\n\n${SMS_OPT_OUT_FOOTER}`
+  // WS-069 — appended ONCE. A template whose authored body already instructs "Reply STOP"
+  // (the six booking bodies) is authoritative; stacking a second STOP line onto it was the
+  // defect this branch fixed, and the footer moving to the chokepoint must not reinstate it.
+  // Bodies without it (the workshop templates) keep the auto-appended footer exactly as before.
+  const wireBody = /reply\s+stop/i.test(body) ? body : `${body}\n\n${SMS_OPT_OUT_FOOTER}`
 
   const base = appBaseUrl()
   const statusCallback = base

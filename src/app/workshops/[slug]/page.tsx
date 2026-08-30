@@ -41,12 +41,10 @@ export default async function WorkshopLandingPage(props: { params: Promise<{ slu
   const w = await loadPublicWorkshop(slug)
   if (!w) notFound()
 
-  const when = w.scheduled_at
-    ? new Date(w.scheduled_at).toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' })
-    : 'Date to be announced'
-  const timeOnly = w.scheduled_at
-    ? new Date(w.scheduled_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-    : null
+  // WS-051: venue-zone strings formatted server-side by the loader — never the server's
+  // own zone (UTC on Vercel showed a 6 PM Central session as 11 PM, sometimes next-day).
+  const when = w.when_local ?? 'Date to be announced'
+  const timeOnly = w.time_local
   const DeliveryIcon = w.delivery_mode === 'virtual' ? Video : w.delivery_mode === 'hybrid' ? Users : MapPin
   const place =
     w.delivery_mode === 'virtual'
@@ -59,7 +57,7 @@ export default async function WorkshopLandingPage(props: { params: Promise<{ slu
     .map((s) => s.trim())
     .filter(Boolean)
   const registerHref = `/workshops/${w.slug}/register`
-  const ctaLabel = w.is_full ? 'Join the waitlist' : 'Reserve your seat'
+  const ctaLabel = w.is_full ? 'Session full' : 'Reserve your seat'
 
   return (
     <SiteShell active="workshops">
@@ -88,7 +86,7 @@ export default async function WorkshopLandingPage(props: { params: Promise<{ slu
                 <a className="btn btn--red" href={registerHref}>
                   {ctaLabel} <ArrowRight aria-hidden />
                 </a>
-                <span className="wbadge" style={{ background: 'rgba(255,255,255,.1)', borderColor: 'rgba(255,255,255,.2)', color: '#E4ECFA' }}>
+                <span className="wbadge" style={{ background: 'var(--on-navy-veil)', borderColor: 'var(--on-navy-veil-line)', color: 'var(--on-navy)' }}>
                   <GraduationCap aria-hidden /> Free · education only
                 </span>
               </div>
@@ -97,7 +95,7 @@ export default async function WorkshopLandingPage(props: { params: Promise<{ slu
                   <strong>{w.seats_remaining} seats</strong> remaining for this session.
                 </p>
               ) : w.is_full ? (
-                <p className="whero__seats reveal">This session is full — join the waitlist and we&apos;ll hold the next one for you.</p>
+                <p className="whero__seats reveal">This session is currently full. Check the <Link href="/workshops">workshops page</Link> for the next date, or contact the office.</p>
               ) : null}
             </div>
 
@@ -111,7 +109,7 @@ export default async function WorkshopLandingPage(props: { params: Promise<{ slu
                   <GraduationCap aria-hidden />
                   <span>{FORMAT_LABEL[w.delivery_mode] ?? 'In person'} educational workshop</span>
                   {timeOnly ? (
-                    <span style={{ color: '#C9D8F0', fontWeight: 600 }}>Starts {timeOnly}</span>
+                    <span style={{ color: 'var(--on-navy-dim)', fontWeight: 600 }}>Starts {timeOnly}</span>
                   ) : null}
                 </div>
               )}
@@ -188,7 +186,7 @@ export default async function WorkshopLandingPage(props: { params: Promise<{ slu
                 <strong>Reserve</strong>
                 <span>
                   {w.is_full
-                    ? 'This session is full — join the waitlist.'
+                    ? 'This session is currently full.'
                     : w.seats_remaining != null
                       ? `${w.seats_remaining} seats remaining. Free to attend.`
                       : 'Free to attend — reserve your seat.'}
@@ -225,7 +223,7 @@ export default async function WorkshopLandingPage(props: { params: Promise<{ slu
             <span>{timeOnly ? `Starts ${timeOnly}` : 'Reserve your seat'}</span>
           </span>
           <a className="btn btn--red" href={registerHref}>
-            {w.is_full ? 'Waitlist' : 'Reserve'} <ArrowRight aria-hidden />
+            {w.is_full ? 'See other dates' : 'Reserve'} <ArrowRight aria-hidden />
           </a>
         </div>
       </main>

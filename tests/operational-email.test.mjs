@@ -16,7 +16,7 @@
 // Mocks Resend — never sends a live email. Run: node tests/operational-email.test.mjs
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -248,42 +248,45 @@ const read = (rel) => readFileSync(join(root, rel), 'utf8')
 
 t('forms.ts routes email through lib/messaging sendEmail (no direct new Resend)', () => {
   const src = read('src/lib/forms.ts')
-  assert.ok(/from '@\/lib\/messaging'/.test(src), 'imports the shared sender')
-  assert.ok(/sendEmail\(/.test(src), 'calls sendEmail')
+  // §11a repair: the import-line regex was satisfiable with the call deleted; the
+  // executable call-site anchor is the guarantee.
+  assert.ok(/await sendEmail\(/.test(src), 'the executable sendEmail call is present')
   assert.ok(!/new Resend\(/.test(src), 'no direct Resend instantiation remains')
 })
 
 t('briefing/send routes through lib/messaging sendEmail (no direct new Resend)', () => {
   const src = read('src/app/api/briefing/send/route.ts')
-  assert.ok(/from '@\/lib\/messaging'/.test(src), 'imports the shared sender')
-  assert.ok(/sendEmail\(/.test(src), 'calls sendEmail')
+  assert.ok(/await sendEmail\(/.test(src), 'the executable sendEmail call is present')
   assert.ok(!/new Resend\(/.test(src), 'no direct Resend instantiation remains')
   // Still fails fast on misconfiguration before the (paid) AI call.
   assert.ok(/RESEND_API_KEY is not set|RESEND_FROM_EMAIL is not a verified/.test(src), 'config guard kept')
 })
 
-t('workshops/register confirmation goes through the shared sender and logs failures', () => {
-  const src = read('src/app/api/workshops/register/route.ts')
-  assert.ok(/from '@\/lib\/messaging'/.test(src), 'imports the shared sender')
-  assert.ok(/const sent = await sendEmail\(/.test(src), 'captures the send result')
-  assert.ok(/if \(!sent\.ok\)/.test(src), 'branches on failure')
-  assert.ok(/console\.(error|warn)\(/.test(src), 'logs on failure instead of dropping silently')
+t('legacy /api/workshops/register stays deleted (WS-002 — the gated public route is the only door)', () => {
+  assert.ok(!existsSync(join(root, 'src/app/api/workshops/register')), 'legacy unauthenticated register route must not return')
 })
 
 t('no operational send gates on the marketing consent table', () => {
   for (const rel of [
     'src/lib/forms.ts',
-    'src/app/api/workshops/register/route.ts',
     'src/app/api/briefing/send/route.ts',
   ]) {
     const src = read(rel)
-    assert.ok(!/\.from\('consents'\)/.test(src), `${rel} does not read consents for a transactional send`)
+    // §11a repair: tightened beyond one literal spelling; also ban the consent-gating
+    // module imports through which gating would realistically arrive.
+    assert.ok(!/\.from\(\s*['\"]consents['\"]\s*\)/.test(src), `${rel} does not read consents for a transactional send`)
+    assert.ok(!/@\/lib\/comms\/policy-resolver|@\/lib\/comms\/simulation|@\/lib\/comms\/consent-population/.test(src), `${rel} does not import a consent-gating module`)
   }
 })
 
-t('no hardcoded from-address — all senders resolve RESEND_FROM_EMAIL', () => {
+t('no hardcoded from-address — sendEmail itself resolves RESEND_FROM_EMAIL', () => {
   const msg = read('src/lib/messaging.ts')
-  assert.ok(/process\.env\.RESEND_FROM_EMAIL/.test(msg), 'from resolved from env, never hardcoded')
+  // §11a repair: the token anywhere in the file (e.g. emailConfigured()) satisfied the old
+  // regex even with sendEmail hardcoded. Extract sendEmail's function body and assert the
+  // env read INSIDE it; extraction failure fails the test (no vacuous fallback).
+  const fn = msg.match(/export async function sendEmail\([\s\S]*?\n\}/)
+  assert.ok(fn, 'sendEmail function body found')
+  assert.ok(/opts\?\.from \|\| process\.env\.RESEND_FROM_EMAIL/.test(fn[0]), 'from resolves env (with per-send override) inside sendEmail itself')
 })
 
 console.log(`\n✅ operational-email: ${passed} passed`)

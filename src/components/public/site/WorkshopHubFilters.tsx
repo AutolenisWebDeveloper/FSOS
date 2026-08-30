@@ -10,10 +10,8 @@ import type { PublicWorkshopCard } from '@/lib/workshops/public'
 
 const FORMAT_LABEL: Record<string, string> = { in_person: 'In person', virtual: 'Online', hybrid: 'Hybrid' }
 
-function formatWhen(iso: string | null): string {
-  if (!iso) return 'Date to be announced'
-  return new Date(iso).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-}
+// WS-051: dates arrive PRE-FORMATTED in the venue zone from the server loader — this
+// client component must never re-format them (hydration would swap to the viewer's zone).
 
 function FormatBadge({ mode }: { mode: string }) {
   const Icon = mode === 'virtual' ? Video : mode === 'hybrid' ? Users : MapPin
@@ -115,7 +113,7 @@ export function WorkshopHubFilters({ cards }: { cards: PublicWorkshopCard[] }) {
                   {c.description ? <p className="wcard__desc">{c.description}</p> : null}
                   <ul className="wcard__meta">
                     <li>
-                      <Calendar aria-hidden /> {formatWhen(c.starts_at)}
+                      <Calendar aria-hidden /> {c.when_local ?? 'Date to be announced'}
                     </li>
                     {c.presenters.length > 0 ? (
                       <li className="wcard__pres">
@@ -131,7 +129,7 @@ export function WorkshopHubFilters({ cards }: { cards: PublicWorkshopCard[] }) {
                 </div>
                 <div className="wcard__foot">
                   {c.is_full ? (
-                    <span className="wseats wseats--full">Waitlist only</span>
+                    <span className="wseats wseats--full">Session full</span>
                   ) : c.seats_remaining != null ? (
                     <span className="wseats">{c.seats_remaining} seats left</span>
                   ) : (
@@ -140,7 +138,7 @@ export function WorkshopHubFilters({ cards }: { cards: PublicWorkshopCard[] }) {
                     </span>
                   )}
                   <span className="wcard__cta">
-                    {c.is_full ? 'Join waitlist' : 'View & register'} <ArrowRight aria-hidden />
+                    {c.is_full ? 'View details' : 'View & register'} <ArrowRight aria-hidden />
                   </span>
                 </div>
               </a>

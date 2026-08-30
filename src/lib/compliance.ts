@@ -14,7 +14,7 @@ export const FINRA_DISCLAIMER =
 // message copy itself — every AI conversation opener says "automated assistant" and that
 // is asserted by tests/lifecycle-campaign-messaging.test.mjs.
 // The "Reply STOP" keyword is a carrier requirement and may NOT be removed.
-export const SMS_OPT_OUT_FOOTER = 'Reply STOP to opt out.'
+export const SMS_OPT_OUT_FOOTER = 'Reply STOP to opt out, HELP for help.'
 
 export const AI_PERMITTED_ACTIONS = [
   'Educate on financial concepts',

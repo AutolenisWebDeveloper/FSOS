@@ -42,6 +42,9 @@ export interface RegLite {
   referral_id?: string | null
   lead_converted_at?: string | null
   appointment_booked?: boolean | null
+  /** WS-073: the registrant ASKED for a consult on the post-event feedback form. A real
+   *  consult signal, unlike the automation's own lead_converted_at stamp. */
+  consult_requested?: boolean | null
 }
 
 export interface AttLite {
@@ -128,29 +131,43 @@ export function computeAttendanceStats(regs: RegLite[], attendance: AttLite[]): 
 
 export interface ConsultConversion {
   registrations: number
-  /** attendees converted to a lead/consult (referral or GHL opportunity created). */
+  /** Registrants who produced a REAL consult signal (asked on the feedback form, or an
+   *  appointment was booked). NOT the automation's own conversion stamp. */
   consultsBooked: number
-  /** of those, how many showed (appointment_booked === true). */
+  /** of those, how many actually have a booked appointment. */
   consultsShowed: number
   /** consultsBooked / registrations, 0..1. */
   bookedRate: number
   /** consultsShowed / consultsBooked, 0..1. */
   showRate: number
+  /** WS-073 transparency: how many registrations carry the automation's
+   *  lead_converted_at / referral stamp. This is PIPELINE ENTRY, not a consult — it is
+   *  reported separately so the two can never be conflated again. */
+  automationRouted: number
 }
 
 /**
- * A registration is "converted to a consult/lead" when the convert produced an internal
- * referral or marked the native conversion (lead_converted_at). "Showed" reuses the existing
- * appointment_booked flag on the registration (the consult was actually booked/kept). Both
- * are conservative counts.
+ * WS-073 — a consult is a signal the PERSON gave, not one the automation wrote.
+ *
+ * The old definition counted `referral_id || lead_converted_at`, both of which the
+ * nurture pass stamps automatically for every attended/left_early registrant. That made
+ * "consults booked" a synonym for "attended", so the booked-rate measured the
+ * automation, not the business. Counted now:
+ *   • `consult_requested` — the registrant ticked the box on the post-event feedback
+ *     form (an explicit ask), or
+ *   • `appointment_booked` — an appointment actually exists.
+ * `automationRouted` still reports the old stamp count alongside, labelled as pipeline
+ * entry, so nothing is hidden — only correctly named.
  */
 export function computeConsultConversion(regs: RegLite[]): ConsultConversion {
   let booked = 0
   let showed = 0
+  let automationRouted = 0
   for (const r of regs) {
-    const converted = !!r.referral_id || !!r.lead_converted_at
-    if (converted) booked++
-    if (converted && r.appointment_booked) showed++
+    const realSignal = r.consult_requested === true || r.appointment_booked === true
+    if (realSignal) booked++
+    if (r.appointment_booked === true) showed++
+    if (r.referral_id || r.lead_converted_at) automationRouted++
   }
   return {
     registrations: regs.length,
@@ -158,6 +175,7 @@ export function computeConsultConversion(regs: RegLite[]): ConsultConversion {
     consultsShowed: showed,
     bookedRate: ratio(booked, regs.length),
     showRate: ratio(showed, booked),
+    automationRouted,
   }
 }
 

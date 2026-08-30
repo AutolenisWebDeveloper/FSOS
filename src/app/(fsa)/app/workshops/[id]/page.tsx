@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ExternalLink, QrCode, BarChart3 } from 'lucide-react'
+import { ExternalLink, QrCode, BarChart3, Download } from 'lucide-react'
 import { requireRole } from '@/lib/auth/session'
 import { DetailShell, ErrorState, StatusBadge, type StatusKey } from '@/components/archetypes'
 import { MonoLabel } from '@/components/ui/typography'
@@ -10,6 +10,7 @@ import { getDb } from '@/lib/supabase/client'
 import { WorkshopStatusControl } from '@/components/app/WorkshopStatusControl'
 import { WorkshopRegistrations, type Registration, type AttendanceStatus } from '@/components/app/WorkshopRegistrations'
 import { WorkshopDeliveryPanel } from '@/components/app/WorkshopDeliveryPanel'
+import { WorkshopEditPanel, type WorkshopEditable } from '@/components/app/WorkshopEditPanel'
 import { loadDeliverySummary, type DeliverySummary } from '@/lib/workshops/server'
 
 export const dynamic = 'force-dynamic'
@@ -37,6 +38,9 @@ interface Workshop {
   is_security: boolean | null
   delivery_mode: string | null
   host_name: string | null
+  agenda: string | null
+  budget_spend: number | null
+  budget_spend_note: string | null
 }
 
 // Workshop detail (docs/legacy-port.md §2.5) — A3. Registrations, attendance, and
@@ -48,11 +52,12 @@ export default async function WorkshopDetailPage(props: { params: Promise<{ id: 
   let workshop: Workshop | null = null
   let registrations: Registration[] = []
   let delivery: DeliverySummary | null = null
+  let editSession: WorkshopEditable['session'] = null
   try {
     const db = getDb()
     const { data: w } = await db
       .from('workshops')
-      .select('workshop_id, title, topic, status, description, scheduled_at, location, max_attendees, slug, is_security, delivery_mode, host_name')
+      .select('workshop_id, title, topic, status, description, agenda, scheduled_at, location, max_attendees, slug, is_security, delivery_mode, host_name, budget_spend, budget_spend_note')
       .eq('workshop_id', params.id)
       .maybeSingle()
     workshop = (w as Workshop) ?? null
@@ -77,6 +82,16 @@ export default async function WorkshopDetailPage(props: { params: Promise<{ id: 
       }
       registrations = rows.map((r) => ({ ...r, attendance_status: attMap.get(r.reg_id) ?? 'registered' }))
       delivery = await loadDeliverySummary(db, params.id)
+      // WS-046: the upcoming session backing the edit panel's reschedule/venue fields.
+      const { data: sess } = await db
+        .from('workshop_sessions')
+        .select('id, starts_at, ends_at, timezone, venue_name, venue_address')
+        .eq('workshop_id', params.id)
+        .eq('status', 'scheduled')
+        .order('starts_at', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      editSession = (sess as WorkshopEditable['session']) ?? null
     }
   } catch (e) {
     return (
@@ -117,6 +132,12 @@ export default async function WorkshopDetailPage(props: { params: Promise<{ id: 
               <BarChart3 className="h-4 w-4" aria-hidden /> Report
             </Link>
           </Button>
+          {/* WS-045: server-generated roster CSV (role-gated + audited as a PII export). */}
+          <Button asChild variant="outline" size="sm">
+            <a href={`/api/workshops/${workshop.workshop_id}/roster`} download>
+              <Download className="h-4 w-4" aria-hidden /> Roster CSV
+            </a>
+          </Button>
           <WorkshopStatusControl workshopId={workshop.workshop_id} status={workshop.status} />
         </div>
       }
@@ -151,6 +172,22 @@ export default async function WorkshopDetailPage(props: { params: Promise<{ id: 
       }
     >
       {workshop.description ? <p className="text-sm text-muted-foreground">{workshop.description}</p> : null}
+
+      {/* WS-046: edit in place — details, event spend (cost per lead), schedule + venue. */}
+      <WorkshopEditPanel
+        workshop={{
+          workshop_id: workshop.workshop_id,
+          status: workshop.status,
+          title: workshop.title,
+          description: workshop.description ?? null,
+          agenda: workshop.agenda ?? null,
+          host_name: workshop.host_name ?? null,
+          location: workshop.location ?? null,
+          budget_spend: workshop.budget_spend ?? null,
+          budget_spend_note: workshop.budget_spend_note ?? null,
+          session: editSession,
+        }}
+      />
       {delivery && (delivery.hasVirtual || delivery.feedback.count > 0) ? (
         <Card>
           <CardHeader>

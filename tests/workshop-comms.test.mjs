@@ -44,7 +44,12 @@ const require = createRequire(import.meta.url)
 const R = require(join(out, 'reminders.js'))
 
 console.log('\nReminder scheduling (isReminderDue / dueReminderKinds)')
-ok('offset→kind map is exact', R.reminderKindForOffset(10080) === 'reminder_7d' && R.reminderKindForOffset(1440) === 'reminder_1d' && R.reminderKindForOffset(60) === 'reminder_1h' && R.reminderKindForOffset(0) === 'reminder_starting' && R.reminderKindForOffset(999) === null)
+ok('offset→kind map is exact (D-1(b): 3d added; 60 retained as capability only)',
+  R.reminderKindForOffset(10080) === 'reminder_7d' && R.reminderKindForOffset(4320) === 'reminder_3d' &&
+  R.reminderKindForOffset(1440) === 'reminder_1d' && R.reminderKindForOffset(60) === 'reminder_1h' &&
+  R.reminderKindForOffset(0) === 'reminder_starting' && R.reminderKindForOffset(999) === null)
+ok('unmappedOffsets surfaces exactly the stray values (never silently dropped)',
+  JSON.stringify(R.unmappedOffsets([10080, 999, 4320, 120])) === JSON.stringify([999, 120]))
 const now = 1_800_000_000_000
 ok('7d reminder DUE when registered before its fire-time and now in [fireAt,start]',
   R.isReminderDue({ offsetMinutes: 10080, startMs: now + 3 * D, nowMs: now, registeredMs: now - 5 * D }) === true)
@@ -53,9 +58,72 @@ ok('7d reminder SKIPPED when booked <7d out (registered after fire-time — spec
 ok('1h reminder DUE inside its window', R.isReminderDue({ offsetMinutes: 60, startMs: now + 30 * MIN, nowMs: now, registeredMs: now - 2 * D }) === true)
 ok('1h reminder NOT due too early', R.isReminderDue({ offsetMinutes: 60, startMs: now + 3 * H, nowMs: now, registeredMs: now - 2 * D }) === false)
 ok('before-start reminder NOT due after the event started', R.isReminderDue({ offsetMinutes: 60, startMs: now - 10 * MIN, nowMs: now, registeredMs: now - 2 * D }) === false)
-ok('confirmation due while the event is still upcoming', R.isConfirmationDue({ startMs: now + D, nowMs: now }) === true && R.isConfirmationDue({ startMs: now - D, nowMs: now }) === false)
-const kinds = R.dueReminderKinds({ startMs: now + 30 * MIN, nowMs: now, registeredMs: now - 10 * D, offsetsMinutes: [10080, 1440, 60], confirmationEnabled: true })
-ok('dueReminderKinds includes confirmation first + the due 1h reminder', kinds[0] === 'confirmation' && kinds.includes('reminder_1h'))
+// D-8: the engine 'confirmation' kind is DELETED — the register route's instant ack is
+// the single confirmation of record. dueReminderKinds can no longer produce it.
+ok('the engine cannot produce a confirmation (D-8: isConfirmationDue is gone; dueReminderKinds never yields it)',
+  R.isConfirmationDue === undefined &&
+  !R.dueReminderKinds({ startMs: now + 30 * MIN, nowMs: now, registeredMs: now - 10 * D, offsetsMinutes: [10080, 4320, 1440, 60, 0], venueZone: 'America/Chicago', deliveryMode: 'virtual' }).includes('confirmation'))
+const kinds = R.dueReminderKinds({ startMs: now + 30 * MIN, nowMs: now, registeredMs: now - 10 * D, offsetsMinutes: [10080, 1440, 60], venueZone: 'America/Chicago', deliveryMode: 'in_person' })
+ok('dueReminderKinds includes the due 1h reminder (capability offset)', kinds.includes('reminder_1h'))
+
+console.log('\nDay-of-AM (WALL-CLOCK kind) + WS-071 mode gate + T+2/3d follow-up')
+// 2026-08-07 session at 19:00Z = 2:00 PM CDT; 9:00 AM CDT that day = 14:00Z.
+const START = Date.UTC(2026, 7, 7, 19, 0)
+ok('dayOfNineAmMs resolves 9:00 AM on the VENUE calendar date (CDT: 14:00Z)',
+  R.dayOfNineAmMs(START, 'America/Chicago') === Date.UTC(2026, 7, 7, 14, 0))
+// January (CST): 9:00 AM = 15:00Z — the DST pair pins a real zone computation.
+ok('…and is DST-correct (CST January: 15:00Z)',
+  R.dayOfNineAmMs(Date.UTC(2026, 0, 20, 19, 0), 'America/Chicago') === Date.UTC(2026, 0, 20, 15, 0))
+ok('day-of due inside [9AM venue, start]; not before; never after start; skipped for same-morning registrants',
+  R.isDayOfDue({ startMs: START, nowMs: Date.UTC(2026, 7, 7, 15, 0), registeredMs: START - 3 * D, venueZone: 'America/Chicago' }) === true &&
+  R.isDayOfDue({ startMs: START, nowMs: Date.UTC(2026, 7, 7, 13, 0), registeredMs: START - 3 * D, venueZone: 'America/Chicago' }) === false &&
+  R.isDayOfDue({ startMs: START, nowMs: Date.UTC(2026, 7, 7, 20, 0), registeredMs: START - 3 * D, venueZone: 'America/Chicago' }) === false &&
+  R.isDayOfDue({ startMs: START, nowMs: Date.UTC(2026, 7, 7, 15, 0), registeredMs: Date.UTC(2026, 7, 7, 14, 30), venueZone: 'America/Chicago' }) === false)
+ok('a session STARTING before 9 AM venue-local never gets a day-of touch (empty window)',
+  R.isDayOfDue({ startMs: Date.UTC(2026, 7, 7, 12, 0), nowMs: Date.UTC(2026, 7, 7, 12, 0), registeredMs: 0, venueZone: 'America/Chicago' }) === false)
+const dueVirtual = R.dueReminderKinds({ startMs: now + 10 * MIN, nowMs: now, registeredMs: now - 10 * D, offsetsMinutes: [0], venueZone: 'America/Chicago', deliveryMode: 'virtual' })
+const dueHybrid = R.dueReminderKinds({ startMs: now + 10 * MIN, nowMs: now + 11 * MIN, registeredMs: now - 10 * D, offsetsMinutes: [0], venueZone: 'America/Chicago', deliveryMode: 'hybrid' })
+const dueInPerson = R.dueReminderKinds({ startMs: now + 10 * MIN, nowMs: now + 11 * MIN, registeredMs: now - 10 * D, offsetsMinutes: [0], venueZone: 'America/Chicago', deliveryMode: 'in_person' })
+ok('reminder_starting fires for VIRTUAL and HYBRID only (WS-071 — walk-ins have no link to tap)',
+  !dueVirtual.includes('reminder_starting') /* pre-start */ && dueHybrid.includes('reminder_starting') && !dueInPerson.includes('reminder_starting'))
+ok('the follow-up trigger is a distinct delay (due at anchor+delay, not before)',
+  R.isFollowupDue({ anchorMs: now, nowMs: now + 2 * D, followupDelayMinutes: 2880 }) === true &&
+  R.isFollowupDue({ anchorMs: now, nowMs: now + D, followupDelayMinutes: 2880 }) === false)
+
+console.log('\nPlaintext part (WS-067)')
+const PLAIN = R.toPlainText('<h1>Hi {{name}}</h1><p>Your seat is saved.</p><hr /><p style="x">Visit <a href="https://x.test/w">the page</a> &amp; reply STOP to opt out.</p>')
+ok('toPlainText strips tags, keeps link targets, decodes entities',
+  PLAIN.includes('Hi {{name}}') && PLAIN.includes('Your seat is saved.') &&
+  PLAIN.includes('the page (https://x.test/w)') && PLAIN.includes('& reply STOP') && !/[<>]/.test(PLAIN.replace(/&lt;|&gt;/g, '')))
+
+console.log('\nReminder-class allowlist (SETTLED consent model — the closed enum)')
+// Batch 4 widened the class by exactly the four LIFECYCLE service kinds (a change/
+// cancellation notice + the cancel ack service the registration itself). Still closed.
+ok('the allowlist is EXACTLY the reminder + lifecycle-service kinds (closed set)',
+  JSON.stringify([...R.REMINDER_CLASS].sort()) === JSON.stringify([
+    'cancel_ack', 'change_reschedule', 'change_venue', 'confirmation', 'event_cancelled',
+    'reminder_1d', 'reminder_1h', 'reminder_3d', 'reminder_7d', 'reminder_day_of', 'reminder_starting',
+  ]))
+ok('every nurture/marketing kind is OUTSIDE the reminder class (cannot borrow the registration basis)',
+  ['nurture_attended', 'nurture_left_early', 'nurture_no_show', 'nurture_registered_no_show', 'nurture_followup'].every((k) => R.isReminderClass(k) === false))
+ok('an unknown kind is outside the class too (no default-open)', R.isReminderClass('anything_else') === false)
+
+console.log('\nClaim generation (WS-029 re-arm key) + change-kind pick')
+ok('re-armable kinds claim at the session generation (floored to 1)',
+  R.claimGeneration('reminder_1d', 3) === 3 && R.claimGeneration('change_reschedule', 2) === 2 &&
+  R.claimGeneration('reminder_7d', null) === 1 && R.claimGeneration('event_cancelled', 0) === 1)
+ok('one-time kinds pin to generation 0 REGARDLESS of the session generation (a reschedule can never replay them)',
+  R.claimGeneration('confirmation', 5) === 0 && R.claimGeneration('cancel_ack', 5) === 0 &&
+  R.claimGeneration('nurture_attended', 5) === 0 && R.claimGeneration('nurture_followup', 5) === 0)
+ok('the re-armable set is EXACTLY the pre-event reminders + change notices (closed set)',
+  JSON.stringify([...R.REARMABLE_KINDS].sort()) === JSON.stringify([
+    'change_reschedule', 'change_venue', 'event_cancelled',
+    'reminder_1d', 'reminder_1h', 'reminder_3d', 'reminder_7d', 'reminder_day_of', 'reminder_starting',
+  ]))
+ok('a time move dominates a combined edit (ONE reschedule notice, never two)',
+  R.pickChangeKind({ timeChanged: true, venueChanged: true }) === 'change_reschedule' &&
+  R.pickChangeKind({ timeChanged: false, venueChanged: true }) === 'change_venue' &&
+  R.pickChangeKind({ timeChanged: false, venueChanged: false }) === null)
 
 console.log('\nQuiet-hours floor (recipient-local 9–20)')
 ok('8am blocked, 9am ok, 7:59pm ok, 8pm blocked', R.withinQuietHours(8) === false && R.withinQuietHours(9) === true && R.withinQuietHours(19) === true && R.withinQuietHours(20) === false)
@@ -63,9 +131,15 @@ ok('8am blocked, 9am ok, 7:59pm ok, 8pm blocked', R.withinQuietHours(8) === fals
 ok('a "starting now" send at 8:05pm local is outside quiet hours', R.withinQuietHours(R.recipientLocalHour(Date.UTC(2026, 6, 20, 2, 5), -6)) === false)
 ok('same send at 3:00pm local is inside quiet hours', R.withinQuietHours(R.recipientLocalHour(Date.UTC(2026, 6, 20, 21, 0), -6)) === true)
 
-console.log('\nTimezone offset (utcOffsetHoursForTimezone)')
-const chi = R.utcOffsetHoursForTimezone('America/Chicago', Date.UTC(2026, 6, 20, 18, 0))
-ok('America/Chicago resolves to CDT/CST (−5 or −6)', chi === -5 || chi === -6)
+console.log('\nTimezone offset (utcOffsetHoursForTimezone) — §11a repair: pinned per fixture date')
+// July 20 is unambiguously CDT: the ONLY correct answer is −5. (The old assertion accepted
+// −5 OR −6 — true for every legal state including the total-failure fallback — §11a A.)
+ok('America/Chicago on July 20 is exactly CDT (−5)', R.utcOffsetHoursForTimezone('America/Chicago', Date.UTC(2026, 6, 20, 18, 0)) === -5)
+ok('America/Chicago on January 20 is exactly CST (−6)', R.utcOffsetHoursForTimezone('America/Chicago', Date.UTC(2026, 0, 20, 18, 0)) === -6)
+// DST boundary pair (2026: spring-forward Mar 8, fall-back Nov 1): the offset CHANGES
+// across each boundary — a wrong-offset or no-DST implementation fails one side.
+ok('spring-forward 2026: −6 the day before, −5 the day after', R.utcOffsetHoursForTimezone('America/Chicago', Date.UTC(2026, 2, 7, 18, 0)) === -6 && R.utcOffsetHoursForTimezone('America/Chicago', Date.UTC(2026, 2, 9, 18, 0)) === -5)
+ok('fall-back 2026: −5 the day before, −6 the day after', R.utcOffsetHoursForTimezone('America/Chicago', Date.UTC(2026, 9, 31, 18, 0)) === -5 && R.utcOffsetHoursForTimezone('America/Chicago', Date.UTC(2026, 10, 2, 18, 0)) === -6)
 ok('unknown zone falls back to Central floor (−6)', R.utcOffsetHoursForTimezone('Not/AZone', now) === -6)
 
 console.log('\nIdempotency (decideClaim / classifySendOutcome)')
@@ -74,8 +148,16 @@ ok('deferred → retry (only retryable state)', R.decideClaim('deferred') === 'r
 ok('sent/blocked/sending/skipped → skip (never resend)', ['sent', 'blocked', 'sending', 'skipped'].every((s) => R.decideClaim(s) === 'skip'))
 ok('overlapping ticks resolve to one send: 2nd tick sees "sending" → skip', R.decideClaim('sending') === 'skip')
 ok('retry of a sent row is a skip (retry === one send)', R.decideClaim('sent') === 'skip')
-ok('gate outcome: sent→sent, quiet_hours→deferred, business_hours→deferred, consent→blocked',
+ok('outcome classes — sent / operational-hold deferrals / terminal blocks (WS-026 table)',
   R.classifySendOutcome(true, null) === 'sent' && R.classifySendOutcome(false, 'quiet_hours') === 'deferred' && R.classifySendOutcome(false, 'business_hours') === 'deferred' && R.classifySendOutcome(false, 'consent') === 'blocked' && R.classifySendOutcome(false, 'is_security') === 'blocked')
+ok('WS-026: the A2P staging hold (sms_live) defers — it clears on approval, never burns the slot',
+  R.classifySendOutcome(false, 'sms_live') === 'deferred')
+ok('WS-026: frequency + collision holds defer (they roll over / end on their own)',
+  R.classifySendOutcome(false, 'frequency') === 'deferred' && R.classifySendOutcome(false, 'collision') === 'deferred')
+ok('WS-026: a provider failure (no gate block) retries bounded, then parks terminally',
+  R.classifySendOutcome(false, null, 1) === 'deferred' && R.classifySendOutcome(false, null, R.PROVIDER_RETRY_MAX - 1) === 'deferred' && R.classifySendOutcome(false, null, R.PROVIDER_RETRY_MAX) === 'blocked')
+ok('terminal steps stay terminal (dnc/suppression/template/personalization)',
+  R.classifySendOutcome(false, 'dnc') === 'blocked' && R.classifySendOutcome(false, 'suppression') === 'blocked' && R.classifySendOutcome(false, 'approved_template') === 'blocked' && R.classifySendOutcome(false, 'personalization') === 'blocked')
 
 console.log('\nSegmentation + lead-score deltas')
 ok('attended→attended, left_early→left_early, no_show→no_show, null/registered→registered_no_show',
@@ -107,17 +189,29 @@ ok('config offsets + score deltas + physical address are assumption-badged confi
 ok('NO insert/update/delete policy on the new tables (service-role writes only)', !/for\s+(insert|update|delete)/i.test(mig))
 ok('additive only — no destructive DDL', !/\bdrop\s+table\b/i.test(mig) && !/\bdrop\s+column\b/i.test(mig) && !/\btruncate\b/i.test(mig))
 
-// ── Part 3: static engine guarantees (comms-engine.ts + send.ts) ──
-console.log('\nEngine wiring (static guarantees)')
+// ── Part 3: engine wiring — §11a repair. The old regexes here were satisfiable by the
+// header comment and the import line alone (delete the gated dispatch, keep the comment,
+// stay green — sweep §11a pattern B). The BEHAVIORAL guarantees now live in
+// tests/workshop-engine-invocation.test.mjs (executed engine + recording gate stub) and
+// the pinned workshop-guarantee-*.test.mjs suite (real Postgres). What remains here are
+// EXECUTABLE-STATEMENT anchors: each regex matches only the executable call/guard, so a
+// comment or import cannot satisfy it.
+console.log('\nEngine wiring (executable-statement anchors; behavior proven in workshop-engine-invocation)')
 const eng = readFileSync(join(root, 'src/lib/workshops/comms-engine.ts'), 'utf8')
-ok('engine sends ONLY through the existing gate (sendMessage), never a raw sender', /sendMessage/.test(eng) && !/from '@\/lib\/messaging'/.test(eng) && !/\bsendSms\b/.test(eng) && !/\bsendEmail\b/.test(eng))
-ok('durable per-channel consent guard is read + fed to the gate', /durableConsentGranted/.test(eng) && /workshop_consent_events/.test(eng) && /action\s*===\s*'granted'/.test(eng))
-ok('no send on a channel without durable granted consent (blocked before dispatch)', /const consent = await durableConsentGranted/.test(eng) && /if \(!consent\)/.test(eng))
-ok('is_security workshops are excluded from selection', /is_security\s*===\s*true\)\s*continue/.test(eng) || /is_security === true/.test(eng))
-ok('is_security registrants route to FFS (not the automated segments)', /routeSecuritiesToFfs/.test(eng) && /is_security: true/.test(eng))
-ok('placeholder templates cannot activate (approved+active+gate-handle required)', /\.eq\('status', 'approved'\)/.test(eng) && /\.eq\('active', true\)/.test(eng) && /\.not\('comm_template_id', 'is', null\)/.test(eng))
-ok('missing/placeholder template → deferred (template_not_approved), never sent', /template_not_approved/.test(eng))
-ok('atomic claim before dispatch (idempotency): insert sending + guarded deferred retry', /status: 'sending'/.test(eng) && /\.eq\('status', 'deferred'\)/.test(eng))
+// MERGE NOTE: main updated its versions of these assertions only for the rename. The
+// branch's are kept because they are the §11a repair — each regex anchors on an EXECUTABLE
+// statement, so a comment or an import cannot satisfy it — and because main's consent
+// assertion (`const consent = await durableConsentGranted` reading workshop_consent_events)
+// asserts the PRE-D-3 model this branch replaced: consent is now read from the registration
+// row. Main's line would fail against this engine. Nothing here was loosened to merge.
+ok('the ONE dispatch is the awaited chokepoint call (main renamed sendThroughGate → sendMessage) (anchor: the executable await)', /const outcome = await sendMessage\(\{/.test(eng))
+ok('no raw sender import can reach the engine', !/from '@\/lib\/messaging'/.test(eng) && !/\bsendSms\b/.test(eng) && !/\bsendEmail\b/.test(eng))
+ok('consent is READ FROM THE ROW at the send site (SETTLED model anchor: the executable ternary + guard)', /const consent = isReminderClass\(kind\) \? true : reg\.marketing_opt_in === true/.test(eng) && /if \(!consent\)/.test(eng))
+ok('the purpose class is declared per kind (executable ternary)', /purpose: isReminderClass\(kind\) \? 'TRANSACTIONAL' : 'WORKSHOP'/.test(eng))
+ok('is_security exclusion is the executable selection guard (anchor: the full statement)', /if \(!workshop \|\| workshop\.status !== 'published' \|\| workshop\.is_security === true\) continue/.test(eng))
+ok('securities registrants route to FFS via the executable call (anchor)', /await routeSecuritiesToFfs\(db, reg, workshop\)/.test(eng))
+ok('sendable-template query requires approved+active+gate-handle (executable .eq chain)', /\.eq\('status', 'approved'\)/.test(eng) && /\.eq\('active', true\)/.test(eng) && /\.not\('comm_template_id', 'is', null\)/.test(eng))
+ok('atomic claim before dispatch (executable insert + guarded retry update)', /status: 'sending'/.test(eng) && /\.eq\('status', 'deferred'\)/.test(eng))
 
 // The additive-OR consent rule moved with enforcement: it now lives at the dispatch
 // chokepoint's policy resolver, where it applies to EVERY send rather than only to callers

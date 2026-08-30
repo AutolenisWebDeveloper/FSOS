@@ -91,6 +91,7 @@ async function bundle(entry) {
 
 console.log('\nlib/notifications/transactional.ts — shared transactional sends (Resend mocked)')
 const notify = await bundle('src/lib/notifications/transactional.ts')
+const site = await bundle('src/lib/site.ts')
 
 await at('FSA inbox resolves env → reply-to → CONTACT.email (precedence)', async () => {
   process.env.FSOS_NOTIFY_EMAIL = 'leads@fsa.example'
@@ -99,7 +100,7 @@ await at('FSA inbox resolves env → reply-to → CONTACT.email (precedence)', a
   process.env.RESEND_REPLY_TO = 'reply@fsa.example'
   assert.equal(notify.fsaNotificationInbox(), 'reply@fsa.example', 'falls back to RESEND_REPLY_TO')
   delete process.env.RESEND_REPLY_TO
-  assert.match(notify.fsaNotificationInbox(), /@/, 'falls back to a real CONTACT.email default')
+  assert.equal(notify.fsaNotificationInbox(), site.CONTACT.email, 'falls back to EXACTLY CONTACT.email (the documented third precedence leg)')
 })
 
 await at('notifyFsa sends to the FSA inbox with subject/html/text + reply-to', async () => {
@@ -187,10 +188,15 @@ t('contact route sends a visitor ack + FSA alert', () => {
   assert.ok(/notifyFsa\(/.test(src), 'alerts the FSA')
 })
 
-t('workshop public register route sends a visitor ack + FSA alert', () => {
+t('workshop public register route acks through the GATE (D-8) + FSA alert', () => {
+  // Batch 5 (D-8): the registrant receipt is the confirmation of record and now rides
+  // the send chokepoint (one send path per channel) with the mig-131 approval handle —
+  // executed end-to-end in tests/workshop-lifecycle-routes.test.mjs. The route still
+  // renders the shared transactional shell and still alerts the FSA internally.
   const src = read('src/app/api/public/workshops/register/route.ts')
-  assert.ok(/from '@\/lib\/notifications\/transactional'/.test(src), 'imports the shared helpers')
-  assert.ok(/sendVisitorAck\(/.test(src), 'acknowledges the registrant')
+  assert.ok(/from '@\/lib\/notifications\/transactional'/.test(src), 'renders the shared transactional shell')
+  assert.ok(/sendMessage\(\{/.test(src), 'acknowledges the registrant THROUGH the gate (allSettled member)')
+  assert.ok(!/sendVisitorAck\(/.test(src), 'the direct-send ack path is gone (exactly one send path)')
   assert.ok(/notifyFsa\(/.test(src), 'alerts the FSA')
 })
 
@@ -209,7 +215,10 @@ t('no transactional intake send gates on the marketing consent table', () => {
     'src/app/api/public/workshops/register/route.ts',
   ]) {
     const src = read(rel)
-    assert.ok(!/\.from\('consents'\)/.test(src), `${rel} does not read consents for a transactional send`)
+    // §11a repair: tightened beyond the single-spelling absence check — also ban the
+    // consent-gating MODULES whose import is how gating would realistically arrive.
+    assert.ok(!/\.from\(\s*['\"]consents['\"]\s*\)/.test(src), `${rel} does not read consents for a transactional send`)
+    assert.ok(!/@\/lib\/comms\/policy-resolver|@\/lib\/comms\/simulation|@\/lib\/comms\/consent-population/.test(src), `${rel} does not import a consent-gating module`)
   }
 })
 

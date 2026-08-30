@@ -100,8 +100,14 @@ const EMAIL_PATHS = [
   // asserts the transactional BASIS, which is the field anchored here.
   ['2 booking transactional fallback', 'src/lib/booking/notify.ts', 'transactionalBasis: true',
     { actor: 'system:notify', purpose: 'TRANSACTIONAL', templateKind: 'system_transactional', suppressible: false, durableConsentGranted: true }],
-  ['3 legacy workshop registration route', 'src/app/api/workshops/register/route.ts', 'system_transactional',
-    { actor: 'system:workshop-register', purpose: 'TRANSACTIONAL', templateKind: 'system_transactional', suppressible: false, durableConsentGranted: true }],
+  // PATH 3 REMOVED, not un-gated: main gated `src/app/api/workshops/register/route.ts`
+  // because it was an unauthenticated, publicly reachable POST. This branch DELETED that
+  // route outright (WS-B1/WS-002) — it had no in-repo caller, no rate limit, no publish
+  // gate and no consent capture, and the gated public route
+  // (/api/public/workshops/register) is the only door. A path that does not exist cannot
+  // bypass the chokepoint, and its absence is asserted positively, not merely implied:
+  // tests/operational-email.test.mjs — "legacy /api/workshops/register stays deleted".
+  // Nothing was loosened; one row was dropped because its file is gone.
   // NOT aiGenerated: §11 governs client-facing AI; this digest goes to the operator's own
   // inbox. The recommendation red line still screens the AI body (proven separately below).
   ['4 AI morning briefing (briefing/send)', 'src/app/api/briefing/send/route.ts', 'system_transactional',

@@ -4,7 +4,7 @@ import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { RegistrationPatchSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
-import { convertRegistrationToLead } from '@/lib/workshops/server'
+import { convertRegistrationToLead, reconcileAttendance } from '@/lib/workshops/server'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -44,7 +44,29 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     if (!reg) return NextResponse.json({ error: 'Registration not found' }, { status: 404 })
 
     const update: Record<string, unknown> = {}
-    if (typeof v.data.attended === 'boolean') update.attended = v.data.attended
+
+    // WS-040: attendance lives in the workshop_attendance TABLE — the source the
+    // nurture segmentation and D-2 pipeline placement read. Writing only the legacy
+    // registrations.attended flag left a duality where a PATCH-marked attendee still
+    // nurtured (and scored) as a no-show. reconcileAttendance writes the attendance row
+    // (capture_method='manual', idempotent) AND keeps the legacy flag in sync.
+    if (typeof v.data.attended === 'boolean') {
+      const att = await reconcileAttendance(db, reg.workshop_id, [
+        { registration_id: reg.reg_id, status: v.data.attended ? 'attended' : 'no_show' },
+      ])
+      if (att.written === 0 && att.skipped > 0 && reg.attended !== v.data.attended) {
+        // No session to key an attendance row to (pre-038 shape) — preserve the legacy
+        // flag write rather than dropping the operator's mark.
+        update.attended = v.data.attended
+      }
+      await writeAudit({
+        actor,
+        action: 'entity.updated',
+        entity: 'workshop_registration',
+        entityId: reg.reg_id,
+        diff: { attended: v.data.attended, attendance_rows_written: att.written, attendance_rows_skipped: att.skipped },
+      })
+    }
 
     const wantLead = v.data.convert_to_lead === true
     const wantReferral = v.data.convert_to_referral === true

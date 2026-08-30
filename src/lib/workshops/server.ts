@@ -8,6 +8,12 @@ import { deriveIsSecurity, decideSessionMeetingProvision } from './logic'
 import { resolveCheckIn, type AttendanceStatus } from './attendance'
 import { deriveWebhookAttendance, type ParsedParticipantEvent } from './delivery'
 import { addZoomRegistrant, createZoomMeeting, deleteZoomMeeting, zoomEnabled } from '@/lib/zoom/client'
+import {
+  SIGNUP_FORM_VERSION,
+  SMS_REMINDER_DISCLOSURE,
+  MARKETING_OPT_IN_LABEL,
+  EMAIL_REMINDER_BASIS,
+} from './consent-copy'
 
 // Minimal structural type for the Supabase client we use (avoids importing the SDK type).
 type Db = ReturnType<typeof import('@/lib/supabase/client')['getDb']>
@@ -322,8 +328,8 @@ export interface WalkInInput {
   email?: string | null
   phone?: string | null
   chosen_delivery?: 'in_person' | 'virtual'
-  consent_email?: boolean
-  consent_sms?: boolean
+  /** SETTLED model (D-3): the ONE marketing fact; signing in covers this workshop's comms. */
+  marketing_opt_in?: boolean
   session_id?: string
 }
 
@@ -334,8 +340,10 @@ export interface WalkInResult {
 
 /**
  * Add a walk-in at the kiosk: create a workshop_registrations row (flagged is_walk_in,
- * lead_source='walk-in') + an 'attended' attendance row (capture_method='checkin'). Consent
- * is captured the same way as public registration, including durable consent evidence.
+ * lead_source='walk-in') + an 'attended' attendance row (capture_method='checkin').
+ * SETTLED consent model: the walk-in sheet IS this person's one-time signup — the
+ * registration covers this workshop's comms; the ONE optional box is post-event
+ * marketing, stamped on the row with the capture time + form version.
  */
 export async function addWalkIn(
   db: Db,
@@ -356,10 +364,9 @@ export async function addWalkIn(
     sessionId = s?.id ?? null
   }
 
-  const channels = [input.consent_email ? 'email' : null, input.consent_sms ? 'sms' : null].filter(Boolean) as (
-    | 'email'
-    | 'sms'
-  )[]
+  const channels = ['email', ...(input.phone ? ['sms'] : [])].filter(
+    (c) => (c === 'email' ? !!input.email : true),
+  ) as ('email' | 'sms')[]
   const joinToken = randomUUID()
 
   const { data: reg, error } = await db
@@ -368,7 +375,7 @@ export async function addWalkIn(
       workshop_id: workshopId,
       session_id: sessionId,
       name: input.name,
-      email: input.email || null,
+      email: input.email ? input.email.toLowerCase() : null,
       phone: input.phone || null,
       chosen_delivery: input.chosen_delivery ?? 'in_person',
       consent_channels: channels,
@@ -376,6 +383,9 @@ export async function addWalkIn(
       is_walk_in: true,
       join_token: joinToken,
       status: 'registered',
+      marketing_opt_in: input.marketing_opt_in === true,
+      consent_captured_at: nowIso(),
+      consent_form_version: `${SIGNUP_FORM_VERSION} · walk-in`,
     })
     .select('reg_id')
     .single()
@@ -387,8 +397,21 @@ export async function addWalkIn(
         registration_id: reg.reg_id,
         channel,
         action: 'granted',
-        disclosure_text: meta.disclosureText,
-        disclosure_version: meta.disclosureVersion,
+        disclosure_text: channel === 'sms' ? SMS_REMINDER_DISCLOSURE : `${meta.disclosureText} ${EMAIL_REMINDER_BASIS}`,
+        disclosure_version: `${SIGNUP_FORM_VERSION} · walk-in · ${meta.disclosureVersion}`,
+        ip_address: meta.ip ?? null,
+        user_agent: meta.userAgent ?? null,
+      })),
+    )
+  }
+  if (input.marketing_opt_in === true && channels.length > 0) {
+    await db.from('workshop_consent_events').insert(
+      channels.map((channel) => ({
+        registration_id: reg.reg_id,
+        channel,
+        action: 'granted',
+        disclosure_text: MARKETING_OPT_IN_LABEL,
+        disclosure_version: `${SIGNUP_FORM_VERSION} · walk-in · marketing`,
         ip_address: meta.ip ?? null,
         user_agent: meta.userAgent ?? null,
       })),
@@ -726,6 +749,13 @@ export async function cancelWorkshopZoomMeetings(db: Db, workshopId: string): Pr
         updated_at: nowIso(),
       })
       .eq('id', s.id)
+    // WS-070c: the per-registrant links died with the meeting — clear them so no stale
+    // join URL can ever surface (merge tokens, resend, UI). join_token is NOT touched:
+    // it is the registrant's manage/cancel identity, independent of Zoom.
+    await db
+      .from('workshop_registrations')
+      .update({ join_url: null, zoom_registrant_id: null })
+      .eq('session_id', s.id)
     result.deleted++
   }
   return result

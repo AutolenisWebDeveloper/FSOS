@@ -167,28 +167,62 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     }
 
     // ── Step 3: opportunity with full attribution (agency/referral/household).
-    const initialStage = 'prospect'
-    const { data: opp, error: oppErr } = await db
+    // D-2 (Batch 4): workshop attendance may already have PLACED this referral's
+    // opportunity (native entry stage, no household yet). Converting then ENRICHES that
+    // opportunity — household/product/premium attribution — instead of inserting a
+    // second one and double-counting the pipeline. Stage is preserved (it may have
+    // advanced since placement).
+    const { data: placedOpp } = await db
       .from('opportunities')
-      .insert({
-        referring_agency_id: referral.referring_agency_id,
-        referral_id: params.id,
-        household_id: householdId,
-        product_id: v.data.product_id ?? null,
-        engagement: v.data.engagement,
-        stage: initialStage,
-        is_security: isSecurity,
-        license_basis_used: licenseBasis,
-        premium: v.data.expected_premium ?? null,
-        aum: v.data.expected_aum ?? null,
-        stage_history: [{ stage: initialStage, at: new Date().toISOString(), actor }],
-        owner_scope: actor,
-      })
-      .select('id')
-      .single()
-    if (oppErr || !opp) return NextResponse.json({ error: oppErr?.message ?? 'Opportunity create failed' }, { status: 500 })
-    await writeAudit({ actor, action: 'entity.created', entity: 'opportunity', entityId: opp.id, diff: { from_referral: params.id, household_id: householdId, is_security: isSecurity } })
-    await writeAudit({ actor, action: 'stage.changed', entity: 'opportunity', entityId: opp.id, diff: { from: null, to: initialStage } })
+      .select('id, stage, household_id')
+      .eq('referral_id', params.id)
+      .is('deleted_at', null)
+      .limit(1)
+      .maybeSingle()
+
+    let oppId: string
+    if (placedOpp) {
+      const { error: enrichErr } = await db
+        .from('opportunities')
+        .update({
+          household_id: placedOpp.household_id ?? householdId,
+          product_id: v.data.product_id ?? null,
+          is_security: isSecurity,
+          license_basis_used: licenseBasis,
+          premium: v.data.expected_premium ?? null,
+          aum: v.data.expected_aum ?? null,
+          owner_scope: actor,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', placedOpp.id)
+      if (enrichErr) return NextResponse.json({ error: enrichErr.message }, { status: 500 })
+      oppId = placedOpp.id
+      await writeAudit({ actor, action: 'entity.updated', entity: 'opportunity', entityId: oppId, diff: { from_referral: params.id, household_id: householdId, enriched_existing: true, is_security: isSecurity } })
+    } else {
+      const initialStage = 'prospect'
+      const { data: opp, error: oppErr } = await db
+        .from('opportunities')
+        .insert({
+          referring_agency_id: referral.referring_agency_id,
+          referral_id: params.id,
+          household_id: householdId,
+          product_id: v.data.product_id ?? null,
+          engagement: v.data.engagement,
+          stage: initialStage,
+          is_security: isSecurity,
+          license_basis_used: licenseBasis,
+          premium: v.data.expected_premium ?? null,
+          aum: v.data.expected_aum ?? null,
+          stage_history: [{ stage: initialStage, at: new Date().toISOString(), actor }],
+          owner_scope: actor,
+        })
+        .select('id')
+        .single()
+      if (oppErr || !opp) return NextResponse.json({ error: oppErr?.message ?? 'Opportunity create failed' }, { status: 500 })
+      oppId = opp.id
+      await writeAudit({ actor, action: 'entity.created', entity: 'opportunity', entityId: oppId, diff: { from_referral: params.id, household_id: householdId, is_security: isSecurity } })
+      await writeAudit({ actor, action: 'stage.changed', entity: 'opportunity', entityId: oppId, diff: { from: null, to: initialStage } })
+    }
 
     // ── Close the loop: referral → converted (+ linkage), rollups.
     await db
@@ -207,10 +241,10 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       action: 'entity.updated',
       entity: 'referral',
       entityId: params.id,
-      diff: { status: 'converted', household_id: householdId, opportunity_id: opp.id, created_household: createdHousehold },
+      diff: { status: 'converted', household_id: householdId, opportunity_id: oppId, created_household: createdHousehold },
     })
 
-    return NextResponse.json({ opportunity_id: opp.id, household_id: householdId }, { status: 201 })
+    return NextResponse.json({ opportunity_id: oppId, household_id: householdId }, { status: 201 })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Conversion failed' }, { status: 500 })
   }

@@ -54,10 +54,13 @@ refer/page.tsx                             /refer
 refer/success/page.tsx                     /refer/success
 schedule/page.tsx                          /schedule
 schedule/success/page.tsx                  /schedule/success
-events/page.tsx                            /events
-events/[id]/page.tsx                       /events/[id]
-events/[id]/register/page.tsx              /events/[id]/register
-events/[id]/register/success/page.tsx      /events/[id]/register/success
+events/[id]/page.tsx                       /events/[id]          (legacy entry — renders the shared register form)
+workshops/page.tsx                         /workshops            (the public workshop hub)
+workshops/[slug]/page.tsx                  /workshops/[slug]
+workshops/[slug]/register/page.tsx         /workshops/[slug]/register
+workshops/[slug]/confirmed/page.tsx        /workshops/[slug]/confirmed
+workshops/[slug]/replay/page.tsx           /workshops/[slug]/replay
+workshops/cancel/page.tsx                  /workshops/cancel     (registrant self-cancel, ?token=)
 consent/page.tsx                           /consent
 consent/preferences/page.tsx               /consent/preferences
 privacy/page.tsx  terms/page.tsx  disclosures/page.tsx  support/page.tsx

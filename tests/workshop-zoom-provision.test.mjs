@@ -123,7 +123,11 @@ let capturedCreate = null
   ok('POST hits the host user meetings endpoint', /\/users\/host%40fsa\.example\/meetings$/.test(capturedCreate.url))
   ok('start_time sent without milliseconds', capturedCreate.body.start_time === '2026-08-10T18:00:00Z')
   ok('type=2 scheduled meeting', capturedCreate.body.type === 2)
-  ok('no securities/financial data in the create body', !/account|ssn|policy|suitability/i.test(JSON.stringify(capturedCreate.body)))
+  // §11a repair: the old negative regex over a body built from the test's own clean input
+  // was true by construction. Pin the CLOSED key set instead: adding ANY field to the Zoom
+  // create body (securities data included) fails this until reviewed here.
+  ok('create body is exactly the closed field set (topic/type/start_time/duration/timezone/settings)',
+    JSON.stringify(Object.keys(capturedCreate.body).sort()) === JSON.stringify(['duration', 'settings', 'start_time', 'timezone', 'topic', 'type']))
 }
 
 console.log('\nRESCHEDULE path (mocked) — PATCH /meetings/{id} → 204 ok')
@@ -176,7 +180,7 @@ console.log('\nWorkshop create route wires meeting creation')
 const createRoute = readFileSync(join(root, 'src/app/api/workshops/route.ts'), 'utf8')
 ok('calls ensureSessionZoomMeeting on the seeded session', /ensureSessionZoomMeeting\(/.test(createRoute))
 ok('selects the session id back for provisioning', /workshop_sessions'\)[\s\S]*\.select\('id'\)/.test(createRoute))
-ok('meeting creation is non-fatal (does not block workshop create)', /non-fatal/.test(createRoute) && /catch/.test(createRoute))
+ok('meeting creation is non-fatal (anchor: the executable catch + its log call)', /catch \(/.test(createRoute) && /console\.error\('\[workshop\] zoom meeting creation \(non-fatal/.test(createRoute))
 
 console.log('\nStaff retry route creates missing meetings BEFORE provisioning registrants')
 const retryRoute = readFileSync(join(root, 'src/app/api/workshops/[id]/provision-zoom/route.ts'), 'utf8')
@@ -192,8 +196,14 @@ console.log('\nServer helpers — idempotent create + host-only start_url')
 const server = readFileSync(join(root, 'src/lib/workshops/server.ts'), 'utf8')
 ok('ensureSessionZoomMeeting uses the pure decision gate', /decideSessionMeetingProvision\(/.test(server))
 ok('persists zoom_meeting_id + host start_url on create', /zoom_meeting_id: meeting\.meetingId/.test(server) && /zoom_start_url: meeting\.startUrl/.test(server))
-ok('start_url column flagged HOST-ONLY (never returned/logged)', /HOST-ONLY column; never returned to a client or logged/.test(server))
-ok('EnsureMeetingOutcome does NOT return start_url to callers', !/startUrl/.test(server.split('EnsureMeetingOutcome')[1]?.split('export type ProvisionOutcome')[0] ?? ''))
+ok('start_url is persisted host-side only (anchor: the executable column assignment)', /zoom_start_url: meeting\.startUrl \?\? null/.test(server))
+{
+  // §11a repair: the old slice had a vacuous ?? '' fallback (renamed type → empty slice →
+  // pass). Extract the type block explicitly and FAIL if it cannot be found.
+  const outcomeBlock = server.match(/export type EnsureMeetingOutcome =[\s\S]*?(?=\nexport )/)
+  ok('EnsureMeetingOutcome type block found (extraction cannot silently vanish)', !!outcomeBlock)
+  ok('EnsureMeetingOutcome does NOT expose start_url to callers', !!outcomeBlock && !/startUrl/.test(outcomeBlock[0]))
+}
 ok('cancelWorkshopZoomMeetings deletes + clears session zoom columns', /export async function cancelWorkshopZoomMeetings/.test(server) && /zoom_meeting_id: null/.test(server))
 
 console.log('\nZoom client — uuid + passcode added to the create result')

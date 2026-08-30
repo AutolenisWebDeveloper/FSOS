@@ -969,8 +969,56 @@ export const WorkshopPatchSchema = z
     // the UI — a planning figure, never a Farmers-published number; guardrail 3).
     budget_spend: z.coerce.number().min(0).max(10_000_000).optional(),
     budget_spend_note: z.string().trim().max(500).optional(),
+    // ── WS-007 (Batch 4): session reschedule / venue change. The SESSION is the single
+    // source of truth for when/where; a material change bumps its cadence generation
+    // (re-arming reminders) and queues the change notice through the engine. Targets the
+    // workshop's single upcoming session unless session_id says otherwise.
+    session_id: uuid.optional(),
+    starts_at: z.string().datetime({ offset: true }).optional(),
+    ends_at: z.string().datetime({ offset: true }).nullable().optional(),
+    timezone: z
+      .string()
+      .trim()
+      .min(1)
+      .max(64)
+      .refine(
+        (tz) => {
+          try {
+            new Intl.DateTimeFormat('en-US', { timeZone: tz })
+            return true
+          } catch {
+            return false
+          }
+        },
+        { message: 'Unknown IANA timezone' },
+      )
+      .optional(),
+    venue_name: z.string().trim().max(300).nullable().optional(),
+    venue_address: z.string().trim().max(500).nullable().optional(),
+    // WS-042: the replay surface's data source finally has a writer — the recording
+    // link + finite replay window land on the SESSION via the same PATCH plumbing.
+    // NOT a material change (adding a replay link is not a reschedule).
+    recording_url: z.string().trim().url().max(1000).nullable().optional(),
+    recording_expires_at: z.string().datetime({ offset: true }).nullable().optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'No changes provided' })
+  // Every SESSION-targeted field must be listed here, or targeting a session by id for
+  // that field alone is rejected as "no session change" and its route path becomes
+  // unreachable (WS-042's recording fields were missed when they were added).
+  .refine(
+    (v) =>
+      !(
+        v.session_id &&
+        !v.starts_at &&
+        v.ends_at === undefined &&
+        !v.timezone &&
+        v.venue_name === undefined &&
+        v.venue_address === undefined &&
+        v.recording_url === undefined &&
+        v.recording_expires_at === undefined
+      ),
+    { message: 'session_id was provided without any session change' },
+  )
 export type WorkshopPatch = z.infer<typeof WorkshopPatchSchema>
 
 // Presenter (reusable across workshops — wholesaler / fund-family model). No securities
@@ -1002,9 +1050,10 @@ export const WorkshopApproveSchema = z.object({
 })
 export type WorkshopApprove = z.infer<typeof WorkshopApproveSchema>
 
-// Public workshop registration. Consent captured at registration (§2.5). No securities
-// data. Honeypot handled before Zod in the route. Phone required only when SMS consent
-// is given (TCPA — registration itself is never conditioned on consent).
+// Public workshop registration — SETTLED consent model (Gate 1): registering IS consent
+// for this workshop's reminders (no checkbox; the phone field carries the FFS-approved
+// reminder disclosure). ONE unchecked box covers POST-EVENT MARKETING only. No
+// securities data. Honeypot handled before Zod in the route.
 export const WorkshopRegisterSchema = z
   .object({
     workshop_id: uuid,
@@ -1013,17 +1062,10 @@ export const WorkshopRegisterSchema = z
     email: z.string().trim().email('Enter a valid email').max(200),
     phone: optionalPhone,
     chosen_delivery: z.enum(['in_person', 'virtual']).optional(),
-    consent_email: z.boolean().optional().default(false),
-    consent_sms: z.boolean().optional().default(false),
-  })
-  .superRefine((v, ctx) => {
-    if (v.consent_sms && !v.phone) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['phone'],
-        message: 'A phone number is required to receive SMS reminders.',
-      })
-    }
+    // D-7: plus-ones consume IN-PERSON capacity only (the claim function enforces).
+    guest_count: z.number().int().min(0).max(10).optional().default(0),
+    // The ONE marketing fact (post-event follow-up + nurture). Never reminders.
+    marketing_opt_in: z.boolean().optional().default(false),
   })
 export type WorkshopRegister = z.infer<typeof WorkshopRegisterSchema>
 
@@ -1044,8 +1086,16 @@ export type RegistrationPatch = z.infer<typeof RegistrationPatchSchema>
 export const ATTENDANCE_STATUS = ['registered', 'attended', 'no_show', 'left_early'] as const
 
 // Kiosk check-in / walk-in add. Exactly one action: check in a known registrant by their
-// unique join_token, OR add a walk-in (creates a registration + attendance row). Consent
-// for a walk-in is captured the same way as public registration (optional, independent).
+// unique join_token, OR add a walk-in (creates a registration + attendance row). SETTLED
+// consent model: the walk-in form IS that person's one-time signup surface — signing in
+// covers this workshop's comms; ONE optional box covers post-event marketing.
+// Registrant self-cancel (WS-009): token-addressed (the per-registrant join_token from
+// the confirmation/reminder cancel link) — never a name/email lookup.
+export const WorkshopCancelSchema = z.object({
+  token: z.string().trim().min(8, 'Invalid link').max(200),
+})
+export type WorkshopCancel = z.infer<typeof WorkshopCancelSchema>
+
 export const WorkshopCheckInSchema = z
   .object({
     join_token: z.string().trim().min(1).max(200).optional(),
@@ -1055,14 +1105,8 @@ export const WorkshopCheckInSchema = z
         email: z.string().trim().email('Enter a valid email').max(200).optional().or(z.literal('')),
         phone: optionalPhone,
         chosen_delivery: z.enum(['in_person', 'virtual']).optional(),
-        consent_email: z.boolean().optional().default(false),
-        consent_sms: z.boolean().optional().default(false),
+        marketing_opt_in: z.boolean().optional().default(false),
         session_id: uuid.optional(),
-      })
-      .superRefine((v, ctx) => {
-        if (v.consent_sms && !v.phone) {
-          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['phone'], message: 'A phone number is required for SMS consent.' })
-        }
       })
       .optional(),
   })

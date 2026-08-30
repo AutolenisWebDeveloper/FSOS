@@ -25,7 +25,7 @@
 // server-resolved conversation flag).
 
 import type { GateInput, GateResult } from './gate'
-import type { SendResult, SendPolicyOptions } from '../messaging'
+import type { SendResult, SendPolicyOptions, EmailAttachment } from '../messaging'
 import type { EmailStream } from './senders'
 import type { SuppressionSubject } from './suppression'
 import type { TemplateKind } from './dispatch-policy'
@@ -39,6 +39,8 @@ export interface DispatchRequest {
   body: string
   /** email only — the stored plaintext part (multipart). */
   bodyText?: string
+  /** email only — file attachments (WS-022: the workshop instant-ack .ics). */
+  attachments?: EmailAttachment[]
   /**
    * Caller-computed context. Only the caller-owned fields are forwarded (see the header);
    * the regulatory reads are performed fresh at the chokepoint regardless of what is here.
@@ -126,6 +128,7 @@ export async function dispatch(req: DispatchRequest): Promise<DispatchResult> {
       ? await sendSms(req.to, req.body, req.correlationId, { policy })
       : await sendEmail(req.to, req.subject ?? '', req.body, req.bodyText, {
           policy,
+          ...(req.attachments?.length ? { attachments: req.attachments } : {}),
           ...(await resolveEmailEnvelope(req)),
         })
 

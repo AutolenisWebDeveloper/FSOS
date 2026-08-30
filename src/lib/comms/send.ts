@@ -50,6 +50,9 @@ export interface SendContext {
    * email is single-part HTML (existing behavior). Ignored for SMS.
    */
   bodyText?: string
+  /** Email file attachments (WS-022: the workshop instant-ack .ics). Dispatched only
+   *  when the policy clears the send; ignored for SMS. */
+  attachments?: import('../messaging').EmailAttachment[]
   actor: string
   /** The member this send targets (for consent lookup). */
   memberId?: string | null
@@ -710,6 +713,7 @@ export async function sendMessage(ctx: SendContext): Promise<SendOutcome> {
     body: sendBody,
     correlationId: messageId,
     bodyText: ctx.channel === 'email' ? identityText : undefined,
+    attachments: ctx.channel === 'email' ? ctx.attachments : undefined,
     messageClass: streamForPurpose(ctx.purpose),
     actor: ctx.actor,
     entity: ctx.entity ?? (conversationId ? { type: 'conversation', id: conversationId } : undefined),

@@ -16,7 +16,8 @@
     "templates:build": "npx tsx scripts/build-email-templates.ts",
     "templates:build:sms": "npx tsx scripts/build-sms-templates.ts",
     "test": "node scripts/run-tests.mjs unit",
-    "test:rls": "node scripts/run-tests.mjs rls"
+    "test:rls": "node scripts/run-tests.mjs rls",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.112.4",
@@ -45,6 +46,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@react-email/components": "^1.0.12",
     "@react-email/render": "^2.1.0",
     "@types/node": "^20",

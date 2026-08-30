@@ -26,6 +26,15 @@ export function verifyTwilioSignature(url: string, params: Record<string, string
   return timingSafeEqual(a, b)
 }
 
+/** TwiML that replies with one message — used ONLY for the carrier-required HELP
+ *  auto-response (WS-033). A TwiML reply is the standards-compliant mechanism: it is a
+ *  direct response to the inbound message, delivered regardless of opt-out state, and
+ *  it is not an outbound API send (so it is not a second send path). */
+export function messageTwiml(body: string): string {
+  const esc = body.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  return `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${esc}</Message></Response>`
+}
+
 /** Minimal empty TwiML response body (we reply asynchronously, not inline). */
 export function emptyTwiml(): string {
   return '<?xml version="1.0" encoding="UTF-8"?><Response></Response>'

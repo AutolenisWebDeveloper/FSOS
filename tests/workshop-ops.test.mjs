@@ -78,17 +78,24 @@ console.log('\nAttendance stats + in-person/virtual split (computeAttendanceStat
   ok('virtual split: 2 reg, attended+left_early=2 -> 1.0', s.virtual.registrations === 2 && near(s.virtual.attendanceRate, 1))
 }
 
-console.log('\nConsult conversion (computeConsultConversion)')
+console.log('\nConsult conversion (computeConsultConversion) — WS-073 definition')
 {
+  // WS-073: a consult is a signal the PERSON gave (asked on the feedback form, or an
+  // appointment exists) — NOT the automation's own referral/lead_converted_at stamp,
+  // which the nurture pass writes for every attendee. 'b' below carries only that stamp.
   const regs = [
     { reg_id: 'a', referral_id: 'r1', appointment_booked: true },
     { reg_id: 'b', lead_converted_at: '2026-01-01T00:00:00Z', appointment_booked: false },
-    { reg_id: 'c' },
+    { reg_id: 'c', consult_requested: true },
     { reg_id: 'd' },
   ]
   const c = m.computeConsultConversion(regs)
-  ok('booked = 2', c.consultsBooked === 2)
-  ok('showed = 1', c.consultsShowed === 1)
+  ok('booked = 2 — the booked appointment and the explicit ASK, and only those', c.consultsBooked === 2)
+  ok('the automation-stamped registrant is NOT counted as a consult (the WS-073 defect)',
+    m.computeConsultConversion([{ reg_id: 'b', lead_converted_at: '2026-01-01T00:00:00Z', referral_id: 'r9' }]).consultsBooked === 0)
+  ok('…but it IS reported separately as pipeline entry (nothing hidden, only renamed)',
+    c.automationRouted === 2)
+  ok('showed = 1 (only a real appointment)', c.consultsShowed === 1)
   ok('bookedRate = 2/4', near(c.bookedRate, 0.5))
   ok('showRate = 1/2', near(c.showRate, 0.5))
 }
@@ -195,16 +202,16 @@ ok('reaffirms RLS on workshop_attendance', /alter table workshop_attendance\s+en
 console.log('\nConvert-to-lead firewall + check-in idempotency (static)')
 const regRoute = readFileSync(join(root, 'src/app/api/workshops/registrations/[id]/route.ts'), 'utf8')
 ok('securities workshop routes convert to FFS (not automated engine)', /is_security === true/.test(regRoute) && /ffs_referred/.test(regRoute))
-ok('non-securities convert routes through convertRegistrationToLead', /convertRegistrationToLead/.test(regRoute))
+ok('non-securities convert routes through convertRegistrationToLead (anchor: the executable await)', /await convertRegistrationToLead\(/.test(regRoute))
 const server = readFileSync(join(root, 'src/lib/workshops/server.ts'), 'utf8')
-ok('check-in uses resolveCheckIn for idempotent no-op', /resolveCheckIn/.test(server))
+ok('check-in uses resolveCheckIn for idempotent no-op (anchor: the executable call)', /resolveCheckIn\(existing/.test(server) || /= resolveCheckIn\(/.test(server))
 ok('convert helper firewalls is_security to FFS with no automated push', /is_security === true/.test(server) && /routed: 'ffs'/.test(server))
 // GHL excised (Pre-Phase-2): the non-securities path now marks the native conversion
 // (lead_converted_at) with no external provider push. This asserts the preserved behavior.
-ok('convert helper marks the native conversion (lead_converted_at), no GHL', /lead_converted_at/.test(server) && /routed: 'native'/.test(server) && !/GHL_CUSTOM_FIELDS/.test(server))
+ok('convert helper marks the native conversion (anchor: the executable update payload)', /lead_converted_at: nowIso\(\)|lead_converted_at: new Date\(\)\.toISOString\(\)/.test(server) && /routed: 'native'/.test(server) && !/GHL_CUSTOM_FIELDS/.test(server))
 const checkinRoute = readFileSync(join(root, 'src/app/api/workshops/[id]/check-in/route.ts'), 'utf8')
-ok('check-in route supports token + walk-in', /checkInByToken/.test(checkinRoute) && /addWalkIn/.test(checkinRoute))
+ok('check-in route supports token + walk-in (anchors: the executable awaits)', /await checkInByToken\(/.test(checkinRoute) && /await addWalkIn\(/.test(checkinRoute))
 const attRoute = readFileSync(join(root, 'src/app/api/workshops/[id]/attendance/route.ts'), 'utf8')
-ok('attendance reconcile route is staff-gated + audited', /requirePermission/.test(attRoute) && /reconcileAttendance/.test(attRoute))
+ok('attendance reconcile route is staff-gated + audited (anchors: the executable calls)', /requirePermission\(auth\.session/.test(attRoute) && /await reconcileAttendance\(/.test(attRoute))
 
 console.log(`\n${passed} checks passed.\n`)

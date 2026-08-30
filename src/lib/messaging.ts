@@ -76,8 +76,27 @@ export function emailConfigured(): boolean {
   return !!process.env.RESEND_API_KEY && !!from && !/yourdomain\.com/i.test(from)
 }
 
+/**
+ * Can this deployment place an SMS? THE SAME PREDICATE `sendSms` ENFORCES below —
+ * SID + token + (a Messaging Service SID OR a from-number). Exported so the readiness
+ * surfaces call it instead of each keeping a copy. All four copies were wrong, in both
+ * directions:
+ *   • /api/health, /super/health and /api/forms/send demanded TWILIO_PHONE_NUMBER
+ *     specifically, so a Messaging-Service-only deployment — the PREFERRED Twilio setup,
+ *     since the service carries the number pool and carrier opt-out handling — reported
+ *     SMS unconfigured while sending perfectly well. Wrong in exactly the configuration
+ *     FSOS should be running.
+ *   • /super/integrations went the other way and reported "connected" on the account SID
+ *     alone: no auth token, no sender, nothing that could place a message.
+ * tests/dispatch-chokepoint.test.mjs drives all 16 env combinations through the real
+ * sendSms and asserts this predicate agrees with it on every one, so the two cannot drift.
+ */
 export function smsConfigured(): boolean {
-  return !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER)
+  return !!(
+    process.env.TWILIO_ACCOUNT_SID &&
+    process.env.TWILIO_AUTH_TOKEN &&
+    (process.env.TWILIO_MESSAGING_SERVICE_SID || process.env.TWILIO_PHONE_NUMBER)
+  )
 }
 
 /** Optional per-send email delivery options (deliverability: reply routing + headers). */

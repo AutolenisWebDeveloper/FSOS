@@ -6,6 +6,7 @@ import { rateLimit, clientIp } from '@/lib/http/rate-limit'
 import { WorkshopRegisterSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
 import { provisionZoomForRegistration } from '@/lib/workshops/server'
+import { usableZone } from '@/lib/workshops/reminders'
 import { notifyFsa, renderHtml, renderText, type EmailContent } from '@/lib/notifications/transactional'
 import { sendMessage } from '@/lib/comms/send'
 import { buildIcs } from '@/lib/booking/ics'
@@ -236,15 +237,23 @@ export async function POST(req: NextRequest) {
         .eq('id', sessionId)
         .maybeSingle()
       sessionForIcs = s ?? null
-      if (s?.starts_at) {
+      // The "When" row is the venue's wall clock or it is nothing. Falling back to Central
+      // for an unresolvable zone printed a confident wrong hour on the one message the
+      // registrant keeps; falling back to toUTCString() printed a different-looking time in
+      // a zone they are probably not in. whenLocal is already `string | null` and the row
+      // builder drops a null value, so the receipt simply omits the row — the cadence
+      // reminders carry the details, exactly as the lookup's own best-effort comment says.
+      const zone = usableZone(s?.timezone)
+      if (s?.starts_at && zone) {
         try {
-          whenLocal = new Intl.DateTimeFormat('en-US', {
-            timeZone: s.timezone || 'America/Chicago',
-            dateStyle: 'full',
-            timeStyle: 'short',
-          }).format(new Date(s.starts_at))
+          whenLocal =
+            new Intl.DateTimeFormat('en-US', {
+              timeZone: zone,
+              dateStyle: 'full',
+              timeStyle: 'short',
+            }).format(new Date(s.starts_at)) || null
         } catch {
-          whenLocal = new Date(s.starts_at).toUTCString()
+          whenLocal = null
         }
       }
       venue = s?.venue_name || s?.venue_address || null

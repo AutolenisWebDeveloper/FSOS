@@ -6,12 +6,29 @@
 // claim itself is proven against real Postgres in workshop-registration-claim.test.mjs.
 // Run: node tests/workshop-register-route.test.mjs
 import assert from 'node:assert/strict'
+import { writeFileSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { bundle, fakeDb, installDb, makeReq } from './helpers/workshop-harness.mjs'
 
 let passed = 0
 const ok = (name, cond, extra) => { assert.ok(cond, `${name}${extra ? `\n${extra}` : ''}`); console.log(`  ✓ ${name}`); passed++ }
 
-const route = await bundle('src/app/api/public/workshops/register/route.ts')
+// The receipt rides the ONE send chokepoint; record what it hands over so the ack's
+// content is assertable without a live send.
+globalThis.__ackSends = []
+const stubDir = mkdtempSync(join(tmpdir(), 'fsos-reg-ack-'))
+process.on('exit', () => { try { rmSync(stubDir, { recursive: true, force: true }) } catch { /* best-effort */ } })
+const sendStub = join(stubDir, 'send-stub.mjs')
+writeFileSync(sendStub, `
+export async function sendMessage(ctx) {
+  globalThis.__ackSends.push(ctx)
+  return { sent: true, gate: { blockedStep: null }, messageId: 'cm-ack', reason: null }
+}
+export async function isTemplateApproved() { return true }
+`)
+
+const route = await bundle('src/app/api/public/workshops/register/route.ts', { aliases: { '@/lib/comms/send': sendStub } })
 const W = 'dddd1111-1111-1111-1111-111111111111'
 const S = 'dddd2222-2222-2222-2222-222222222222'
 const PUBLISHED = { workshop_id: W, title: 'T', status: 'published', max_attendees: 50, disclosure_config_id: null }
@@ -103,6 +120,51 @@ console.log('Session fallback — only UPCOMING, non-cancelled sessions are cons
   ok('the fallback query filters cancelled + past sessions',
     !!sessQuery && sessQuery.filters.some(([op, k]) => op === 'neq' && k === 'status') &&
     sessQuery.filters.some(([op, k]) => op === 'gte' && k === 'starts_at'))
+}
+
+console.log('Receipt "When" row — the venue wall clock or NOTHING (no Central guess)')
+{
+  // The session's timezone column is NOT NULL with a default, so an unset zone arrives as
+  // '' — not null. The old `s.timezone || 'America/Chicago'` turned that into a confident
+  // Central time on the one message the registrant keeps, and its catch turned a bad zone
+  // into a UTC string. Both stated an hour the registrant would plan around.
+  const withZone = (tz) => {
+    const db = fakeDb({
+      workshops: [PUBLISHED],
+      workshop_sessions: [{ starts_at: '2026-09-01T18:00:00Z', timezone: tz, venue_name: 'Hall', venue_address: null, ends_at: null, ics_uid: null }],
+    })
+    db.rpc = async () => ({ data: { ok: true, reg_id: 'r-tz' }, error: null })
+    return db
+  }
+
+  globalThis.__ackSends = []
+  installDb(withZone('America/Chicago'))
+  await route.POST(req(GOOD_BODY, '198.51.100.20'))
+  installDb(null)
+  const good = globalThis.__ackSends.find((c) => c.channel === 'email')
+  ok('a resolvable zone puts the VENUE wall clock in the receipt (18:00Z Sep 1 = 1:00 PM CDT)',
+    !!good && /September 1, 2026/.test(good.body) && /1:00\s?PM/.test(good.body),
+    good?.body?.slice(0, 400))
+
+  globalThis.__ackSends = []
+  installDb(withZone(''))
+  await route.POST(req(GOOD_BODY, '198.51.100.21'))
+  installDb(null)
+  const blank = globalThis.__ackSends.find((c) => c.channel === 'email')
+  ok('an EMPTY zone omits the When row entirely — no Central date, no UTC string',
+    !!blank && !/September 1, 2026/.test(blank.body) && !/1:00\s?PM/.test(blank.body) && !/Sep 2026 18:00:00 GMT/.test(blank.body),
+    blank?.body?.slice(0, 400))
+  ok('…and the receipt still SENDS with the rest of its content intact (fail closed on the field, not the message)',
+    !!blank && /Hall/.test(blank.body) && /T/.test(blank.body))
+
+  globalThis.__ackSends = []
+  installDb(withZone('Not/AZone'))
+  await route.POST(req(GOOD_BODY, '198.51.100.22'))
+  installDb(null)
+  const bogus = globalThis.__ackSends.find((c) => c.channel === 'email')
+  ok('an UNKNOWN zone likewise omits the row rather than falling back to toUTCString()',
+    !!bogus && !/September 1, 2026/.test(bogus.body) && !/GMT/.test(bogus.body),
+    bogus?.body?.slice(0, 400))
 }
 
 console.log(`\n${passed} checks passed.`)

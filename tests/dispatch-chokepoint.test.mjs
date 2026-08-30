@@ -261,6 +261,72 @@ await t('even a CONFIGURATION failure is audited, never a silent false', async (
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
+console.log('\nsmsConfigured() — the readiness surfaces and the sender agree, exhaustively')
+
+// The readiness surfaces (/api/health, the super health page, /api/forms/send) each kept
+// their own copy of "is SMS configured", and three of them demanded TWILIO_PHONE_NUMBER
+// specifically. A Messaging-Service-only deployment — the PREFERRED Twilio setup, since the
+// service carries the number pool and carrier opt-out handling — could therefore place SMS
+// successfully while every readiness surface reported it unconfigured. They now call this
+// one exported predicate. What makes that safe is not that the copies were deleted but that
+// the survivor agrees with what sendSms ACTUALLY enforces, so drive all 16 combinations of
+// the four env vars through the real sender and compare.
+await t('smsConfigured() equals sendSms\'s real precondition for all 16 env combinations', async () => {
+  const KEYS = ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_PHONE_NUMBER', 'TWILIO_MESSAGING_SERVICE_SID']
+  const VALUES = { TWILIO_ACCOUNT_SID: 'ACtest', TWILIO_AUTH_TOKEN: 'token', TWILIO_PHONE_NUMBER: '+15550000', TWILIO_MESSAGING_SERVICE_SID: 'MGtest' }
+  const saved = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]))
+  const rows = []
+  try {
+    for (let mask = 0; mask < 16; mask++) {
+      for (const [i, k] of KEYS.entries()) {
+        if (mask & (1 << i)) process.env[k] = VALUES[k]
+        else delete process.env[k]
+      }
+      const claimed = mod.messaging.smsConfigured()
+      const { r } = await smsTo('+12145550147', {}, {}, NOON)
+      // `not_configured` is the LAST gate sendSms applies, so a send that gets past it is
+      // proof the env satisfied the sender. Any other block would mean the case never
+      // reached the config check and the comparison would be vacuous.
+      const senderBlocked = r.blockedStep === 'not_configured'
+      assert.notEqual(r.blockedStep, 'sms_live', 'guard: the A2P hold must not preempt the config check')
+      assert.equal(
+        claimed, !senderBlocked,
+        `env ${KEYS.filter((_, i) => mask & (1 << i)).join('+') || '(none)'}: smsConfigured()=${claimed} but sendSms ${senderBlocked ? 'blocked not_configured' : 'accepted'}`,
+      )
+      rows.push({ mask, claimed })
+    }
+  } finally {
+    for (const k of KEYS) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k] }
+  }
+  // Guard against a vacuous truth table: both verdicts must actually occur, or the loop
+  // above would pass against a predicate hardwired to a constant.
+  assert.ok(rows.some((x) => x.claimed) && rows.some((x) => !x.claimed), 'both verdicts must occur')
+})
+
+await t('a MESSAGING-SERVICE-ONLY deployment reports ready — the specific case the old copies got wrong', async () => {
+  const saved = { p: process.env.TWILIO_PHONE_NUMBER, m: process.env.TWILIO_MESSAGING_SERVICE_SID }
+  try {
+    delete process.env.TWILIO_PHONE_NUMBER
+    process.env.TWILIO_MESSAGING_SERVICE_SID = 'MGtest'
+    assert.equal(mod.messaging.smsConfigured(), true, 'a Messaging Service alone is a complete SMS sender')
+    const { r } = await smsTo('+12145550147', {}, {}, NOON)
+    assert.notEqual(r.blockedStep, 'not_configured', 'and the sender agrees — it does not demand a from-number')
+
+    // The converse: a from-number alone is equally complete. Neither sender is privileged.
+    process.env.TWILIO_PHONE_NUMBER = '+15550000'
+    delete process.env.TWILIO_MESSAGING_SERVICE_SID
+    assert.equal(mod.messaging.smsConfigured(), true)
+
+    // Neither → not ready. SID + token alone cannot place a message.
+    delete process.env.TWILIO_PHONE_NUMBER
+    assert.equal(mod.messaging.smsConfigured(), false, 'credentials without any sender are NOT ready')
+  } finally {
+    if (saved.p === undefined) delete process.env.TWILIO_PHONE_NUMBER; else process.env.TWILIO_PHONE_NUMBER = saved.p
+    if (saved.m === undefined) delete process.env.TWILIO_MESSAGING_SERVICE_SID; else process.env.TWILIO_MESSAGING_SERVICE_SID = saved.m
+  }
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
 console.log('\nMigration 123 — static guarantees (storage for the above)')
 
 await t('mig 123: additive only, scoped-id CHECK, tz columns with method CHECK, no destructive statement', async () => {

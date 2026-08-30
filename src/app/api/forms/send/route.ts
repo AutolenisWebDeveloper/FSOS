@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireInternalAuth, readJson } from '@/lib/http'
 import { sendForm, type SendChannel } from '@/lib/forms'
+import { smsConfigured } from '@/lib/messaging'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -23,13 +24,13 @@ export async function GET(req: NextRequest) {
       note: 'from_email must be an address on a Resend-verified domain',
     },
     sms: {
-      ready:
-        !!process.env.TWILIO_ACCOUNT_SID &&
-        !!process.env.TWILIO_AUTH_TOKEN &&
-        !!process.env.TWILIO_PHONE_NUMBER,
+      ready: smsConfigured(),
       account_sid_set: !!process.env.TWILIO_ACCOUNT_SID,
       auth_token_set: !!process.env.TWILIO_AUTH_TOKEN,
+      // Kept as their own fields: `ready` is now the real send precondition (either
+      // sender is enough), so these say WHICH sender is configured.
       phone_number_set: !!process.env.TWILIO_PHONE_NUMBER,
+      messaging_service_set: !!process.env.TWILIO_MESSAGING_SERVICE_SID,
     },
   })
 }

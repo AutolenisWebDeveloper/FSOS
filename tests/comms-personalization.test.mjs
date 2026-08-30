@@ -96,6 +96,15 @@ t('an unregistered token a caller DOES supply resolves and never blocks', () => 
   assert.deepEqual(unresolvedBlockingTokens('Meeting on {{appointment_date}}', { appointment_date: 'Aug 14' }), [])
   assert.equal(personalize('Meeting on {{appointment_date}}', { appointment_date: 'Aug 14' }), 'Meeting on Aug 14')
 })
+t('{{starts_local}} is BLOCKING-tier by omission — the workshop engine\'s fail-closed depends on it', () => {
+  // src/lib/workshops/comms-engine.ts withholds `starts_local` from its token map when the
+  // venue zone cannot be resolved, on the stated ground that the unresolved token then
+  // blocks here rather than shipping a guessed hour. That only holds while starts_local is
+  // NOT cosmetic: adding it to COSMETIC_DEFAULTS would silently re-enable the guess with no
+  // other test going red. This pins the dependency at the layer that decides it.
+  assert.deepEqual(unresolvedBlockingTokens('Starts {{starts_local}}', {}), ['starts_local'])
+  assert.deepEqual(unresolvedBlockingTokens('Starts {{starts_local}}', { starts_local: 'Tue, Sep 1, 1:00 PM CDT' }), [])
+})
 t('an unregistered token wired to the gate HARD-BLOCKS and escalates', () => {
   const body = 'Meeting on {{appointment_date}}'
   const unresolved = unresolvedBlockingTokens(body, {})

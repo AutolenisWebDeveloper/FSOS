@@ -149,7 +149,7 @@ export function AddNoteButton({ householdId, memberId }: { householdId: string; 
 
 // ─── Note item (pin / edit / delete) ────────────────────────────────────────────
 
-function NoteItem({ note }: { note: NoteRecord }) {
+export function NoteItem({ note }: { note: NoteRecord }) {
   const router = useRouter()
   const [editing, setEditing] = React.useState(false)
   const [draft, setDraft] = React.useState(note.body)

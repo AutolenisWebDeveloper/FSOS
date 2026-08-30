@@ -1,4 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
+import { mkdirSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 
 // Playwright config for the workshop E2E suite (Batch 8, Phase 5 scope).
 //
@@ -7,7 +10,10 @@ import { defineConfig, devices } from '@playwright/test'
 //      capture file — see src/lib/comms/capture-transport.ts. A capture-write failure
 //      fails the send rather than falling through to a provider.
 //   2. `SMS_A2P_APPROVED` is left unset, so the A2P backstop refuses SMS anyway.
-// The suite asserts guarantee 1 directly (tests/e2e/no-live-sends.spec.ts).
+// Guarantee 1 is asserted IN THE SERVER PROCESS over HTTP (tests/e2e/no-live-sends.spec.ts
+// reads /api/dev/comms-capture). Asserting the runner's own env would prove nothing about
+// the process that actually sends. tests/e2e-guard-falsifiable.test.mjs proves that guard
+// FAILS when a server reports capture off.
 //
 // Browser: the container's pre-installed chromium. PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 // is set in the environment; never run `playwright install` here.
@@ -18,6 +24,30 @@ import { defineConfig, devices } from '@playwright/test'
 // FSOS_E2E_SUPABASE is not set, so an unconfigured run can never read as coverage.
 const PORT = Number(process.env.FSOS_E2E_PORT ?? 3737)
 
+// PER-RUN capture file. A shared fixed path lets one run read a previous run's file as
+// its own evidence (and lets two runs interleave lines); a run-scoped name cannot.
+// The guard compares the server's reported target against THIS value, so the variable is
+// also exported to the runner — but the server's own report is what the assertion reads.
+const CAPTURE_FILE =
+  process.env.COMMS_CAPTURE_TRANSPORT ??
+  join(tmpdir(), 'fsos-e2e-captures', `run-${process.pid}-${Date.now()}.jsonl`)
+try {
+  mkdirSync(join(tmpdir(), 'fsos-e2e-captures'), { recursive: true })
+} catch {
+  /* best-effort; the guard fails loudly if the server cannot write here */
+}
+// The config module is evaluated once in the runner process and again in each forked
+// worker. Pin the generated name into the environment on the FIRST load so the worker
+// (forked after this line runs) inherits it and resolves to the same file — otherwise
+// each load invents a new name and the guard's target check fails on its own config.
+process.env.COMMS_CAPTURE_TRANSPORT = CAPTURE_FILE
+process.env.FSOS_E2E_EXPECTED_CAPTURE = CAPTURE_FILE
+
+// Escape hatch for the falsifiability harness: when PW_BASE_URL is set the suite runs
+// against an already-running server (a stub, in that harness) and starts none of its own.
+const EXTERNAL_BASE = process.env.PW_BASE_URL
+const baseURL = EXTERNAL_BASE ?? `http://127.0.0.1:${PORT}`
+
 export default defineConfig({
   testDir: './tests/e2e',
   timeout: 45_000,
@@ -27,7 +57,7 @@ export default defineConfig({
   retries: 0,
   reporter: [['list']],
   use: {
-    baseURL: `http://127.0.0.1:${PORT}`,
+    baseURL,
     trace: 'off',
     screenshot: 'only-on-failure',
     launchOptions: {
@@ -47,15 +77,33 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'], viewport: { width: 375, height: 812 }, hasTouch: true },
     },
   ],
-  webServer: {
-    command: `npx next start -p ${PORT}`,
-    url: `http://127.0.0.1:${PORT}/workshops`,
-    reuseExistingServer: true,
-    timeout: 120_000,
-    env: {
-      NODE_ENV: 'test',
-      COMMS_CAPTURE_TRANSPORT: process.env.COMMS_CAPTURE_TRANSPORT ?? '/tmp/fsos-e2e-captured.jsonl',
-      NEXT_PUBLIC_APP_URL: `http://127.0.0.1:${PORT}`,
-    },
-  },
+  ...(EXTERNAL_BASE
+    ? {}
+    : {
+        webServer: {
+          // `next dev`, NOT `next start`, and this is load-bearing.
+          //
+          // Next inlines `process.env.NODE_ENV` at BUILD time. In a production build the
+          // minifier constant-folds capture-transport.ts's production refusal and the
+          // whole function collapses to `return null` — verified in the emitted bundle:
+          //   function e(){return process.env.COMMS_CAPTURE_TRANSPORT,null}
+          // That is the safety property working exactly as designed: a deployed build has
+          // no capture path at all. But it also means a suite driven by `next start` runs
+          // with captured transport DEAD, which is how the Batch 8 run reported itself
+          // safe while the mechanism it named was inert. A dev build keeps the branch.
+          command: `npx next dev -p ${PORT}`,
+          url: `http://127.0.0.1:${PORT}/workshops`,
+          // FALSE, deliberately. With reuse on, a server already listening on this port
+          // — started by hand, by a previous run, or with no capture env at all — is
+          // adopted silently and the suite's safety premise becomes unverifiable.
+          // Playwright now fails the run instead of adopting a stranger's process.
+          reuseExistingServer: false,
+          timeout: 180_000,
+          env: {
+            NODE_ENV: 'development',
+            COMMS_CAPTURE_TRANSPORT: CAPTURE_FILE,
+            NEXT_PUBLIC_APP_URL: `http://127.0.0.1:${PORT}`,
+          },
+        },
+      }),
 })

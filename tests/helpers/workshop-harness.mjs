@@ -157,10 +157,22 @@ export function fakeDb(script = {}) {
     from(table) {
       const call = { table, method: 'select', filters: [], payload: null, selected: null }
       calls.push(call)
+      // A scripted value may be:
+      //   plain            → returned as { data, error: null }
+      //   { __throw: msg } → the chain THROWS (a transport/module failure)
+      //   { __error: obj } → resolves { data: null, error: obj } — the PostgREST shape for
+      //                      a constraint violation, which callers branch on by `code`
+      //                      (e.g. 23505 unique_violation). Without this the fake could
+      //                      only ever report success, so no error branch was reachable.
       const next = () => {
         const v = remaining[table]?.length ? remaining[table].shift() : null
         if (v && typeof v === 'object' && v.__throw) throw new Error(String(v.__throw))
         return v
+      }
+      const settle = () => {
+        const v = next()
+        if (v && typeof v === 'object' && v.__error) return { data: null, error: v.__error }
+        return { data: v, error: null }
       }
       const chain = {
         select(cols) { call.selected = cols; return chain },
@@ -181,9 +193,9 @@ export function fakeDb(script = {}) {
         or(expr) { call.filters.push(['or', expr]); return chain },
         order() { return chain },
         limit() { return chain },
-        maybeSingle: async () => ({ data: next(), error: null }),
-        single: async () => ({ data: next(), error: null }),
-        then(resolve) { resolve({ data: next(), error: null }) },
+        maybeSingle: async () => settle(),
+        single: async () => settle(),
+        then(resolve) { resolve(settle()) },
       }
       return chain
     },

@@ -65,8 +65,12 @@ export function makeShim({ host, port, db, user = 'postgres', asRole = null }) {
   const queries = []
 
   function raw(sql) {
+    // VERBOSITY=verbose so psql prefixes the SQLSTATE onto the error text
+    // ("ERROR:  23505: duplicate key value violates ..."). Without it the shim could only
+    // report a message, so any code branching on `error.code` — which real supabase-js
+    // does return — was UNREACHABLE in this harness and its error path untestable.
     const args = ['-u', 'postgres', '--', 'psql', '-h', host, '-p', String(port), '-U', user, '-d', db,
-      '-v', 'ON_ERROR_STOP=1', '-t', '-A', '-c', sql]
+      '-v', 'ON_ERROR_STOP=1', '-v', 'VERBOSITY=verbose', '-t', '-A', '-c', sql]
     return execFileSync('runuser', args, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] })
   }
 
@@ -327,7 +331,10 @@ export function makeShim({ host, port, db, user = 'postgres', asRole = null }) {
         if (err instanceof HarnessError) return reject(err)
         // A genuine Postgres error is surfaced the way supabase-js does ({data:null,error})
         // so the code under test takes its real error branch.
-        try { return resolve({ data: null, error: { message: err.message } }) } catch (e) { return reject(e) }
+        // Surface the SQLSTATE as `code`, the way supabase-js does, so a caller's
+        // `error.code === '23505'` branch is reachable here and not only in production.
+        const sqlstate = /ERROR:\s+([0-9A-Z]{5}):/.exec(err.message)?.[1] ?? undefined
+        try { return resolve({ data: null, error: { message: err.message, ...(sqlstate ? { code: sqlstate } : {}) } }) } catch (e) { return reject(e) }
       })
     }
   }

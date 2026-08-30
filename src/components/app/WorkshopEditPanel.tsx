@@ -138,9 +138,12 @@ export function WorkshopEditPanel({ workshop }: { workshop: WorkshopEditable }) 
     }
     if (budgetNote !== (workshop.budget_spend_note ?? '')) payload.budget_spend_note = budgetNote
     if (workshop.session) {
-      if (scheduleLocked) {
-        // Belt and braces: the control is disabled, but a save must never fall through
-        // to a guessed zone if it is ever reached another way.
+      // The lock is on the TIME, not on the form. Title, description, agenda, host,
+      // budget and venue do not depend on the session's zone, so an unresolved zone must
+      // not discard them — and must never report a time change the operator did not make.
+      // Belt and braces: timeChanged is already false while locked, so this fires only if
+      // a time edit reaches here some other way.
+      if (scheduleLocked && startsAt !== '' && startsAt !== originalStart) {
         setBusy(false)
         setErrorField('starts_at')
         toast.error('Set this session\u2019s timezone before changing its time.')

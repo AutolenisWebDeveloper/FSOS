@@ -1,12 +1,27 @@
-// Batch 8 — CAPTURED TRANSPORT, the E2E safety mechanism, proven by EXECUTION.
-// The Playwright suite's "nothing sends" claim rests entirely on this module, so it is
-// proven here rather than assumed: activation rules, the production refusal, the
-// JSON-Lines record, and — the one that matters — that a capture-write FAILURE returns
-// false so the caller fails the send instead of falling through to a live provider.
+// CAPTURED TRANSPORT, the E2E safety mechanism, proven by EXECUTION:
+// activation rules, the production refusal, the JSON-Lines record, and — the one that
+// matters — that a capture-write FAILURE returns false so the caller fails the send
+// instead of falling through to a live provider.
+//
+// ── WHAT THIS FILE DOES NOT COVER, and why it matters ───────────────────────────
+// It compiles capture-transport.ts with BARE tsc and tests SOURCE SEMANTICS. That is
+// not the artifact that ships. Next runs the same source through webpack's DefinePlugin,
+// which inlines process.env.NODE_ENV at build time; in a production build the minifier
+// then constant-folds the production refusal and the whole function collapses:
+//
+//     function e(){return process.env.COMMS_CAPTURE_TRANSPORT,null}
+//
+// So in a `next build` artifact captureTarget() is unconditionally null and capture is
+// structurally absent. That is the production refusal working as designed — but it is
+// invisible from here, and this file's green result is exactly what made the Batch 8
+// E2E "nothing sends" claim look proven while the mechanism was inert under `next start`.
+// The ARTIFACT-level property is asserted elsewhere, at runtime, over HTTP:
+// tests/e2e/no-live-sends.spec.ts reads the server's own /api/dev/comms-capture, and
+// tests/e2e-guard-falsifiable.test.mjs proves that guard fails when it should.
 // Run: node tests/comms-capture-transport.test.mjs
 import assert from 'node:assert/strict'
 import { execSync } from 'node:child_process'
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync, chmodSync } from 'node:fs'
+import { mkdtempSync, rmSync, readFileSync, mkdirSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -80,29 +95,39 @@ console.log('The captured record')
 
 console.log('Fail CLOSED — a broken capture must never become a live send')
 {
-  // An unwritable target (a directory, and a read-only dir) makes appendFileSync throw.
+  // The contract has TWO halves and both are asserted exactly: a failed write returns
+  // FALSE and leaves nothing behind; a successful write returns TRUE and the line lands.
+  // The previous version of this block used a chmod 0444 file and asserted only
+  // `typeof wrote === 'boolean'` — which passes for true AND false, i.e. it could not
+  // tell "captured" from "failed", the one distinction the block exists to make. The
+  // failure modes below are chosen because ROOT CANNOT BYPASS THEM: a missing parent
+  // directory is ENOENT and a directory target is EISDIR regardless of privilege.
+  const msg = { at: 'now', channel: 'sms', to: '+12145550100', body: 'x' }
+
   const dir = join(out, 'not-a-file')
   mkdirSync(dir, { recursive: true })
   process.env.COMMS_CAPTURE_TRANSPORT = dir
-  ok('a capture write that THROWS returns false (the caller fails the send, per messaging.ts)',
-    C.captureMessage({ at: 'now', channel: 'sms', to: '+1', body: 'x' }) === false)
+  ok('a directory target (EISDIR) returns EXACTLY false — never true, never a throw',
+    C.captureMessage(msg) === false)
 
-  const roDir = join(out, 'ro')
-  mkdirSync(roDir, { recursive: true })
-  const roFile = join(roDir, 'cap.jsonl')
-  writeFileSync(roFile, '')
-  chmodSync(roFile, 0o444)
-  process.env.COMMS_CAPTURE_TRANSPORT = roFile
-  const wrote = C.captureMessage({ at: 'now', channel: 'email', to: 'a@x.test', body: 'x' })
-  // Running as root can bypass file permissions; assert the CONTRACT either way —
-  // a successful write is fine, a failed one must report false (never throw, never true).
-  ok('a read-only target either captures or reports false — it never throws and never silently "sends"',
-    typeof wrote === 'boolean')
-  chmodSync(roFile, 0o644)
+  const orphan = join(out, 'no-such-dir', 'deeper', 'cap.jsonl')
+  process.env.COMMS_CAPTURE_TRANSPORT = orphan
+  ok('a missing parent directory (ENOENT) returns EXACTLY false',
+    C.captureMessage(msg) === false)
+  ok('…and nothing was created on the way past — a failed capture leaves NO evidence',
+    !existsSync(orphan) && !existsSync(join(out, 'no-such-dir')))
+
+  // POSITIVE CONTROL on the same assertion, so `false` above is a real decision rather
+  // than a writer that always refuses.
+  const good = join(out, 'faildemo-ok.jsonl')
+  process.env.COMMS_CAPTURE_TRANSPORT = good
+  ok('POSITIVE CONTROL: a writable target returns EXACTLY true…', C.captureMessage(msg) === true)
+  ok('…and the message is IN the file (returning true always means the line landed)',
+    existsSync(good) && JSON.parse(readFileSync(good, 'utf8').trim()).to === '+12145550100')
 
   delete process.env.COMMS_CAPTURE_TRANSPORT
   ok('with capture INACTIVE the writer reports false (nothing is captured, nothing is claimed)',
-    C.captureMessage({ at: 'now', channel: 'sms', to: '+1', body: 'x' }) === false)
+    C.captureMessage(msg) === false)
 }
 
 console.log('The product wiring (messaging.ts) uses it at the provider boundary')

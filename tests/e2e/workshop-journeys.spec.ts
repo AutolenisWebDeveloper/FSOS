@@ -29,9 +29,14 @@ test.describe('registration journey', () => {
     await page.getByRole('button', { name: /reserve my seat/i }).click()
     await expect(page).toHaveURL(/\/confirmed/)
     await expect(page.getByRole('heading', { level: 1 })).toContainText(/registered/i)
-    // The receipt is captured, never sent (D-8 + WS-022): assert the .ics rode along.
-    // (Requires the mig-131 gate handle to be approved in the seeded environment;
-    // otherwise the gate correctly blocks it and this assertion documents that.)
+    // SCOPE, stated exactly: this test asserts the BROWSER outcome only — the redirect
+    // and the confirmation heading. It does NOT assert the receipt or its .ics.
+    // An earlier comment here claimed an .ics assertion that was never written, which is
+    // a coverage claim the file could not back. The receipt IS proven, by execution, in
+    // tests/workshop-lifecycle-routes.test.mjs: the ack goes through sendThroughGate as a
+    // TRANSACTIONAL email under the mig-131 handle, and its attachment is decoded from
+    // base64 and checked for VCALENDAR + DTSTART + DTEND + a stable UID. That test runs
+    // in the unit suite on every commit; this one has never executed anywhere.
   })
 
   test('duplicate registration returns the already-registered STATE, not an error', async ({ page }) => {
@@ -68,16 +73,14 @@ test.describe('registrant cancel journey (WS-009)', () => {
   })
 })
 
-test.describe('admin journeys', () => {
-  test.skip(!LIVE || !process.env.FSOS_E2E_SESSION_COOKIE, `${reason}; also needs FSOS_E2E_SESSION_COOKIE`)
-
-  test('check-in at a mobile viewport marks attendance', async () => {
-    // Requires an authenticated staff session; the door flow is otherwise proven at the
-    // route level (tests/workshop-lifecycle-routes.test.mjs) and in the RLS suite.
-  })
-
-  test('agency reschedule captures a change notice to existing registrants', async () => {
-    // The engine half is proven against real Postgres in tests/workshop-lifecycle.test.mjs
-    // (30 checks); this scenario would prove the operator path end-to-end.
-  })
-})
+// DELETED — the two 'admin journeys' tests (check-in at a mobile viewport, agency
+// reschedule change notice) had COMMENT-ONLY BODIES. A Playwright test with an empty body
+// passes. They were masked by the skip here, but with FSOS_E2E_SUPABASE and
+// FSOS_E2E_SESSION_COOKIE set they would have reported two green results having asserted
+// nothing at all. Implementing them needs an authenticated staff session against a seeded
+// non-production Supabase, which no environment reachable from this repo has — so they
+// could not be written AND proven, and an unprovable assertion is what this cleanup is
+// removing. Both behaviors are already covered where they can actually be executed:
+//   • check-in / attendance → tests/workshop-lifecycle-routes.test.mjs (routes, executed)
+//     and tests/workshop-dual-path-coverage.test.mjs (both resolveSessionId halves).
+//   • reschedule change notices → tests/workshop-lifecycle.test.mjs, against real Postgres.

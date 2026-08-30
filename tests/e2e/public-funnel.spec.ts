@@ -21,13 +21,33 @@ test.describe('workshop hub', () => {
   })
 
   test('degrades honestly when workshop data cannot be loaded (no raw error, no dead end)', async ({ page }) => {
-    await page.goto('/workshops')
+    // The failure is FORCED, not hoped for. playwright.config.ts points the server's
+    // Supabase URL at 127.0.0.1:1 for non-live runs, so loadPublicWorkshops() cannot
+    // succeed and the page's loadError branch is the one under test. The previous
+    // version asserted only "no stack trace, body longer than 120 chars" against
+    // whatever rendered — which passes on the HEALTHY page too, so it proved nothing
+    // about degradation and would have gone green in a configured environment.
+    test.skip(process.env.FSOS_E2E_SUPABASE === '1', 'forces a data-layer failure; not applicable to a live-data run')
+
+    const res = await page.goto('/workshops')
+    expect(res?.status(), 'a data-layer failure must still return a rendered page, never a 500').toBe(200)
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+
+    // The specific degraded state: an alert region that says what happened and what to
+    // do next. Anything else here — the healthy listing, the empty state, a blank page —
+    // fails, which is what makes this assertion worth having.
+    // Scoped to the page's own main landmark: Next injects a route-announcer div that
+    // also carries role="alert", and an unscoped query matches both.
+    const alert = page.locator('main#main').getByRole('alert')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText(/couldn.t load workshops right now/i)
+    await expect(alert).toContainText(/refresh|call the office/i)
+
+    // And the marketing chrome survives the failure — a degraded page is still a page
+    // with a way onward, not a dead end.
+    await expect(page.locator('main#main')).toBeVisible()
     const body = await page.locator('body').innerText()
-    // Whatever the data state, a visitor must never see a stack trace, an internal
-    // error string, or a bare empty page with no next action.
     expect(body).not.toMatch(/ConfigError|at Object\.|TypeError|Cannot read propert/i)
-    expect(body.trim().length).toBeGreaterThan(120)
   })
 
   test('has exactly one h1 and no horizontal overflow at 375px', async ({ page }, testInfo) => {

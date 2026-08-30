@@ -103,6 +103,15 @@ export default defineConfig({
             NODE_ENV: 'development',
             COMMS_CAPTURE_TRANSPORT: CAPTURE_FILE,
             NEXT_PUBLIC_APP_URL: `http://127.0.0.1:${PORT}`,
+            // Point the data layer at an unreachable address so the funnel's
+            // degraded-state test EXERCISES a real load failure instead of asserting
+            // against whatever happens to render. Only the URL is set — the anon key
+            // stays unset, so middleware's auth path stays skipped. In a live-data run
+            // (FSOS_E2E_SUPABASE=1) the real configuration is left alone and that test
+            // skips itself.
+            ...(process.env.FSOS_E2E_SUPABASE === '1'
+              ? {}
+              : { NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:1', SUPABASE_URL: 'http://127.0.0.1:1' }),
           },
         },
       }),

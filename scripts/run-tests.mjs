@@ -50,6 +50,8 @@ const RLS = new Set([
   'workshop-registration-claim.test.mjs',
   // Batch 4 — lifecycle/change-comms guarantees (full engine + migration 130 triggers).
   'workshop-lifecycle.test.mjs',
+  // Migration 134 — the opportunities de-dupe race, driven as overlapping transactions.
+  'opportunity-referral-race.test.mjs',
 ])
 
 const mode = process.argv[2] === 'rls' ? 'rls' : 'unit'

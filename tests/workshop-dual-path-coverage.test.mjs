@@ -22,7 +22,7 @@ import assert from 'node:assert/strict'
 import { writeFileSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { bundle, fakeDb } from './helpers/workshop-harness.mjs'
+import { bundle, fakeDb, installDb, makeReq, auditCalls } from './helpers/workshop-harness.mjs'
 
 let passed = 0
 const ok = (name, cond, extra) => { assert.ok(cond, `${name}${extra ? `\n${extra}` : ''}`); console.log(`  ✓ ${name}`); passed++ }
@@ -273,6 +273,91 @@ const REG_NO_SESSION = {
   ok('POSITIVE CONTROL: with a session, the SAME template renders the venue and a local date',
     status === 'sent' && !!ctx && /Community Hall/.test(ctx.body) && !/ on  at /.test(ctx.body), ctx?.body)
   ok('…and the session WAS looked up on this path', db.calls.some((c) => c.table === 'workshop_sessions'))
+}
+
+
+// ── Migration 134: the LOSING writer treats a unique violation as SUCCESS ───────
+console.log('\nThe opportunities de-dupe race — the convert route, EXECUTED')
+{
+  // idx_opportunities_live_referral decides the race at the DB (proven against real
+  // Postgres by overlapping transactions in tests/opportunity-referral-race.test.mjs).
+  // Proven HERE is the caller half: the route that LOSES must enrich the winner, not 500.
+  const stubDir2 = mkdtempSync(join(tmpdir(), 'fsos-convert-stub-'))
+  process.on('exit', () => { try { rmSync(stubDir2, { recursive: true, force: true }) } catch { /* best-effort */ } })
+  const authStub = join(stubDir2, 'auth.mjs')
+  writeFileSync(authStub, `
+const session = { userId: 'u-1', roles: ['fsa'], email: 'fsa@test.example' }
+export async function requireApiRole() { return { ok: true, session } }
+export function requirePermission() { return null }
+export function actorOf() { return 'u-1' }
+export function hasSecuritiesScope() { return true }
+`)
+  const consentStub = join(stubDir2, 'consent.mjs')
+  writeFileSync(consentStub, `export async function recordConsentChange() { return { ok: true } }`)
+  const convert = await bundle('src/app/api/referrals/[id]/convert/route.ts', {
+    aliases: { '@/lib/auth/api': authStub, '@/lib/comms/consent-events': consentStub },
+  })
+
+  const REFID = 'rrrr1111-1111-1111-1111-111111111111'
+  const WINNER = 'oooo2222-2222-2222-2222-222222222222'
+  const UNIQUE_VIOLATION = { __error: { code: '23505', message: 'duplicate key value violates unique constraint "idx_opportunities_live_referral"' } }
+  const props2 = { params: Promise.resolve({ id: REFID }) }
+  const body = {
+    primary_name: 'Racer Household',
+    member_full_name: 'Dana Racer',
+    member_email: 'dana@example.com',
+    engagement: 'direct',
+    idempotency_key: 'convert-race-key-0001',
+  }
+
+  const script = (oppScript) => ({
+    referrals: [{ id: REFID, referring_agency_id: null, status: 'received', first_name: 'Dana', last_name: 'Racer', email: 'dana@example.com', phone: null, is_security: false, dob: null }, null],
+    household_members: [null],
+    households: [{ id: 'hhhh3333-3333-3333-3333-333333333333' }],
+    consents: [null],
+    opportunities: oppScript,
+    agency_partnerships: [null],
+  })
+
+  // LOSING run: the lookup finds nothing, the insert hits the index, the re-read finds
+  // the winner, and the route enriches it.
+  globalThis.__wsAuditCalls = []
+  const dbLose = installDb(fakeDb(script([null, UNIQUE_VIOLATION, { id: WINNER, household_id: null }, null])))
+  dbLose.rpc = async () => ({ data: 'mmmm4444-4444-4444-4444-444444444444', error: null })
+  const resLose = await convert.POST(makeReq('/api/x', { method: 'POST', body }), props2)
+  installDb(null)
+  const loseBody = await resLose.clone().json().catch(() => ({}))
+  ok('losing the insert race is NOT a 500 — the route succeeds (201)', resLose.status === 201,
+    `status=${resLose.status} body=${JSON.stringify(loseBody)}`)
+  ok('…and returns the WINNER\'s opportunity id, not a second row',
+    loseBody.opportunity_id === WINNER, JSON.stringify(loseBody))
+  const upd = dbLose.calls.find((c) => c.table === 'opportunities' && c.method === 'update')
+  ok('…it ENRICHES the winning row rather than inserting a second',
+    !!upd && upd.filters.some(([op, k, v]) => op === 'eq' && k === 'id' && v === WINNER))
+  ok('…and audits the lost race explicitly, so the pipeline record says what happened',
+    auditCalls().some((a) => a.entity === 'opportunity' && a.diff?.lost_insert_race === true),
+    JSON.stringify(auditCalls().map((a) => a.diff)))
+  ok('…exactly ONE opportunity insert was attempted (no retry loop, no second row)',
+    dbLose.calls.filter((c) => c.table === 'opportunities' && c.method === 'insert').length === 1)
+
+  // POSITIVE CONTROL: an uncontended conversion still inserts normally.
+  globalThis.__wsAuditCalls = []
+  const dbWin = installDb(fakeDb(script([null, { id: 'oooo5555-5555-5555-5555-555555555555' }, null])))
+  dbWin.rpc = async () => ({ data: 'mmmm4444-4444-4444-4444-444444444444', error: null })
+  const resWin = await convert.POST(makeReq('/api/x', { method: 'POST', body }), props2)
+  installDb(null)
+  ok('POSITIVE CONTROL: an uncontended conversion inserts and returns 201',
+    resWin.status === 201 && dbWin.calls.some((c) => c.table === 'opportunities' && c.method === 'insert'),
+    `status=${resWin.status}`)
+  ok('…and does NOT claim a lost race', !auditCalls().some((a) => a.diff?.lost_insert_race === true))
+
+  // A NON-23505 insert failure must still surface as a 500.
+  const dbReal = installDb(fakeDb(script([null, { __error: { code: '23503', message: 'foreign key violation' } }])))
+  dbReal.rpc = async () => ({ data: 'mmmm4444-4444-4444-4444-444444444444', error: null })
+  const resReal = await convert.POST(makeReq('/api/x', { method: 'POST', body }), props2)
+  installDb(null)
+  ok('a REAL insert failure (not 23505) is still a 500 — the guard did not swallow it',
+    resReal.status === 500, `status=${resReal.status}`)
 }
 
 console.log(`\n${passed} checks passed.`)

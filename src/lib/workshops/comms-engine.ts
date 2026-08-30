@@ -1095,6 +1095,16 @@ async function routeSegmentToSpine(db: Db, reg: RegRow, workshop: WorkshopRow, s
         })
         .select('id')
         .maybeSingle()
+      if (oppErr?.code === '23505') {
+        // The convert route won the race: it inserted this referral's opportunity between
+        // our lookup and this insert. idx_opportunities_live_referral (migration 134)
+        // decides it, and a unique violation here is SUCCESS — the placement already
+        // exists, which is exactly the outcome this block wanted. Nothing to enrich from
+        // the engine's side (the convert route carries the richer attribution), so record
+        // the no-op and fall through rather than logging a comms.error for a healthy state.
+        await writeAudit({ actor: ACTOR, action: 'entity.updated', entity: 'workshop_registration', entityId: reg.reg_id, diff: { from_referral: referralId, opportunity_already_placed: true, lost_insert_race: true, segment } })
+        return
+      }
       if (oppErr || !opp?.id) {
         await writeAudit({ actor: ACTOR, action: 'comms.error', entity: 'workshop_registration', entityId: reg.reg_id, diff: { query: 'opportunity_insert', error: oppErr?.message ?? 'no row returned' } })
         return

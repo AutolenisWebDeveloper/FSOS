@@ -218,10 +218,43 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         })
         .select('id')
         .single()
-      if (oppErr || !opp) return NextResponse.json({ error: oppErr?.message ?? 'Opportunity create failed' }, { status: 500 })
-      oppId = opp.id
-      await writeAudit({ actor, action: 'entity.created', entity: 'opportunity', entityId: oppId, diff: { from_referral: params.id, household_id: householdId, is_security: isSecurity } })
-      await writeAudit({ actor, action: 'stage.changed', entity: 'opportunity', entityId: oppId, diff: { from: null, to: initialStage } })
+      if (oppErr?.code === '23505') {
+        // The other writer won the race. The lookup above found nothing, but the workshop
+        // attendance pass placed this referral's opportunity between that read and this
+        // insert — idx_opportunities_live_referral (migration 134) is what decides it.
+        // A unique violation here is SUCCESS, not an error: re-read the winner and take
+        // the enrich path, which is what the lookup would have done a moment later.
+        const { data: raced } = await db
+          .from('opportunities')
+          .select('id, household_id')
+          .eq('referral_id', params.id)
+          .is('deleted_at', null)
+          .limit(1)
+          .maybeSingle()
+        if (!raced) return NextResponse.json({ error: 'Opportunity create failed' }, { status: 500 })
+        const { error: raceEnrichErr } = await db
+          .from('opportunities')
+          .update({
+            household_id: raced.household_id ?? householdId,
+            product_id: v.data.product_id ?? null,
+            is_security: isSecurity,
+            license_basis_used: licenseBasis,
+            premium: v.data.expected_premium ?? null,
+            aum: v.data.expected_aum ?? null,
+            owner_scope: actor,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', raced.id)
+        if (raceEnrichErr) return NextResponse.json({ error: raceEnrichErr.message }, { status: 500 })
+        oppId = raced.id
+        await writeAudit({ actor, action: 'entity.updated', entity: 'opportunity', entityId: oppId, diff: { from_referral: params.id, household_id: householdId, enriched_existing: true, lost_insert_race: true, is_security: isSecurity } })
+      } else if (oppErr || !opp) {
+        return NextResponse.json({ error: oppErr?.message ?? 'Opportunity create failed' }, { status: 500 })
+      } else {
+        oppId = opp.id
+        await writeAudit({ actor, action: 'entity.created', entity: 'opportunity', entityId: oppId, diff: { from_referral: params.id, household_id: householdId, is_security: isSecurity } })
+        await writeAudit({ actor, action: 'stage.changed', entity: 'opportunity', entityId: oppId, diff: { from: null, to: initialStage } })
+      }
     }
 
     // ── Close the loop: referral → converted (+ linkage), rollups.

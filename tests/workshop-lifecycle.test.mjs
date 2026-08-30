@@ -14,14 +14,15 @@
 // Run: node tests/workshop-lifecycle.test.mjs   (rls suite; needs root Postgres)
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import {
   guardInfraOrExit, bootCluster, stopCluster, freezeClock, installFetchStub,
   installProviderEnv, resetProviderCalls, providerCalls, freshWorkshopDb,
-  q, IDS, buildWorkshopBundle,
+  q, IDS, buildWorkshopBundle, sh,
 } from './helpers/workshop-guarantee-common.mjs'
 
 const PGBIN = guardInfraOrExit()
+const SQLDIR = '/tmp/fsos-workshop-guarantee-sql'
 let passed = 0
 const ok = (name, cond, extra) => { assert.ok(cond, `${name}${extra ? `\n${extra}` : ''}`); console.log(`  ✓ ${name}`); passed++ }
 
@@ -292,6 +293,41 @@ try {
     opp[0].source === 'workshop_attendance')
   ok('…and exactly one referral was seeded for them (guarded nurtured_at claim owns the side effects)',
     q(C.name, `select count(*)::int::text from referrals where lower(referred_email)='pam@example.com'`) === '1')
+
+  // ── Migration 134: the ENGINE losing the insert race, against the REAL index ──
+  // The convert route's half is executed with a scripted 23505 in the unit suite; this
+  // is the engine's half against real Postgres and the real
+  // idx_opportunities_live_referral. Retire the placement, insert a stand-in for "the
+  // convert route got there first", then run the nurture pass again: the engine's
+  // check-then-insert must hit the index and treat the violation as already-placed —
+  // not log a comms.error and not leave a second live row.
+  {
+    const refE = q(C.name, `select referral_id from workshop_registrations where reg_id='${REGE}'`)
+    q(C.name, `update opportunities set deleted_at=now() where referral_id='${refE}'`)
+    q(C.name, `update workshop_registrations set nurtured_at=null, lead_converted_at=null where reg_id='${REGE}'`)
+    const auditBefore = q(C.name, `select count(*)::int::text from audit_log where action='comms.error'`)
+    // FORCE THE REAL INTERLEAVING. The engine's lookup and the index share the predicate
+    // (referral_id + deleted_at is null), so a row inserted BEFORE the pass is simply
+    // found by the lookup — that is the ordinary already-placed case, not the race. The
+    // race needs the winner to commit BETWEEN the lookup and the insert: T1 inserts and
+    // holds, the engine's lookup sees nothing (T1 uncommitted), its insert BLOCKS on the
+    // index, and T1's commit turns that block into 23505.
+    writeFileSync(`${SQLDIR}/opp-race-t1.sql`,
+      `begin;\ninsert into opportunities (referral_id, engagement, stage) values ('${refE}','warm_handoff','fact_find');\nselect pg_sleep(2.5);\ncommit;\n`)
+    sh(`chmod 644 ${SQLDIR}/opp-race-t1.sql`)
+    sh(`bash -c 'runuser -u postgres -- psql -h /tmp/fsos-workshop-guarantee-log -p 55490 -U postgres -d ${C.name} -t -A -f ${SQLDIR}/opp-race-t1.sql > /tmp/opp-race-t1.out 2>&1 &'`)
+    await new Promise((r) => setTimeout(r, 700))
+    await engine.runNurturePass()
+    ok('mig-134: the engine LOSING to the convert route leaves exactly ONE live opportunity',
+      q(C.name, `select count(*)::int::text from opportunities where referral_id='${refE}' and deleted_at is null`) === '1')
+    ok('…the winner is untouched (the convert route\'s row, not a workshop placement)',
+      q(C.name, `select engagement from opportunities where referral_id='${refE}' and deleted_at is null`) === 'warm_handoff')
+    ok('…and the engine did NOT log a comms.error for what is a healthy outcome',
+      q(C.name, `select count(*)::int::text from audit_log where action='comms.error'`) === auditBefore,
+      `before=${auditBefore} after=${q(C.name, `select count(*)::int::text from audit_log where action='comms.error'`)}`)
+    ok('…it audited the lost race instead, so the record says what happened',
+      q(C.name, `select count(*)::int::text from audit_log where diff->>'lost_insert_race' = 'true'`) === '1')
+  }
 
   // ── Migration 132 standing guards (pinned here so they stay proven) ──
   ok('the instant-ack gate handle sits in the FFS queue (submitted + provenance), NOT principal-approved',

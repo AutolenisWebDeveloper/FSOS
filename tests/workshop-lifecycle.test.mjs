@@ -241,11 +241,10 @@ try {
     registeredIso: '2026-08-01T12:00:00Z',
     kinds: ['nurture_followup'],
     extraSql: `
-      -- WS-025: commercial email needs the real physical address (fixture E proves the
-      -- placeholder DEFERS; this fixture supplies the address so marketing mail flows).
-      insert into workshop_comms_config (id, sender_physical_address)
-        values ('global', '123 Main St Suite 5, McKinney TX 75070')
-        on conflict (id) do update set sender_physical_address = excluded.sender_physical_address;
+      -- WS-025: commercial email needs a real physical address. This fixture used to
+      -- supply one of its own; migration 133 now ships the practice's actual address, so
+      -- the override is gone and this fixture exercises the SHIPPED value. (Fixture E
+      -- sets a placeholder explicitly to keep proving the fail-closed half.)
       update workshop_registrations
         set nurture_segment='attended', nurtured_at='2026-08-03T21:00:00Z', marketing_opt_in=true,
             consent_captured_at='2026-08-01T12:00:00Z', consent_form_version='signup-v2-2026-08'
@@ -299,10 +298,19 @@ try {
   ok('marketing_opt_in=true WITHOUT a capture record is impossible (wreg_marketing_capture_chk)',
     /wreg_marketing_capture_chk/.test(mustRaise(C.name,
       `insert into workshop_registrations (workshop_id, name, email, marketing_opt_in) values ('${IDS.workshop}','X','x-check@example.com', true)`) ?? ''))
+  ok('mig-133 (WS-025): the shipped config carries the REAL mailing address, not a placeholder',
+    q(C.name, `select sender_physical_address from workshop_comms_config where id='global'`) ===
+      '12800 Westridge Blvd, Ste 114, Frisco, TX 75035')
+  ok('…and the column DEFAULT still fails closed, so a fresh row never inherits it',
+    (q(C.name, `select column_default from information_schema.columns where table_name='workshop_comms_config' and column_name='sender_physical_address'`) || '').includes('[PLACEHOLDER'))
   ok('WS-063 REFUTED and pinned: workshop_sessions.ics_uid carries a UNIQUE constraint',
     q(C.name, `select count(*)::int::text from pg_constraint where conrelid='workshop_sessions'::regclass and contype='u' and pg_get_constraintdef(oid) like '%ics_uid%'`) === '1')
 
   // ── WS-025 (fixture E): placeholder address ⇒ commercial email DEFERS at PG level ──
+  // Migration 133 supplies the REAL address, so this fixture can no longer inherit the
+  // placeholder from the seed — it sets one explicitly. The fail-closed CODE property is
+  // unchanged and still worth pinning: a fresh install, a cleared value, or a new practice
+  // must all defer commercial mail rather than send it without a postal address.
   console.log('WS-025 — placeholder sender address holds commercial email')
   const E = freshWorkshopDb({
     startsAtIso: '2026-08-03T17:00:00Z',
@@ -312,6 +320,9 @@ try {
     registeredIso: '2026-08-01T12:00:00Z',
     kinds: ['nurture_followup'],
     extraSql: `
+      update workshop_comms_config
+        set sender_physical_address = '[PLACEHOLDER - set the FSA business mailing address]'
+        where id = 'global';
       update workshop_registrations
         set nurture_segment='attended', nurtured_at='2026-08-03T21:00:00Z', marketing_opt_in=true,
             consent_captured_at='2026-08-01T12:00:00Z', consent_form_version='signup-v2-2026-08'

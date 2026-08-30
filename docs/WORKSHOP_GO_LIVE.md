@@ -14,153 +14,303 @@ Each item is tagged with who must act:
 | **PLATFORM** | Whoever administers Vercel / Twilio / Resend | Provisioning or configuration outside the app code. |
 
 Nothing on this list is blocked by the branch, and shipping the branch does not perform
-any of it. Items 1 and 2 are **deploy blockers** — the subsystem is inert without them.
+any of it. **Item 1–2 (the FFS approvals) is the deploy blocker** — the subsystem is inert
+without it. Items 3 and 4 are closed; items 5 and 6 are provisioned but each carries a
+NOT-VERIFIED fact recorded in place.
+
+Approval-surface state below was queried against the real 133-migration chain in a
+pristine Postgres, not read off the source. Anything this session could not establish —
+Vercel environment contents, Vercel cron header behaviour, Twilio console facts, live
+delivery — is marked NOT VERIFIED rather than assumed.
 
 ---
 
-## 1. FFS approval — the instant-ack gate handle  ⛔ DEPLOY BLOCKER — DO THIS FIRST
+## 1–2. FFS approvals — the exact change, described before anyone runs it
 
-**Tag: FFS**
+**Tag: FFS. The principal has signed off; the data change has NOT been executed.**
 
-The registration receipt ("You're registered") is the single confirmation of record
-(decision D-8). Batch 5 routed it through `sendThroughGate`, which requires an approved
-`comm_templates` row to satisfy gate step 4.
+Everything below was **queried against the real 133-migration chain** in a pristine
+Postgres, not inferred from source. Three different tables use three different state
+columns, so "at `submitted`" resolves differently in each.
 
-That handle (`comm_templates.id = eeee0000-0000-4000-8000-00000000ac01`) is currently
-`approval_status = 'submitted'` with a PROVENANCE body recording that it is pre-existing
-production copy brought under the gate — **not** principal-approved. Migration 132
-deliberately reversed an earlier seeded approval: a migration writing "approved" with no
-approver, no timestamp and no copy version is the same audit-trail defect as WS-047.
+### 1a. What is actually at `submitted` — exactly one row
 
-**Until a firm principal approves this row, the registration receipt does not send.**
-A registrant would complete signup and receive nothing. That is why this item is first.
+| Table | Rows | State | Kinds |
+|---|---|---|---|
+| `comm_templates` (the ack gate handle) | **1** | `approval_status = 'submitted'` | email |
+| `workshop_message_templates` | **25** | `status = 'placeholder'`, `active = false` — **none at `submitted`**; the column's CHECK allows only `placeholder` / `draft` / `approved` | see 1c |
+| `workshop_disclosure_configs` | **4** | no status column — `is_assumption = true`, `approved_by` NULL, `approved_at` NULL | `sms`, `recording`, `seminar_advertising`, `educational` (all v1) |
 
-- The copy to review is the rendered receipt: heading "You're registered", the event
-  detail rows (workshop / when / where), the educational-event note, and the `.ics`
-  calendar attachment.
-- Approval is a **data change** recorded by the approval workflow (approver name,
-  timestamp, copy version) — never a migration, and never a `UPDATE ... approved` by hand.
-- Migration 132's update is guarded on the provenance marker, so a principal approval
-  **survives** a later re-run of the migration chain (proven).
+The single `submitted` row is
+`comm_templates.id = eeee0000-0000-4000-8000-00000000ac01` — "Workshop registration
+instant acknowledgment (gate handle — awaiting FFS approval)", channel `email`, v1,
+`approved_by` NULL, `approved_at` NULL.
 
----
+### 1b. The exact data change per surface
 
-## 2. FFS approval — the workshop message templates  ⛔ DEPLOY BLOCKER for comms
+**A. The instant-ack gate handle** (`comm_templates`) — via `PATCH /api/comms/templates/{id}`
+with `action: 'approve'`. Requires a `compliance`, `supervisor`, or `super_admin` role.
+Writes:
 
-**Tag: FFS**
+| Column | To |
+|---|---|
+| `approval_status` | `'approved'` |
+| `approved_at` | `now()` |
+| `approved_by` | **the acting user's UUID** — not a typed name, not a CRD |
+| `version` | unchanged |
 
-Every workshop template ships as a **placeholder draft** (decision D-5). The engine
-cannot select an unapproved template: it records a `template_not_approved` deferral and
-sends nothing. Activation is a data change (set the copy, `status='approved'`,
-`active=true`, bind an approved `comm_templates` handle) — never a code deploy.
+Gate step 4 (`isTemplateApproved`, `send.ts:281-293`) then passes:
+`approval_status === 'approved' && !archived_at`.
 
-**Current state: 25 template rows, 0 approved. 4 disclosure configs, 0 approved.**
+**B. Disclosure configs** (`workshop_disclosure_configs`) — blessed through
+`POST /api/workshops/{id}/approve`, which sets on the row:
 
-### 2a. Pre-event cadence (transactional — registration is the consent basis, D-3)
+| Column | To |
+|---|---|
+| `is_assumption` | `false` |
+| `approved_by` | `approver_name` from the request — **a typed name** |
+| `approved_at` | `now()` |
 
-| Kind | Channels | In the shipped default cadence? |
+If the principal **edits the disclosure body** at approval time, the route does not
+rewrite the row: it **inserts a new version** (`version = max+1`, `is_assumption=false`,
+approver, timestamp) and binds the workshop to it, leaving the prior text intact. That is
+the copy-version record.
+
+**C. Workshop message templates** (`workshop_message_templates`) — activation is
+**four columns on the row**, and the engine's selector
+(`selectSendableTemplate`, `comms-engine.ts:237-266`) requires all of them:
+
+| Column | To | Why |
 |---|---|---|
-| `reminder_7d` | email | Yes (offset 10080) |
-| `reminder_3d` | email + SMS | Yes (offset 4320) |
-| `reminder_1d` | email + SMS | Yes (offset 1440) |
-| `reminder_day_of` | SMS | Yes (wall-clock 9:00 AM venue-local) |
-| `reminder_starting` | SMS | Yes (offset 0) — **virtual/hybrid sessions only** (WS-071) |
-| `reminder_1h` | email + SMS | **No** — retained capability; fires only if an operator adds offset 60 |
+| `subject` / `body` | the approved copy | placeholder text must be replaced |
+| `status` | `'approved'` | `.eq('status','approved')` |
+| `active` | `true` | `.eq('active', true)` |
+| `comm_template_id` | an **approved** `comm_templates` row | `.not('comm_template_id','is',null)`, then gate step 4 re-checks it |
+| `disclosure_config_id` | **SMS only** — a config with `is_assumption=false` AND `approved_by` non-null | `selectSendableTemplate:250-258` |
 
-### 2b. Lifecycle service notices (transactional)
+Note the approver identity/timestamp for a message template live on the **bound
+`comm_templates` row**, not on `workshop_message_templates` — that table has no approver
+columns at all (`id, kind, channel, subject, body, disclosure_config_id,
+comm_template_id, status, is_assumption, active, version, created_at, updated_at`). Copy
+version is its `version` integer, which the highest-version approved row wins.
 
-| Kind | Channels |
+### 1c. The 25 template rows
+
+All at `placeholder` / `active=false` / `comm_template_id` NULL / `disclosure_config_id` NULL:
+
+`cancel_ack`(email) · `change_reschedule`(email,sms) · `change_venue`(email,sms) ·
+`confirmation`(email — **dead, D-8 deleted the kind; needs no approval**) ·
+`event_cancelled`(email,sms) · `nurture_attended`(email,sms) ·
+`nurture_followup`(email,sms) · `nurture_left_early`(email) ·
+`nurture_no_show`(email,sms) · `nurture_registered_no_show`(email) ·
+`reminder_1d`(email,sms) · `reminder_1h`(email,sms — not in the shipped cadence) ·
+`reminder_3d`(email,sms) · `reminder_7d`(email) · `reminder_day_of`(sms) ·
+`reminder_starting`(sms — virtual/hybrid only, WS-071)
+
+### 1d. The provenance marker — ORDER MATTERS, and approving first destroys the approval
+
+The ack handle's `body` opens with `PROVENANCE: pre-existing production receipt copy …
+NOT principal-approved.` That text is a **compliance record only** — the receipt a
+registrant sees is rendered by the route (`renderHtml(ackContent)`), never from this row's
+body, so the marker cannot reach anyone. But leaving it in place after approval leaves a
+row that says "approved" and "NOT principal-approved" at once.
+
+**The approve action does not touch `body`** (`templates/[id]/route.ts:98-99` writes only
+`approval_status`, `approved_at`, `approved_by`). So the marker must be edited out
+separately — and the edit path **resets approval**: a PATCH bumps `version` and forces
+`approval_status='draft'`, `approved_at=NULL`, `approved_by=NULL`
+(`templates/[id]/route.ts:40-43`).
+
+Required order:
+
+1. **Edit the body** — replace the PROVENANCE preamble with the approved receipt copy.
+   Row goes `submitted → draft`, `version 1 → 2`.
+2. **Submit** — `action:'submit'` (requires `approval_status='draft'`; it now is).
+3. **Approve** — `action:'approve'`. Stamps approver + timestamp on version 2.
+
+Approving first and editing after silently destroys the approval and the receipt stops
+sending again.
+
+Migration 132's update is guarded on `body not like 'PROVENANCE:%'`, so once the body no
+longer starts with that marker, a re-run of the migration chain leaves the approved row
+alone. Proven in the RLS suite.
+
+### 1e. What goes live the moment these flip
+
+Given A2P armed in production and `CRON_SECRET` set:
+
+| Approval | What starts sending | Trigger | To whom |
+|---|---|---|---|
+| **Ack handle alone** | The registration receipt — subject "You're registered", with the `.ics` attachment | **Immediately, inside the registration request.** Not cron. | Every person who completes the public signup form, at the email they typed |
+| **+ a disclosure config** | Nothing yet — but a workshop can now be **published**, which is what makes public registration possible at all (`server.ts:140-143`, plus the DB publish gate) | operator publishes | — |
+| **+ reminder/lifecycle templates** | That kind's reminders and change notices | The `*/15` cron, subject to 6b | Registrants of published workshops, on the shipped cadence: 7d / 3d / 1d / 9:00 AM day-of / at-start (virtual & hybrid only) |
+| **+ nurture templates** | Post-event nurture and the T+2d follow-up | Same cron, 180 min after session end | **Only registrants with `marketing_opt_in = true`** — the one signup checkbox |
+
+Three things stay off regardless: securities workshops (firewalled to FFS, never
+automated), SMS on any kind whose `disclosure_config_id` is unset or unapproved, and any
+template whose bound `comm_templates` handle is not itself approved.
+
+The narrowest safe first step is the ack handle **alone**: it restores the signup receipt,
+sends nothing on a schedule, and reaches only people who just asked to register.
+
+---
+
+## 3. D-6 — `senior_focused`  ✅ ANSWERED (owner, 2026-08-30)
+
+**Tag: OWNER — CLOSED.**
+
+**Not senior-focused.** No state seminar-notice or advertising-filing requirement gates
+template activation for this practice. The `senior_focused` flag stays in schema
+(`workshops.senior_focused boolean default false`, plus `senior_disclosure_config_id`)
+and defaults to false.
+
+Nothing on this checklist waits on a notice or filing lead time. If a future workshop is
+ever marketed to a senior audience, this item reopens and the notice/filing clock — which
+can run weeks — starts then, before that workshop is advertised or published.
+
+---
+
+## 4. WS-025 — the physical mailing address  ✅ SUPPLIED (owner, 2026-08-30)
+
+**Tag: OWNER — CLOSED.**
+
+```
+12800 Westridge Blvd, Ste 114, Frisco, TX 75035
+```
+
+Shipped as a data change in `supabase/migrations/133_workshop_sender_address.sql`, which
+updates `workshop_comms_config.sender_physical_address`. Two guards on that migration:
+
+- It only rewrites a value still carrying the `[PLACEHOLDER` marker, so an address set
+  later through the config UI is never clobbered by a re-run of the chain.
+- The **column DEFAULT stays the placeholder**. A fresh install with no config row must
+  still fail closed rather than inherit one practice's address.
+
+**Verified by execution, both directions:**
+
+| Proof | Where |
 |---|---|
-| `change_reschedule` | email + SMS |
-| `change_venue` | email + SMS |
-| `event_cancelled` | email + SMS |
-| `cancel_ack` | email |
+| With the placeholder, a MARKETING email defers (`sender_address_placeholder`) | `workshop-engine-invocation.test.mjs`, `workshop-lifecycle.test.mjs` fixture E (real Postgres) |
+| With the REAL address, the SAME marketing email **sends** — the deferral clears | `workshop-engine-invocation.test.mjs` (new) |
+| The CAN-SPAM footer carries the real address, not the placeholder | same |
+| A TRANSACTIONAL reminder receipt sends under **both** configs — unaffected either way | same |
+| The shipped config row holds the real address after the migration chain | `workshop-lifecycle.test.mjs` (new, real Postgres) |
+| The column default still fails closed | same |
 
-### 2c. Post-event nurture (MARKETING tier — requires the registrant's opt-in box)
+Each new assertion was mutation-tested: forcing the marketing defer unconditionally, and
+writing a wrong address in the migration, both kill their check.
 
-| Kind | Channels |
+---
+
+## 5. A2P 10DLC — registered and approved; two items still NOT VERIFIED
+
+**Tag: PLATFORM / OWNER.** Owner reports the brand and campaign are **registered and
+approved**, and the environment variables are **already set in Vercel**.
+
+### 5a. Environment variables the workshop SMS path requires
+
+Read directly from the send path — `src/lib/messaging.ts:111-144`, `src/lib/comms/a2p.ts`:
+
+| Variable | Required? | What breaks without it |
+|---|---|---|
+| `SMS_A2P_APPROVED` | **Yes**, must be `true`/`1`/`yes` | `smsA2pApproved()` is false → the gate defers every SMS at step `sms_live` (retryable), and `sendSms()` refuses independently with `sms_pending_a2p_approval`. Two separate stops. |
+| `TWILIO_ACCOUNT_SID` | **Yes** | `Twilio env not set` — send fails |
+| `TWILIO_AUTH_TOKEN` | **Yes** | `Twilio env not set` — send fails. Also signs/validates the inbound STOP/HELP webhook (`src/lib/comms/twilio.ts:13`) |
+| `TWILIO_MESSAGING_SERVICE_SID` **or** `TWILIO_PHONE_NUMBER` | **One of the two** | `Twilio env not set`. The Messaging Service is *preferred* when set (`messaging.ts:121-122`) — it carries the number pool and carrier opt-out handling |
+| `NEXT_PUBLIC_APP_URL` (or `APP_URL`) | Effectively yes | Used to build the Twilio `StatusCallback` URL; without it delivery/failure callbacks never come back. Separately, WS-034 makes the engine defer **email** with no app URL |
+
+Note `smsConfigured()` (`messaging.ts:20`) checks SID + TOKEN + **`TWILIO_PHONE_NUMBER`
+specifically** — so `/api/health` and the super-admin health page report SMS as
+unconfigured on a Messaging-Service-only setup even though sending works. A reporting
+discrepancy, not a send-path failure.
+
+**Environments that must carry these:** whichever environments run the engine. The
+workshop cron is a `vercel.json` entry (`*/15 * * * *`), and Vercel runs cron jobs against
+**Production only** — so Production is the environment that matters for sending. Preview
+needs them only if a live send is deliberately exercised there.
+
+**This session cannot read Vercel environment variables** — no access. Presence is
+reported by the owner and is **NOT VERIFIED here.**
+
+### 5b. Still NOT VERIFIED (recorded, not closed)
+
+1. **Campaign use-case coverage for BOTH message classes.** The workshop path sends two
+   materially different classes under one A2P campaign:
+   - **Event reminders / lifecycle notices** — transactional, registration is the consent
+     basis (D-3): `reminder_3d`, `reminder_1d`, `reminder_day_of`, `reminder_starting`,
+     `reminder_1h`, `change_reschedule`, `change_venue`, `event_cancelled`.
+   - **Post-event nurture** — marketing, requires the registrant's opt-in box:
+     `nurture_attended`, `nurture_no_show`, `nurture_followup`.
+
+   Whether the registered use case and sample messages cover **both** is a Twilio-console
+   fact. Nothing in this repo can establish it.
+
+2. **Carrier-level Advanced Opt-Out.** Batch 7 shipped the application half — the
+   `Reply STOP to opt out, HELP for help.` footer and a HELP auto-response returned as the
+   webhook's own TwiML. Carrier-level keyword handling only proves out on live traffic.
+
+---
+
+## 6. `CRON_SECRET` — provisioned; one unverified platform behaviour decides whether the engine ever runs
+
+**Tag: PLATFORM.** Owner reports `CRON_SECRET` exists in Vercel for **Production and
+Preview** (added Jul 26). Not verifiable from this session.
+
+### 6a. How the route is invoked
+
+A **`vercel.json` cron entry** — `{ "path": "/api/cron/workshop-reminders", "schedule":
+"*/15 * * * *" }`, the last of 24 entries. No external scheduler is involved.
+
+### 6b. Does that caller send `Authorization: Bearer`?  ⚠️ NOT VERIFIED
+
+This is the single fact that decides whether the workshop engine runs at all, and it could
+not be established here: **vercel.com is blocked by this environment's egress proxy**, and
+the Vercel docs MCP search returned only cron *configuration* pages, never the securing-
+cron-jobs page. So the following is stated as risk, not fact.
+
+`/api/cron/workshop-reminders` accepts **`Authorization: Bearer <CRON_SECRET>` only**
+(WS-030, route:28-32). It does not accept the `x-vercel-cron` header.
+
+- **If** Vercel attaches `Authorization: Bearer $CRON_SECRET` to cron invocations when the
+  variable is set — the widely-documented behaviour — nothing needs to change. The engine
+  runs every 15 minutes.
+- **If it does not**, every tick returns **401** and the engine silently never runs. No
+  reminders, no change notices, no nurture — and *no error surfaces to the app*, because a
+  401 is the route working as designed.
+
+**Verify before relying on it**, cheaply and directly: after deploying, check the Vercel
+cron invocation log for `/api/cron/workshop-reminders`. A 200 means the header arrives; a
+401 means it does not.
+
+**If it turns out to be a 401**, the change and its cost:
+
+| Option | Change | Cost |
+|---|---|---|
+| A. Restore header acceptance | Re-add `if (req.headers.get('x-vercel-cron')) return true` | **Reverses WS-030.** A forgeable client-supplied header would again authorize a live send engine. Not recommended — this was the highest-severity item in Batch 7. |
+| B. Move the trigger off `vercel.json` | Drive the route from an external scheduler that sends the Bearer header | Keeps Bearer-only auth; adds an external dependency to provision and monitor. |
+| C. Verify at the edge instead | Check `x-vercel-cron` **plus** a value only the platform can supply | Only sound if such a value exists and is verified; currently unproven. |
+
+No option is taken here. The route stays Bearer-only.
+
+### 6c. What else reads `CRON_SECRET`, and does the expected value match?
+
+Four readers, and **the expected value is identical in all of them** — every one reads
+`process.env.CRON_SECRET` and compares the header to the exact string
+`` `Bearer ${secret}` ``. One secret serves all; nothing needs a second value.
+
+| Reader | Accepts |
 |---|---|
-| `nurture_attended` | email + SMS |
-| `nurture_left_early` | email |
-| `nurture_no_show` | email + SMS |
-| `nurture_registered_no_show` | email |
-| `nurture_followup` | email + SMS (the T+2/3d second touch) |
+| `src/lib/env.ts:29` `cronSecret()` | (accessor only — the single named resolution) |
+| `/api/cron/[job]` (catch-all, 21 jobs) | `x-vercel-cron` header **OR** Bearer |
+| `/api/cron/booking-reminders` | `x-vercel-cron` header **OR** Bearer |
+| `/api/cron/social-publish` | `x-vercel-cron` header **OR** Bearer |
+| `/api/cron/workshop-reminders` | **Bearer only** (WS-030) |
 
-### 2d. Disclosure configs — 4 rows, all placeholders
-
-`sms`, `recording`, `seminar_advertising`, `educational`. **A workshop cannot be
-published at all until at least one disclosure config is approved** — the publish gate
-(route + DB trigger) requires an approved, non-placeholder config. SMS templates
-additionally require an approved SMS disclosure before the engine will select them.
-
-### 2e. Dead row — no approval needed
-
-`confirmation / email` still exists as a placeholder row but the engine kind was
-**deleted** by D-8. Nothing selects it. It needs no approval and can be left or removed.
-
----
-
-## 3. D-6 — `senior_focused`: still open, OWNER to answer
-
-**Tag: OWNER**
-
-Batch 3 shipped the schema unconditionally (`workshops.senior_focused` boolean default
-false, plus `senior_disclosure_config_id`). The **business answer is still open** and is
-the owner's to give.
-
-> **If YES** — if any workshop is marketed to a senior audience — state-level
-> seminar-notice and advertising-filing requirements attach. Those notice and filing
-> lead times **gate activation and can run weeks**. That lead time is not a code
-> dependency: it is calendar time that must be started before the first senior-focused
-> workshop can be advertised or published.
-
-If NO, the flag stays false and nothing further is required.
-
----
-
-## 4. WS-025 — the real physical mailing address
-
-**Tag: OWNER**
-
-CAN-SPAM requires a valid physical postal address on commercial email.
-`workshop_comms_config.sender_physical_address` currently holds
-`[PLACEHOLDER - set the FSA business mailing address …]`.
-
-Batch 7 made this **fail closed**: while the placeholder is present, marketing-tier
-workshop email DEFERS (`sender_address_placeholder`, audited) and nothing is sent.
-Transactional reminder-class receipts are unaffected. Supply the address (a data change
-to the config row) and the marketing tier resumes on the next tick.
-
----
-
-## 5. A2P 10DLC — campaign coverage + Advanced Opt-Out
-
-**Tag: PLATFORM** (with **OWNER** input on the registered use case)
-
-- The registered A2P campaign must **cover the workshop use case**. Workshop reminders
-  and lifecycle notices are a distinct message class from the existing campaign traffic;
-  confirm the registered campaign's use case and sample messages cover them, or register
-  accordingly.
-- **Advanced Opt-Out** (carrier-level keyword handling) — **NOT VERIFIED by any batch.**
-  Batch 7 shipped the application-level half: the STOP/HELP footer
-  (`Reply STOP to opt out, HELP for help.`) and a HELP auto-response returned as the
-  webhook's own TwiML. Carrier-level behavior must be confirmed in the Twilio console.
-- SMS stays **staged** until `SMS_A2P_APPROVED=true`. While staged, the gate defers SMS
-  (`sms_live`, a retryable hold — not a terminal block), so nothing is lost.
-
----
-
-## 6. `CRON_SECRET` provisioned
-
-**Tag: PLATFORM**
-
-Batch 7 (WS-030) removed header-trust from `/api/cron/workshop-reminders`: authorization
-is the Bearer `CRON_SECRET` **only**, and with no secret configured **the route refuses
-every request** (fail closed).
-
-**Consequence: if `CRON_SECRET` is not provisioned in the deploy environment, the
-workshop comms engine never runs.** No reminders, no change notices, no nurture. Vercel
-sends `Authorization: Bearer <CRON_SECRET>` on cron invocations once the env var is set.
+The workshop route differs only in what it *accepts*, never in the value it expects. That
+also means 6b is testable without deploying anything new: the three other cron routes
+already run on this schedule, so if their invocations currently succeed via the header
+alone, that tells you nothing — but a Bearer-only 401 on the workshop route would show up
+in the same log.
 
 ---
 
@@ -257,12 +407,16 @@ and the status callbacks land as expected. That is the only way these become ver
 
 ## Ordered sequence
 
-1. **FFS** approves the instant-ack gate handle (item 1) — otherwise signup receipts fail.
-2. **OWNER** answers D-6 (item 3). If YES, start the notice/filing clock **now** — weeks.
-3. **OWNER** supplies the physical mailing address (item 4).
-4. **PLATFORM** provisions `CRON_SECRET` (item 6) — otherwise the engine never runs.
-5. **PLATFORM/OWNER** confirm A2P campaign coverage + Advanced Opt-Out (item 5).
-6. **FFS** approves disclosure configs, then template copy per kind (item 2) — a workshop
-   cannot publish without an approved disclosure.
-7. **PLATFORM** runs the controlled live-send verification (item 9).
-8. Separately scoped, not blocking: the cron header-auth item (item 7).
+Items 3 (D-6) and 4 (WS-025) are **closed**. What remains:
+
+1. **FFS** — the instant-ack gate handle, in the order at 1d: **edit the body first**,
+   then submit, then approve. Editing after approving destroys the approval.
+2. **FFS** — approve at least one disclosure config; a workshop cannot publish without one.
+3. **PLATFORM** — confirm the `*/15` cron actually authorizes (6b). A 401 loop is silent:
+   check the invocation log for `/api/cron/workshop-reminders` after deploying.
+4. **PLATFORM / OWNER** — settle the two open A2P items (5b): campaign coverage for both
+   message classes, and carrier-level Advanced Opt-Out.
+5. **FFS** — approve template copy per kind (1b/1c), narrowest set first.
+6. **PLATFORM** — the controlled live-send verification (item 9). Nothing above proves
+   delivery.
+7. Separately scoped, not blocking: the cron header-auth item (item 7).

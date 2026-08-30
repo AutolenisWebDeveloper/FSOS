@@ -138,6 +138,39 @@ console.log('\nWS-025 — placeholder physical address ⇒ COMMERCIAL email defe
   })
   ok('a TRANSACTIONAL reminder receipt is NOT held hostage to the marketing config item (gate reached)',
     status2 === 'sent' && globalThis.__gateCalls.length === 1)
+
+  // WS-025 CLEARED (migration 133 supplies the real address). The deferral above is only
+  // meaningful if a real value RELEASES it — otherwise it could be an engine that never
+  // sends marketing at all. Both halves of the fork are driven.
+  const REAL_ADDRESS = '12800 Westridge Blvd, Ste 114, Frisco, TX 75035'
+  const cfgReal = { ...CONFIG, sender_physical_address: REAL_ADDRESS }
+  globalThis.__gateCalls = []
+  const db3 = fakeDb({
+    workshop_message_log: [null, { id: 'log-p3' }],
+    workshop_message_templates: [TPL],
+  })
+  const status3 = await engine.sendWorkshopMessage(db3, {
+    reg: { ...REG, marketing_opt_in: true }, workshop: WORKSHOP, session: session(venueZone()), kind: 'nurture_attended', channel: 'email', config: cfgReal,
+  })
+  ok('with the REAL address the SAME marketing email SENDS — the deferral clears',
+    status3 === 'sent' && globalThis.__gateCalls.length === 1, `status=${status3} gateCalls=${globalThis.__gateCalls.length}`)
+  ok('…and the CAN-SPAM footer carries that address, not the placeholder',
+    globalThis.__gateCalls[0]?.body?.includes(REAL_ADDRESS) === true &&
+      !/\[PLACEHOLDER/.test(globalThis.__gateCalls[0]?.body ?? ''),
+    (globalThis.__gateCalls[0]?.body ?? '').slice(-400))
+
+  // And the transactional half stays put under the real address too — supplying it must
+  // not change receipt behaviour in either direction.
+  globalThis.__gateCalls = []
+  const db4 = fakeDb({
+    workshop_message_log: [null, { id: 'log-p4' }],
+    workshop_message_templates: [TPL],
+  })
+  const status4 = await engine.sendWorkshopMessage(db4, {
+    reg: REG, workshop: WORKSHOP, session: session(venueZone()), kind: 'reminder_1h', channel: 'email', config: cfgReal,
+  })
+  ok('a transactional reminder still sends with the real address configured (no behaviour change)',
+    status4 === 'sent' && globalThis.__gateCalls.length === 1)
 }
 
 console.log('\nWS-034 — no app URL ⇒ email DEFERS before the gate (broken unsubscribe never ships)')

@@ -148,6 +148,58 @@ const TARGET = {
   installDb(null)
   ok('a cancelled session cannot be rescheduled (422)', res.status === 422)
 }
+{
+  // COVERAGE GAP (re-audit item 1): the explicit `session_id` + schedule-change path was
+  // only ever exercised on its 422. A route can reject correctly and still write to the
+  // wrong session on success — WS-042 was exactly that shape — so the SUCCESS path is
+  // proven here, on a healthy session, with the target asserted.
+  const S2 = 'aaaa3333-3333-3333-3333-333333333333'
+  const db = installDb(fakeDb({
+    workshops: [{ workshop_id: W, status: 'published', compliance_approval_ref: 'a', disclosure_config_id: 'd' }, [{ workshop_id: W, status: 'published' }]],
+    workshop_sessions: [{ ...TARGET, id: S2 }, null],
+  }))
+  const res = await patchRoute.PATCH(req({ session_id: S2, starts_at: '2026-09-05T18:00:00Z', venue_name: 'Named Hall' }), props)
+  installDb(null)
+  const body = await res.json()
+  ok('a reschedule that NAMES its session succeeds (the explicit-target success path, not just its 422)',
+    res.status === 200, `status=${res.status} body=${JSON.stringify(body)}`)
+  ok('…and reports a material change: time dominates venue',
+    body.session_change?.kind === 'change_reschedule' && body.session_change?.generation === 2, JSON.stringify(body))
+  const sUpd = db.calls.find((c) => c.table === 'workshop_sessions' && c.method === 'update')
+  ok('…writing the new time AND venue', !!sUpd && sUpd.payload.starts_at === '2026-09-05T18:00:00Z' && sUpd.payload.venue_name === 'Named Hall')
+  ok('…re-arming the cadence on THAT session and recording the change kind',
+    !!sUpd && sUpd.payload.cadence_generation === 2 && sUpd.payload.change_kind === 'change_reschedule')
+  // The two branches are told apart by the SELECT that resolved the target: the explicit
+  // path filters on the session id alone; the fallback filters workshop_id + status +
+  // an upcoming-starts_at window. Asserting the UPDATE's id is not enough — a scripted
+  // fake returns the same row either way, so that assertion survives the branch being
+  // deleted. This one does not.
+  const sSel = db.calls.find((c) => c.table === 'workshop_sessions' && c.method === 'select')
+  const f = (op, k) => !!sSel && sSel.filters.some((x) => x[0] === op && x[1] === k)
+  ok('…resolved by the NAMED session id (eq id), not by the workshop\'s upcoming-session query',
+    !!sSel && sSel.filters.some(([op, k, v]) => op === 'eq' && k === 'id' && v === S2) &&
+      !f('eq', 'workshop_id') && !f('gte', 'starts_at') && !f('neq', 'status'),
+    JSON.stringify(sSel?.filters))
+  ok('…and the write lands on that same resolved session',
+    !!sUpd && sUpd.filters.some(([op, k, v]) => op === 'eq' && k === 'id' && v === S2))
+  const wUpd = db.calls.find((c) => c.table === 'workshops' && c.method === 'update')
+  ok('…and workshops.scheduled_at is mirrored to the new time',
+    !!wUpd && wUpd.payload.scheduled_at === '2026-09-05T18:00:00Z', JSON.stringify(wUpd?.payload))
+}
+{
+  // The explicit path's own safety check: a session id that belongs to a DIFFERENT
+  // workshop must be refused, not silently rescheduled.
+  const OTHER = 'aaaa4444-4444-4444-4444-444444444444'
+  const db = installDb(fakeDb({
+    workshops: [{ workshop_id: W, status: 'published', compliance_approval_ref: 'a', disclosure_config_id: 'd' }],
+    workshop_sessions: [{ ...TARGET, id: OTHER, workshop_id: 'bbbb0000-0000-0000-0000-000000000000' }],
+  }))
+  const res = await patchRoute.PATCH(req({ session_id: OTHER, starts_at: '2026-09-06T18:00:00Z' }), props)
+  installDb(null)
+  ok('a session_id belonging to another workshop is refused (422), with no session write',
+    res.status === 422 && !db.calls.some((c) => c.table === 'workshop_sessions' && c.method === 'update'))
+  ok('…and no workshop mirror write either', !db.calls.some((c) => c.table === 'workshops' && c.method === 'update'))
+}
 
 console.log('WS-074 — /approve status precondition')
 {

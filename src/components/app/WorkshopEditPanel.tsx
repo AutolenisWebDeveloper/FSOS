@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { patchJson, firstFieldError } from '@/lib/client/api'
+import { isValidIanaZone } from '@/lib/booking/config-schemas'
 
 export interface WorkshopEditable {
   workshop_id: string
@@ -31,13 +32,23 @@ export interface WorkshopEditable {
   } | null
 }
 
+/** A session's zone is usable only when it is present AND a real IANA zone. Anything
+ *  else is unresolved — never substituted with a default. */
+function zoneResolved(timeZone: string | null): boolean {
+  return !!timeZone && isValidIanaZone(timeZone)
+}
+
 /** `datetime-local` wants YYYY-MM-DDTHH:mm in the VENUE's zone — the operator edits the
  *  time they actually booked, not their own local time. */
 function toLocalInput(iso: string | null, timeZone: string | null): string {
   if (!iso) return ''
+  // FAIL CLOSED. A guessed zone renders a time that is silently wrong by hours, and the
+  // operator has no way to see it — the same defect class as WS-005. No zone, no value;
+  // the panel disables the field and says why.
+  if (!zoneResolved(timeZone)) return ''
   try {
     const parts = new Intl.DateTimeFormat('en-CA', {
-      timeZone: timeZone || 'America/Chicago',
+      timeZone: timeZone as string,
       year: 'numeric', month: '2-digit', day: '2-digit',
       hour: '2-digit', minute: '2-digit', hour12: false,
     }).formatToParts(new Date(iso))
@@ -52,7 +63,10 @@ function toLocalInput(iso: string | null, timeZone: string | null): string {
 /** Convert a venue-local `datetime-local` value back to a UTC instant. */
 function toUtcIso(local: string, timeZone: string | null): string | null {
   if (!local) return null
-  const zone = timeZone || 'America/Chicago'
+  // FAIL CLOSED, as above: writing a start instant derived from a guessed zone would
+  // reschedule the workshop to the wrong moment and notify every registrant of it.
+  if (!zoneResolved(timeZone)) return null
+  const zone = timeZone as string
   const naive = Date.parse(`${local}:00Z`)
   if (Number.isNaN(naive)) return null
   // Resolve the zone's offset AT that wall-clock moment (DST-correct within an hour of
@@ -89,6 +103,9 @@ export function WorkshopEditPanel({ workshop }: { workshop: WorkshopEditable }) 
   const [errorField, setErrorField] = React.useState<string | undefined>()
 
   const tz = workshop.session?.timezone ?? null
+  // Unresolved zone → the schedule fields refuse rather than guess (see zoneResolved).
+  const tzUsable = zoneResolved(tz)
+  const scheduleLocked = !!workshop.session && !tzUsable
   const [title, setTitle] = React.useState(workshop.title)
   const [description, setDescription] = React.useState(workshop.description ?? '')
   const [agenda, setAgenda] = React.useState(workshop.agenda ?? '')
@@ -100,7 +117,7 @@ export function WorkshopEditPanel({ workshop }: { workshop: WorkshopEditable }) 
   const [venueAddress, setVenueAddress] = React.useState(workshop.session?.venue_address ?? '')
 
   const originalStart = toLocalInput(workshop.session?.starts_at ?? null, tz)
-  const timeChanged = !!workshop.session && startsAt !== '' && startsAt !== originalStart
+  const timeChanged = !!workshop.session && !scheduleLocked && startsAt !== '' && startsAt !== originalStart
   const venueChanged =
     !!workshop.session &&
     (venueName !== (workshop.session.venue_name ?? '') || venueAddress !== (workshop.session.venue_address ?? ''))
@@ -121,6 +138,14 @@ export function WorkshopEditPanel({ workshop }: { workshop: WorkshopEditable }) 
     }
     if (budgetNote !== (workshop.budget_spend_note ?? '')) payload.budget_spend_note = budgetNote
     if (workshop.session) {
+      if (scheduleLocked) {
+        // Belt and braces: the control is disabled, but a save must never fall through
+        // to a guessed zone if it is ever reached another way.
+        setBusy(false)
+        setErrorField('starts_at')
+        toast.error('Set this session\u2019s timezone before changing its time.')
+        return
+      }
       if (timeChanged) {
         const iso = toUtcIso(startsAt, tz)
         if (!iso) {
@@ -236,11 +261,17 @@ export function WorkshopEditPanel({ workshop }: { workshop: WorkshopEditable }) 
                 type="datetime-local"
                 value={startsAt}
                 onChange={(e) => setStartsAt(e.target.value)}
+                disabled={scheduleLocked}
                 aria-describedby="e_start_help"
                 aria-invalid={errorField === 'starts_at'}
               />
-              <p id="e_start_help" className="text-xs text-muted-foreground">
-                In the venue&apos;s timezone ({tz ?? 'America/Chicago'}).
+              <p
+                id="e_start_help"
+                className={`text-xs ${scheduleLocked ? 'text-status-pending' : 'text-muted-foreground'}`}
+              >
+                {scheduleLocked
+                  ? `This session has no usable timezone${tz ? ` (${tz} is not a valid IANA zone)` : ''}, so its start time cannot be shown or changed here \u2014 a guessed zone would move the workshop by hours and notify every registrant of the wrong time. Set the session timezone first.`
+                  : `In the venue\u2019s timezone (${tz}).`}
               </p>
             </div>
             <div className="space-y-1.5">

@@ -169,7 +169,18 @@ async function execute(args: RunAgentArgs): Promise<RunAgentResult> {
           phone: req.channel === 'sms' ? req.to : null,
           email: req.channel === 'email' ? req.to : null,
         }
-      await dispatch({ ...req, suppressionSubject, actor, escalationNote: `agent:${args.agentKey} run:${runId}` })
+      // The chokepoint (lib/messaging.ts) re-resolves suppression, consent and DNC fresh
+      // regardless of what is passed here, so this path cannot become a bypass even though
+      // it does not go through the message-preparation layer. The agent key is forwarded as
+      // the worker scope so a per-worker configured send window applies to it.
+      await dispatch({
+        ...req,
+        suppressionSubject,
+        actor,
+        workerKey: args.agentKey,
+        policy: { ...(req.policy ?? {}), aiAuthorAgentKey: args.agentKey },
+        escalationNote: `agent:${args.agentKey} run:${runId}`,
+      })
     },
     async escalate(reason, detail) {
       await db.from('agent_actions').insert({

@@ -1,5 +1,5 @@
 // Pure row → send-context derivation for the legacy drip runner (/api/campaigns/run).
-// Extracted so the C-1 rewire (route the runner through sendThroughGate instead of
+// Extracted so the C-1 rewire (route the runner through sendMessage instead of
 // the raw sendEmail/sendSms) is unit-testable without a DB (tests/campaign-gate.test.mjs).
 //
 // This layer ONLY maps a legacy (campaign, customer, step) into the fields the gate
@@ -64,7 +64,7 @@ export function fill(tpl: string, c: { first_name?: string | null; last_name?: s
  * Map a due legacy enrollment's (campaign, customer, step) to the send context the
  * gate consumes, or null when there is no usable contact method for the channel
  * (skip — never send). Consent/DNC/quiet-hours/template/recommendation/securities are
- * all enforced downstream by sendThroughGate; this only derives the row-level inputs.
+ * all enforced downstream by sendMessage; this only derives the row-level inputs.
  */
 export function buildCampaignSend(
   campaign: CampaignForSend,

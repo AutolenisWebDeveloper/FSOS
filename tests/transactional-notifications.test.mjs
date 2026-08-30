@@ -43,10 +43,31 @@ writeFileSync(
    export default { Resend }`,
 )
 
+const policyStub = join(out, 'policy-stub.mjs')
+writeFileSync(
+  policyStub,
+  `// Permissive policy stub. This file's subject is the CONTENT and ROUTING of the
+   // transactional notifications, not the gate — the gate is proven against the real
+   // resolver in tests/guardrail-proof.test.mjs and tests/dispatch-chokepoint.test.mjs,
+   // and the per-path declarations are proven in tests/chokepoint-paths.test.mjs.
+   export async function resolveDispatchPolicy(ctx) {
+     return {
+       gate: { allowed: true, escalate: false },
+       allowed: true,
+       timezone: { resolution: { resolved: true, timeZone: 'America/Chicago', method: 'npa', input: 'stub', approximate: false },
+                   zone: 'America/Chicago', localHour: 12, localDay: 3, legacy: true },
+       resolved: { memberId: null, householdId: null, agencyId: null, consent: true, onDNC: false, suppressed: undefined },
+     }
+   }
+   export default { resolveDispatchPolicy }`,
+)
+
 const stubPlugin = {
   name: 'notify-stubs',
   setup(b) {
     b.onResolve({ filter: /^resend$/ }, () => ({ path: resendStub }))
+    b.onResolve({ filter: /dispatch-policy$/ }, () => ({ path: policyStub }))
+
     b.onResolve({ filter: /^@\// }, (args) => {
       const rel = args.path.slice(2)
       for (const ext of ['.ts', '.tsx', '/index.ts', '.mjs']) {
@@ -169,12 +190,12 @@ t('contact route sends a visitor ack + FSA alert', () => {
 
 t('workshop public register route acks through the GATE (D-8) + FSA alert', () => {
   // Batch 5 (D-8): the registrant receipt is the confirmation of record and now rides
-  // sendThroughGate (one send path per channel) with the mig-131 approval handle —
+  // the send chokepoint (one send path per channel) with the mig-131 approval handle —
   // executed end-to-end in tests/workshop-lifecycle-routes.test.mjs. The route still
   // renders the shared transactional shell and still alerts the FSA internally.
   const src = read('src/app/api/public/workshops/register/route.ts')
   assert.ok(/from '@\/lib\/notifications\/transactional'/.test(src), 'renders the shared transactional shell')
-  assert.ok(/sendThroughGate\(\{/.test(src), 'acknowledges the registrant THROUGH the gate (allSettled member)')
+  assert.ok(/sendMessage\(\{/.test(src), 'acknowledges the registrant THROUGH the gate (allSettled member)')
   assert.ok(!/sendVisitorAck\(/.test(src), 'the direct-send ack path is gone (exactly one send path)')
   assert.ok(/notifyFsa\(/.test(src), 'alerts the FSA')
 })

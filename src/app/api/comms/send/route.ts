@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { readJson, configErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { z } from 'zod'
-import { sendThroughGate } from '@/lib/comms/send'
+import { sendMessage } from '@/lib/comms/send'
 import { runIdempotent } from '@/lib/jobs/runtime'
 import { isManualPurposeAllowed } from '@/lib/comms/console'
 import { resolveAssetPayload, adHocTemplateId } from '@/lib/comms/assets'
@@ -112,7 +112,7 @@ export async function POST(req: NextRequest) {
     }
 
     const outcome = await runIdempotent(`send:${d.idempotency_key}`, 'comms.send', async () =>
-      sendThroughGate({
+      sendMessage({
         channel,
         to: d.to,
         subject,

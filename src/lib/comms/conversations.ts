@@ -6,7 +6,7 @@
 // thread per contact per channel (unique in the schema), so replies and campaign
 // sends land in the same timeline as the contact's other messages.
 
-import { getDb } from '@/lib/supabase/client'
+import { getDb } from '../supabase/client'
 
 export type Channel = 'sms' | 'email'
 export type Direction = 'inbound' | 'outbound'

@@ -10,7 +10,7 @@
 // What this proves, per campaign:
 //   1. Every body is recommendation-free (containsRecommendationLanguage → false). §4.2 red line.
 //   2. Every body lands as approval_status='draft' at the campaign's current version with prior
-//      approval cleared — nothing can dispatch until a human approves it (sendThroughGate refuses
+//      approval cleared — nothing can dispatch until a human approves it (sendMessage refuses
 //      an unapproved template). No campaign is approved or activated by this work.
 //   3. Every {{merge_token}} is on that campaign's proven-resolvable allowlist, so no send can
 //      hard-block on an unresolved BLOCKING-tier token (gate step 4b /
@@ -92,7 +92,7 @@ const ALLOWED_TOKENS = new Set([
 // The verified per-recipient policy/conversion facts ONLY the Life Conversion campaign may
 // reference: its enrollment population comes from v_conversions_due (verified deadline from the
 // imported FNWL conversion list, which also supplies policy_number and the convertible amount as
-// face_amount), and its tick passes enrollment.policy_id into sendThroughGate so
+// face_amount), and its tick passes enrollment.policy_id into sendMessage so
 // resolvePolicySource() resolves these BLOCKING-tier variables fail-closed per recipient.
 // conversion_exam_clause is COSMETIC by design: it renders "with no new medical exam" ONLY when
 // household_policies.conversion_no_exam is verified true, and otherwise degrades to the neutral

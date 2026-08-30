@@ -4,12 +4,13 @@
 // burst / no auto catch-up, §4b), recomputing eligibility BEFORE every touch so a newly
 // opened/reopened opportunity, an opt-out, or a securities flag immediately pauses/exits the
 // enrollment (Active Opportunity Ownership). Every client-facing send goes through
-// sendThroughGate() — consent, quiet-hours (9am–8pm local), DNC, approved-template,
+// sendMessage() — consent, quiet-hours (9am–8pm local), DNC, approved-template,
 // recommendation, and the securities firewall are all enforced there, not re-implemented.
 // Per-touch execution rows make each touch idempotent: a touch is never sent twice.
 import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
-import { sendThroughGate, isTemplateApproved } from '@/lib/comms/send'
+import { sendMessage, isTemplateApproved } from '@/lib/comms/send'
+import { isDeferralGateStep } from '@/lib/comms/gate'
 import { campaignDispatchContext, campaignIdentityContext } from '@/lib/comms/campaign'
 import { smsA2pApproved } from '@/lib/comms/a2p'
 import { getOrCreateConversation } from '@/lib/comms/conversations'
@@ -137,8 +138,15 @@ export async function lifeCampaignTick(): Promise<TickResult> {
           await fireAdvisorTouch(db, cfg, e, nextTouchNo, touch, nowISO)
           advisorTasks++
         } else {
-          const did = await fireMessageTouch(db, cfg, e, nextTouchNo, touch, dispatchCtx, nowISO)
-          if (did) sent++
+          const fired = await fireMessageTouch(db, cfg, e, nextTouchNo, touch, dispatchCtx, nowISO)
+          if (fired === 'sent') sent++
+          // DEFERRAL (configured window / business hours / frequency / A2P hold): the claim
+          // was released inside fireMessageTouch and the CURSOR MUST NOT ADVANCE — the
+          // enrollment's next_touch_at stays due, so the next tick re-claims and re-attempts
+          // this same touch once the hold clears. Advancing here would burn the touch: the
+          // execution row is gone, the cursor is past it, and nothing would ever retry — the
+          // exact failure the exempt-purpose defer rule exists to prevent.
+          if (fired === 'deferred') continue
         }
       }
 
@@ -208,7 +216,7 @@ async function enrollSweep(db: ReturnType<typeof getDb>, cfg: CampaignConfig, no
 }
 
 // Exported for the fail-closed regression proof (tests/campaign-template-failclosed.test.mjs),
-// which drives this function with a stubbed sendThroughGate and asserts a null/empty/invalid
+// which drives this function with a stubbed sendMessage and asserts a null/empty/invalid
 // template is skipped WITHOUT any dispatch. Not part of the module's runtime API otherwise.
 export async function fireMessageTouch(
   db: ReturnType<typeof getDb>,
@@ -218,11 +226,11 @@ export async function fireMessageTouch(
   touch: TouchRow,
   dispatchCtx: Awaited<ReturnType<typeof campaignDispatchContext>>,
   nowISO: string,
-): Promise<boolean> {
+): Promise<'sent' | 'blocked' | 'deferred'> {
   // Unapproved/empty template → skip the send but keep the timeline moving (never stall).
   if (!touch.template_id || !(await isTemplateApproved(touch.template_id))) {
     await markExecution(db, e.id, touchNo, 'skipped', { reason: 'template_not_approved' })
-    return false
+    return 'blocked'
   }
   // comm_templates has no `subject` column — the subject rides on the body's leading
   // "Subject:" line (template-subject.ts). Selecting a non-existent column errors (42703),
@@ -241,20 +249,24 @@ export async function fireMessageTouch(
           ? 'template_channel_invalid'
           : 'template_body_empty',
     })
-    return false
+    return 'blocked'
   }
   const { data: member } = await db.from('household_members').select('email, phone, full_name').eq('id', e.member_id!).maybeSingle()
   const channel = tpl.channel as 'email' | 'sms'
   const to = channel === 'email' ? member?.email : member?.phone
 
-  // SMS A2P hold: leave the execution 'scheduled' and do NOT advance past it — retried next run.
+  // SMS A2P hold: a DEFERRAL — release the claim and hold the cursor so the next tick
+  // re-attempts once A2P approves. (The old 'scheduled' mark never re-fired: the loop
+  // advanced the cursor regardless and a later re-claim conflicted on the existing row, so
+  // the touch was burned despite the comment promising otherwise. The tri-state return
+  // finally lets the loop honor the hold.)
   if (channel === 'sms' && !smsA2pApproved()) {
-    await markExecution(db, e.id, touchNo, 'scheduled', { reason: 'sms_a2p_hold' })
-    return false
+    await db.from('life_campaign_executions').delete().eq('enrollment_id', e.id).eq('touch_no', touchNo)
+    return 'deferred'
   }
   if (!to) {
     await markExecution(db, e.id, touchNo, 'skipped', { reason: 'no_contact_method' })
-    return false
+    return 'blocked'
   }
 
   // AI-conversation touch: resolve/create the (channel, contact) thread so the opener lands on a
@@ -271,7 +283,7 @@ export async function fireMessageTouch(
     .eq('enrollment_id', e.id)
     .eq('touch_no', touchNo)
 
-  const outcome = await sendThroughGate({
+  const outcome = await sendMessage({
     channel,
     to,
     subject: parseSubjectFromBody(tpl.body),
@@ -310,6 +322,16 @@ export async function fireMessageTouch(
   if (isAi && outcome.sent && conv) {
     aiArmed = await armCampaignAiConversation(conv.id, AI_AGENT_KEY, conv.is_security, SYSTEM)
   }
+  // A DEFERRAL step (gate.ts DEFERRAL_GATE_STEPS: configured window, business hours,
+  // frequency, collision, A2P hold) is a self-clearing hold, not a verdict on this
+  // touch. RELEASE the idempotency claim so the next tick can re-claim and re-attempt
+  // it — mirroring the booking ledger's release-on-deferral — and tell the loop not to
+  // advance the cursor. Everything else (a compliance block, a suppression) stays a
+  // terminal 'suppressed' execution exactly as before.
+  if (!outcome.sent && isDeferralGateStep(outcome.gate.blockedStep)) {
+    await db.from('life_campaign_executions').delete().eq('enrollment_id', e.id).eq('touch_no', touchNo)
+    return 'deferred'
+  }
   await markExecution(db, e.id, touchNo, outcome.sent ? 'sent' : 'suppressed', {
     channel,
     kind: touch.kind,
@@ -317,7 +339,7 @@ export async function fireMessageTouch(
     messageId: outcome.messageId,
     ...(isAi ? { ai_armed: aiArmed } : {}),
   })
-  return outcome.sent
+  return outcome.sent ? 'sent' : 'blocked'
 }
 
 async function fireAdvisorTouch(

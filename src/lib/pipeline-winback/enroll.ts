@@ -6,6 +6,7 @@
 // pure schedule engine. Nothing is SENT here — sends happen in the tick, all through the gate.
 import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
+import { enrollmentTimezoneFor } from '@/lib/comms/recipient-timezone-db'
 import { evaluateWinbackEligibility, type WinbackEligibilityReason } from './eligibility'
 import { computeTouchPlan } from './schedule'
 import { loadCampaign, loadWinbackEligibilityInput } from './data'
@@ -77,6 +78,8 @@ export async function enrollOpportunity(input: WinbackEnrollInput): Promise<Winb
   const plan = computeTouchPlan(today)
   const firstDue = `${plan[0].dueDate}T13:00:00.000Z`
 
+  const enrollTz = await enrollmentTimezoneFor(memberId, snapshot.household_id)
+
   const { data: inserted, error } = await db
     .from('pipeline_winback_enrollments')
     .insert({
@@ -93,6 +96,9 @@ export async function enrollOpportunity(input: WinbackEnrollInput): Promise<Winb
       stale_days_at_enroll: snapshot.stale_days,
       winback_category: snapshot.winback_category,
       enrolled_by: input.actor,
+      // Recipient-zone stamp for AUDIT/REPORTING only — dispatch resolves fresh every
+      // send (mig 123). Unresolvable → omit, keeping the column default.
+      ...(enrollTz ? { timezone: enrollTz } : {}),
     })
     .select('id')
     .maybeSingle()

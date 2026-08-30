@@ -7,7 +7,7 @@ import { WorkshopRegisterSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
 import { provisionZoomForRegistration } from '@/lib/workshops/server'
 import { notifyFsa, renderHtml, renderText, type EmailContent } from '@/lib/notifications/transactional'
-import { sendThroughGate } from '@/lib/comms/send'
+import { sendMessage } from '@/lib/comms/send'
 import { buildIcs } from '@/lib/booking/ics'
 import { BUSINESS } from '@/lib/site'
 import {
@@ -18,7 +18,7 @@ import {
 } from '@/lib/workshops/consent-copy'
 
 // Gate step-4 handle for the instant ack (seeded approved in migration 131 — the
-// pre-existing live production receipt, brought under sendThroughGate by D-8).
+// pre-existing live production receipt, brought under the send chokepoint by D-8).
 const ACK_GATE_TEMPLATE_ID = 'eeee0000-0000-4000-8000-00000000ac01'
 
 export const dynamic = 'force-dynamic'
@@ -252,7 +252,7 @@ export async function POST(req: NextRequest) {
 
     // TRANSACTIONAL receipt (best-effort — the registration is already persisted). D-8:
     // the instant ack IS the single confirmation of record (the engine 'confirmation'
-    // kind is deleted) and it now rides sendThroughGate like every other client-facing
+    // kind is deleted) and it now rides the send chokepoint like every other client-facing
     // send — one send path per channel; DNC/suppression enforced even on the receipt.
     // The .ics calendar file attaches here (WS-022). The FSA ops alert is internal.
     const displayName = v.data.name?.trim() || 'there'
@@ -281,7 +281,12 @@ export async function POST(req: NextRequest) {
       attachments = [{ filename: 'workshop.ics', content: Buffer.from(ics, 'utf8').toString('base64'), contentType: 'text/calendar' }]
     }
     await Promise.allSettled([
-      sendThroughGate({
+      // D-8: the receipt is the single confirmation of record and rides the ONE send
+      // path like every other client-facing message — main's `sendVisitorAck` tweak
+      // (transactionalBasis: true) expresses the same basis this states explicitly as
+      // purpose TRANSACTIONAL + durableConsentGranted, and only this path carries the
+      // .ics attachment and the mig-131 gate handle.
+      sendMessage({
         channel: 'email',
         to: v.data.email,
         subject: `You're registered — ${w.title}`,

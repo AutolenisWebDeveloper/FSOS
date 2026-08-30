@@ -5,11 +5,23 @@
 //   • the VISITOR — a receipt/acknowledgement of the action they just took, and
 //   • the FSA     — an internal "new lead / registration / booking" ops alert.
 //
-// Both are TRANSACTIONAL (a direct response to a user-initiated action) and INTERNAL,
-// so — exactly like lib/forms.ts, briefing/send, and the legacy workshop confirmation —
-// they route through the ONE shared, guarded Resend sender (lib/messaging.sendEmail) and
-// are NOT gated by the marketing compliance dispatcher (sendThroughGate) or the `consents`
-// table. They carry no product recommendation, no securities content, and no SMS (§4/§12).
+// Both are TRANSACTIONAL (a direct response to a user-initiated action).
+//
+// THESE ARE NOW GATED. They were the largest of the nine paths Phase A found sending with
+// no consent read, no DNC check, no suppression and no audit. They still call
+// lib/messaging.sendEmail — but that function IS the dispatch chokepoint now, so every one
+// of those checks runs. What each call declares below is the basis on which it is entitled
+// to send, not an exemption from being checked:
+//
+//   templateKind: 'system_transactional' — a fixed, code-resident, review-controlled
+//     template. It satisfies gate step 4 (approved content) and nothing else.
+//   purpose: 'TRANSACTIONAL' — drives purpose-scoped consent and the correct stream.
+//   suppressible: false — a receipt for an action the person just took is not marketing
+//     outreach, so agent-book / individual BUSINESS suppression does not apply. DNC and
+//     consent are regulatory and DO still apply.
+//
+// A DNC'd or revoked recipient now blocks here where it previously sent. That is the
+// intended tightening.
 //
 // Every send is BEST-EFFORT: it never throws into the caller and never blocks the
 // user-facing action (the lead/registration/booking is already persisted). A provider
@@ -19,7 +31,7 @@
 // All recipient-controlled values are HTML-escaped (name, email, message, free text) —
 // stored/reflected-XSS defense (§13.8).
 
-import { sendEmail, emailConfigured, type SendResult } from '@/lib/messaging'
+import { sendEmail, emailConfigured, type SendResult, type SendPolicyOptions } from '@/lib/messaging'
 import { resolveSender } from '@/lib/comms/senders'
 import { BUSINESS, CONTACT } from '@/lib/site'
 import { renderEmailShell, paragraphHtml, detailTableHtml, fineHtml } from './email-shell'
@@ -112,6 +124,8 @@ export async function notifyFsa(opts: {
   rows?: DetailRow[]
   note?: string
   replyTo?: string | null
+  /** Entity linkage for the audit trail, when the caller has one. */
+  entity?: { type: string; id: string }
 }): Promise<SendResult> {
   if (!emailConfigured()) {
     // eslint-disable-next-line no-console
@@ -120,9 +134,21 @@ export async function notifyFsa(opts: {
   }
   const to = fsaNotificationInbox()
   const content: EmailContent = { heading: opts.heading, lede: opts.lede, rows: opts.rows, note: opts.note }
+  // The recipient is the PRACTICE'S OWN operations inbox, not a client. There is no consent
+  // relationship with yourself, so the waiver applies — and it stays opt-out-safe: an
+  // explicit revoke on that address still blocks (contactConsentRevoked at the chokepoint).
+  const policy: SendPolicyOptions = {
+    actor: 'system:notify',
+    purpose: 'TRANSACTIONAL',
+    templateKind: 'system_transactional',
+    suppressible: false,
+    consentWaived: true,
+    entity: opts.entity,
+  }
   const result = await sendEmail(to, opts.subject, renderHtml(content), renderText(content), {
     from: resolveSender('transactional').from || undefined,
     replyTo: opts.replyTo || undefined,
+    policy,
   })
   return logOutcome(`fsa-alert (${opts.subject})`, to, result)
 }
@@ -139,6 +165,16 @@ export async function sendVisitorAck(opts: {
   rows?: DetailRow[]
   note?: string
   replyTo?: string | null
+  /** Entity linkage for the audit trail. */
+  entity?: { type: string; id: string }
+  /**
+   * The caller asserts that this person just performed the action being acknowledged and
+   * supplied this address FOR that acknowledgement — the transactional basis. Each call
+   * site states it explicitly rather than this helper assuming it, because the assertion is
+   * only true where a submission was in fact just persisted. Defaults to false, which means
+   * the chokepoint requires ordinary consent on file.
+   */
+  transactionalBasis?: boolean
 }): Promise<SendResult> {
   if (!opts.to) return { ok: false, error: 'no_recipient', skipped: true }
   if (!emailConfigured()) {
@@ -147,9 +183,20 @@ export async function sendVisitorAck(opts: {
     return { ok: false, error: 'email_not_configured', skipped: true }
   }
   const content: EmailContent = { heading: opts.heading, lede: opts.lede, rows: opts.rows, note: opts.note }
+  const policy: SendPolicyOptions = {
+    actor: 'system:notify',
+    purpose: 'TRANSACTIONAL',
+    templateKind: 'system_transactional',
+    suppressible: false,
+    // The basis is the action the visitor just took, asserted by the call site. DNC/STOP,
+    // the securities firewall and the red line are enforced independently of it.
+    durableConsentGranted: opts.transactionalBasis === true,
+    entity: opts.entity,
+  }
   const result = await sendEmail(opts.to, opts.subject, renderHtml(content), renderText(content), {
     from: resolveSender('transactional').from || undefined,
     replyTo: opts.replyTo || fsaNotificationInbox(),
+    policy,
   })
   return logOutcome(`visitor-ack (${opts.subject})`, opts.to, result)
 }

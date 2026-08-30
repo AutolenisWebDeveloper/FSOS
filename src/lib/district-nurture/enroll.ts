@@ -6,6 +6,7 @@
 // in the tick, all through the gate.
 import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
+import { resolveRecipientTimeZone } from '@/lib/comms/recipient-timezone'
 import { evaluateNurtureEligibility, OVERRIDABLE_REASONS, type NurtureEligibilityReason } from './eligibility'
 import { computeTouchPlan } from './schedule'
 import { loadCampaign, loadNurtureEligibilityInput } from './data'
@@ -66,6 +67,10 @@ export async function enrollAgent(input: NurtureEnrollInput): Promise<NurtureEnr
   const plan = computeTouchPlan(baseline)
   const firstDue = `${plan[0].dueDate}T13:00:00.000Z`
 
+  // Recipient-zone stamp for AUDIT/REPORTING only — dispatch resolves fresh every send
+  // (mig 123). The snapshot already carries the phone, so the pure resolver suffices.
+  const enrollTzR = resolveRecipientTimeZone({ phone: snapshot.phone })
+
   const { data: inserted, error } = await db
     .from('district_nurture_enrollments')
     .insert({
@@ -81,6 +86,7 @@ export async function enrollAgent(input: NurtureEnrollInput): Promise<NurtureEnr
       current_touch_no: 0,
       next_touch_at: firstDue,
       enrolled_by: input.actor,
+      ...(enrollTzR.resolved ? { timezone: enrollTzR.timeZone } : {}),
     })
     .select('id')
     .maybeSingle()

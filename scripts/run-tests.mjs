@@ -38,6 +38,9 @@ const RLS = new Set([
   'district-nurture-rls.test.mjs',
   'suppression-rpc.test.mjs',
   'booking-reschedule-self-exclude.test.mjs',
+  // Applies the WHOLE migration chain to an empty database via the real migrate.mjs.
+  // Needs root Postgres (initdb) and write access to the extension dir for its pg_cron stub.
+  'migration-chain.test.mjs',
   // Batch 0 GUARANTEE tests — full engine + gate against ephemeral Postgres. Pinned RED
   // in tests/expected-failures.json until the batch named there lands.
   'workshop-guarantee-send-once.test.mjs',

@@ -2,7 +2,7 @@
 // The Conversation Responder agent (green-zone). Given an inbound contact message
 // plus the thread history, it retrieves relevant Knowledge Library context and
 // drafts a reply through the model-agnostic gateway. The draft is then sent ONLY
-// through sendThroughGate() — the same 7-step compliance gate as every other
+// through sendMessage() — the same 7-step compliance gate as every other
 // message — so a securities-flagged thread, an out-of-hours reply, an unconsented
 // recipient, or any recommendation language is hard-blocked and escalated, never
 // sent. The agent holds no "recommend" capability; the prompt is constrained to

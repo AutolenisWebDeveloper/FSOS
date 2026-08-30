@@ -6,7 +6,7 @@
 //   • runChangePass    — reschedule/venue-change notices + event cancellations (WS-007/008)
 //   • runNurturePass   — segmented post-event nurture + the T+2/3d follow-up (§2.4, D-1)
 // All run from the dedicated Vercel Cron route (/api/cron/workshop-reminders). Every
-// client-facing send goes through the EXISTING dispatcher/gate (sendThroughGate) — there is
+// client-facing send goes through the EXISTING dispatcher/gate (sendMessage) — there is
 // no parallel sender here. Pure decisions live in ./reminders.ts; GHL routing reuses
 // ./server.ts + ghl.ts; the referral spine reuses the same shape as the P1 convert route.
 //
@@ -28,8 +28,9 @@
 
 import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
-import { sendThroughGate } from '@/lib/comms/send'
-import { ianaZoneForPhone, utcOffsetHoursForZone } from '@/lib/comms/recipient-timezone'
+import { sendMessage } from '@/lib/comms/send'
+import { resolveRecipientTimeZone } from '@/lib/comms/recipient-timezone'
+import { localPartsInZone } from '@/lib/comms/dispatch-policy'
 import {
   convertRegistrationToLead,
   PLACEHOLDER_MARKER,
@@ -51,7 +52,6 @@ import {
   classifySendOutcome,
   recipientLocalHour,
   withinQuietHours,
-  utcOffsetHoursForTimezone,
   buildCanSpamFooter,
   appendCanSpamFooter,
   type MessageKind,
@@ -390,20 +390,27 @@ export async function sendWorkshopMessage(db: Db, args: SendArgs): Promise<LogSt
   // quiet-hours floor (purpose.ts quietHoursApply) and keeps the venue offset for the
   // gate's context. Outside the window → defer (retry next tick); the deferral is
   // audited like its template/consent siblings (WS-065).
+  //
+  // ADOPTS MAIN'S CHOKEPOINT. This engine no longer computes a UTC OFFSET for the
+  // recipient. main's dispatch policy resolves the local hour from an IANA ZONE via
+  // Intl (dispatch-policy.localPartsInZone), which is DST-correct and — unlike an
+  // hours-rounded offset — exact in half-hour zones. The branch's own
+  // utcOffsetHoursForZone rounded (Math.round), which put America/St_Johns 30 minutes
+  // fast and could open an 08:30–09:00 recipient-local send window; deleting that helper
+  // in favour of main's resolver removes the defect rather than patching it.
   const nowMs = Date.now()
-  let utcOffset = utcOffsetHoursForTimezone(session?.timezone, nowMs)
+  let recipientZone: string | null = null
   if (channel === 'sms') {
-    const recipientZone = ianaZoneForPhone(to)
-    const recipientOffset = recipientZone ? utcOffsetHoursForZone(recipientZone, nowMs) : null
-    if (recipientOffset === null) {
-      // Fail closed: no resolvable recipient zone → no send. Deferred (not blocked) so a
-      // corrected phone number can still deliver before the event; the reminder window
-      // itself bounds the retries.
+    const resolution = resolveRecipientTimeZone({ phone: to, zip: null })
+    if (!resolution.resolved) {
+      // Fail closed, unchanged: no resolvable recipient zone → no send. Deferred (not
+      // blocked) so a corrected phone number can still deliver before the event; the
+      // reminder window itself bounds the retries.
       await writeAudit({ actor: ACTOR, action: 'comms.deferred', entity: 'workshop_registration', entityId: reg.reg_id, diff: { kind, channel, reason: 'recipient_tz_unresolved' } })
       return finalize('deferred', { gate_blocked_step: 'quiet_hours', reason: 'recipient_tz_unresolved' })
     }
-    utcOffset = recipientOffset
-    const localHour = recipientLocalHour(nowMs, utcOffset)
+    recipientZone = resolution.timeZone
+    const localHour = localPartsInZone(recipientZone, new Date(nowMs)).hour
     if (!withinQuietHours(localHour)) {
       await writeAudit({ actor: ACTOR, action: 'comms.deferred', entity: 'workshop_registration', entityId: reg.reg_id, diff: { kind, channel, reason: 'outside_quiet_hours', recipient_zone: recipientZone, local_hour: localHour } })
       return finalize('deferred', { gate_blocked_step: 'quiet_hours', reason: 'outside_quiet_hours' })
@@ -455,7 +462,7 @@ export async function sendWorkshopMessage(db: Db, args: SendArgs): Promise<LogSt
   // Dispatch through the SAME gate as everything else. durableConsentGranted feeds gate
   // step 1; isSecurity is false here (securities workshops are excluded upstream + route to
   // FFS). templateId is the approved comm_templates handle → gate step 4 passes.
-  const outcome = await sendThroughGate({
+  const outcome = await sendMessage({
     channel,
     to,
     subject,
@@ -472,7 +479,11 @@ export async function sendWorkshopMessage(db: Db, args: SendArgs): Promise<LogSt
     // marketing class. The engine's own recipient-local quiet-hours pre-check applies
     // to EVERY workshop SMS regardless (conservative operating setting).
     purpose: isReminderClass(kind) ? 'TRANSACTIONAL' : 'WORKSHOP',
-    utcOffsetHours: utcOffset,
+    // An IANA ZONE, never an offset — main's chokepoint resolves the local hour from it
+    // exactly (localPartsInZone) and reports the resolution as non-approximate. SMS
+    // carries the RECIPIENT's zone (resolved above, fail-closed); email is exempt from
+    // the quiet-hours floor and carries the venue's zone purely as gate context.
+    timeZone: channel === 'sms' ? (recipientZone ?? undefined) : (session?.timezone ?? undefined),
     entity: { type: 'workshop_registration', id: reg.reg_id },
     recipientContext: { full_name: reg.name },
   })

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getDb } from '@/lib/supabase/client'
 import { requireInternalAuth, readJson, dbErrorResponse } from '@/lib/http'
-import { sendThroughGate } from '@/lib/comms/send'
+import { sendMessage } from '@/lib/comms/send'
 import { buildCampaignSend } from '@/lib/comms/campaign-run'
 
 export const dynamic = 'force-dynamic'
@@ -11,7 +11,7 @@ export const maxDuration = 60
 
 // POST /api/campaigns/run  (internal)  body: { campaign_id?, limit? }
 // Processes due enrollments (next_send_at <= now, status active): sends the current
-// step through the FULL compliance gate (sendThroughGate — consent, quiet-hours, DNC,
+// step through the FULL compliance gate (sendMessage — consent, quiet-hours, DNC,
 // approved-template, recommendation, is_security), then advances or completes the
 // enrollment. There is NO raw send path: this route no longer calls sendEmail/sendSms
 // directly (C-1). The dispatcher appends the required TRAIGA/Reply-STOP SMS footer.
@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Send through the full 7-step gate (consent/quiet-hours/DNC/template/recommendation/securities).
-    const outcome = await sendThroughGate({
+    const outcome = await sendMessage({
       channel: cs.channel,
       to: cs.to,
       subject: cs.subject,

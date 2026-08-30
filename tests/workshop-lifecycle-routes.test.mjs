@@ -367,12 +367,12 @@ console.log('WS-040 — a PATCH attendance mark writes the attendance TABLE')
     res.status === 200 && !!up && up.payload.status === 'no_show' && up.payload.capture_method === 'manual')
 }
 
-console.log('D-8 / WS-022 — the instant ack rides sendThroughGate with the .ics attached')
+console.log('D-8 / WS-022 — the instant ack rides the chokepoint with the .ics attached')
 {
   globalThis.__ackGateCalls = []
   const sendStub = join(stubDir, 'send-stub.mjs')
   writeFileSync(sendStub, `
-export async function sendThroughGate(ctx) {
+export async function sendMessage(ctx) {
   globalThis.__ackGateCalls.push(ctx)
   return { sent: true, gate: { allowed: true, blockedStep: null }, messageId: 'cm-ack', reason: null }
 }
@@ -393,7 +393,7 @@ export async function sendThroughGate(ctx) {
   installDb(null)
   ok('the registration succeeds', res.status === 200)
   const ack = globalThis.__ackGateCalls.find((c) => c.entity?.type === 'workshop_registration')
-  ok('the ack goes THROUGH sendThroughGate (one send path per channel — D-8)', !!ack && globalThis.__ackGateCalls.length === 1)
+  ok('the ack goes THROUGH the chokepoint (one send path per channel — D-8)', !!ack && globalThis.__ackGateCalls.length === 1)
   ok('…as a TRANSACTIONAL email on the registration basis, under the mig-131 gate handle',
     ack.channel === 'email' && ack.purpose === 'TRANSACTIONAL' && ack.durableConsentGranted === true &&
       ack.templateId === 'eeee0000-0000-4000-8000-00000000ac01' && ack.entity.id === 'reg-ack-1')
@@ -407,26 +407,41 @@ export async function sendThroughGate(ctx) {
       ics.includes('DTEND:20260901T190000Z'), ics.slice(0, 200))
 }
 
-console.log('WS-069 — the dispatcher appends the STOP footer exactly once')
+console.log('WS-069 — the STOP footer is appended exactly once, at the chokepoint')
 {
-  const dispatcherMod = await bundle('src/lib/comms/dispatcher.ts')
-  const sent = []
+  // RELOCATED BY THE MERGE. This branch appended the footer in dispatcher.ts; main moved
+  // the append into messaging.ts (`wireBody`) so it happens once, at the one place that
+  // talks to Twilio — and main's own chokepoint-paths test asserts the dispatcher must NOT
+  // append it. Main's version appended UNCONDITIONALLY, which would have reinstated the
+  // double-STOP this branch fixed, so WS-069's condition was ported onto main's line. The
+  // two assertions are unchanged; only the seam they drive moved.
+  const messagingMod = await bundle('src/lib/messaging.ts')
+  const wire = []
   const deps = {
-    recordComplianceEvent: async () => {},
-    createEscalation: async () => {},
-    writeAudit: async () => {},
-    verifyNotSuppressed: async () => ({ suppressed: false, resolved: true }),
-    send: async (channel, to, body) => { sent.push({ channel, to, body }); return { ok: true, id: 'sm-1' } },
+    resolvePolicy: async () => ({
+      gate: { allowed: true, escalate: false },
+      allowed: true,
+      timezone: { resolution: { resolved: true, timeZone: 'America/Chicago', method: 'npa', input: 'caller', approximate: false }, zone: 'America/Chicago', localHour: 12, localDay: 3, secondaryZone: null, legacy: false },
+      resolved: { memberId: null, householdId: null, agencyId: null, consent: true, onDNC: false, suppressed: false },
+    }),
+    escalate: async () => {},
+    auditSent: async () => {},
+    deliverEmail: async () => ({ ok: true, id: 'em-1' }),
+    deliverSms: async ({ to, body }) => { wire.push({ to, body }); return { ok: true, id: 'sm-1' } },
   }
-  const gate = { hasConsent: true, recipientLocalHour: 12, withinBusinessHours: true, usesApprovedTemplateOrPolicy: true }
-  await dispatcherMod.dispatch({ channel: 'sms', to: '+12145550100', body: 'See you at 6 PM.', gate, actor: 'test' }, deps)
-  await dispatcherMod.dispatch({ channel: 'sms', to: '+12145550100', body: 'Rebook anytime: link Reply STOP to opt out.', gate, actor: 'test' }, deps)
+  process.env.TWILIO_ACCOUNT_SID = 'AC_test'
+  process.env.TWILIO_AUTH_TOKEN = 'tok_test'
+  process.env.TWILIO_PHONE_NUMBER = '+12145550000'
+  process.env.SMS_A2P_APPROVED = 'true'
+  await messagingMod.sendSms('+12145550100', 'See you at 6 PM.', undefined, undefined, deps)
+  await messagingMod.sendSms('+12145550100', 'Rebook anytime: link Reply STOP to opt out.', undefined, undefined, deps)
   ok('a body WITHOUT opt-out language gets the footer appended (WS-033: STOP + HELP)',
-    sent.length === 2 && /Reply STOP to opt out, HELP for help\.$/.test(sent[0].body) && sent[0].body.startsWith('See you at 6 PM.'),
-    JSON.stringify(sent[0]))
-  const stopCount = (sent[1].body.match(/reply\s+stop/gi) ?? []).length
+    wire.length === 2 && /Reply STOP to opt out, HELP for help\.$/.test(wire[0].body) && wire[0].body.startsWith('See you at 6 PM.'),
+    JSON.stringify(wire[0]))
+  const stopCount = (wire[1].body.match(/reply\s+stop/gi) ?? []).length
   ok('a body ALREADY carrying "Reply STOP" (the booking templates) is NOT double-footered',
-    stopCount === 1, JSON.stringify(sent[1]))
+    stopCount === 1, JSON.stringify(wire[1]))
+  delete process.env.SMS_A2P_APPROVED
 }
 
 console.log('WS-030 — the cron trigger authorizes on Bearer CRON_SECRET ONLY')

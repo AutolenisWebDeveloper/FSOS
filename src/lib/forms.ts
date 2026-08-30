@@ -7,7 +7,7 @@ import { getDb } from '@/lib/supabase/client'
 import { generateFormToken } from '@/lib/tokens'
 import { escapeHtml } from '@/lib/http'
 import { sendEmail } from '@/lib/messaging'
-import { sendThroughGate } from '@/lib/comms/send'
+import { sendMessage } from '@/lib/comms/send'
 import { resolveSender } from '@/lib/comms/senders'
 import { renderEmailShell, paragraphHtml, buttonHtml, fineHtml } from '@/lib/notifications/email-shell'
 
@@ -134,14 +134,29 @@ export async function sendForm(input: SendFormInput): Promise<SendFormResult> {
     // the never-throw { ok, error } contract are identical everywhere. A form link
     // is transactional — it is NOT gated by marketing consent. Fail loudly on
     // misconfiguration or provider rejection instead of reporting a phantom "sent".
+    // GATED. This leg previously sent with no consent, DNC or suppression check while the
+    // SMS leg forty lines below ran the full gate — one function, one recipient, two
+    // policies. Both now route through the same chokepoint with the same declaration.
     const result = await sendEmail(
       email,
       `Action Required — ${FORM_TITLES[form_id]}`,
       buildEmailHTML(client_name || 'Client', FORM_TITLES[form_id], link, form_id),
       undefined,
-      // Transactional stream (notify.) for reputation isolation; falls back to
-      // RESEND_FROM_EMAIL until the subdomain is configured.
-      { from: resolveSender('transactional').from || undefined },
+      {
+        // Transactional stream (notify.) for reputation isolation; falls back to
+        // RESEND_FROM_EMAIL until the subdomain is configured.
+        from: resolveSender('transactional').from || undefined,
+        policy: {
+          actor: 'system:forms',
+          purpose: 'TRANSACTIONAL',
+          // Operator-initiated 1:1 servicing message with no comm_templates row — the
+          // licensed operator who triggered POST /api/forms/send is the content approval,
+          // exactly as the SMS leg already declares.
+          templateKind: 'human',
+          suppressible: false,
+          entity: { type: 'form_submission', id: submission.submission_id },
+        },
+      },
     )
     if (result.ok) {
       email_sent = true
@@ -160,7 +175,7 @@ export async function sendForm(input: SendFormInput): Promise<SendFormResult> {
   }
 
   if ((channel === 'sms' || channel === 'both') && phone) {
-    // Route the form-link SMS through the ONE gated pipeline (sendThroughGate) — identical to every
+    // Route the form-link SMS through the ONE gated pipeline (sendMessage) — identical to every
     // other outbound SMS. Consent, DNC/STOP, the A2P 10DLC hold, the securities firewall, the audit
     // trail, and the message-of-record are ALL enforced there. This replaces a raw inline Twilio
     // fetch that bypassed every one of them (audit finding F-3). The dispatcher appends the
@@ -175,7 +190,7 @@ export async function sendForm(input: SendFormInput): Promise<SendFormResult> {
     const e164 = phone.startsWith('+') ? phone : `+1${phone.replace(/\D/g, '')}`
     const smsBody = `Hi ${client_name || 'there'}, Markist sent you a secure form to complete before your appointment. Tap to open: ${link}`
     try {
-      const outcome = await sendThroughGate({
+      const outcome = await sendMessage({
         channel: 'sms',
         to: e164,
         body: smsBody,

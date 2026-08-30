@@ -6,11 +6,11 @@
 // FK — silently, into an ignored `error` — and the provider send went out anyway. ~88 sends left
 // no per-message record. The engine attribution fix (campaignId=null) is proven by
 // tests/campaign-message-of-record.test.mjs. THIS test proves the deeper guarantee in
-// sendThroughGate(): if the message-of-record insert errors (or returns no id) for ANY reason, the
+// sendMessage(): if the message-of-record insert errors (or returns no id) for ANY reason, the
 // send is WITHHELD — the dispatcher/provider is never reached — instead of shipping an untraceable
 // message.
 //
-// It drives the REAL sendThroughGate (compiled from src) with a fake DB whose comm_messages insert
+// It drives the REAL sendMessage (compiled from src) with a fake DB whose comm_messages insert
 // fails, and a SPY dispatcher, asserting: dispatch() is never called, the outcome is blocked, and
 // the reason names the withheld record. A control case (insert succeeds) proves a healthy send DOES
 // reach the dispatcher — so the guard blocks ONLY on the failure it exists for.
@@ -67,7 +67,7 @@ function fakeDb() {
 }
 
 // Real-shaped stubs for exactly the helpers send.ts spreads/iterates/awaits before the insert;
-// every other import falls back to a harmless proxy. This keeps the REAL sendThroughGate control
+// every other import falls back to a harmless proxy. This keeps the REAL sendMessage control
 // flow intact up to (and past) the message-of-record insert.
 const makeStub = () => new Proxy(function () {}, {
   get: (_t, p) => (p === '__esModule' ? true : p === 'then' ? undefined : makeStub()),
@@ -105,7 +105,7 @@ Module._load = function (request, ...rest) {
   if (request.startsWith('@/') || request.startsWith('./') || request.startsWith('../')) return modProxy()
   return origLoad.call(this, request, ...rest)
 }
-const { sendThroughGate } = require(join(out, 'comms/send.js'))
+const { sendMessage } = require(join(out, 'comms/send.js'))
 
 const baseCtx = {
   channel: 'sms', to: '+15550100', body: 'Your review is confirmed for tomorrow at 10am.',
@@ -119,12 +119,12 @@ const record = (name, fn) => Promise.resolve().then(fn).then(
   (e) => { results.push({ name, pass: false, err: e.message }); console.log(`  ✗ ${name}: ${e.message}`) },
 )
 
-console.log('F-1 fail-closed proof (real sendThroughGate, spy dispatcher)\n')
+console.log('F-1 fail-closed proof (real sendMessage, spy dispatcher)\n')
 
 // 1. Insert FAILS → send withheld, dispatcher NEVER reached.
 insertShouldFail = true
 dispatchCalls.length = 0
-const failOutcome = await sendThroughGate({ ...baseCtx })
+const failOutcome = await sendMessage({ ...baseCtx })
 await record('message-of-record insert fails → outcome.sent === false', () =>
   assert.equal(failOutcome.sent, false))
 await record('message-of-record insert fails → outcome.blocked === true', () =>
@@ -139,7 +139,7 @@ await record('message-of-record insert fails → escalating block with a naming 
 // 2. Control: insert SUCCEEDS → the send DOES reach the dispatcher (guard blocks only on failure).
 insertShouldFail = false
 dispatchCalls.length = 0
-const okOutcome = await sendThroughGate({ ...baseCtx })
+const okOutcome = await sendMessage({ ...baseCtx })
 await record('control — insert succeeds → dispatcher IS invoked exactly once', () =>
   assert.equal(dispatchCalls.length, 1))
 await record('control — insert succeeds → outcome.sent === true', () =>

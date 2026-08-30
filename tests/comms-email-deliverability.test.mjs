@@ -91,7 +91,7 @@ t('resolves {{unsubscribe_url}} from the recipient context', () => {
 
 t('unset {{unsubscribe_url}} FAILS CLOSED — no relative fallback, never a raw token', () => {
   // Fail-closed contract: unsubscribe_url is a blocking-tier token. The send path INJECTS the
-  // absolute, per-recipient link at send time (sendThroughGate → emailUnsubscribeUrl); when a
+  // absolute, per-recipient link at send time (sendMessage → emailUnsubscribeUrl); when a
   // caller leaves it unset the personalizer no longer emits a CAN-SPAM-exposing relative
   // "/unsubscribe" — it renders empty and the token is flagged unresolved so the send blocks.
   const body = '{{unsubscribe_url}}'

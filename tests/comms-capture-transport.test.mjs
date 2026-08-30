@@ -141,11 +141,18 @@ console.log('The product wiring (messaging.ts) uses it at the provider boundary'
   ok('the SMS path does the same before the Twilio fetch',
     /captureMessage\(\{ at: new Date\(\)\.toISOString\(\), channel: 'sms'/.test(src) &&
       /return ok \? \{ ok: true, id: `SMcaptured/.test(src))
+  ok('both capture hooks sit INSIDE the delivery seam, so policy + gate + quiet hours still run above them',
+    /async deliverEmail\(\{[\s\S]{0,600}?captureActive\(\)/.test(src) &&
+      /async deliverSms\(\{[\s\S]{0,600}?captureActive\(\)/.test(src))
   const emailIdx = src.indexOf("channel: 'email'")
   const resendIdx = src.indexOf('resend.emails.send')
   ok('the email capture branch precedes the Resend call in source order (it can short-circuit it)',
     emailIdx > 0 && resendIdx > emailIdx)
-  const smsIdx = src.indexOf("channel: 'sms', to, body, correlationId")
+  // Re-anchored for main's refactor: the provider call moved into the `deliverSms` seam
+  // of MessagingDeps, whose args carry no correlationId (it reaches Twilio inside the
+  // statusCallback URL instead), so the capture record no longer carries one either. The
+  // ordering property this asserts is unchanged.
+  const smsIdx = src.indexOf("channel: 'sms', to, body })")
   // Anchor on the EXECUTABLE fetch, not the string 'api.twilio.com' — that also appears
   // in a comment above the capture branch, and matching it would be the §11a
   // comment-satisfiable defect this suite exists to prevent.

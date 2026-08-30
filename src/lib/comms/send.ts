@@ -1,6 +1,6 @@
 // src/lib/comms/send.ts
 // P1 send-time gate binding. Every automated SMS/email in FSOS goes through
-// sendThroughGate(): it computes the 7-step gate context FRESH from the database
+// sendMessage(): it computes the 7-step gate context FRESH from the database
 // AT SEND TIME (consent, DNC, recipient-local quiet hours, template approval,
 // securities flag), routes the message through the dispatcher (which runs the pure
 // gate and escalates on block), and records a comm_messages row with the gate
@@ -20,12 +20,10 @@ import { writeAudit } from '@/lib/audit/log'
 import { dispatch, type DispatchRequest } from './dispatcher'
 import type { GateResult } from './gate'
 import { getOrCreateConversation, touchConversation, normalizeContact, type Channel } from './conversations'
-import { loadHoursPolicy, isWithinOperatingHours } from './hours'
 import { recordMessageEvent } from './events'
 import { personalize, unresolvedBlockingTokens, type RecipientContext } from './personalize'
 import { BUSINESS } from '@/lib/site'
 import { emailUnsubscribeUrl } from './unsubscribe'
-import { smsLiveFor } from './a2p'
 import { instrumentEmailHtml } from './tracking'
 import { wrapMarketingEmailBody } from '@/lib/notifications/email-shell'
 import { resolveDelegation, enqueueAssignmentReview, resolveAgentOfRecord, type AgentOfRecord } from './ownership'
@@ -34,17 +32,11 @@ import { resolvePolicySource } from './policy-context'
 import { resolveIdentityDisclosure, type IdentityContext } from './identity-resolver'
 import { prependIdentityDisclosure } from './identity'
 import { parseSubjectFromBody } from './template-subject'
-import { resolveSendPolicy } from './policy-resolver'
 import type { MessagePurpose } from './purpose'
-import { quietHoursApply } from './purpose'
-import { localHourInTimeZone, withinLiveConversationWindow, DEFAULT_TIMEZONE } from './local-time'
-import { evaluateOutboundMessage } from './evaluations'
 import type { AiMessageClass } from './ai-authority'
 import { evaluateDataConfidence, type ClaimField } from './data-confidence'
-import { latestConsentGranted, smsTail } from './contact-consent'
-import { purposeToConsentPurpose } from './purpose'
 import { streamForPurpose } from './senders'
-import { isBusinessSuppressible, resolveEffectiveSuppression, type SuppressionSubject } from './suppression'
+import type { TemplateKind } from './dispatch-policy'
 
 export interface SendContext {
   channel: Channel
@@ -59,7 +51,7 @@ export interface SendContext {
    */
   bodyText?: string
   /** Email file attachments (WS-022: the workshop instant-ack .ics). Dispatched only
-   *  when the gate clears the send; ignored for SMS. */
+   *  when the policy clears the send; ignored for SMS. */
   attachments?: import('../messaging').EmailAttachment[]
   actor: string
   /** The member this send targets (for consent lookup). */
@@ -253,6 +245,20 @@ export interface SendContext {
    * relaxes consent, DNC, quiet hours, or any regulatory control.
    */
   suppressible?: boolean
+  /**
+   * Declares a fixed, CODE-RESIDENT transactional notice (a booking confirmation, a visitor
+   * acknowledgement, a password-setup mail). These have no `comm_templates` row because they
+   * are not operator-authored, but they are real reviewed templates that change only through
+   * code review — so declaring this satisfies gate step 4. It relaxes NOTHING else: consent,
+   * DNC, suppression, the red line and the securities firewall all still run. This is the
+   * declaration that let the nine previously-ungated paths join the gated path without a
+   * bypass being invented for them.
+   */
+  systemTransactional?: boolean
+  /** Recipient phone for NPA timezone resolution, when the caller already has it. */
+  recipientPhone?: string | null
+  /** Recipient ZIP for the secondary timezone resolution, when the caller already has it. */
+  recipientZip?: string | null
 }
 
 export interface SendOutcome {
@@ -262,19 +268,6 @@ export interface SendOutcome {
   messageId?: string
   conversationId?: string
   reason?: string
-}
-
-/**
- * Recipient-local hour for the quiet-hours floor. An explicit caller-resolved UTC offset
- * wins (the workshop engine derives one from the session's IANA zone); otherwise the hour
- * is resolved DST-correctly from the recipient's IANA timezone, defaulting to
- * America/Chicago (local-time.ts — the old hardcoded -6 was wrong during CDT).
- */
-function recipientLocalHour(utcOffsetHours?: number, timeZone?: string): number {
-  if (typeof utcOffsetHours === 'number' && Number.isFinite(utcOffsetHours)) {
-    return (new Date().getUTCHours() + utcOffsetHours + 24) % 24
-  }
-  return localHourInTimeZone(timeZone ?? DEFAULT_TIMEZONE)
 }
 
 /** True if the named comm template exists and is approved (gate step 4). */
@@ -292,221 +285,22 @@ export async function isTemplateApproved(templateId: string | null | undefined):
   }
 }
 
-/** Valid granted consent on this channel for this member (gate step 1). */
-async function hasConsent(memberId: string | null | undefined, channel: Channel): Promise<boolean> {
-  if (!memberId) return false
-  try {
-    const { data } = await getDb()
-      .from('consents')
-      .select('status')
-      .eq('member_id', memberId)
-      .eq('channel', channel)
-      .maybeSingle()
-    return data?.status === 'granted'
-  } catch {
-    return false
-  }
-}
-
 /**
- * Durable, CONTACT-RESOLVABLE customer-care consent (gate step 1) for a lead captured at
- * PUBLIC INTAKE before any household member exists (comm_contact_consents, migration 074).
+ * PREPARE and send one message.
  *
- * This is the enforcement read that makes public-intake consent a REAL control: the send
- * path consults it for every SMS/email by normalized contact — SMS matched TOLERANTLY on
- * the last-10-digit suffix (like onDNC) so +1/bare drift can't miss a grant. Latest action
- * wins (a later `revoked` overrides an earlier `granted`; latestConsentGranted). Fails
- * CLOSED (false) on any error — never grants on a lookup failure.
+ * This is no longer a gate wrapper — the name `sendMessage` is gone with the role. The
+ * checks it used to run (consent, DNC, suppression, quiet hours, approved template, the
+ * red line, the securities firewall) now run at the DISPATCH CHOKEPOINT in lib/messaging.ts,
+ * where they also cover the nine paths that never called this function.
  *
- * Scope: applied ONLY when the contact has NOT resolved to a household member. Once a
- * member exists, the member-keyed `consents` table is authoritative (and STOP/DNC always
- * governs independently at gate step 3), so this can never re-grant a member-level revoke.
+ * What happens here is everything a message needs BEFORE a policy decision can be made
+ * about it: thread it into the one conversation for (channel, contact), resolve its
+ * subject, substitute merge tokens and fail closed on an unresolved blocking one, prepend
+ * the platform identity disclosure, write the §13.9 message-of-record, wrap the branded
+ * shell and instrument tracking. The chokepoint then decides, and the outcome is patched
+ * back onto the record here.
  */
-async function durableContactConsentGranted(contact: string, channel: Channel): Promise<boolean> {
-  try {
-    const db = getDb()
-    if (channel === 'sms') {
-      const tail = smsTail(contact)
-      if (tail.length < 10) return false
-      const { data } = await db
-        .from('comm_contact_consents')
-        .select('action, captured_at')
-        .eq('channel', 'sms')
-        .ilike('contact', `%${tail}`)
-        .order('captured_at', { ascending: false })
-        .limit(1)
-      return latestConsentGranted(data as { action: string; captured_at: string }[] | null)
-    }
-    const { data } = await db
-      .from('comm_contact_consents')
-      .select('action, captured_at')
-      .eq('channel', channel)
-      .eq('contact', contact.toLowerCase())
-      .order('captured_at', { ascending: false })
-      .limit(1)
-    return latestConsentGranted(data as { action: string; captured_at: string }[] | null)
-  } catch {
-    return false
-  }
-}
-
-/**
- * Explicit opt-out / revoke on this channel — used ONLY to keep the console/self-test
- * consent WAIVER (ctx.consentWaived, ADR-033) opt-out-safe. Returns true when the recipient
- * has told us to stop at ANY level:
- *   • member-level channel revoke (`consents.status='revoked'`),
- *   • purpose-scoped revoke (`comm_consent_purposes.status='revoked'`) when a purpose is set,
- *   • the latest contact-level action is `revoked` (comm_contact_consents, public-intake store).
- * A revoke here disables the waiver so the normal consent gate (step 1) blocks the send. STOP
- * opt-outs are ALSO caught independently at gate step 3 (DNC); this is defense in depth for a
- * consent-store revoke that may not be mirrored to the DNC list. Fails SAFE (true = treat as
- * revoked → waiver does not apply) so a lookup failure can never turn a waiver into an unwanted
- * send. Only called when ctx.consentWaived is set.
- */
-async function consentRevoked(
-  memberId: string | null | undefined,
-  contact: string,
-  channel: Channel,
-  purpose?: MessagePurpose,
-): Promise<boolean> {
-  try {
-    const db = getDb()
-    if (memberId) {
-      const { data } = await db.from('consents').select('status').eq('member_id', memberId).eq('channel', channel).maybeSingle()
-      if (data?.status === 'revoked') return true
-      if (purpose) {
-        const consentPurpose = purposeToConsentPurpose(purpose, channel)
-        const { data: pr } = await db
-          .from('comm_consent_purposes')
-          .select('status')
-          .eq('member_id', memberId)
-          .eq('channel', channel)
-          .eq('purpose', consentPurpose)
-          .maybeSingle()
-        if (pr?.status === 'revoked') return true
-      }
-    }
-    // Contact-level latest-wins revoke (matches durableContactConsentGranted's read shape).
-    if (channel === 'sms') {
-      const tail = smsTail(contact)
-      if (tail.length < 10) return false
-      const { data } = await db
-        .from('comm_contact_consents')
-        .select('action, captured_at')
-        .eq('channel', 'sms')
-        .ilike('contact', `%${tail}`)
-        .order('captured_at', { ascending: false })
-        .limit(1)
-      const rows = data as { action: string; captured_at: string }[] | null
-      return Array.isArray(rows) && rows.length > 0 && !latestConsentGranted(rows) && rows[0]?.action === 'revoked'
-    }
-    const { data } = await db
-      .from('comm_contact_consents')
-      .select('action, captured_at')
-      .eq('channel', channel)
-      .eq('contact', contact.toLowerCase())
-      .order('captured_at', { ascending: false })
-      .limit(1)
-    const rows = data as { action: string; captured_at: string }[] | null
-    return Array.isArray(rows) && rows.length > 0 && !latestConsentGranted(rows) && rows[0]?.action === 'revoked'
-  } catch {
-    // Fail safe: if we cannot verify, treat as revoked so the waiver does NOT apply.
-    return true
-  }
-}
-
-/**
- * "Approved AI policy" for gate step 4 — the non-template path for AI-authored
- * green-zone messages (CLAUDE.md §7: "approved template OR approved AI policy").
- * A policy is approved only when BOTH kill switches are on: the global AI gateway
- * AND the specific agent that authored the message (the conversation responder for
- * inbound replies; the acting outreach agent — cross_sell / term_conversion /
- * referral_followup / marketing_automation — for proactive workforce outreach).
- * This keeps every AI auto-send fully operator-controlled: disabling either switch
- * immediately blocks + escalates instead of sending. It only satisfies step 4; the
- * AI draft still must clear recommendation (5), securities (6), consent (1),
- * quiet-hours (2), and DNC (3).
- */
-async function hasApprovedAiPolicy(agentKey = 'conversation'): Promise<boolean> {
-  if (process.env.AI_GATEWAY_DISABLED === '1') return false
-  try {
-    const db = getDb()
-    const [{ data: pol }, { data: agent }] = await Promise.all([
-      db.from('ai_policies').select('gateway_enabled').eq('id', 'global').maybeSingle(),
-      db.from('ai_agents').select('enabled').eq('key', agentKey).maybeSingle(),
-    ])
-    const gatewayOn = pol?.gateway_enabled !== false
-    return gatewayOn && agent?.enabled === true
-  } catch {
-    return false
-  }
-}
-
-/**
- * Recipient on internal/external DNC for this channel (gate step 3).
- *
- * DNC is a TCPA opt-out control, so the match must be TOLERANT of contact-format drift:
- * a STOP arrives from the carrier as full E.164 (`+1XXXXXXXXXX`) while an outbound `to`
- * may be stored bare (`XXXXXXXXXX`). An exact-string match would miss the STOP row and
- * re-message a suppressed recipient. For SMS we match on the last-10-digit suffix; email
- * is matched on the normalized (lower-cased) address. Fails SAFE (blocked) on error.
- */
-async function onDNC(to: string, channel: Channel): Promise<boolean> {
-  try {
-    const db = getDb()
-    if (channel === 'sms') {
-      const digits = to.replace(/[^\d]/g, '')
-      const tail = digits.slice(-10)
-      if (tail.length < 10) {
-        // Not enough digits to match tolerantly — fall back to exact and fail safe.
-        const { data } = await db.from('dnc_entries').select('id').eq('contact', to).in('channel', ['sms', 'all']).limit(1)
-        return Array.isArray(data) && data.length > 0
-      }
-      // Any stored DNC contact ending in these 10 digits blocks (format-agnostic).
-      const { data } = await db
-        .from('dnc_entries')
-        .select('id')
-        .in('channel', ['sms', 'all'])
-        .ilike('contact', `%${tail}`)
-        .limit(1)
-      return Array.isArray(data) && data.length > 0
-    }
-    const { data } = await db.from('dnc_entries').select('id').eq('contact', to).in('channel', ['email', 'all']).limit(1)
-    return Array.isArray(data) && data.length > 0
-  } catch {
-    // Fail safe: if we cannot verify DNC, treat as blocked (never send blindly).
-    return true
-  }
-}
-
-/**
- * True when the conversation's most recent INBOUND message is within the 24h
- * live-conversation window (local-time.ts) — the only condition under which a
- * human-typed 1:1 SMS is exempt from the quiet-hours floor. FAILS CLOSED: no
- * conversation, no inbound row, or any read error → false (the send stays gated).
- */
-async function lastInboundWithinLiveWindow(conversationId: string): Promise<boolean> {
-  try {
-    const { data } = await getDb()
-      .from('comm_messages')
-      .select('created_at')
-      .eq('conversation_id', conversationId)
-      .eq('direction', 'inbound')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    return withinLiveConversationWindow(data?.created_at ?? null)
-  } catch {
-    return false
-  }
-}
-
-/**
- * Send one message through the full 7-step gate, computed at send time.
- * On block: dispatcher records the compliance_event + escalation; we log the
- * comm_messages row as blocked with the failing step. Never sends on block.
- */
-export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
+export async function sendMessage(ctx: SendContext): Promise<SendOutcome> {
   const db = getDb()
   const to = normalizeContact(ctx.channel, ctx.to)
 
@@ -700,116 +494,20 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
     }
   }
 
-  // Compute the gate context FRESH (send-time re-check — WF-9 invariant). Step 4
-  // is satisfied by an approved template OR, for AI-authored replies with no
-  // template, an approved AI policy (both AI kill switches on).
-  // A durable, contact-resolvable public-intake grant only applies BEFORE the contact has a
-  // household member — once a member exists, the member-keyed `consents` row is authoritative
-  // (and STOP/DNC always governs independently), so this can never re-grant a member revoke.
-  const [memberConsent, contactConsent, dnc, templateApproved, hoursPolicy, waiverRevoked] = await Promise.all([
-    hasConsent(convMemberId, ctx.channel),
-    convMemberId ? Promise.resolve(false) : durableContactConsentGranted(to, ctx.channel),
-    onDNC(to, ctx.channel),
-    isTemplateApproved(ctx.templateId),
-    loadHoursPolicy(),
-    // Only when the console/self-test waiver is set do we spend a read to confirm there is no
-    // explicit opt-out that the waiver would have to respect (opt-out always wins).
-    ctx.consentWaived === true ? consentRevoked(convMemberId, to, ctx.channel, ctx.purpose) : Promise.resolve(false),
-  ])
-  // Gate step 1: member-keyed consent OR a domain-owned durable per-channel grant
-  // (workshops) OR a durable PUBLIC-INTAKE contact grant (comm_contact_consents, mig 074).
-  // The OR can only ADD consent an existing caller never asserted; it never removes it.
-  // DNC/quiet-hours/recommendation/securities remain enforced below.
-  // Console / self-test waiver (ADR-033): a licensed operator's 1:1 send or a verified-self
-  // test does not require consent-on-file — but the waiver is OPT-OUT-SAFE (never fires on an
-  // explicit revoke) and relaxes ONLY step 1; every other gate step still applies below.
-  const consentWaiverApplies = ctx.consentWaived === true && !waiverRevoked
-  let consent = memberConsent || contactConsent || ctx.durableConsentGranted === true || consentWaiverApplies
-
-  // Purpose policy (Slice 3, §9/§10): purpose-scoped consent + frequency caps + priority
-  // collision. Opt-in via ctx.purpose. Purpose-scoped consent (when a row exists) REPLACES
-  // the channel-wide check — a purpose-level revoke must win over a channel grant; a
-  // durable workshop grant can still OR in. Frequency/collision become non-escalating gate
-  // deferrals. Absent ctx.purpose → unchanged behavior.
-  // Per-recipient FREQUENCY caps (§9) apply to EVERY campaign send, not only those that declared a
-  // purpose (audit finding P1-B: `withinFrequencyCaps` used to be computed only inside `if
-  // (ctx.purpose)`, so a purposeless campaign — and the entire legacy `/api/campaigns/run` drip —
-  // ran with NO min-interval / SMS-per-day / marketing-email-per-day / combined-touch cap). An
-  // unclassified campaign send is treated as MARKETING for capping — the same default the stream
-  // router (streamForPurpose) and the quiet-hours floor (quietHoursApply) already apply. Purpose-
-  // scoped CONSENT and campaign COLLISION stay opt-in to an EXPLICIT purpose: a defaulted purpose
-  // must never newly replace the channel-wide consent read or pause on a §10 collision the caller
-  // did not opt into. Consent, DNC/STOP, approval, the red-line, and the firewall are all enforced
-  // independently below regardless.
-  const effectivePurpose = ctx.purpose ?? 'MARKETING'
-  let withinFrequencyCaps: boolean | undefined
-  let frequencyReason: string | undefined
-  let collisionPaused: boolean | undefined
-  let collisionReason: string | undefined
-  {
-    const policy = await resolveSendPolicy({
-      memberId: convMemberId,
-      channel: ctx.channel,
-      purpose: effectivePurpose,
-      conversationId,
-      activeCampaignPurpose: ctx.activeCampaignPurpose ?? null,
-      // Reply-scoped caps for a live conversation turn; outreach caps for everything else.
-      frequencyPolicyId: ctx.isConversationReply === true ? 'reply' : 'global',
-    })
-    // FREQUENCY applies to every send (purpose defaulted above).
-    withinFrequencyCaps = policy.frequency.allowed
-    frequencyReason = policy.frequency.reason
-    // CONSENT replacement + COLLISION remain gated on an EXPLICIT caller purpose (behavior for
-    // purposeless sends is unchanged apart from now honoring the frequency caps).
-    if (ctx.purpose) {
-      if (policy.consentForPurpose !== null) {
-        // A purpose-scoped grant/revoke replaces the channel-wide read. The console/self-test
-        // waiver still ORs in — it is already purpose-revoke-aware (consentRevoked checked the
-        // purpose-scoped row), so consentWaiverApplies is false whenever this purpose was revoked.
-        consent = policy.consentForPurpose || ctx.durableConsentGranted === true || consentWaiverApplies
-      }
-      collisionPaused = !policy.collision.allowed
-      collisionReason = policy.collision.reason
-    }
-  }
-
-  // Data confidence (Slice 6, §13): a message making SPECIFIC claims on unverified/
-  // conflicting data is excluded (gate step data_confidence) and a verification task is
-  // raised. Opt-in via ctx.dataConfidence; a generic invitation passes.
-  let dataConfidenceOk: boolean | undefined
-  let dataConfidenceReason: string | undefined
-  let dataConfidenceUnverified: string[] = []
-  if (ctx.dataConfidence) {
-    const dc = evaluateDataConfidence(ctx.dataConfidence)
-    dataConfidenceOk = dc.allowed
-    dataConfidenceReason = dc.reason
-    dataConfidenceUnverified = dc.unverified
-  }
-  // Operator hours of operation (business-local). A human-typed 1:1 reply from the
-  // FSA inbox is NOT gated by business hours — the licensed operator is present and
-  // choosing to send. Automated/AI/bulk sends ARE gated (held outside hours).
-  const withinBusinessHours = ctx.humanAuthored === true ? true : await isWithinOperatingHours(hoursPolicy)
-  const approved =
-    templateApproved ||
-    ctx.humanAuthored === true ||
-    (ctx.aiGenerated === true && !ctx.templateId ? await hasApprovedAiPolicy(ctx.aiAuthorAgentKey) : false)
-
-  // Quiet-hours scope (owner-directed, 2026-08-07): the 9:00–20:00 recipient-local floor
-  // gates SMS MARKETING/CAMPAIGN sends only (purpose.ts quietHoursApply — email and
-  // transactional/servicing-class SMS are exempt; an SMS with NO purpose is the campaign
-  // path and stays gated). A human-typed 1:1 SMS is additionally exempt ONLY on a LIVE
-  // conversation — the contact sent an inbound message within the preceding 24h
-  // (local-time.ts window); outside that window it falls through to the unclassified
-  // default and stays gated. The lookup FAILS CLOSED (any error → not exempt). This
-  // scoping relaxes ONLY gate step 2 — consent, DNC/STOP, approval, the recommendation
-  // red-line, and the securities firewall are untouched.
-  let quietHoursExempt = !quietHoursApply(ctx.channel, ctx.purpose)
-  if (!quietHoursExempt && ctx.humanAuthored === true && conversationId) {
-    quietHoursExempt = await lastInboundWithinLiveWindow(conversationId)
-  }
-
+  // ── Policy context, NOT policy decisions ───────────────────────────────────
+  // This layer used to resolve consent, DNC, suppression, template approval, quiet hours
+  // and business hours itself, then hand the answers to the gate. It no longer does. Those
+  // reads moved to the DISPATCH CHOKEPOINT (lib/messaging.ts via dispatch-policy.ts),
+  // where they run for every send — including the nine paths that never called this
+  // function. What remains here is message PREPARATION: threading, personalization,
+  // identity disclosure, the message-of-record, the branded shell and tracking.
+  //
+  // Only the caller-owned findings are assembled below. Consent is deliberately absent:
+  // `consent_at_send` is patched after dispatch from the SAME read the decision was made
+  // on, so the record can never claim a consent state the gate did not actually see.
   // On-behalf-of authority (Slice 1). Resolved FRESH here (never from an enrollment
-  // snapshot). Absent delegation context → not an on-behalf-of send → step is a no-op.
+  // snapshot) because it is caller-owned context — which delegation authorizes THIS send —
+  // rather than a recipient-state read.
   let delegationValid: boolean | undefined
   let delegationReason: string | undefined
   let resolvedDelegationId: string | null = ctx.ownership?.delegationId ?? null
@@ -825,6 +523,30 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
     delegationReason = dec.reason
     resolvedDelegationId = dec.delegationId ?? resolvedDelegationId
   }
+
+  // Data confidence (Slice 6, §13): a message making SPECIFIC claims on unverified data is
+  // excluded. Caller-owned (the caller declares which claims the copy makes).
+  let dataConfidenceOk: boolean | undefined
+  let dataConfidenceReason: string | undefined
+  let dataConfidenceUnverified: string[] = []
+  if (ctx.dataConfidence) {
+    const dc = evaluateDataConfidence(ctx.dataConfidence)
+    dataConfidenceOk = dc.allowed
+    dataConfidenceReason = dc.reason
+    dataConfidenceUnverified = dc.unverified
+  }
+
+  // How gate step 4 is satisfied for this send, declared explicitly so the chokepoint does
+  // not have to infer it from a combination of flags.
+  const templateKind: TemplateKind = ctx.templateId
+    ? 'stored'
+    : ctx.humanAuthored === true
+      ? 'human'
+      : ctx.aiGenerated === true
+        ? 'ai_policy'
+        : ctx.systemTransactional === true
+          ? 'system_transactional'
+          : 'stored'
 
   // Pre-insert the message row (queued) so email tracking can reference its id and
   // so a blocked send is still visible in the timeline. The final status/provider
@@ -856,7 +578,9 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
         policy_id: ctx.policyId ?? null,
         entity_type: ctx.entity?.type ?? (convHouseholdId ? 'household' : 'conversation'),
         entity_id: ctx.entity?.id ?? convHouseholdId ?? conversationId,
-        consent_at_send: consent,
+        // Patched post-dispatch from the chokepoint's resolution, so the record can never
+        // claim a consent state the gate did not actually evaluate.
+        consent_at_send: null,
         actor: ctx.actor,
         ai_generated: ctx.aiGenerated === true,
         // Slice 1 — distinct actual-sender vs represented-party attribution (§7).
@@ -982,169 +706,70 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
   const sendBody =
     ctx.channel === 'email' && messageId ? instrumentEmailHtml(emailReady, messageId) : emailReady
 
-  // ── BUSINESS suppression (agent-level book / individual client), §ordering: after DNC ──
-  // Applies to NON-transactional outreach only (marketing/campaign/nurture/AI outreach);
-  // transactional/servicing sends are never business-suppressed. Resolved FRESH here at send
-  // time from the policy layers (suppression.ts) so a client newly assigned to a blocked agent
-  // inherits the restriction and a reassigned client recalculates — no per-client copies. The
-  // decision fails CLOSED (suppressed) on a lookup error. The same subject is handed to the
-  // dispatcher for the final provider-boundary re-check just before transmission.
-  // Business suppression applies to NON-transactional AUTOMATED/AI outreach. It never applies to:
-  //   • a human-authored 1:1 send (a deliberate operator action, not automated outreach),
-  //   • a test send (a verified-self pipeline proof, not client outreach),
-  //   • a caller that explicitly declares itself transactional (suppressible === false, e.g.
-  //     appointment reminders), or
-  //   • a transactional/servicing purpose (businessSuppressionApplies === false).
-  // Unknown/absent purpose on an automated send still fails CLOSED (suppressible) so marketing
-  // can never slip through unclassified.
-  const suppressionEligible = isBusinessSuppressible({
-    purpose: ctx.purpose,
-    humanAuthored: ctx.humanAuthored,
-    isTest: ctx.isTest,
-    suppressible: ctx.suppressible,
-  })
-  let suppressionSubject: SuppressionSubject | undefined
-  let businessSuppressed: boolean | undefined
-  let suppressionResolved: boolean | undefined
-  let suppressionReason: string | undefined
-  if (suppressionEligible) {
-    suppressionSubject = {
-      memberId: convMemberId,
-      householdId: convHouseholdId,
-      agencyId: convAgencyId,
-      contactId: ctx.entity?.type === 'contact' ? ctx.entity.id : null,
-      phone: ctx.channel === 'sms' ? to : null,
-      email: ctx.channel === 'email' ? to : null,
-    }
-    const decision = await resolveEffectiveSuppression(suppressionSubject)
-    businessSuppressed = decision.suppressed
-    suppressionResolved = decision.resolved
-    suppressionReason = decision.reason
-  }
-
   const req: DispatchRequest = {
     channel: ctx.channel,
     to,
     subject: resolvedSubject,
     body: sendBody,
-    // FSOS-030: echo the pre-inserted message id so a provider status callback correlates
-    // deterministically (Twilio ?mid=, Resend X-FSOS-Message-Id) even before provider_id is
-    // patched onto the row after dispatch.
     correlationId: messageId,
-    // Final provider-boundary re-check subject (non-transactional sends only). Absent for
-    // transactional/servicing sends so they are never business-suppressed.
-    suppressionSubject,
-    // Plaintext part is NOT instrumented (open/click tracking is HTML-only).
     bodyText: ctx.channel === 'email' ? identityText : undefined,
     attachments: ctx.channel === 'email' ? ctx.attachments : undefined,
-    // Reputation stream for the envelope From (email): marketing/workshop → mail.,
-    // everything else → notify. Absent purpose → marketing (this is the campaign path).
     messageClass: streamForPurpose(ctx.purpose),
     actor: ctx.actor,
     entity: ctx.entity ?? (conversationId ? { type: 'conversation', id: conversationId } : undefined),
+    templateKind,
+    memberId: convMemberId,
+    householdId: convHouseholdId,
+    agencyId: convAgencyId,
+    conversationId,
+    campaignKey: ctx.sourceCampaignKey ?? (ctx.campaignId ?? null),
+    workerKey: ctx.aiGenerated === true ? (ctx.aiAuthorAgentKey ?? 'conversation') : null,
+    utcOffsetHours: ctx.utcOffsetHours,
+    timeZone: ctx.timeZone,
+    policy: {
+      purpose: ctx.purpose,
+      templateId: ctx.templateId ?? null,
+      aiGenerated: ctx.aiGenerated === true,
+      aiMessageClass: ctx.aiMessageClass,
+      aiAuthorAgentKey: ctx.aiAuthorAgentKey,
+      identityDisclosureSatisfied: !ctx.identity ? true : identityFirstTouch ? identityFullIntro === true : true,
+      durableConsentGranted: ctx.durableConsentGranted,
+      consentWaived: ctx.consentWaived,
+      suppressible: ctx.suppressible,
+      isTest: ctx.isTest,
+      isConversationReply: ctx.isConversationReply,
+      activeCampaignPurpose: ctx.activeCampaignPurpose ?? null,
+      recipientZip: ctx.recipientZip ?? null,
+      recipientPhone: ctx.recipientPhone ?? null,
+    },
     gate: {
       ownershipResolved: ctx.ownershipResolved,
       ownershipConflict: ctx.ownershipConflict,
-      hasConsent: consent,
-      recipientLocalHour: recipientLocalHour(ctx.utcOffsetHours, ctx.timeZone),
-      quietHoursExempt,
-      withinBusinessHours,
-      withinFrequencyCaps,
-      frequencyReason,
-      collisionPaused,
-      collisionReason,
+      // Firewall (§4.1): caller flag OR the server-resolved conversation/household flag.
+      // The chokepoint ORs it again with its own read — it can only get more restrictive.
+      isSecurity: ctx.isSecurity === true || convIsSecurity,
       delegationValid,
       delegationReason,
-      onDNC: dnc,
-      // 3b — BUSINESS suppression (agent-level book / individual client). Separate from DNC:
-      // it never overrides a regulatory opt-out and applies to non-transactional sends only.
-      // Undefined for transactional/servicing sends (suppressionEligible === false).
-      businessSuppressed,
-      suppressionResolved,
-      suppressionReason,
-      usesApprovedTemplateOrPolicy: approved,
-      // 5 — B3-1: relax the recommendation red-line ONLY for a supervisor-approved, human-authored
-      // template (a real approved template id on a NON-AI send). AI-generated content — even when it
-      // rides an approved AI policy — never qualifies, so the firewall on the agent is untouched.
-      approvedHumanTemplate: approved === true && !!ctx.templateId && ctx.aiGenerated !== true,
-      // 4b — fail-closed personalization: a required merge token that did not resolve blocks +
-      // escalates (never ship an empty appointment time / opt-out link / advisor identity).
       personalizationResolved: unresolvedTokens.length === 0,
       personalizationReason: unresolvedTokens.length
         ? `Unresolved required merge tokens: ${unresolvedTokens.join(', ')}`
         : undefined,
-      // Firewall (§4.1): caller flag OR the server-resolved conversation/household flag.
-      isSecurity: ctx.isSecurity === true || convIsSecurity,
-      // A2P 10DLC (§12): SMS holds until the campaign is approved; email is never gated.
-      // Computed server-side from the single go-live flag so no caller can bypass it.
-      smsLive: smsLiveFor(ctx.channel),
       dataConfidenceOk,
       dataConfidenceReason,
+      // These are resolved at the chokepoint; the values here are inert placeholders that
+      // satisfy the GateInput shape and are NOT forwarded (see dispatcher.ts).
+      hasConsent: false,
+      recipientLocalHour: 12,
+      onDNC: false,
+      usesApprovedTemplateOrPolicy: false,
     },
   }
 
-  // AI authority matrix + §12 evaluations (Slice 5). Runs for EVERY aiGenerated send —
-  // NOT only classified ones — so a caller can never bypass §11 by omitting the class:
-  // an absent/unknown class fails safe to draft_only (evaluateAiAuthority), so unclassified
-  // autonomous AI content is held for the licensed FSA, never auto-sent (§4.2/§11 —
-  // enforced through code + classification, not prompts). A positively-classified auto_send
-  // class that clears every §12 check still auto-sends.
-  if (ctx.aiGenerated === true) {
-    const classLabel = ctx.aiMessageClass || 'unclassified'
-    const identitySatisfied = !ctx.identity ? true : identityFirstTouch ? identityFullIntro === true : true
-    const evalResult = evaluateOutboundMessage({
-      draft: identityBody,
-      messageClass: ctx.aiMessageClass,
-      purposeClassified: !!ctx.purpose,
-      ownershipResolved: ctx.ownershipResolved !== false,
-      identityDisclosureSatisfied: identitySatisfied,
-      consentCompatible: consent,
-      templateApproved: approved,
-    })
-    if (!evalResult.mayAutoSend) {
-      // Hold as a human-review draft (not sent). Record the AI action + escalate.
-      try {
-        await db.from('agent_actions').insert({
-          kind: 'ai_draft',
-          actor: ctx.actor,
-          outcome: evalResult.authority === 'blocked' ? 'blocked' : 'drafted',
-          target_type: ctx.entity?.type ?? 'conversation',
-          target_id: ctx.entity?.id ?? convHouseholdId ?? conversationId,
-          reason: evalResult.failures.length ? evalResult.failures.join(',') : `authority:${evalResult.authority}`,
-          note: `ai message class "${classLabel}" → ${evalResult.authority}; not auto-sent (§11/§12)`,
-          drafted_content: identityBody,
-        })
-      } catch {
-        /* best-effort; the message row below still records the hold */
-      }
-      if (messageId) {
-        try {
-          await db.from('comm_messages').update({
-            delivery_status: 'blocked',
-            blocked_step: 'ai_authority',
-            block_reason: evalResult.failures.length ? evalResult.failures.join(',') : `draft_only:${evalResult.authority}`,
-            updated_at: new Date().toISOString(),
-          }).eq('id', messageId)
-        } catch { /* best-effort */ }
-      }
-      await recordMessageEvent({
-        messageId,
-        conversationId,
-        campaignId: ctx.campaignId ?? null,
-        event: 'failed',
-        channel: ctx.channel,
-        detail: `ai_authority:${evalResult.authority}`,
-      })
-      return {
-        sent: false,
-        blocked: true,
-        gate: { allowed: false, escalate: true, reason: `AI message held for human review (${evalResult.authority}).` },
-        messageId,
-        conversationId: conversationId ?? undefined,
-        reason: `AI message class "${classLabel}" is not auto-send (${evalResult.failures.join(',') || evalResult.authority}); drafted for the FSA.`,
-      }
-    }
-  }
+  // §11/§12 AI authority is evaluated at the CHOKEPOINT (dispatch-policy.ts), alongside the
+  // consent and template-approval reads it depends on — see the note above. It surfaces here
+  // as gate step `ai_authority`, and the draft-recording below is this layer's response to
+  // that verdict. Evaluating it here as well would mean two layers reading the same facts
+  // separately, which is exactly the disagreement this refactor removes.
 
   const result = await dispatch(req)
 
@@ -1163,12 +788,53 @@ export async function sendThroughGate(ctx: SendContext): Promise<SendOutcome> {
           // Persist the EXACT transmitted body so the audit record includes the SMS
           // opt-out footer the dispatcher appended at send (§13.9 audit fidelity).
           ...(result.sent && result.sentBody ? { body: result.sentBody } : {}),
+          // The consent the chokepoint actually resolved, and the timezone the quiet-hours
+          // decision was made in — recorded so a send is reconstructible after the fact.
+          ...(result.resolved ? { consent_at_send: result.resolved.consent } : {}),
+          ...(result.timezone
+            ? {
+                // On an NPA/ZIP zone DISAGREEMENT both zones are recorded, joined as
+                // '<npaZone>+<zipZone>' — the decision had to hold in both (mig 124).
+                resolved_timezone: result.timezone.secondaryZone
+                  ? `${result.timezone.zone}+${result.timezone.secondaryZone}`
+                  : result.timezone.zone,
+                // Method/input are recorded ONLY for a map resolution (a real NPA or ZIP3).
+                // A caller-supplied zone and the legacy flag-off default record the zone
+                // with a null method — mig 123's contract for "not evidence-resolved".
+                ...(result.timezone.resolution.resolved &&
+                !['caller', 'caller_offset', 'legacy_default'].includes(result.timezone.resolution.input)
+                  ? {
+                      tz_resolution_method: result.timezone.resolution.method,
+                      tz_resolution_input: result.timezone.resolution.input,
+                    }
+                  : { tz_resolution_method: null, tz_resolution_input: null }),
+              }
+            : {}),
           error: result.error ?? null,
           updated_at: new Date().toISOString(),
         })
         .eq('id', messageId)
     } catch {
       /* best-effort */
+    }
+  }
+
+  // §11/§12 hold → record the AI draft for the licensed FSA (the chokepoint already blocked
+  // the send and escalated it). This is the recovery path, not the decision.
+  if (!result.sent && result.gate.blockedStep === 'ai_authority') {
+    try {
+      await db.from('agent_actions').insert({
+        kind: 'ai_draft',
+        actor: ctx.actor,
+        outcome: 'drafted',
+        target_type: ctx.entity?.type ?? 'conversation',
+        target_id: ctx.entity?.id ?? convHouseholdId ?? conversationId,
+        reason: result.gate.reason ?? 'ai_authority',
+        note: `ai message class "${ctx.aiMessageClass || 'unclassified'}" not auto-sent (§11/§12)`,
+        drafted_content: identityBody,
+      })
+    } catch {
+      /* best-effort — the message row already records the hold */
     }
   }
 

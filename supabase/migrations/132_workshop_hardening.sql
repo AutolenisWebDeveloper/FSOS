@@ -25,15 +25,21 @@
 -- ADDITIVE + idempotent.
 
 -- ── 1. Instant-ack gate handle → the FFS queue (owner ruling; reverses 131 §3) ──
--- Guarded on the PROVENANCE marker so a later principal approval (data change) is
--- never un-approved by a chain re-run.
+-- Guarded TWO ways. The PROVENANCE-marker check makes the migration idempotent, but it
+-- does NOT protect a later approval: an approval REMOVES the marker, so on a chain replay
+-- the marker test passes and the row is reverted — proven by rehearsal (approved/v3 →
+-- submitted/v3), which silently stops the registration receipt with no error anywhere.
+-- `approved_by is null` is the guard that actually holds: this migration exists to reverse
+-- migration 131's SEEDED approval, which had no approver (the WS-047 defect), and a
+-- principal approval always stamps one.
 update comm_templates
 set approval_status = 'submitted',
     name = 'Workshop registration instant acknowledgment (gate handle — awaiting FFS approval)',
     body = 'PROVENANCE: pre-existing production receipt copy (register route transactional ack), brought under sendThroughGate by Gate-1 decision D-8 — NOT principal-approved. Copy: heading "You''re registered", event details rows (workshop / when / where), educational-event note, .ics calendar attachment; rendered by the route (notifications/transactional renderer). FIRST item in the FFS approval queue: until a firm principal approves this copy (data change recorded by the approval workflow), gate step 4 blocks the registration receipt — which is a DEPLOY BLOCKER noted on the go-live checklist.',
     updated_at = now()
 where id = 'eeee0000-0000-4000-8000-00000000ac01'
-  and body not like 'PROVENANCE:%';
+  and body not like 'PROVENANCE:%'
+  and approved_by is null;
 
 -- ── 2. D-2: queryable origin marker for pipeline segmentation ──────────────────
 alter table opportunities

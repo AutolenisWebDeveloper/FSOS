@@ -1,7 +1,7 @@
 // src/lib/booking/notify-core.ts
 // PURE core for booking notifications (Slice 5) — DB-free and clock-injected, so the
 // reminder-due rule, the merge-token context, and the meeting-details copy are unit-provable
-// offline. The impure send path (notify.ts) renders these into sendThroughGate calls.
+// offline. The impure send path (notify.ts) renders these into sendMessage calls.
 
 const MS_PER_HOUR = 3_600_000
 export const DEFAULT_REMINDER_LEAD_HOURS = 24

@@ -11,11 +11,12 @@
 //     (b) is_security, (c) DNC, (d) outside quiet hours → NOT sent, each writes a
 //         compliance_event + escalation + audit (blocked, never silently dropped).
 //
-// Mirrors tests/guardrail-proof.test.mjs' spy-dispatch harness. The DB-coupled
-// wiring in sendThroughGate (row → gate context) is exercised by guardrail-proof;
-// here we prove the campaign runner's row-derivation + the gate outcome per recipient.
+// Mirrors tests/guardrail-proof.test.mjs. Part B drives the REAL dispatch chokepoint with
+// the REAL policy resolver and the REAL gate; only the DB readers and the provider are
+// stubbed, so a recipient's verdict is produced by the same code production runs.
 // Run: node tests/campaign-gate.test.mjs
 import assert from 'node:assert/strict'
+import { loadChokepoint, makeMessagingDeps, withProviderEnv } from './helpers/chokepoint.mjs'
 import { execSync } from 'node:child_process'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -24,13 +25,12 @@ import { createRequire } from 'node:module'
 
 const out = mkdtempSync(join(tmpdir(), 'fsos-campaign-'))
 execSync(
-  `npx tsc src/lib/comms/campaign-run.ts src/lib/comms/dispatcher.ts --outDir ${out} ` +
+  `npx tsc src/lib/comms/campaign-run.ts --outDir ${out} ` +
     `--module commonjs --target es2020 --moduleResolution node --skipLibCheck --esModuleInterop`,
   { stdio: 'inherit' },
 )
 const require = createRequire(import.meta.url)
-const { buildCampaignSend } = require(join(out, 'comms/campaign-run.js'))
-const { dispatch } = require(join(out, 'comms/dispatcher.js'))
+const { buildCampaignSend } = require(join(out, 'campaign-run.js'))
 
 const results = []
 function record(id, name, fn) {
@@ -93,54 +93,61 @@ record('A4', 'unconsented customer still produces a context (gate is authoritati
 })
 
 // ── Part B — the four recipients resolve through the REAL gate/dispatcher ──
-// These are the gate contexts sendThroughGate produces from each runner recipient.
+// These are the gate contexts sendMessage produces from each runner recipient.
 console.log('Part B — four recipients through the real dispatcher/gate')
-function makeSpies() {
-  const calls = { compliance: [], escalation: [], audit: [], send: [] }
-  const deps = {
-    recordComplianceEvent: async (req, gate) => { calls.compliance.push({ req, gate }) },
-    createEscalation: async (req, gate) => { calls.escalation.push({ req, gate }) },
-    writeAudit: async (entry) => { calls.audit.push(entry) },
-    send: async (channel, to, body, subject) => { calls.send.push({ channel, to, body, subject }); return { ok: true, id: 'prov_1' } },
+withProviderEnv()
+const mod = loadChokepoint('campaign-gate')
+
+// Fixed instants: 18:00 UTC = 12:00 America/Chicago (inside the floor);
+// 04:00 UTC = 22:00 the previous day (outside it). Never the wall clock.
+const NOON = new Date(Date.UTC(2026, 0, 15, 18, 0))
+const LATE = new Date(Date.UTC(2026, 0, 15, 4, 0))
+
+function drive(state, now = NOON) {
+  const { messagingDeps, calls } = makeMessagingDeps(mod, state, { now })
+  return mod.messaging
+    .sendSms('+12145550147', 'Your annual review window is open. Reply to schedule.', 'mid-c1', {
+      policy: {
+        actor: 'campaign:drip',
+        entity: { type: 'customer', id: 'cust1' },
+        purpose: 'MARKETING',
+        templateKind: 'stored',
+        templateId: TEMPLATE,
+      },
+    }, messagingDeps)
+    .then((r) => ({ r, calls }))
+}
+
+async function blocked(id, name, state, expectStep, expectAudit, now = NOON) {
+  try {
+    const { r, calls } = await drive(state, now)
+    assert.equal(r.ok, false, 'must NOT send')
+    assert.equal(calls.sms.length, 0, 'provider never invoked')
+    assert.equal(r.blockedStep, expectStep, `blockedStep=${expectStep}`)
+    assert.equal(r.escalated, true, 'must escalate')
+    assert.equal(calls.escalate.length, 1, 'the withheld send goes through the escalation path')
+    assert.equal(calls.escalate[0].outcome.escalate, true)
+    record(id, name, () => {})
+  } catch (e) {
+    results.push({ id, name, pass: false, err: e.message })
+    console.log(`  ✗ ${name}: ${e.message}`)
   }
-  return { calls, deps }
-}
-const cleanGate = { hasConsent: true, recipientLocalHour: 12, onDNC: false, usesApprovedTemplateOrPolicy: true, isSecurity: false }
-const req = (over = {}) => ({
-  channel: 'sms', to: '+15550100', body: 'Your annual review window is open. Reply to schedule.',
-  actor: 'campaign:drip', entity: { type: 'customer', id: 'cust1' }, gate: { ...cleanGate, ...(over.gate || {}) },
-  ...Object.fromEntries(Object.entries(over).filter(([k]) => k !== 'gate')),
-})
-
-async function blocked(id, name, gateOver, expectStep, expectAudit) {
-  const { calls, deps } = makeSpies()
-  const r = await dispatch(req({ gate: gateOver }), deps)
-  assert.equal(r.sent, false, 'must NOT send')
-  assert.equal(calls.send.length, 0, 'sender never invoked')
-  assert.equal(r.gate.blockedStep, expectStep, `blockedStep=${expectStep}`)
-  assert.equal(r.escalated, true, 'must escalate')
-  assert.equal(calls.compliance.length, 1, 'compliance_event recorded')
-  assert.equal(calls.escalation.length, 1, 'escalation created')
-  assert.equal(calls.audit.length, 1, 'audit written')
-  assert.equal(calls.audit[0].action, expectAudit, `audit=${expectAudit}`)
-  record(id, name, () => {})
 }
 
-await blocked('B_b', '(b) is_security recipient → firewall.blocked + escalation', { isSecurity: true }, 'is_security', 'firewall.blocked')
-await blocked('B_c', '(c) DNC recipient → comms.blocked + escalation', { onDNC: true }, 'dnc', 'comms.blocked')
-await blocked('B_d', '(d) outside quiet hours (22:00 local) → comms.blocked + escalation', { recipientLocalHour: 22 }, 'quiet_hours', 'comms.blocked')
+await blocked('B_b', '(b) is_security recipient → firewall block + escalation', { conversationSecurity: true }, 'is_security', 'firewall.blocked')
+await blocked('B_c', '(c) DNC recipient → blocked + escalation', { onDNC: true }, 'dnc', 'comms.blocked')
+await blocked('B_d', '(d) outside quiet hours (22:00 recipient-local) → blocked + escalation', {}, 'quiet_hours', 'comms.blocked', LATE)
 
 record('B_a', '(a) clean/consented/approved → SENDS once WITH the Reply STOP footer', () => {})
 {
-  const { calls, deps } = makeSpies()
-  const r = await dispatch(req(), deps)
+  const { r, calls } = await drive({})
   const a = results.find((x) => x.id === 'B_a')
   try {
-    assert.equal(r.sent, true, 'sent=true')
-    assert.equal(calls.send.length, 1, 'sender invoked once')
-    assert.ok(calls.send[0].body.includes('Reply STOP'), 'SMS carries opt-out footer')
-    assert.equal(calls.compliance.length, 0, 'no compliance_event on a clean send')
-    assert.equal(calls.audit[0].action, 'comms.sent', 'audit=comms.sent')
+    assert.equal(r.ok, true, 'sent=true')
+    assert.equal(calls.sms.length, 1, 'provider invoked once')
+    assert.ok(calls.sms[0].body.includes('Reply STOP'), 'SMS carries opt-out footer')
+    assert.equal(calls.escalate.length, 0, 'no escalation on a clean send')
+    assert.equal(calls.auditSent.length, 1, 'the send is audited')
   } catch (e) { a.pass = false; a.err = e.message; console.log(`  ✗ ${e.message}`) }
 }
 

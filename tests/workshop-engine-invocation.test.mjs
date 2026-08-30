@@ -25,7 +25,7 @@ const stubDir = mkdtempSync(join(tmpdir(), 'fsos-gate-stub-'))
 process.on('exit', () => { try { rmSync(stubDir, { recursive: true, force: true }) } catch { /* best-effort */ } })
 const gateStub = join(stubDir, 'send-stub.mjs')
 writeFileSync(gateStub, `
-export async function sendThroughGate(ctx) {
+export async function sendMessage(ctx) {
   globalThis.__gateCalls.push(ctx)
   return globalThis.__gateResult
 }
@@ -95,7 +95,7 @@ console.log('\nsendWorkshopMessage — the gate invocation IS the guarantee (rem
     reg: REG, workshop: WORKSHOP, session: session(venueZone()), kind: 'reminder_1h', channel: 'email', config: CONFIG,
   })
   ok('a fully-consented, approved-template send returns sent', status === 'sent')
-  ok('sendThroughGate was invoked EXACTLY once — delete the call and this fails',
+  ok('sendMessage was invoked EXACTLY once — delete the call and this fails',
     globalThis.__gateCalls.length === 1)
   const ctx = globalThis.__gateCalls[0]
   ok('gate receives the approved comm_templates handle (step-4 input)', ctx.templateId === 'tpl-1')
@@ -103,7 +103,14 @@ console.log('\nsendWorkshopMessage — the gate invocation IS the guarantee (rem
   ok('reminder-class sends declare the TRANSACTIONAL purpose (registration-derived)', ctx.purpose === 'TRANSACTIONAL')
   ok('the engine queried NO consent store at send time (SETTLED model: the row is the record)',
     !db.calls.some((c) => c.table === 'workshop_consent_events'))
-  ok('gate receives a numeric utcOffsetHours for quiet hours (step-2 input)', typeof ctx.utcOffsetHours === 'number')
+  // CHANGED BY THE MERGE, deliberately and in the safer direction. The engine used to hand
+  // the chokepoint a NUMERIC utcOffsetHours. main's dispatch policy resolves the local hour
+  // from an IANA ZONE via Intl (localPartsInZone) and marks an offset-supplied resolution
+  // `approximate: true`; the offset path also forced a Math.round that put half-hour zones
+  // 30 minutes off. The engine now passes a zone and no offset at all.
+  ok('gate receives an IANA timeZone for quiet hours (step-2 input) — never a rounded offset',
+    typeof ctx.timeZone === 'string' && ctx.timeZone.includes('/') && ctx.utcOffsetHours === undefined,
+    `timeZone=${ctx.timeZone} utcOffsetHours=${ctx.utcOffsetHours}`)
   ok('gate receives the registration entity for audit lineage', ctx.entity?.type === 'workshop_registration' && ctx.entity?.id === 'reg-1')
   ok('securities flag is explicitly false on the excluded-population path', ctx.isSecurity === false)
   ok('workshop tokens are substituted BEFORE the gate sees the body', /Retirement Readiness 101/.test(ctx.body) && !/\{\{workshop_title\}\}/.test(ctx.body))
@@ -226,8 +233,13 @@ console.log('\nQuiet-hours defers SMS in the RECIPIENT zone, BEFORE the gate (WS
     reg: regWithPhone(inw.phone), workshop: WORKSHOP, session: session(venueZone()), kind: 'reminder_1h', channel: 'sms', config: CONFIG,
   })
   ok(`recipient-local ${inw.hour}:00 (${inw.zone}) → dispatched through the gate`, status2 === 'sent' && globalThis.__gateCalls.length === 1)
-  ok('the gate offset is the RECIPIENT offset (matches the picked zone hour)',
-    ((new Date().getUTCHours() + globalThis.__gateCalls[0].utcOffsetHours + 24) % 24) === localHourIn(inw.zone))
+  // Same property, expressed against the zone contract the merge adopted: the chokepoint
+  // is handed the RECIPIENT's zone, and its local hour is the recipient's — computed by
+  // Intl, so it is exact in half-hour zones where the old rounded offset was 30 min out.
+  ok('the chokepoint receives the RECIPIENT zone (its local hour matches the picked zone)',
+    globalThis.__gateCalls[0].timeZone === inw.zone &&
+      localHourIn(globalThis.__gateCalls[0].timeZone) === localHourIn(inw.zone),
+    `sent=${globalThis.__gateCalls[0].timeZone} expected=${inw.zone}`)
 }
 
 console.log('\nUnresolvable recipient zone fails CLOSED (WS-005: no default, no send)')

@@ -4,7 +4,7 @@ import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { ConversationReplySchema, ConversationPatchSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
-import { sendThroughGate } from '@/lib/comms/send'
+import { sendMessage } from '@/lib/comms/send'
 import { runIdempotent } from '@/lib/jobs/runtime'
 
 export const dynamic = 'force-dynamic'
@@ -91,7 +91,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     if (!conv) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     const outcome = await runIdempotent(`reply:${v.data.idempotency_key}`, 'comms.reply', async () =>
-      sendThroughGate({
+      sendMessage({
         channel: conv.channel,
         to: conv.contact,
         subject: v.data.subject,

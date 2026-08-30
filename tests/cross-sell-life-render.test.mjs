@@ -28,7 +28,7 @@ const t = (name, fn) => { fn(); passed++; console.log('  ✓', name) }
 const SEED = readFileSync('supabase/migrations/086_cross_sell_life_seed.sql', 'utf8')
 const seedTokens = [...new Set([...SEED.matchAll(/\{\{\s*([a-z_]+)\s*\}\}/gi)].map((m) => m[1].toLowerCase()))]
 
-// The context the send path (sendThroughGate) builds for a cross-sell EMAIL: identity defaults
+// The context the send path (sendMessage) builds for a cross-sell EMAIL: identity defaults
 // injected, the tick's full_name, and the forced per-recipient absolute unsubscribe link.
 const sendCtx = {
   ...advisorMergeContext(),

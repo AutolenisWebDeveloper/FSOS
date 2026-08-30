@@ -201,6 +201,8 @@ export async function POST(req: NextRequest) {
     ]
     await Promise.allSettled([
       sendVisitorAck({
+        // The lead was persisted immediately above; this address was supplied for this reply.
+        transactionalBasis: true,
         to: v.data.email,
         subject: `We received your request — ${BUSINESS.short}`,
         heading: `Thanks for reaching out, ${displayName}.`,

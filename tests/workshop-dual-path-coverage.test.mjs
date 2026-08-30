@@ -209,7 +209,7 @@ const stubDir = mkdtempSync(join(tmpdir(), 'fsos-dualpath-gate-'))
 process.on('exit', () => { try { rmSync(stubDir, { recursive: true, force: true }) } catch { /* best-effort */ } })
 const gateStub = join(stubDir, 'send-stub.mjs')
 writeFileSync(gateStub, `
-export async function sendThroughGate(ctx) {
+export async function sendMessage(ctx) {
   globalThis.__gateCalls.push(ctx)
   return { sent: true, gate: { blockedStep: null }, messageId: 'cm-cancel', reason: null }
 }

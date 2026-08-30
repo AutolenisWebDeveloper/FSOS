@@ -348,6 +348,8 @@ export async function bookAppointment(input: BookInput, now: string): Promise<Bo
     if (!confirmationSent) {
       notes.push(
         sendVisitorAck({
+          // The appointment was persisted above; this is its confirmation.
+          transactionalBasis: true,
           to: input.email,
           subject: `Appointment confirmed — ${type.name}`,
           heading: `You're booked, ${input.name?.trim() || 'there'}.`,

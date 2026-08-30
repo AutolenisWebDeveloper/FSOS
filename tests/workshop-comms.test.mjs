@@ -198,7 +198,13 @@ ok('additive only — no destructive DDL', !/\bdrop\s+table\b/i.test(mig) && !/\
 // comment or import cannot satisfy it.
 console.log('\nEngine wiring (executable-statement anchors; behavior proven in workshop-engine-invocation)')
 const eng = readFileSync(join(root, 'src/lib/workshops/comms-engine.ts'), 'utf8')
-ok('the ONE dispatch is the awaited gate call (anchor: the executable await)', /const outcome = await sendThroughGate\(\{/.test(eng))
+// MERGE NOTE: main updated its versions of these assertions only for the rename. The
+// branch's are kept because they are the §11a repair — each regex anchors on an EXECUTABLE
+// statement, so a comment or an import cannot satisfy it — and because main's consent
+// assertion (`const consent = await durableConsentGranted` reading workshop_consent_events)
+// asserts the PRE-D-3 model this branch replaced: consent is now read from the registration
+// row. Main's line would fail against this engine. Nothing here was loosened to merge.
+ok('the ONE dispatch is the awaited chokepoint call (main renamed sendThroughGate → sendMessage) (anchor: the executable await)', /const outcome = await sendMessage\(\{/.test(eng))
 ok('no raw sender import can reach the engine', !/from '@\/lib\/messaging'/.test(eng) && !/\bsendSms\b/.test(eng) && !/\bsendEmail\b/.test(eng))
 ok('consent is READ FROM THE ROW at the send site (SETTLED model anchor: the executable ternary + guard)', /const consent = isReminderClass\(kind\) \? true : reg\.marketing_opt_in === true/.test(eng) && /if \(!consent\)/.test(eng))
 ok('the purpose class is declared per kind (executable ternary)', /purpose: isReminderClass\(kind\) \? 'TRANSACTIONAL' : 'WORKSHOP'/.test(eng))
@@ -207,7 +213,14 @@ ok('securities registrants route to FFS via the executable call (anchor)', /awai
 ok('sendable-template query requires approved+active+gate-handle (executable .eq chain)', /\.eq\('status', 'approved'\)/.test(eng) && /\.eq\('active', true\)/.test(eng) && /\.not\('comm_template_id', 'is', null\)/.test(eng))
 ok('atomic claim before dispatch (executable insert + guarded retry update)', /status: 'sending'/.test(eng) && /\.eq\('status', 'deferred'\)/.test(eng))
 
-const send = readFileSync(join(root, 'src/lib/comms/send.ts'), 'utf8')
-ok('send.ts consent is additive OR (member consent OR public-intake grant OR durable grant — never reduces)', /memberConsent \|\| contactConsent \|\| ctx\.durableConsentGranted === true/.test(send))
+// The additive-OR consent rule moved with enforcement: it now lives at the dispatch
+// chokepoint's policy resolver, where it applies to EVERY send rather than only to callers
+// that went through the old wrapper. The invariant is unchanged — a durable domain grant
+// (the workshop registrant's own consent store) can only ADD consent, never remove it.
+const policy = readFileSync(join(root, 'src/lib/comms/dispatch-policy.ts'), 'utf8')
+ok(
+  'dispatch-policy consent is additive OR (member consent OR public-intake grant OR durable grant OR waiver — never reduces)',
+  /memberConsentOk \|\| contactConsentOk \|\| ctx\.durableConsentGranted === true \|\| waiverApplies/.test(policy),
+)
 
 console.log(`\n${passed} checks passed.`)

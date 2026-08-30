@@ -37,7 +37,7 @@ export async function buildWorkshopBundle() {
   writeFileSync(
     entry,
     `export { runReminderPass, runChangePass, runNurturePass, sendWorkshopMessage, sendCancelAcknowledgment } from '@/lib/workshops/comms-engine'\n` +
-      `export { sendThroughGate } from '@/lib/comms/send'\n`,
+      `export { sendMessage } from '@/lib/comms/send'\n`,
   )
 
   const out = join(dir, 'bundle.cjs')

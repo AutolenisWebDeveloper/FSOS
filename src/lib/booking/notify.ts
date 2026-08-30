@@ -1,6 +1,6 @@
 // src/lib/booking/notify.ts
 // Booking notifications (Slice 5) — confirmation on booking + a pre-appointment reminder,
-// both routed through the EXISTING comms platform via sendThroughGate. Comms code is
+// both routed through the EXISTING comms platform via sendMessage. Comms code is
 // consumed, never modified: the 7-step gate (consent, quiet-hours, DNC, approved-template,
 // recommendation, securities) is re-checked at send time exactly as for any other send.
 //
@@ -12,7 +12,7 @@
 import { getDb } from '@/lib/supabase/client'
 import { unwrapOne } from '@/lib/data/query'
 import { BUSINESS, CONTACT, siteUrl } from '@/lib/site'
-import { sendThroughGate } from '@/lib/comms/send'
+import { sendMessage } from '@/lib/comms/send'
 import { sendVisitorAck } from '@/lib/notifications/transactional'
 import { signManageToken, manageTokenKey, MANAGE_TOKEN_TTL_MS } from './manage-tokens'
 import { buildBookingContext, buildBookingFallbackContent, DEFAULT_REMINDER_LEAD_HOURS } from './notify-core'
@@ -120,7 +120,7 @@ async function sendAppointmentMessage(
     location: OFFICE_LOCATION,
   })
 
-  const outcome = await sendThroughGate({
+  const outcome = await sendMessage({
     channel: opts.channel,
     to,
     subject: opts.channel === 'email' ? tpl.subject ?? undefined : undefined,
@@ -238,7 +238,15 @@ async function sendBookingTransactionalFallback(
     cancelUrl: links.cancel_url,
     scheduleUrl: `${siteUrl()}/schedule`,
   })
-  const result = await sendVisitorAck({ to, subject, heading, lede, rows, note: note || undefined })
+  const result = await sendVisitorAck({
+    to, subject, heading, lede, rows, note: note || undefined,
+    // The attendee booked this appointment; the lifecycle notice is its transactional
+    // consequence. This fallback is now GATED like every other send — it previously
+    // reached Resend with no consent, DNC or suppression check because
+    // sendAppointmentMessage returns `template_not_approved` BEFORE the gate ran.
+    transactionalBasis: true,
+    entity: { type: 'appointment', id: appt.id },
+  })
   return { sent: result.ok === true, reason: result.ok ? undefined : result.error ?? 'fallback_failed', messageId: result.id }
 }
 

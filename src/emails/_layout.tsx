@@ -126,7 +126,7 @@ export function EmailLayout({ preview, children }: { preview: string; children: 
               {/*
                 CAN-SPAM footer: every marketing email carries the sender's physical mailing address +
                 a working, per-recipient unsubscribe link. {{unsubscribe_url}} is substituted at send
-                by personalize.ts (sendThroughGate injects the recipient-specific URL); opting out writes
+                by personalize.ts (sendMessage injects the recipient-specific URL); opting out writes
                 the enforced DNC store, so future marketing sends are truly suppressed.
               */}
               <Text style={canspam}>

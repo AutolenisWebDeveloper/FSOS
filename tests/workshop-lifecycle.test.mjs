@@ -14,6 +14,7 @@
 // Run: node tests/workshop-lifecycle.test.mjs   (rls suite; needs root Postgres)
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
+import { readFileSync } from 'node:fs'
 import {
   guardInfraOrExit, bootCluster, stopCluster, freezeClock, installFetchStub,
   installProviderEnv, resetProviderCalls, providerCalls, freshWorkshopDb,
@@ -298,6 +299,30 @@ try {
   ok('marketing_opt_in=true WITHOUT a capture record is impossible (wreg_marketing_capture_chk)',
     /wreg_marketing_capture_chk/.test(mustRaise(C.name,
       `insert into workshop_registrations (workshop_id, name, email, marketing_opt_in) values ('${IDS.workshop}','X','x-check@example.com', true)`) ?? ''))
+  // mig-132 REPLAY SAFETY. The guard is executed FROM THE MIGRATION FILE, not retyped
+  // here: a hand-copied statement drifts from the artifact and would prove nothing about
+  // what actually ships. Rehearsal found the original guard (`body not like 'PROVENANCE:%'`
+  // alone) did the OPPOSITE of its comment — an approval REMOVES the marker, so a replay
+  // reverted the approved row and silently stopped the registration receipt.
+  {
+    const ACK = 'eeee0000-0000-4000-8000-00000000ac01'
+    const mig132 = readFileSync('supabase/migrations/132_workshop_hardening.sql', 'utf8')
+    const stmt = mig132.split(/;\s*\n/).find((x) => /update comm_templates/i.test(x) && x.includes(ACK))
+    ok('mig-132 carries the approved_by guard (read from the shipped file, not retyped)',
+      !!stmt && /approved_by\s+is\s+null/i.test(stmt), (stmt ?? '').slice(0, 240))
+    // Approve the handle the way the route does, then replay the REAL statement.
+    q(C.name, `update comm_templates set approval_status='approved', approved_at=now(), approved_by='11111111-2222-4333-8444-555555555555', body='You are registered.' where id='${ACK}'`)
+    const before = q(C.name, `select approval_status||'/'||coalesce(approved_by,'NULL') from comm_templates where id='${ACK}'`)
+    q(C.name, stmt)
+    const after = q(C.name, `select approval_status||'/'||coalesce(approved_by,'NULL') from comm_templates where id='${ACK}'`)
+    ok('replaying migration 132 over a PRINCIPAL-APPROVED handle leaves it untouched',
+      before === after && /^approved\//.test(after), `before=${before} after=${after}`)
+    // Positive control: the seeded approval it EXISTS to reverse (no approver) is still reversed.
+    q(C.name, `update comm_templates set approval_status='approved', approved_at=now(), approved_by=null, body='Gate handle seeded approved by mig 131.' where id='${ACK}'`)
+    q(C.name, stmt)
+    ok('POSITIVE CONTROL: an approval with NO approver (the WS-047 defect) is still reversed',
+      q(C.name, `select approval_status from comm_templates where id='${ACK}'`) === 'submitted')
+  }
   ok('mig-133 (WS-025): the shipped config carries the REAL mailing address, not a placeholder',
     q(C.name, `select sender_physical_address from workshop_comms_config where id='global'`) ===
       '12800 Westridge Blvd, Ste 114, Frisco, TX 75035')

@@ -32,6 +32,18 @@ const optionalPhone = z
   .or(z.literal('').transform(() => undefined))
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD')
 
+/**
+ * A field the UI must be able to CLEAR. An emptied input posts `''`, which for a
+ * nullable column has to become NULL, not an empty string — Postgres `date`
+ * rejects `''` outright, and a blank street would otherwise poison the household
+ * origin key (services/householdMaterialize). `null` passes through unchanged.
+ */
+const clearable = <T extends z.ZodTypeAny>(inner: T) =>
+  z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? null : typeof v === 'string' ? v.trim() : v),
+    inner.nullable(),
+  )
+
 // ─── Enums (mirror the DB CHECK constraints in migration 009) ──────────────────
 export const AGENCY_STATUS = ['prospective', 'activated', 'producing', 'dormant', 'terminated'] as const
 export const REFERRAL_ENGAGEMENT = ['warm_handoff', 'co_sell', 'direct'] as const
@@ -155,6 +167,32 @@ export type ReferralConvert = z.infer<typeof ReferralConvertSchema>
 export const dobNotFuture = (d: string | undefined) => {
   if (!d) return true
   return new Date(d) <= new Date()
+}
+
+/**
+ * A date of birth a person could actually have. `dobNotFuture` alone accepts a
+ * typo like `0197-03-14` or an impossible `2001-02-31`, which then stores an
+ * absurd age (or makes Postgres reject the write at the `date` cast, surfacing as
+ * a 500 instead of a field error). This checks the three things that matter:
+ *
+ *   • the parts describe a REAL calendar day (Feb 31 rolls over — reject it);
+ *   • it is not in the future;
+ *   • the birth year is within 130 years, matching `ageFromDob`'s upper bound in
+ *     lib/contacts/record-view so anything that saves also renders an age.
+ *
+ * An absent or cleared DOB is always valid — not knowing it is normal.
+ */
+export const dobPlausible = (d: string | null | undefined) => {
+  if (!d) return true
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d)
+  if (!m) return false
+  const [y, mo, day] = [Number(m[1]), Number(m[2]), Number(m[3])]
+  const dt = new Date(Date.UTC(y, mo - 1, day))
+  const real = dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === day
+  if (!real) return false
+  const now = new Date()
+  if (dt.getTime() > now.getTime()) return false
+  return y >= now.getUTCFullYear() - 130
 }
 
 // ─── Household & Members (OS-04) ───────────────────────────────────────────────
@@ -1193,6 +1231,11 @@ export const ContactCreateSchema = z
     source: z.string().trim().max(80).optional().or(z.literal('').transform(() => undefined)),
     household_id: uuid.optional(),
     agency_partnership_id: uuid.optional(),
+    // DOB and street are stored plainly on contacts (mig 096 — no gating, no
+    // encryption, unlike the spine's household_members). The street also feeds the
+    // household origin key, so capturing it at create time improves grouping.
+    dob: clearable(isoDate).optional(),
+    address: clearable(z.string().max(300)).optional(),
     city: z.string().trim().max(120).optional().or(z.literal('').transform(() => undefined)),
     state: z.string().trim().max(40).optional().or(z.literal('').transform(() => undefined)),
     zip: z.string().trim().max(20).optional().or(z.literal('').transform(() => undefined)),
@@ -1201,6 +1244,7 @@ export const ContactCreateSchema = z
   .refine((v) => v.full_name || v.first_name || v.last_name || v.email || v.phone, {
     message: 'Provide at least a name, email, or phone',
   })
+  .refine((v) => dobPlausible(v.dob), { message: 'Enter a real date of birth', path: ['dob'] })
 export type ContactCreate = z.infer<typeof ContactCreateSchema>
 
 export const ContactPatchSchema = z
@@ -1217,12 +1261,17 @@ export const ContactPatchSchema = z
     status: z.enum(CONTACT_STATUS).optional(),
     household_id: uuid.nullable().optional(),
     agency_partnership_id: uuid.nullable().optional(),
+    // Editable, and clearable: an FSA correcting a bad import must be able to blank
+    // a wrong DOB or street rather than being stuck with it.
+    dob: clearable(isoDate).optional(),
+    address: clearable(z.string().max(300)).optional(),
     city: z.string().trim().max(120).optional(),
     state: z.string().trim().max(40).optional(),
     zip: z.string().trim().max(20).optional(),
     notes: z.string().trim().max(4000).optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'No changes provided' })
+  .refine((v) => dobPlausible(v.dob), { message: 'Enter a real date of birth', path: ['dob'] })
 export type ContactPatch = z.infer<typeof ContactPatchSchema>
 
 // PERMANENT (hard) deletion of Contact Center contacts — individually, by explicit

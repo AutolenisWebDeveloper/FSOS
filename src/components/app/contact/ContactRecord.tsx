@@ -1080,7 +1080,6 @@ function Documents({ r, openRequests }: { r: Record_; openRequests: Record_['doc
 
 function Profile({ r }: { r: Record_ }) {
   const c = r.contact
-  const mailing = [c.address, [c.city, c.state].filter(Boolean).join(', '), c.zip].filter(Boolean).join(' · ')
   return (
     <div className="space-y-6">
       <Panel title="Edit contact" hint="Saved changes apply immediately across the book">
@@ -1089,11 +1088,9 @@ function Profile({ r }: { r: Record_ }) {
         </div>
       </Panel>
 
-      <Panel title="Stored on the record" hint="Read-only fields captured at import or by an automation">
+      <Panel title="Stored on the record" hint="Set elsewhere — not editable from this form">
         <Surface className="max-w-3xl">
           <div className="divide-y px-3.5">
-            <DataRow label="Date of birth" value={fmtDate(c.dob)} mono />
-            <DataRow label="Mailing address" value={mailing || null} />
             <DataRow
               label="Lines of business"
               value={c.lines_of_business && c.lines_of_business.length ? c.lines_of_business.map((l) => humanize(l)).join(', ') : null}
@@ -1107,8 +1104,8 @@ function Profile({ r }: { r: Record_ }) {
           </div>
         </Surface>
         <p className="max-w-3xl text-xs text-muted-foreground">
-          Date of birth, mailing street, and lines of business are captured by the import mapper and are not editable from
-          this form.
+          Lines of business are captured by the import mapper. The household and referring agency are set by the referral
+          and materialization paths.
         </p>
       </Panel>
     </div>

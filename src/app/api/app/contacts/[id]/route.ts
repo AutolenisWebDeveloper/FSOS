@@ -36,7 +36,7 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     const d = v.data
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const updates: Record<string, any> = {}
-    for (const k of ['first_name', 'last_name', 'company', 'title', 'contact_type', 'tags', 'city', 'state', 'zip', 'notes', 'household_id', 'agency_partnership_id'] as const) {
+    for (const k of ['first_name', 'last_name', 'company', 'title', 'contact_type', 'tags', 'dob', 'address', 'city', 'state', 'zip', 'notes', 'household_id', 'agency_partnership_id'] as const) {
       if (d[k] !== undefined) updates[k] = d[k]
     }
     if (d.email !== undefined) {
@@ -66,7 +66,14 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     const { error } = await db.from('contacts').update(updates).eq('id', params.id)
     if (error) return dbErrorResponse('app/contacts/[id]', error)
 
-    await writeAudit({ actor, action: 'entity.updated', entity: 'contact', entityId: params.id, diff: updates })
+    // A date of birth never enters the audit trail. audit_log is append-only
+    // (mig 077), so a value written here cannot be redacted later; record only THAT
+    // the DOB changed and in which direction — the same shape the member routes use
+    // (`has_dob` on create, field names on update).
+    const auditDiff: Record<string, unknown> = { ...updates }
+    if ('dob' in auditDiff) auditDiff.dob = updates.dob === null ? '[cleared]' : '[set]'
+
+    await writeAudit({ actor, action: 'entity.updated', entity: 'contact', entityId: params.id, diff: auditDiff })
     return NextResponse.json({ ok: true })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed to update contact' }, { status: 500 })

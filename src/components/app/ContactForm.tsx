@@ -25,6 +25,8 @@ export interface ContactInitial {
   contact_type?: string
   tags?: string[]
   source?: string | null
+  dob?: string | null
+  address?: string | null
   city?: string | null
   state?: string | null
   zip?: string | null
@@ -53,6 +55,10 @@ export function ContactForm({ mode, initial }: { mode: 'create' | 'edit'; initia
       contact_type: String(fd.get('contact_type') || 'unknown'),
       tags: String(fd.get('tags') || '').split(',').map((t) => t.trim()).filter(Boolean),
       source: String(fd.get('source') || ''),
+      // Empty posts as '' and the schema clears the column — that is how an FSA
+      // blanks a wrong DOB or street that came in from an import.
+      dob: String(fd.get('dob') || ''),
+      address: String(fd.get('address') || ''),
       city: String(fd.get('city') || ''),
       state: String(fd.get('state') || ''),
       zip: String(fd.get('zip') || ''),
@@ -90,6 +96,7 @@ export function ContactForm({ mode, initial }: { mode: 'create' | 'edit'; initia
             <Field id="last_name" label="Last name" defaultValue={initial?.last_name} error={errors.last_name} />
             <Field id="email" label="Email" type="email" defaultValue={initial?.email} error={errors.email} />
             <Field id="phone" label="Phone" defaultValue={initial?.phone} error={errors.phone} />
+            <Field id="dob" label="Date of birth" type="date" defaultValue={initial?.dob} error={errors.dob} />
             <Field id="company" label="Company" defaultValue={initial?.company} error={errors.company} />
             <Field id="title" label="Title" defaultValue={initial?.title} error={errors.title} />
             <div className="space-y-1.5">
@@ -103,6 +110,7 @@ export function ContactForm({ mode, initial }: { mode: 'create' | 'edit'; initia
             <Field id="source" label="Source" defaultValue={initial?.source} placeholder="manual" />
             <Field id="tags" label="Tags (comma-separated)" defaultValue={(initial?.tags || []).join(', ')} placeholder="warm-lead, event-2026" />
           </div>
+          <Field id="address" label="Street address" defaultValue={initial?.address} error={errors.address} placeholder="4820 Custer Road, Suite 210" />
           <div className="grid gap-4 sm:grid-cols-3">
             <Field id="city" label="City" defaultValue={initial?.city} />
             <Field id="state" label="State" defaultValue={initial?.state} />

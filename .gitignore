@@ -59,6 +59,9 @@ data/rule_fetch_log.json
 .turn-limit-*/
 .msgstatus-*/
 .comms-out-*/
+# tsc scratch dir used by tests/contact-editable-dob-address.test.mjs (must sit inside
+# the repo so the compiled schemas.js resolves `zod` from node_modules).
+.contact-fields-*/
 
 # Python analysis tooling
 __pycache__/

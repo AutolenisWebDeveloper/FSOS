@@ -94,6 +94,8 @@ export async function POST(req: NextRequest) {
         source: v.data.source ?? 'manual',
         household_id: v.data.household_id ?? null,
         agency_partnership_id: v.data.agency_partnership_id ?? null,
+        dob: v.data.dob ?? null,
+        address: v.data.address ?? null,
         city: v.data.city ?? null,
         state: v.data.state ?? null,
         zip: v.data.zip ?? null,
@@ -116,7 +118,10 @@ export async function POST(req: NextRequest) {
         last_name: v.data.last_name ?? null,
         email: v.data.email ?? null,
         phone: v.data.phone ?? null,
-        address: null,
+        // The street is part of the household origin key, so a contact created with
+        // one groups with the rest of its household instead of falling back to a
+        // solo household (householdOriginKey).
+        address: v.data.address ?? null,
         city: v.data.city ?? null,
         state: v.data.state ?? null,
         zip: v.data.zip ?? null,

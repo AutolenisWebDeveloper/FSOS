@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { ArrowUpRight } from 'lucide-react'
 import { DetailShell, ErrorState, EmptyState } from '@/components/archetypes'
 import {
   ContactSectionNav,
@@ -19,6 +20,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
+import { contactRecordHref } from '@/lib/contacts/member-link'
+import { loadMemberContactLinks } from '@/lib/contacts/member-link-data'
 import { humanize } from '@/lib/dashboards/format'
 
 // Contact 360 canonical sections (redesign spec §4.2). The record collapses the
@@ -167,8 +170,8 @@ async function Overview({ id, hh, hasSecurities }: { id: string; hh: Household; 
 // ─── People ───────────────────────────────────────────────────────────────────
 
 async function People({ id, referringAgencyId }: { id: string; referringAgencyId: string | null }) {
-  const res = await load<{ id: string; full_name: string; relationship: string | null; email: string | null; phone: string | null }[]>(
-    (db) => db.from('household_members').select('id, full_name, relationship, email, phone').eq('household_id', id).is('deleted_at', null).order('created_at'),
+  const res = await load<{ id: string; full_name: string; relationship: string | null; email: string | null; phone: string | null; source_contact_id: string | null }[]>(
+    (db) => db.from('household_members').select('id, full_name, relationship, email, phone, source_contact_id').eq('household_id', id).is('deleted_at', null).order('created_at'),
     [],
   )
   const add = <Button asChild size="sm"><Link href={`/app/households/${id}/members/new`}>Add member</Link></Button>
@@ -176,6 +179,10 @@ async function People({ id, referringAgencyId }: { id: string; referringAgencyId
   if (res.data.length === 0) {
     return <EmptyState title="No members yet" description="Add the primary and any dependents, joint owners, or beneficiaries." action={add} />
   }
+  // The book is the Contacts workspace, so this table is where an FSA reaches a person.
+  // Members materialized from a contact get a direct route to the full Contact Record;
+  // book-only members simply don't offer one (see lib/contacts/member-link).
+  const contactLinks = await loadMemberContactLinks(res.data)
   return (
     <div className="space-y-4">
       <ContactRelationshipGraph householdId={id} referringAgencyId={referringAgencyId} />
@@ -183,20 +190,37 @@ async function People({ id, referringAgencyId }: { id: string; referringAgencyId
         <h3 className="text-sm font-semibold">Members</h3>
         {add}
       </div>
-      <div className="rounded-lg border">
+      <div className="overflow-x-auto rounded-lg border">
         <Table>
           <TableHeader>
-            <TableRow><TableHead>Name</TableHead><TableHead>Relationship</TableHead><TableHead>Email</TableHead><TableHead>Phone</TableHead></TableRow>
+            <TableRow><TableHead className="whitespace-nowrap">Name</TableHead><TableHead>Relationship</TableHead><TableHead>Email</TableHead><TableHead className="whitespace-nowrap">Phone</TableHead><TableHead className="w-px whitespace-nowrap text-right">Record</TableHead></TableRow>
           </TableHeader>
           <TableBody>
-            {res.data.map((m) => (
-              <TableRow key={m.id}>
-                <TableCell><Link href={`/app/households/${id}/members/${m.id}`} className="text-primary hover:underline">{m.full_name}</Link></TableCell>
-                <TableCell className="text-muted-foreground">{m.relationship ? humanize(m.relationship) : '—'}</TableCell>
-                <TableCell className="text-muted-foreground">{m.email ?? '—'}</TableCell>
-                <TableCell className="text-muted-foreground">{m.phone ?? '—'}</TableCell>
-              </TableRow>
-            ))}
+            {res.data.map((m) => {
+              const contactId = contactLinks.get(m.id)
+              return (
+                <TableRow key={m.id}>
+                  <TableCell className="whitespace-nowrap"><Link href={`/app/households/${id}/members/${m.id}`} className="text-primary hover:underline">{m.full_name}</Link></TableCell>
+                  <TableCell className="text-muted-foreground">{m.relationship ? humanize(m.relationship) : '—'}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {/* Bounded: a long address must not squeeze the name, the phone, or the
+                        Record link out of the frame. Full value stays on hover/focus. */}
+                    <span className="block max-w-[12rem] truncate" title={m.email ?? undefined}>{m.email ?? '—'}</span>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-muted-foreground">{m.phone ?? '—'}</TableCell>
+                  <TableCell className="w-px whitespace-nowrap text-right">
+                    {contactId ? (
+                      <Link href={contactRecordHref(contactId)} className="inline-flex items-center gap-1 text-primary hover:underline">
+                        Contact <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
+                        <span className="sr-only"> record for {m.full_name}</span>
+                      </Link>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                </TableRow>
+              )
+            })}
           </TableBody>
         </Table>
       </div>

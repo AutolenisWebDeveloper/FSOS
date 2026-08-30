@@ -183,6 +183,25 @@ export function isReminderDue(input: ReminderDueInput): boolean {
 
 // ── Day-of-AM (WALL-CLOCK kind — D-1(b)) ────────────────────────────────────────
 
+/**
+ * The zone if it is one this runtime can actually resolve, else null. Import-free (this
+ * module compiles standalone), so it re-implements the `new Intl.DateTimeFormat` probe
+ * that src/lib/booking/config-schemas.ts:isValidIanaZone uses rather than importing it.
+ * A blank string is not a zone: the workshop_sessions.timezone column is NOT NULL with a
+ * default, so '' — not null — is the shape an unset zone actually arrives in.
+ */
+export function usableZone(timeZone: string | null | undefined): string | null {
+  if (typeof timeZone !== 'string') return null
+  const tz = timeZone.trim()
+  if (!tz) return null
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz })
+    return tz
+  } catch {
+    return null
+  }
+}
+
 /** Hour (venue-local) the day-of reminder fires. Operating setting, not a legal rule. */
 export const DAY_OF_LOCAL_HOUR = 9
 
@@ -192,8 +211,13 @@ export const DAY_OF_LOCAL_HOUR = 9
  * session start governs — US transitions happen at 2:00 AM local, so 9:00 AM and any
  * later same-day start always share the offset.
  */
-export function dayOfNineAmMs(startMs: number, venueZone: string | null | undefined): number {
-  const zone = venueZone || 'America/Chicago'
+export function dayOfNineAmMs(startMs: number, venueZone: string | null | undefined): number | null {
+  // FAIL CLOSED. This one is not display: it decides WHEN a reminder fires. Substituting
+  // Central for an unresolved venue zone sends the day-of message at the wrong hour of
+  // someone's morning, and does it silently. No usable zone → no fire time, and
+  // isDayOfDue below returns false, so the day-of reminder is simply not due.
+  const zone = usableZone(venueZone)
+  if (!zone) return null
   let y: number, m: number, d: number
   try {
     // en-CA renders YYYY-MM-DD.
@@ -207,6 +231,7 @@ export function dayOfNineAmMs(startMs: number, venueZone: string | null | undefi
     y = dt.getUTCFullYear(); m = dt.getUTCMonth() + 1; d = dt.getUTCDate()
   }
   const offsetHours = utcOffsetHoursForTimezone(zone, startMs)
+  if (offsetHours === null) return null
   return Date.UTC(y, m - 1, d, DAY_OF_LOCAL_HOUR, 0, 0) - offsetHours * 60 * MIN
 }
 
@@ -218,6 +243,7 @@ export function dayOfNineAmMs(startMs: number, venueZone: string | null | undefi
  */
 export function isDayOfDue(input: { startMs: number; nowMs: number; registeredMs: number; venueZone: string | null | undefined }): boolean {
   const fireAt = dayOfNineAmMs(input.startMs, input.venueZone)
+  if (fireAt === null) return false
   if (fireAt >= input.startMs) return false
   return input.registeredMs <= fireAt && input.nowMs >= fireAt && input.nowMs <= input.startMs
 }
@@ -269,16 +295,19 @@ export function withinQuietHours(localHour: number): boolean {
 
 /**
  * Resolve an IANA timezone to a whole-hour UTC offset at a given instant, using Intl (no
- * project imports). Falls back to the conservative Central floor (−6) when the zone is
- * unknown. Used to feed the recipient-local quiet-hours pre-check + the gate's
- * utcOffsetHours.
+ * project imports). Returns NULL for an absent or unknown zone.
+ *
+ * It used to return a "conservative Central floor" of −6 instead. That is a guess wearing
+ * the word conservative: −6 is only conservative for a venue that happens to be Central,
+ * and for anywhere else it moves the computed local hour by up to six. Its sole caller is
+ * dayOfNineAmMs, which now fails closed on null rather than scheduling from a default.
  */
-export function utcOffsetHoursForTimezone(timeZone: string | null | undefined, atMs: number): number {
-  const DEFAULT = -6
-  if (!timeZone) return DEFAULT
+export function utcOffsetHoursForTimezone(timeZone: string | null | undefined, atMs: number): number | null {
+  const zone = usableZone(timeZone)
+  if (!zone) return null
   try {
     const dtf = new Intl.DateTimeFormat('en-US', {
-      timeZone,
+      timeZone: zone,
       hour12: false,
       year: 'numeric',
       month: '2-digit',
@@ -295,7 +324,7 @@ export function utcOffsetHoursForTimezone(timeZone: string | null | undefined, a
     const diffMs = asUtc - atMs
     return Math.round(diffMs / (60 * MIN))
   } catch {
-    return DEFAULT
+    return null
   }
 }
 

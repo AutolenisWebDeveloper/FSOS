@@ -1,10 +1,14 @@
 import { SettingsShell } from '@/components/archetypes'
 import { IntegrationShell } from '@/components/archetypes'
+import { smsConfigured } from '@/lib/messaging'
 export const dynamic = 'force-dynamic'
 // P-6 Integrations (A12). Status/connect/test/failure-log. Never invents an unavailable
 // Farmers/FFS API — absent ones show the manual/CSV/reference-field fallback, labeled.
 export default function SuperIntegrationsPage() {
-  const twilio = !!process.env.TWILIO_ACCOUNT_SID
+  // The SAME predicate sendSms enforces. This page used to call Twilio "connected" on the
+  // account SID alone — no auth token, no sender — so a half-configured deployment read as
+  // ready on the one screen meant to say whether it is.
+  const twilio = smsConfigured()
   const email = !!process.env.RESEND_API_KEY
   const supa = !!(process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL)
   const ai = !!process.env.ANTHROPIC_API_KEY

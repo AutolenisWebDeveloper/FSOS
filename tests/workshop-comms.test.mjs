@@ -140,7 +140,38 @@ ok('America/Chicago on January 20 is exactly CST (−6)', R.utcOffsetHoursForTim
 // across each boundary — a wrong-offset or no-DST implementation fails one side.
 ok('spring-forward 2026: −6 the day before, −5 the day after', R.utcOffsetHoursForTimezone('America/Chicago', Date.UTC(2026, 2, 7, 18, 0)) === -6 && R.utcOffsetHoursForTimezone('America/Chicago', Date.UTC(2026, 2, 9, 18, 0)) === -5)
 ok('fall-back 2026: −5 the day before, −6 the day after', R.utcOffsetHoursForTimezone('America/Chicago', Date.UTC(2026, 9, 31, 18, 0)) === -5 && R.utcOffsetHoursForTimezone('America/Chicago', Date.UTC(2026, 10, 2, 18, 0)) === -6)
-ok('unknown zone falls back to Central floor (−6)', R.utcOffsetHoursForTimezone('Not/AZone', now) === -6)
+// CONTRACT CHANGE (was: "unknown zone falls back to Central floor (−6)"). That fallback is
+// gone. −6 is a guess wearing the word "conservative": it is only conservative for a venue
+// that happens to be Central, and it moved the computed day-of fire time by up to six hours
+// anywhere else — silently. The function now fails closed and its caller declines to fire.
+ok('an UNKNOWN zone resolves to null — no Central floor, no guess',
+  R.utcOffsetHoursForTimezone('Not/AZone', now) === null)
+ok('an EMPTY zone resolves to null (the timezone column is NOT NULL, so \'\' is the real shape of unset)',
+  R.utcOffsetHoursForTimezone('', now) === null && R.utcOffsetHoursForTimezone('   ', now) === null)
+ok('an ABSENT zone resolves to null',
+  R.utcOffsetHoursForTimezone(null, now) === null && R.utcOffsetHoursForTimezone(undefined, now) === null)
+
+console.log('\nUnresolvable venue zone FAILS CLOSED (no guessed fire time)')
+ok('usableZone accepts a real IANA zone and rejects every non-zone',
+  R.usableZone('America/Chicago') === 'America/Chicago' &&
+  R.usableZone(' America/Denver ') === 'America/Denver' &&
+  R.usableZone('Not/AZone') === null && R.usableZone('') === null &&
+  R.usableZone('   ') === null && R.usableZone(null) === null && R.usableZone(undefined) === null)
+ok('dayOfNineAmMs returns null for an unusable zone instead of a Central-derived instant',
+  R.dayOfNineAmMs(START, 'Not/AZone') === null &&
+  R.dayOfNineAmMs(START, '') === null &&
+  R.dayOfNineAmMs(START, null) === null)
+// The falsifiability pin: 16:00Z on the session's UTC date, registered days earlier. Under
+// the OLD code the en-CA lookup threw → UTC date parts, the offset defaulted to −6 → a fire
+// time of 15:00Z → nowMs 16:00Z is inside [fire, start] → DUE. Restoring the fallback turns
+// this assertion red, so it cannot pass by accident.
+ok('isDayOfDue is FALSE for an unusable zone at an instant the −6 fallback would have called due',
+  R.isDayOfDue({ startMs: START, nowMs: Date.UTC(2026, 7, 7, 16, 0), registeredMs: START - 3 * D, venueZone: 'Not/AZone' }) === false)
+ok('…and the same instant IS due with the zone resolvable — the fixture drives the real window',
+  R.isDayOfDue({ startMs: START, nowMs: Date.UTC(2026, 7, 7, 16, 0), registeredMs: START - 3 * D, venueZone: 'America/Chicago' }) === true)
+ok('dueReminderKinds therefore omits reminder_day_of for an unusable zone, and keeps the offset kinds',
+  !R.dueReminderKinds({ startMs: START, nowMs: Date.UTC(2026, 7, 7, 16, 0), registeredMs: START - 3 * D, offsetsMinutes: [1440], venueZone: 'Not/AZone', deliveryMode: 'in_person' }).includes('reminder_day_of') &&
+  R.dueReminderKinds({ startMs: START, nowMs: Date.UTC(2026, 7, 7, 16, 0), registeredMs: START - 3 * D, offsetsMinutes: [1440], venueZone: 'America/Chicago', deliveryMode: 'in_person' }).includes('reminder_day_of'))
 
 console.log('\nIdempotency (decideClaim / classifySendOutcome)')
 ok('no log → claim', R.decideClaim(null) === 'claim')

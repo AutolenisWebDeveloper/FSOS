@@ -275,6 +275,41 @@ console.log('\nUnknown merge tokens pass through UNRESOLVED (WS-032: gate fail-c
   ok('known tokens are still substituted around it', !/\{\{starts_local\}\}/.test(globalThis.__gateCalls[0].body))
 }
 
+console.log('\nAn UNRESOLVABLE venue zone withholds the start time (no Central guess)')
+{
+  // A session EXISTS at a real instant, but its zone cannot be resolved. The old code
+  // rendered that instant on a Central wall clock — a reminder telling a registrant the
+  // wrong hour of their own morning. Now the token is left unresolved so the gate's
+  // personalization step blocks and escalates to the FSA (same route as {{bogus_token}}).
+  globalThis.__gateCalls = []
+  const db = fakeDb({
+    workshop_message_log: [null, { id: 'log-tz-bad' }],
+    workshop_message_templates: [TPL],
+  })
+  await engine.sendWorkshopMessage(db, {
+    reg: REG, workshop: WORKSHOP, session: session('Not/AZone'), kind: 'reminder_1h', channel: 'email', config: CONFIG,
+  })
+  const badBody = globalThis.__gateCalls[0]?.body ?? ''
+  ok('{{starts_local}} reaches the gate UNRESOLVED — the send path blocks rather than stating a guessed hour',
+    globalThis.__gateCalls.length === 1 && /\{\{starts_local\}\}/.test(badBody), badBody)
+  ok('…and no Central-rendered date leaked into the body',
+    !/September 1, 2026/.test(badBody) && !/1:00\s?PM/.test(badBody), badBody)
+
+  // POSITIVE CONTROL: the same template + the same instant with a RESOLVABLE zone renders
+  // the venue wall clock, so the withholding above is the zone branch and not a dead token.
+  globalThis.__gateCalls = []
+  const dbOk = fakeDb({
+    workshop_message_log: [null, { id: 'log-tz-ok' }],
+    workshop_message_templates: [TPL],
+  })
+  await engine.sendWorkshopMessage(dbOk, {
+    reg: REG, workshop: WORKSHOP, session: session('America/Chicago'), kind: 'reminder_1h', channel: 'email', config: CONFIG,
+  })
+  const goodBody = globalThis.__gateCalls[0]?.body ?? ''
+  ok('a resolvable zone renders the VENUE wall clock (18:00Z on Sep 1 = 1:00 PM CDT)',
+    !/\{\{starts_local\}\}/.test(goodBody) && /September 1, 2026/.test(goodBody) && /1:00\s?PM/.test(goodBody), goodBody)
+}
+
 console.log('\nConfig read error fails CLOSED (WS-068: an unreadable kill switch disables)')
 {
   globalThis.__gateCalls = []

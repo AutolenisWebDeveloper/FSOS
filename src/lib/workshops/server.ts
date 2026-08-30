@@ -6,6 +6,7 @@
 import { randomUUID } from 'node:crypto'
 import { deriveIsSecurity, decideSessionMeetingProvision } from './logic'
 import { resolveCheckIn, type AttendanceStatus } from './attendance'
+import { usableZone } from './reminders'
 import { deriveWebhookAttendance, type ParsedParticipantEvent } from './delivery'
 import { addZoomRegistrant, createZoomMeeting, deleteZoomMeeting, zoomEnabled } from '@/lib/zoom/client'
 import {
@@ -688,11 +689,17 @@ export async function ensureSessionZoomMeeting(
     if (Number.isFinite(mins) && mins > 0) durationMinutes = mins
   }
 
+  // Zoom's `timezone` is DISPLAY ONLY — `startTime` is sent as an absolute UTC instant, so
+  // the meeting lands at the right moment regardless (zoom/client.ts documents this and
+  // already defaults to 'UTC'). Still, labelling an unresolvable venue zone "Central" tells
+  // the host and any Zoom-side invitee a zone the venue may not be in. Omit it instead and
+  // let the client's own UTC default stand: unlabelled beats mislabelled.
+  const zoomTimezone = usableZone(session.timezone) ?? undefined
   const meeting = await createZoomMeeting({
     topic: topic || 'Workshop',
     startTime: session.starts_at,
     durationMinutes,
-    timezone: session.timezone || 'America/Chicago',
+    ...(zoomTimezone ? { timezone: zoomTimezone } : {}),
   })
   if (!meeting.ok) return { ok: false, reason: meeting.error ?? 'zoom_create_failed' }
 

@@ -313,7 +313,13 @@ export function BookingFlow({ type, backHref }: { type: PublicType; backHref?: s
     return (
       <div className="w-full">
         <BookingStepper current={current} steps={stepperSteps} />
-        <BookingConfirmed confirmation={confirmation} bookerEmail={form.email || null} onBookAnother={handleBookAnother} />
+        <BookingConfirmed
+          confirmation={confirmation}
+          bookerEmail={form.email || null}
+          smsOptIn={smsOptIn}
+          bookerPhone={form.phone.trim() || null}
+          onBookAnother={handleBookAnother}
+        />
       </div>
     )
   }
@@ -333,6 +339,7 @@ export function BookingFlow({ type, backHref }: { type: PublicType; backHref?: s
           email={form.email.trim()}
           phone={form.phone.trim() || null}
           reason={form.reason || null}
+          smsOptIn={smsOptIn}
           onEdit={handleEdit}
           onConfirm={handleConfirm}
           submitting={submitting}
@@ -655,8 +662,24 @@ function DetailsForm({
               {SMS_CONSENT.disclosure}
             </label>
           </div>
+          {/* The disclosure NAMES these three documents, so they have to be reachable from the
+              checkbox itself — they were previously plain words on this form. Rendered beside
+              the label rather than inside it so the stored consent_text stays byte-identical to
+              the string above (the version hash is derived from those exact bytes). */}
           <p className="mt-2 pl-7 text-xs text-muted-foreground">
-            Consent is not a condition of booking. No mobile information is shared with third parties for marketing.
+            Read our{' '}
+            <Link href="/privacy" className="underline underline-offset-2 hover:text-foreground">
+              Privacy Policy
+            </Link>
+            ,{' '}
+            <Link href="/terms" className="underline underline-offset-2 hover:text-foreground">
+              Terms of Use
+            </Link>
+            , and{' '}
+            <Link href="/sms-terms" className="underline underline-offset-2 hover:text-foreground">
+              SMS Terms &amp; Conditions
+            </Link>
+            . Consent is not a condition of booking. No mobile information is shared with third parties for marketing.
           </p>
         </div>
 
@@ -679,10 +702,15 @@ function DetailsForm({
 function BookingConfirmed({
   confirmation,
   bookerEmail,
+  smsOptIn,
+  bookerPhone,
   onBookAnother,
 }: {
   confirmation: Confirmation
   bookerEmail: string | null
+  /** True when the booker ticked the SMS box — the confirmation text was requested. */
+  smsOptIn: boolean
+  bookerPhone: string | null
   onBookAnother: () => void
 }) {
   function downloadIcs() {
@@ -759,6 +787,14 @@ function BookingConfirmed({
           <li>
             A confirmation email is on its way{bookerEmail ? <> to <span className="text-foreground">{bookerEmail}</span></> : null}.
           </li>
+          {/* Only stated when the booker actually opted in — never implied, and deliberately
+              phrased as "on its way" rather than a delivery claim we cannot make. */}
+          {smsOptIn && bookerPhone ? (
+            <li>
+              A confirmation text is on its way to <span className="text-foreground">{bookerPhone}</span>, and
+              we&rsquo;ll text you a reminder before the meeting. Reply STOP any time to stop the texts.
+            </li>
+          ) : null}
           <li>{modeNote(confirmation.meetingMode, confirmation.meetingStatus)}</li>
           <li>Need to change it? Use the reschedule or cancel link in that email.</li>
         </ul>

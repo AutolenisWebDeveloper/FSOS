@@ -11,7 +11,9 @@ import { ruleFromRow, type AvailabilityRuleRow as EngineRuleRow } from '@/lib/bo
 import { describeWeeklyAvailability, summaryTimezone } from '@/lib/booking/availability-summary'
 import { CommTimeline } from '@/components/comms/CommTimeline'
 import { BOOKING_CONFIG_ENTITIES, toTimelineEntry, type ConfigAuditRow } from '@/lib/booking/config-history'
-import { DEFAULT_REMINDER_LEAD_HOURS } from '@/lib/booking/notify-core'
+import { loadBookingNotificationConfig, reminderLeadHours } from '@/lib/booking/notification-config'
+import { smsA2pApproved } from '@/lib/comms/a2p'
+import { smsConfigured } from '@/lib/messaging'
 
 interface CalendarConnRow {
   id: string
@@ -132,10 +134,13 @@ export default async function BookingSettingsPage() {
   const activeTypes = types.filter((t) => t.active).length
   const activeRules = rules.filter((r) => r.active).length
 
-  // Notification config (§9.6 — expose EXISTING config read-only; the reminder lead is env-driven).
-  const leadRaw = Number.parseInt(process.env.BOOKING_REMINDER_LEAD_HOURS || '', 10)
-  const leadIsDefault = !(Number.isFinite(leadRaw) && leadRaw > 0)
-  const reminderLeadHours = leadIsDefault ? DEFAULT_REMINDER_LEAD_HOURS : leadRaw
+  // Notification config (§9.6 — expose EXISTING config read-only). Read through the SAME loader
+  // the send path uses, so this panel cannot claim a channel state the cron would disagree with.
+  const notificationConfig = await loadBookingNotificationConfig()
+  // The reminder offsets are an editable config default until an operator verifies them
+  // (booking_reminder_config.is_assumption), which is exactly what the gold badge means.
+  const leadHours = Math.max(...notificationConfig.offsets) / 60 || reminderLeadHours()
+  const leadIsDefault = notificationConfig.isAssumption
 
   // Settings-change history → reusable timeline entries (no bodies/PII in config audits).
   const historyEntries = (historyRes.ok ? historyRes.data : []).map(toTimelineEntry)
@@ -189,9 +194,18 @@ export default async function BookingSettingsPage() {
 
       <SettingsSection
         title="Notifications"
-        description="How clients are notified about their appointments. Read-only — reminder timing is set via deployment configuration."
+        description="How clients are notified about their appointments, and why a channel is or is not live. Read-only — timing and channels are set in the reminder configuration."
       >
-        <NotificationSettings leadHours={reminderLeadHours} leadIsDefault={leadIsDefault} />
+        <NotificationSettings
+          leadHours={leadHours}
+          leadIsDefault={leadIsDefault}
+          offsetsMinutes={notificationConfig.offsets}
+          emailEnabled={notificationConfig.emailEnabled}
+          smsEnabled={notificationConfig.smsEnabled}
+          a2pApproved={smsA2pApproved()}
+          smsConfigured={smsConfigured()}
+          configResolved={notificationConfig.resolved}
+        />
       </SettingsSection>
 
       <SettingsSection

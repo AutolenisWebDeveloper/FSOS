@@ -17,13 +17,14 @@ import { createRequire } from 'node:module'
 
 const out = mkdtempSync(join(tmpdir(), 'fsos-booking-render-'))
 execSync(
-  `npx tsc src/lib/comms/personalize.ts src/lib/booking/notify-core.ts --outDir ${out} ` +
+  `npx tsc src/lib/comms/personalize.ts src/lib/booking/notify-core.ts src/lib/booking/sms-templates.ts --outDir ${out} ` +
     `--module commonjs --target es2020 --moduleResolution node --skipLibCheck --esModuleInterop`,
   { stdio: 'inherit' },
 )
 const require = createRequire(import.meta.url)
 const { personalize, unresolvedBlockingTokens } = require(join(out, 'comms/personalize.js'))
 const { buildBookingContext } = require(join(out, 'booking/notify-core.js'))
+const { BOOKING_SMS_TEMPLATES } = require(join(out, 'booking/sms-templates.js'))
 
 let passed = 0
 const t = (name, fn) => { fn(); passed++; console.log('  ✓', name) }
@@ -95,6 +96,65 @@ t('a RELATIVE manage URL is treated as unresolved (absolute-URL enforcement)', (
 t('a fully-resolved booking body reports NO unresolved blocking tokens', () => {
   const missing = unresolvedBlockingTokens(CONFIRMATION_BODY, ctx)
   assert.deepEqual(missing, [], `unexpected unresolved tokens: ${missing.join(', ')}`)
+})
+
+// ── The SMS bodies, through the SAME render engine ───────────────────────────
+// The email half of this file exists because personalize() silently blanked booking tokens in
+// production. The SMS bodies carry the same tokens and have LESS margin for error: an SMS has no
+// subject or layout to carry meaning, so a blanked {{appointment_time}} leaves a text that says
+// "You're confirmed for ." — and unlike email, an SMS leg has no transactional fallback behind it.
+const SMS_CTX = {
+  ...ctx,
+  agency_name: 'Markist Athelus — Farmers Insurance',
+  scheduling_link: `${ABS}/schedule`,
+}
+
+for (const tpl of BOOKING_SMS_TEMPLATES) {
+  t(`[${tpl.sourceKey}] renders with no raw token and no blank slot`, () => {
+    const body = personalize(tpl.body, SMS_CTX)
+    assert.doesNotMatch(body, /\{\{/, 'a raw {{token}} leaked into the delivered SMS')
+    // The failure mode this guards: a token that resolves to '' leaves stranded punctuation.
+    assert.doesNotMatch(body, /\s[.,]/, `blank merge value left stranded punctuation: ${body}`)
+    assert.doesNotMatch(body, /:\s*(Reply|$)/, `an empty link slot was rendered: ${body}`)
+  })
+  t(`[${tpl.sourceKey}] reports NO unresolved blocking tokens when fully supplied`, () => {
+    assert.deepEqual(unresolvedBlockingTokens(tpl.body, SMS_CTX), [])
+  })
+}
+
+t('the confirmation SMS states the actual appointment time and an absolute manage link', () => {
+  const tpl = BOOKING_SMS_TEMPLATES.find((x) => x.sourceKey === 'appointment-confirmation-sms')
+  const body = personalize(tpl.body, SMS_CTX)
+  assert.match(body, /Monday, August 3, 2026/)
+  assert.match(body, /9:00\s?AM/)
+  assert.match(body, /https:\/\/www\.markistfsa\.com\/schedule\?manage=resc-token/)
+  assert.match(body, /Reply STOP to opt out/)
+})
+
+t('the reminder SMS announces the SAME grounded time (a reschedule moves it, not the copy)', () => {
+  const tpl = BOOKING_SMS_TEMPLATES.find((x) => x.sourceKey === 'appointment-reminder-sms')
+  const moved = {
+    ...SMS_CTX,
+    ...buildBookingContext({
+      fullName: 'Dana Rivers',
+      startsAt: '2026-08-05T20:00:00Z', // 3:00 PM CDT — the NEW time after a reschedule
+      bookerTimezone: 'America/Chicago',
+      meetingMode: 'video',
+      joinUrl: 'https://zoom.us/j/9',
+    }),
+  }
+  const body = personalize(tpl.body, moved)
+  assert.match(body, /Wednesday, August 5, 2026/)
+  assert.match(body, /3:00\s?PM/)
+  assert.doesNotMatch(body, /August 3/, 'the reminder must never announce the pre-reschedule time')
+})
+
+t('an appointment with NO reschedule token fails closed rather than texting a broken link', () => {
+  // notify.ts renders reschedule_url as '' for an appointment carrying no self-service token
+  // (e.g. one created from a review). A blocking token must be reported, not shipped empty.
+  const tpl = BOOKING_SMS_TEMPLATES.find((x) => x.sourceKey === 'appointment-confirmation-sms')
+  const missing = unresolvedBlockingTokens(tpl.body, { ...SMS_CTX, reschedule_url: '' })
+  assert.ok(missing.includes('reschedule_url'))
 })
 
 console.log(`\n✓ booking render: ${passed} assertions passed`)

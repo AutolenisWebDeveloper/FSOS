@@ -86,14 +86,23 @@ export async function setAppointmentStatus(
   })
 
   // B-5 — fire the client-facing lifecycle notice on a terminal transition. A no-show gets a
-  // "sorry we missed you / rebook" note; a completed appointment gets a recap thank-you. These
-  // legs previously had templates but no trigger (dead legs). Best-effort and fire-once via the
-  // booking notification ledger, and routed through the SAME 7-step gate + transactional fallback
-  // as every other booking notice — the status change has already committed, so a deferred/blocked
-  // notice never fails this transition.
-  if (toStatus === 'no_show' || toStatus === 'completed') {
+  // "sorry we missed you / rebook" note; a completed appointment gets a recap thank-you; a
+  // CANCELLED appointment gets the cancellation notice. Cancellation used to be missing here,
+  // so an appointment the FSA cancelled from the app told the client NOTHING on either channel —
+  // only the attendee's own self-service cancel notified anyone. Emitting it from this shared
+  // mover covers every caller; the delivery ledger's fire-once claim means a caller that also
+  // asks for the notice cannot produce a second one. Best-effort and routed through the SAME
+  // gate + transactional fallback as every other booking notice — the status change has already
+  // committed, so a deferred/blocked notice never fails this transition.
+  const NOTICE_FOR_STATUS = {
+    no_show: 'no_show_followup',
+    completed: 'recap',
+    cancelled: 'cancellation',
+  } as const
+  const notice = NOTICE_FOR_STATUS[toStatus as keyof typeof NOTICE_FOR_STATUS]
+  if (notice) {
     try {
-      await sendAppointmentNotice(appointmentId, toStatus === 'no_show' ? 'no_show_followup' : 'recap', { actor })
+      await sendAppointmentNotice(appointmentId, notice, { actor })
     } catch {
       /* best-effort — the transition + audit above are the durable record */
     }

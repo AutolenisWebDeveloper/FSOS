@@ -123,4 +123,23 @@ await t('a conversation reply selects the reply cap row, not the outreach row', 
   assert.equal(outreach.frequencyPolicyId, 'global')
 })
 
+await t('an APPOINTMENT notice selects the appointment cap row (migration 136)', async () => {
+  // The email and SMS legs of one appointment notice are sent together by design; under the
+  // OUTREACH row's 60-minute minimum interval the second leg blocks itself on the first.
+  const { policyInput } = await drive({ purpose: 'APPOINTMENT' })
+  assert.equal(policyInput.frequencyPolicyId, 'appointment')
+})
+
+await t('a reply still wins over the appointment row — it answers a message just received', async () => {
+  const { policyInput } = await drive({ purpose: 'APPOINTMENT', isConversationReply: true })
+  assert.equal(policyInput.frequencyPolicyId, 'reply')
+})
+
+await t('marketing traffic can never reach the appointment row', async () => {
+  for (const purpose of ['MARKETING', 'WORKSHOP', 'BIRTHDAY', 'RELATIONSHIP']) {
+    const { policyInput } = await drive({ purpose })
+    assert.equal(policyInput.frequencyPolicyId, 'global', `${purpose} must stay on the outreach caps`)
+  }
+})
+
 console.log(`\nAll ${passed} assertions passed.`)

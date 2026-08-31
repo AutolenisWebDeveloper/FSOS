@@ -149,17 +149,23 @@ async function sendAppointmentMessage(
     //   • frequency: routes both legs to the 'appointment' cap row (mig 136/137). While the
     //     email leg was unclassified it counted against the OUTREACH row's 3-touches-a-day
     //     ceiling, which the 24h+12h+1h cadence overruns — the 1-hour reminder email, the one
-    //     that matters most, was refused for anyone who resolves to a household member;
-    //   • sending stream: senders.ts routes a non-marketing purpose to the transactional
-    //     identity, which is where .env.local.example already says reminders and receipts
-    //     belong. Inert until the owner splits the notify./mail. subdomains (both streams fall
-    //     back to RESEND_FROM_EMAIL), and correct once they do.
+    //     that matters most, was refused for anyone who resolves to a household member.
+    // The one thing purpose would ALSO decide — the email sending identity — is pinned below
+    // instead, so classifying changes no delivered email.
+    //
     // It relaxes nothing: consent (the durable booking grant still ORs in), DNC/STOP, approval,
     // personalization, the recommendation red line and the securities firewall all still run,
     // and `suppressible: false` below already short-circuits business suppression either way.
     // The branded email shell is purpose-independent and passes a full HTML document through
     // untouched, so the delivered appointment email is byte-identical.
     purpose: APPOINTMENT_PURPOSE,
+    // …with ONE thing the purpose does NOT get to decide: the email sending identity.
+    // senders.ts would route a non-marketing purpose to the transactional stream; the owner
+    // has chosen to keep appointment email on the marketing stream, so it is pinned here
+    // rather than left to fall out of the classification. Ignored for SMS. This is the whole
+    // visible difference purpose makes to an email — with it pinned, the delivered appointment
+    // email is identical to what it was before the classification, headers included.
+    emailStream: 'marketing',
     subject: opts.channel === 'email' ? tpl.subject ?? undefined : undefined,
     body: tpl.body,
     bodyText: opts.channel === 'email' ? tpl.body_text ?? undefined : undefined,

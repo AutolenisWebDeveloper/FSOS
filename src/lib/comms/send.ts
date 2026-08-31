@@ -35,7 +35,7 @@ import { parseSubjectFromBody } from './template-subject'
 import type { MessagePurpose } from './purpose'
 import type { AiMessageClass } from './ai-authority'
 import { evaluateDataConfidence, type ClaimField } from './data-confidence'
-import { streamForPurpose } from './senders'
+import { streamForPurpose, type EmailStream } from './senders'
 import type { TemplateKind } from './dispatch-policy'
 
 export interface SendContext {
@@ -252,6 +252,16 @@ export interface SendContext {
    * else: quiet hours, consent, DNC, approval, the red line and the firewall are unaffected.
    */
   businessHoursExempt?: boolean
+  /**
+   * Pin the EMAIL reputation stream instead of deriving it from `purpose` (senders.ts
+   * streamForPurpose). Absent → derived, exactly as before.
+   *
+   * Purpose is the message's classification and drives several controls at once; the sending
+   * identity is a separate, operator-owned decision. This lets a caller classify a send
+   * accurately — so quiet hours, frequency and consent all reason about what it really is —
+   * while keeping it on the stream the owner has chosen for it. Ignored for SMS.
+   */
+  emailStream?: EmailStream
   /**
    * Declares a fixed, CODE-RESIDENT transactional notice (a booking confirmation, a visitor
    * acknowledgement, a password-setup mail). These have no `comm_templates` row because they
@@ -721,7 +731,8 @@ export async function sendMessage(ctx: SendContext): Promise<SendOutcome> {
     correlationId: messageId,
     bodyText: ctx.channel === 'email' ? identityText : undefined,
     attachments: ctx.channel === 'email' ? ctx.attachments : undefined,
-    messageClass: streamForPurpose(ctx.purpose),
+    // Caller-pinned stream wins over the purpose-derived one (see SendContext.emailStream).
+    messageClass: ctx.emailStream ?? streamForPurpose(ctx.purpose),
     actor: ctx.actor,
     entity: ctx.entity ?? (conversationId ? { type: 'conversation', id: conversationId } : undefined),
     templateKind,

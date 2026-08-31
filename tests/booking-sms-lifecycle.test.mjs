@@ -415,6 +415,24 @@ await t('the EMAIL leg is classified APPOINTMENT too, so both share the appointm
   await notify.sendBookingConfirmation('appt-1')
   assert.equal(emailCalls()[0].purpose, 'APPOINTMENT')
 })
+
+await t('but appointment EMAIL stays on the MARKETING sending stream (owner directive)', async () => {
+  // senders.ts would route a non-marketing purpose to the transactional identity. The stream is
+  // an operator decision, not a consequence of classification, so it is pinned explicitly —
+  // which is what keeps the delivered email identical to before the classification.
+  setup()
+  await notify.sendBookingConfirmation('appt-1')
+  assert.equal(emailCalls()[0].emailStream, 'marketing')
+})
+
+await t('the pin is on the email leg only — it is meaningless for SMS', async () => {
+  setup()
+  await notify.sendBookingConfirmation('appt-1')
+  // Both legs go through one call shape, so the flag is present on the SMS context too; what
+  // matters is that it can never change an SMS, which resolveSender is never consulted for.
+  assert.equal(smsCalls()[0].channel, 'sms')
+  assert.equal(smsCalls()[0].purpose, 'APPOINTMENT')
+})
 await t('appointment SMS is declared non-suppressible (transactional, not a marketing touch)', async () => {
   setup()
   await notify.sendBookingConfirmation('appt-1')

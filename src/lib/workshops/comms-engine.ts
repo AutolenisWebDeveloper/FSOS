@@ -50,7 +50,6 @@ import {
   isNurtureDue,
   decideClaim,
   classifySendOutcome,
-  recipientLocalHour,
   withinQuietHours,
   buildCanSpamFooter,
   appendCanSpamFooter,

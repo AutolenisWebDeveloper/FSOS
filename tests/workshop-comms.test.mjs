@@ -127,9 +127,11 @@ ok('a time move dominates a combined edit (ONE reschedule notice, never two)',
 
 console.log('\nQuiet-hours floor (recipient-local 9–20)')
 ok('8am blocked, 9am ok, 7:59pm ok, 8pm blocked', R.withinQuietHours(8) === false && R.withinQuietHours(9) === true && R.withinQuietHours(19) === true && R.withinQuietHours(20) === false)
-// recipientLocalHour: at 02:00 UTC with Central offset -6 → 20:00 previous day → 20 → blocked.
-ok('a "starting now" send at 8:05pm local is outside quiet hours', R.withinQuietHours(R.recipientLocalHour(Date.UTC(2026, 6, 20, 2, 5), -6)) === false)
-ok('same send at 3:00pm local is inside quiet hours', R.withinQuietHours(R.recipientLocalHour(Date.UTC(2026, 6, 20, 21, 0), -6)) === true)
+// The two offset-based cases that stood here are gone with recipientLocalHour. They routed
+// withinQuietHours through a whole-hour UTC offset computed in this module; the engine now
+// resolves the recipient-local hour from an IANA zone (dispatch-policy.localPartsInZone),
+// and that path is covered by executing the engine in workshop-engine-invocation.test.mjs.
+// The boundary assertion above already pins every edge of withinQuietHours itself.
 
 console.log('\nTimezone offset (utcOffsetHoursForTimezone) — §11a repair: pinned per fixture date')
 // July 20 is unambiguously CDT: the ONLY correct answer is −5. (The old assertion accepted

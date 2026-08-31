@@ -282,12 +282,6 @@ export function dueReminderKinds(input: {
 
 // ── Quiet-hours scheduling pre-check (recipient-local) ──────────────────────────
 
-/** Recipient-local hour (0–23) given now (ms) and the recipient tz offset in hours. */
-export function recipientLocalHour(nowMs: number, utcOffsetHours: number): number {
-  const utcHour = new Date(nowMs).getUTCHours()
-  return (utcHour + utcOffsetHours + 24) % 24
-}
-
 /** Within the 9am–8pm recipient-local quiet-hours floor (mirrors the gate). */
 export function withinQuietHours(localHour: number): boolean {
   return localHour >= QUIET_START_HOUR && localHour < QUIET_END_HOUR

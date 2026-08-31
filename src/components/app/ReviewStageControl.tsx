@@ -39,11 +39,16 @@ export function ReviewStageControl({ id, stage }: { id: string; stage: string })
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <label className="sr-only" htmlFor={`rstage-${id}`}>Advance stage</label>
-      <Select id={`rstage-${id}`} className="h-8 w-48 text-xs" value={target} onChange={(e) => setTarget(e.target.value)} disabled={saving}>
-        {REVIEW_STAGE.map((s) => (<option key={s} value={s}>{s.replace(/_/g, ' ')}</option>))}
-      </Select>
+      {/* As in OpportunityStageControl: the row wraps so Advance drops below rather than
+          off-screen, and min-w-0 lets the select shrink under a viewport narrower than it
+          is. Sized on this wrapper — Select renders its own relative div. */}
+      <div className="w-48 min-w-0">
+        <Select id={`rstage-${id}`} className="h-8 text-xs" value={target} onChange={(e) => setTarget(e.target.value)} disabled={saving}>
+          {REVIEW_STAGE.map((s) => (<option key={s} value={s}>{s.replace(/_/g, ' ')}</option>))}
+        </Select>
+      </div>
       <Button size="sm" variant="outline" onClick={advance} disabled={saving || target === stage}>{saving ? '…' : 'Advance'}</Button>
     </div>
   )

@@ -1,10 +1,14 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import type { ReactNode } from 'react'
+import { UserRound } from 'lucide-react'
 import { DetailShell, ErrorState, ContactTimeline } from '@/components/archetypes'
 import { Numeric } from '@/components/ui/typography'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { load } from '@/lib/data/query'
+import { contactRecordHref } from '@/lib/contacts/member-link'
+import { loadMemberContactLinks } from '@/lib/contacts/member-link-data'
 import { MemberDobReveal } from '@/components/app/MemberDobReveal'
 
 export const dynamic = 'force-dynamic'
@@ -14,8 +18,8 @@ export const dynamic = 'force-dynamic'
 export default async function MemberDetailPage(props: { params: Promise<{ id: string; mid: string }> }) {
   const params = await props.params;
   const [member, hh] = await Promise.all([
-    load<{ id: string; full_name: string; relationship: string | null; email: string | null; phone: string | null; household_id: string } | null>(
-      (db) => db.from('household_members').select('id, full_name, relationship, email, phone, household_id').eq('id', params.mid).is('deleted_at', null).maybeSingle(),
+    load<{ id: string; full_name: string; relationship: string | null; email: string | null; phone: string | null; household_id: string; source_contact_id: string | null } | null>(
+      (db) => db.from('household_members').select('id, full_name, relationship, email, phone, household_id, source_contact_id').eq('id', params.mid).is('deleted_at', null).maybeSingle(),
       null,
     ),
     load<{ primary_name: string } | null>((db) => db.from('households').select('primary_name').eq('id', params.id).maybeSingle(), null),
@@ -25,10 +29,24 @@ export default async function MemberDetailPage(props: { params: Promise<{ id: st
   if (!m) notFound()
   const householdName = hh.ok ? hh.data?.primary_name ?? 'Household' : 'Household'
 
+  // The Contact Record behind this member, when there is one and it still resolves.
+  // Members added directly in the book have no contact; a soft-deleted contact is
+  // treated as no contact so the book never advertises a 404.
+  const contactId = (await loadMemberContactLinks([m])).get(m.id) ?? null
+
   return (
     <DetailShell
       title={m.full_name}
       description={m.relationship ?? 'Household member'}
+      actions={
+        contactId ? (
+          <Button asChild size="sm">
+            <Link href={contactRecordHref(contactId)}>
+              <UserRound className="h-4 w-4" /> Open contact record
+            </Link>
+          </Button>
+        ) : undefined
+      }
       breadcrumb={[
         { label: 'FSA', href: '/app' },
         { label: 'Households', href: '/app/households' },
@@ -74,8 +92,10 @@ export default async function MemberDetailPage(props: { params: Promise<{ id: st
 function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex justify-between gap-3">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="text-right font-medium">{value}</span>
+      <span className="shrink-0 text-muted-foreground">{label}</span>
+      {/* A long address (a real one ran to 60+ chars) pushed the page into horizontal
+          scroll on a phone, since an email has no spaces to wrap at. */}
+      <span className="min-w-0 break-words text-right font-medium">{value}</span>
     </div>
   )
 }

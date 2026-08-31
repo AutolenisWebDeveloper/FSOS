@@ -17,12 +17,15 @@ import { BrandMark } from '@/components/portal/BrandMark'
 
 // ─── Breadcrumb + PageHeader (shared chrome) ──────────────────────────────────
 
+// A trail wraps rather than pushing the page sideways: a deep one (FSA › Households ›
+// <household> › Members › <member>) runs past a phone viewport, and a breadcrumb is
+// navigation — losing part of it off-screen is worse than spending a second line.
 export function Breadcrumb({ items }: { items: { label: string; href?: string }[] }) {
   return (
-    <nav aria-label="Breadcrumb" className="flex items-center gap-1 text-sm text-muted-foreground">
+    <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-sm text-muted-foreground">
       {items.map((item, i) => (
         <React.Fragment key={i}>
-          {i > 0 ? <ChevronRight className="h-3.5 w-3.5" aria-hidden /> : null}
+          {i > 0 ? <ChevronRight className="h-3.5 w-3.5 shrink-0" aria-hidden /> : null}
           {item.href ? (
             <Link href={item.href} className="hover:text-foreground">
               {item.label}
@@ -51,11 +54,13 @@ export function PageHeader({
     <header className="space-y-2">
       {breadcrumb ? <Breadcrumb items={breadcrumb} /> : null}
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-1">
+        {/* min-w-0: a flex item defaults to min-width:auto and refuses to shrink below
+            its content, which is how a long crumb trail or title pushed the page. */}
+        <div className="min-w-0 space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
           {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
         </div>
-        {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
+        {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
       </div>
     </header>
   )
@@ -201,12 +206,14 @@ export function DetailShell({
       {/* Dark-tinted header band (design-system.md A3): status chips + primary actions. */}
       <div className="shell-gradient -mx-4 -mt-6 mb-2 border-b border-shell-border px-4 py-5 text-shell-foreground shadow-elev-sm md:-mx-6 md:px-6">
         <div className="mx-auto flex max-w-[1400px] flex-wrap items-start justify-between gap-3">
-          <div className="space-y-2">
+          <div className="min-w-0 space-y-2">
             {breadcrumb ? (
-              <nav aria-label="Breadcrumb" className="flex items-center gap-1 text-sm text-shell-muted">
+              // Wraps for the same reason as <Breadcrumb> above — this is that component
+              // re-stated in the shell's own colour tokens.
+              <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-sm text-shell-muted">
                 {breadcrumb.map((item, i) => (
                   <React.Fragment key={i}>
-                    {i > 0 ? <ChevronRight className="h-3.5 w-3.5" aria-hidden /> : null}
+                    {i > 0 ? <ChevronRight className="h-3.5 w-3.5 shrink-0" aria-hidden /> : null}
                     {item.href ? (
                       <Link href={item.href} className="hover:text-shell-foreground">
                         {item.label}
@@ -224,7 +231,7 @@ export function DetailShell({
             </div>
             {description ? <p className="text-sm text-shell-muted">{description}</p> : null}
           </div>
-          {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
+          {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
         </div>
       </div>
       <div className="grid gap-6 lg:grid-cols-[1fr_18rem]">

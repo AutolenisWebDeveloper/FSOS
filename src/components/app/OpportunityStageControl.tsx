@@ -29,11 +29,18 @@ export function OpportunityStageControl({ id, stage }: { id: string; stage: stri
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <label className="sr-only" htmlFor={`stage-${id}`}>Advance stage</label>
-      <Select id={`stage-${id}`} className="h-8 w-56 text-xs" value={target} onChange={(e) => setTarget(e.target.value)} disabled={saving}>
-        {OPPORTUNITY_STAGE.map((s) => (<option key={s} value={s}>{s.replace(/_/g, ' ')}</option>))}
-      </Select>
+      {/* The row wraps, so on a phone the Advance button drops below the select instead
+          of being pushed off-screen; the select keeps its full width at every size that
+          fits it. min-w-0 is the backstop under that, letting the select itself shrink on
+          a viewport narrower than it is (a flex item otherwise refuses to go below its
+          content). Sized on this wrapper because Select renders its own relative div. */}
+      <div className="w-56 min-w-0">
+        <Select id={`stage-${id}`} className="h-8 text-xs" value={target} onChange={(e) => setTarget(e.target.value)} disabled={saving}>
+          {OPPORTUNITY_STAGE.map((s) => (<option key={s} value={s}>{s.replace(/_/g, ' ')}</option>))}
+        </Select>
+      </div>
       <Button size="sm" variant="outline" onClick={advance} disabled={saving || target === stage}>{saving ? '…' : 'Advance'}</Button>
     </div>
   )

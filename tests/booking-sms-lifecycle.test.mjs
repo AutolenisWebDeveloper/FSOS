@@ -407,10 +407,13 @@ await t("the SMS leg is classified APPOINTMENT (transactional ⇒ not quiet-hour
   await notify.sendBookingConfirmation('appt-1')
   assert.equal(smsCalls()[0].purpose, 'APPOINTMENT')
 })
-await t('the EMAIL leg stays unclassified so its sending stream and wrap are untouched', async () => {
+await t('the EMAIL leg is classified APPOINTMENT too, so both share the appointment caps', async () => {
+  // While email was unclassified it counted against the OUTREACH frequency row's 3-touches-a-day
+  // ceiling. The 24h + 12h + 1h cadence overruns that, and the leg refused would be the 1-hour
+  // reminder — for anyone who resolves to a household member, i.e. every existing client.
   setup()
   await notify.sendBookingConfirmation('appt-1')
-  assert.equal(emailCalls()[0].purpose, undefined)
+  assert.equal(emailCalls()[0].purpose, 'APPOINTMENT')
 })
 await t('appointment SMS is declared non-suppressible (transactional, not a marketing touch)', async () => {
   setup()
@@ -477,6 +480,35 @@ await t('multiple configured offsets each fire once, keyed independently', async
   assert.equal(smsCalls().length, 2)
   assert.equal(ledgerFor(state, 'reminder', 'sms', 60).length, 1)
   assert.equal(ledgerFor(state, 'reminder', 'sms', 1440).length, 1)
+})
+
+await t('the shipped 24h + 12h + 1h cadence fires each offset once, on both channels', async () => {
+  // The cadence migration 137 ships. Each offset is a distinct ledger key per channel, so the
+  // sweep needs no code change to carry a third reminder — this pins that it actually does.
+  const state = setup()
+  state.config = { offsets_minutes: [1440, 720, 60], email_enabled: true, sms_enabled: true }
+  state.emailConsentContacts.add('contact-1')
+  state.appointments[0].booked_at = '2026-08-20T00:00:00.000Z' // long before any window opened
+  state.appointments[0].starts_at = new Date(NOW.getTime() + 30 * 60_000).toISOString() // all three due
+  for (let i = 0; i < 3; i++) await notify.runBookingReminderPass(NOW)
+  assert.equal(smsCalls().length, 3, 'one reminder SMS per offset, however many ticks run')
+  assert.equal(emailCalls().length, 3, 'and one reminder email per offset')
+  for (const offset of [1440, 720, 60]) {
+    assert.equal(ledgerFor(state, 'reminder', 'sms', offset).length, 1, `sms offset ${offset}`)
+    assert.equal(ledgerFor(state, 'reminder', 'email', offset).length, 1, `email offset ${offset}`)
+  }
+})
+
+await t('a booking made inside an offset window does not get that reminder', async () => {
+  // Booked 40 minutes before the meeting: the confirmation already said when it is, so the 1h
+  // reminder is suppressed while the wider offsets stay irrelevant (their windows opened before
+  // the booking existed).
+  const state = setup()
+  state.config = { offsets_minutes: [1440, 720, 60], email_enabled: false, sms_enabled: true }
+  state.appointments[0].starts_at = new Date(NOW.getTime() + 20 * 60_000).toISOString()
+  state.appointments[0].booked_at = new Date(NOW.getTime() - 20 * 60_000).toISOString()
+  await notify.runBookingReminderPass(NOW)
+  assert.equal(smsCalls().length, 0, 'a reminder minutes after the confirmation is noise')
 })
 
 console.log('\n4. Rescheduled appointments')

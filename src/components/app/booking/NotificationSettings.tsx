@@ -65,7 +65,11 @@ export function NotificationSettings({
         : null
 
   const offsets = offsetsMinutes?.length ? [...offsetsMinutes].sort((a, b) => b - a) : [leadHours * 60]
-  const reminderTiming = offsets.map(describeOffset).join(' and ')
+  // "1 day, 12 hours and 1 hour" — a plain `join(' and ')` reads as a run-on once the cadence
+  // carries more than two offsets, which the shipped 24h + 12h + 1h one does.
+  const described = offsets.map(describeOffset)
+  const reminderTiming =
+    described.length > 1 ? `${described.slice(0, -1).join(', ')} and ${described[described.length - 1]}` : described[0]
 
   const channelLabel = smsLive ? 'Email + SMS' : 'Email'
 

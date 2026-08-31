@@ -154,6 +154,16 @@ try {
       `  note text\n` +
       `);\n` +
       `insert into comm_frequency_policy (id, note) values ('global', 'outreach') on conflict (id) do nothing;\n` +
+      // booking_reminder_config as migration 093 leaves it (migration 137 moves its cadence).
+      `create table booking_reminder_config (\n` +
+      `  id text primary key default 'global',\n` +
+      `  offsets_minutes int[] not null default '{1440}',\n` +
+      `  email_enabled boolean not null default true,\n` +
+      `  sms_enabled boolean not null default true,\n` +
+      `  is_assumption boolean not null default true,\n` +
+      `  updated_at timestamptz not null default now()\n` +
+      `);\n` +
+      `insert into booking_reminder_config (id) values ('global') on conflict do nothing;\n` +
       `create table comm_contact_consents (\n` +
       `  id uuid primary key default gen_random_uuid(),\n` +
       `  contact text not null, channel text not null check (channel in ('sms','email','call')),\n` +
@@ -168,6 +178,7 @@ try {
   psqlFile(`${L}/fixture.sql`)
   psqlFile('supabase/migrations/135_booking_sms_appointment_notices.sql')
   psqlFile('supabase/migrations/136_comm_appointment_frequency_policy.sql')
+  psqlFile('supabase/migrations/137_booking_reminder_cadence.sql')
 
   console.log('\napproved SMS templates')
   // loadApprovedTemplate (src/lib/booking/notify.ts) issues exactly this shape:
@@ -310,6 +321,39 @@ try {
     assert.ok(Number(scalar("select max_combined_touches_per_day from comm_frequency_policy where id = 'appointment';")) > 0)
   })
   t('the outreach row is untouched — campaign pacing is unchanged', () => {
+    assert.equal(scalar("select min_interval_minutes from comm_frequency_policy where id = 'global';"), '60')
+  })
+
+  console.log('\nreminder cadence (migration 137)')
+  t('the shipped cadence is 24h + 12h + 1h', () => {
+    assert.equal(scalar("select offsets_minutes::text from booking_reminder_config where id = 'global';"), '{1440,720,60}')
+  })
+  t('a NEW deployment gets the same cadence from the column default', () => {
+    exec("insert into booking_reminder_config (id) values ('fresh');")
+    assert.equal(scalar("select offsets_minutes::text from booking_reminder_config where id = 'fresh';"), '{1440,720,60}')
+    exec("delete from booking_reminder_config where id = 'fresh';")
+  })
+  t('re-applying 137 is a no-op, and an OPERATOR-EDITED cadence is never stomped', () => {
+    // The guard is the whole point: an FSA who has already tuned their offsets keeps them.
+    exec("update booking_reminder_config set offsets_minutes = '{2880}' where id = 'global';")
+    psqlFile('supabase/migrations/137_booking_reminder_cadence.sql')
+    assert.equal(
+      scalar("select offsets_minutes::text from booking_reminder_config where id = 'global';"),
+      '{2880}',
+      'a hand-tuned cadence must survive a re-apply',
+    )
+    exec("update booking_reminder_config set offsets_minutes = '{1440,720,60}' where id = 'global';")
+  })
+  t('the appointment caps have room for three reminders on two channels', () => {
+    // 3 offsets x 2 channels = 6 touches in the trailing day, plus a same-day confirmation (2).
+    const combined = Number(scalar("select max_combined_touches_per_day from comm_frequency_policy where id = 'appointment';"))
+    const sms = Number(scalar("select max_sms_per_day from comm_frequency_policy where id = 'appointment';"))
+    assert.ok(combined >= 8, `combined ceiling ${combined} must clear 3 reminders x 2 channels + a confirmation`)
+    assert.ok(sms >= 4, `sms ceiling ${sms} must clear 3 reminder texts + a confirmation text`)
+    assert.ok(combined < 100 && sms < 100, 'they must remain real ceilings, not disabled')
+  })
+  t('the outreach caps are still untouched by any of this', () => {
+    assert.equal(scalar("select max_combined_touches_per_day from comm_frequency_policy where id = 'global';"), '3')
     assert.equal(scalar("select min_interval_minutes from comm_frequency_policy where id = 'global';"), '60')
   })
 

@@ -95,7 +95,7 @@ export const SMS_CONSENT = {
   // Exact plain-text of the checkbox label shown to the user (informational,
   // customer-care only). MUST stay verbatim-synced with the rendered JSX label.
   disclosure:
-    `By checking this box, I agree to receive recurring account and customer-service text messages from ${BUSINESS.brand} at the mobile number provided — including appointment scheduling and reminders, policy and account service updates, document or information requests, and replies to my inquiries. Messages originate from ${SMS_FROM_NUMBER}. Msg frequency varies. Msg & data rates may apply. Reply STOP to opt out, HELP for help. Consent is not a condition of purchase. See our Privacy Policy, Terms of Use, and SMS Terms & Conditions.`,
+    `By checking this box, I agree to receive recurring account and customer-service text messages from ${BUSINESS.brand} at the mobile number provided — including appointment confirmations, reminders, and reschedule or cancellation notices, policy and account service updates, document or information requests, and replies to my inquiries. Messages originate from ${SMS_FROM_NUMBER}. Msg frequency varies. Msg & data rates may apply. Reply STOP to opt out, HELP for help. Consent is not a condition of purchase. See our Privacy Policy, Terms of Use, and SMS Terms & Conditions.`,
 } as const
 
 /** Canonical FSA authentication host (see loginUrl). */

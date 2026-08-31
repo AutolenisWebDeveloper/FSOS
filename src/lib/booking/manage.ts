@@ -101,17 +101,14 @@ export async function cancelAppointment(appt: ManagedAppointment, reason?: strin
     .update({ cancellation_reason: reason ?? 'Cancelled by attendee', updated_at: new Date().toISOString() })
     .eq('id', appt.id)
 
-  // Best-effort side-effects: delete the Zoom meeting + send the cancellation notice.
+  // Best-effort side-effect: delete the Zoom meeting. The cancellation NOTICE is emitted by
+  // setAppointmentStatus above — the one shared mover every cancel path goes through — so the
+  // attendee's self-service cancel and an FSA-initiated cancel notify identically.
   if (appt.meeting_mode === 'video') {
     const z = await deleteZoomMeeting(appt.zoom_meeting_id)
     if (!z.ok) {
       await writeAudit({ actor: 'public', action: 'config.changed', entity: 'appointment', entityId: appt.id, diff: { zoom_delete_failed: z.error ?? true } })
     }
-  }
-  try {
-    await sendAppointmentNotice(appt.id, 'cancellation')
-  } catch {
-    /* best-effort — cancellation already committed */
   }
   return { ok: true }
 }

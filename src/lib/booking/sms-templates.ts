@@ -13,6 +13,12 @@
 // becomes marketing needing separate consent). Final wording is reconciled to the approved Twilio
 // A2P campaign templates before go-live.
 //
+// ENCODING: every body must stay GSM-7. A single non-GSM character (an em dash is the easy
+// mistake — the reminder carried one) switches the whole message to UCS-2, which cuts the
+// per-segment budget from 153 characters to 67 and turned a 3-segment reminder into 5. Use '-' or ':'
+// rather than '—'. tests/booking-sms-templates.test.mjs pins both the encoding and the
+// rendered segment count, measured with a real signed manage link.
+//
 // Merge tokens are the ALREADY-ENFORCED ones (personalize.ts is NOT modified): {{agency_name}}
 // (identity, blocking), {{first_name}}, {{appointment_time}} (the appointment's grounded full
 // local time — after a reschedule this IS the new time), {{reschedule_url}} (absolute + signed,
@@ -45,7 +51,7 @@ export const BOOKING_SMS_TEMPLATES: BookingSmsTemplate[] = [
     name: 'Appointment reminder (SMS)',
     category: 'appointment',
     body:
-      '{{agency_name}}: Reminder — your appointment is {{appointment_time}}. ' +
+      '{{agency_name}}: Reminder - your appointment is {{appointment_time}}. ' +
       'Reschedule or cancel: {{reschedule_url}} Reply STOP to opt out.',
   },
   {

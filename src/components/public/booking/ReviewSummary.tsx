@@ -54,6 +54,8 @@ export interface ReviewSummaryProps {
   phone?: string | null
   /** Stored reason slug (APPOINTMENT_REASONS); rendered as its human label. */
   reason?: string | null
+  /** The affirmative SMS opt-in as ticked on the details step — read back before submit. */
+  smsOptIn?: boolean
   onEdit: (step: 'slot' | 'details') => void
   onConfirm: () => void
   submitting: boolean
@@ -71,6 +73,7 @@ export function ReviewSummary({
   email,
   phone,
   reason,
+  smsOptIn = false,
   onEdit,
   onConfirm,
   submitting,
@@ -102,6 +105,12 @@ export function ReviewSummary({
             <Row label="Email" value={email} />
             {phone ? <Row label="Phone" value={phone} /> : null}
             {appointmentReasonLabel(reason) ? <Row label="Reason" value={appointmentReasonLabel(reason)!} /> : null}
+            {/* The booker is consenting to be texted, so the read-back must state the decision
+                either way — a consent they cannot see confirmed is a consent they cannot check. */}
+            <Row
+              label="Text updates"
+              value={smsOptIn && phone ? `Yes — to ${phone}` : 'No — email only'}
+            />
           </dl>
         </section>
       </div>

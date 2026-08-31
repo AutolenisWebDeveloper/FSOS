@@ -93,6 +93,19 @@ export interface DispatchPolicyContext {
   isSecurity?: boolean
   /** Explicit non-suppressible declaration for correctly-classified transactional sends. */
   suppressible?: boolean
+  /**
+   * 2b — this send is EXEMPT from the operator's HOURS OF OPERATION window. Defaults to false,
+   * so every existing caller keeps the window exactly as before.
+   *
+   * The window (comm_hours_policy, seeded 09:00–19:00 Mon–Sat) exists to stop FSOS doing
+   * OUTREACH while the office is shut. It is the wrong control for a RECEIPT the customer just
+   * triggered themselves: an appointment booked on a Sunday evening would have its confirmation
+   * held until Monday morning, after the booking screen told the customer a text was on its way.
+   * Only the booking lifecycle notices set this (src/lib/booking/notify.ts), and it relaxes ONLY
+   * step 2b — the statutory quiet-hours floor, consent, DNC/STOP, approval, the recommendation
+   * red line and the securities firewall all still apply exactly as before.
+   */
+  businessHoursExempt?: boolean
   isTest?: boolean
   isConversationReply?: boolean
   activeCampaignPurpose?: MessagePurpose | null
@@ -199,7 +212,8 @@ export interface PolicyDeps {
   sendPolicy(input: {
     memberId: string | null; channel: Channel; purpose: MessagePurpose
     conversationId: string | null; activeCampaignPurpose: MessagePurpose | null
-    frequencyPolicyId: 'global' | 'reply'
+    /** Kept in lock-step with policy-resolver.ts FrequencyPolicyId (migrations 103 + 136). */
+    frequencyPolicyId: 'global' | 'reply' | 'appointment'
   }): Promise<{ consentForPurpose: boolean | null; frequency: { allowed: boolean; reason?: string }; collision: { allowed: boolean; reason?: string } }>
   smsLive(channel: Channel): boolean
   conversationIsSecurity(conversationId: string | null, householdId: string | null): Promise<boolean>
@@ -524,7 +538,11 @@ export async function resolveDispatchPolicy(
     purpose: effectivePurpose,
     conversationId: ctx.conversationId ?? null,
     activeCampaignPurpose: ctx.activeCampaignPurpose ?? null,
-    frequencyPolicyId: ctx.isConversationReply === true ? 'reply' : 'global',
+    // Which cap row bounds this send. A reply wins (it is answering a message the contact just
+    // sent); then an APPOINTMENT notice, whose two channels go out together and would otherwise
+    // block each other on the outreach interval; everything else is outreach.
+    frequencyPolicyId:
+      ctx.isConversationReply === true ? 'reply' : effectivePurpose === 'APPOINTMENT' ? 'appointment' : 'global',
   })
   let collisionPaused: boolean | undefined
   let collisionReason: string | undefined
@@ -683,7 +701,8 @@ export async function resolveDispatchPolicy(
     configuredWindowOk,
     configuredWindowReason,
     windowMisconfigured,
-    withinBusinessHours: ctx.templateKind === 'human' ? true : withinBusinessHours,
+    withinBusinessHours:
+      ctx.templateKind === 'human' || ctx.businessHoursExempt === true ? true : withinBusinessHours,
     withinFrequencyCaps: policy.frequency.allowed,
     frequencyReason: policy.frequency.reason,
     collisionPaused,

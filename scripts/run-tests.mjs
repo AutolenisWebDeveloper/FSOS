@@ -38,6 +38,9 @@ const RLS = new Set([
   'district-nurture-rls.test.mjs',
   'suppression-rpc.test.mjs',
   'booking-reschedule-self-exclude.test.mjs',
+  // Migration 135 applied to a real Postgres: the APPROVED appointment SMS templates the send
+  // path requires, and the booking consent-evidence columns.
+  'booking-sms-templates-approved.test.mjs',
   // Applies the WHOLE migration chain to an empty database via the real migrate.mjs.
   // Needs root Postgres (initdb) and write access to the extension dir for its pg_cron stub.
   'migration-chain.test.mjs',

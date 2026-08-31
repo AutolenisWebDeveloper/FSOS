@@ -59,12 +59,14 @@ export async function hasConsentForPurpose(
 }
 
 /**
- * The cap row this send is bounded by (ADR-017 amendment, migration 103). 'global' bounds
- * proactive campaign/drip outreach; 'reply' bounds an inbound-triggered conversation reply,
- * whose minimum-interval spacing would otherwise stall a normal back-and-forth after one
- * turn. Selecting a row can never REMOVE the caps — both rows are real, audited ceilings.
+ * The cap row this send is bounded by (ADR-017 amendment, migrations 103 + 136). 'global' bounds
+ * proactive campaign/drip outreach; 'reply' bounds an inbound-triggered conversation reply, whose
+ * minimum-interval spacing would otherwise stall a normal back-and-forth after one turn;
+ * 'appointment' bounds booking lifecycle notices, whose email and SMS legs are sent together by
+ * design and would otherwise cap each other. Selecting a row can never REMOVE the caps — all
+ * three are real, audited ceilings, and a missing scoped row falls back to the tighter 'global'.
  */
-export type FrequencyPolicyId = 'global' | 'reply'
+export type FrequencyPolicyId = 'global' | 'reply' | 'appointment'
 
 async function loadFrequencyCaps(policyId: FrequencyPolicyId = 'global'): Promise<{ enabled: boolean; caps: FrequencyCaps } | null> {
   try {

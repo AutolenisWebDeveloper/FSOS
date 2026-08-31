@@ -27,6 +27,7 @@ import { classifyReply } from './reply-classification'
 import { checkTurnLimit, type TurnLimitDecision } from './turn-limit'
 import { shouldPauseOnReply } from './conversation-mode'
 import { recordConsentChange } from './consent-events'
+import { recordChannelOptOut } from './opt-out'
 import { BUSINESS, CONTACT } from '@/lib/site'
 
 /** The HELP keyword auto-response (WS-033): identity, contact, opt-out — nothing else. */
@@ -70,43 +71,25 @@ export interface InboundResult {
   helpResponse?: string
 }
 
-/** Revoke consent on this channel + add to internal DNC (STOP handling). */
+/**
+ * Revoke consent on this channel + add to internal DNC (STOP handling).
+ *
+ * Delegates to the shared opt-out writer so an inbound STOP and a carrier-reported opt-out
+ * (Twilio ErrorCode 21610, seen only on the delivery callback) leave the stores in the SAME
+ * state. That matters for a public booker who ticked the SMS box on the booking form: their
+ * only consent record lives in comm_contact_consents, which this keeps in step with the DNC row
+ * — previously the enforced suppression was written and the evidence store still read `granted`.
+ */
 async function applyOptOut(conv: Conversation, contact: string): Promise<void> {
-  const db = getDb()
-  try {
-    if (conv.member_id) {
-      await db
-        .from('consents')
-        .upsert(
-          { member_id: conv.member_id, household_id: conv.household_id, channel: conv.channel, status: 'revoked', source: 'inbound_stop', updated_at: new Date().toISOString() },
-          { onConflict: 'member_id,channel' },
-        )
-      // STOP is authoritative across the WHOLE consent model: also revoke every
-      // purpose-scoped grant on this channel so a scoped grant can never survive a STOP
-      // and re-enable sends (the resolver also treats a channel revoke as a floor, but
-      // cascading keeps the two stores consistent — TCPA opt-out, §12/§4.2).
-      await db
-        .from('comm_consent_purposes')
-        .update({ status: 'revoked', updated_at: new Date().toISOString() })
-        .eq('member_id', conv.member_id)
-        .eq('channel', conv.channel)
-    }
-    await db.from('dnc_entries').upsert({ contact, channel: conv.channel, scope: 'internal', reason: 'inbound STOP' }, { onConflict: 'contact,channel' })
-    // ONE consent-logging path → audit_log AND the CRM timeline (§C), anchored to the
-    // member/household so the opt-out is visible on the customer 360.
-    await recordConsentChange({
-      actor: 'system',
-      channel: conv.channel,
-      newStatus: 'revoked',
-      previousStatus: 'granted',
-      source: 'inbound_stop',
-      reason: `inbound STOP (conversation ${conv.id})`,
-      memberId: conv.member_id,
-      householdId: conv.household_id,
-    })
-  } catch {
-    /* best-effort; the inbound row is already recorded */
-  }
+  await recordChannelOptOut({
+    contact,
+    channel: conv.channel,
+    source: 'inbound_stop',
+    reason: `inbound STOP (conversation ${conv.id})`,
+    consentText: 'Inbound STOP keyword',
+    memberId: conv.member_id,
+    householdId: conv.household_id,
+  })
 }
 
 /**
@@ -277,6 +260,17 @@ async function applyOptIn(conv: Conversation, contact: string): Promise<void> {
           { onConflict: 'member_id,channel' },
         )
     }
+    // The mirror of the STOP write, and REQUIRED for correctness now that STOP appends a
+    // contact-level revoke: comm_contact_consents is latest-wins, so without this a non-member
+    // who texted STOP and then START would stay blocked at the consent step forever even though
+    // the DNC row was cleared and they explicitly asked to be messaged again.
+    await db.from('comm_contact_consents').insert({
+      contact,
+      channel: conv.channel,
+      action: 'granted',
+      consent_text: 'Inbound START keyword (opt-in restored)',
+      consent_version: 'opt-in',
+    })
     // Consent RESTORED via START: records the grant to audit_log + the CRM timeline. This
     // clears the opt-out for future manual/1:1 sends but does NOT auto-resume any paused
     // promotional enrollment — re-enrollment stays an explicit, authorized admin action.
@@ -378,6 +372,23 @@ export async function processInbound(input: InboundInput): Promise<InboundResult
   if (result.intent === 'stop') {
     await applyOptOut(conv, contact)
     result.optedOut = true
+    // CANCEL / END / QUIT are carrier STOP keywords, and an appointment text that says
+    // "Reschedule or cancel: <link>" invites exactly that reply. The opt-out above stands
+    // unconditionally; this only tells a HUMAN that the client may have meant their
+    // appointment, which is still on the calendar. FSOS never cancels on an inferred intent.
+    if (input.channel === 'sms') {
+      try {
+        const { reviewOptOutAgainstUpcomingAppointment } = await import('@/lib/booking/optout-appointment-review')
+        await reviewOptOutAgainstUpcomingAppointment({
+          channel: input.channel,
+          contact,
+          body: input.body,
+          nowIso: new Date().toISOString(),
+        })
+      } catch {
+        /* best-effort — the opt-out is already applied and is the part that must not fail */
+      }
+    }
     // Close the member's live enrollments as part of the opt-out, BEFORE returning. Consent +
     // DNC already block every send at the gate, but leaving the rows live meant the drip
     // runner kept selecting them and each attempt escalated — an opt-out generating ongoing

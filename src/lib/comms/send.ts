@@ -246,6 +246,13 @@ export interface SendContext {
    */
   suppressible?: boolean
   /**
+   * 2b — exempt this send from the operator's hours-of-operation window (see
+   * dispatch-policy.ts businessHoursExempt). Defaults to false. Set ONLY for a transactional
+   * receipt the customer's own action triggered — never for outreach — and it relaxes nothing
+   * else: quiet hours, consent, DNC, approval, the red line and the firewall are unaffected.
+   */
+  businessHoursExempt?: boolean
+  /**
    * Declares a fixed, CODE-RESIDENT transactional notice (a booking confirmation, a visitor
    * acknowledgement, a password-setup mail). These have no `comm_templates` row because they
    * are not operator-authored, but they are real reviewed templates that change only through
@@ -736,6 +743,7 @@ export async function sendMessage(ctx: SendContext): Promise<SendOutcome> {
       durableConsentGranted: ctx.durableConsentGranted,
       consentWaived: ctx.consentWaived,
       suppressible: ctx.suppressible,
+      businessHoursExempt: ctx.businessHoursExempt,
       isTest: ctx.isTest,
       isConversationReply: ctx.isConversationReply,
       activeCampaignPurpose: ctx.activeCampaignPurpose ?? null,

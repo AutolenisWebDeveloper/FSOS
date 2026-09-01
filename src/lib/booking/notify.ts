@@ -140,18 +140,32 @@ async function sendAppointmentMessage(
   const outcome = await sendMessage({
     channel: opts.channel,
     to,
-    // Classify the SMS leg so the gate applies the RIGHT quiet-hours scope. purpose.ts scopes the
-    // 9:00-20:00 floor to SMS MARKETING traffic; an UNCLASSIFIED SMS defaults INTO the floor, so
-    // without this an evening booking's confirmation is quiet-hours blocked — and an immediate
-    // notice has no cron behind it, so that block used to lose the message outright. APPOINTMENT
-    // is the accurate classification (transactional appointment content, no promotional ask) and
-    // it relaxes ONLY step 2: consent, DNC/STOP, approval, personalization, the recommendation
-    // red line and the securities firewall all still run exactly as before.
+    // Classify BOTH legs. APPOINTMENT is what these messages are — transactional appointment
+    // content with no promotional ask — and every purpose-keyed control then does the right
+    // thing on its own instead of being special-cased:
+    //   • quiet hours: purpose.ts scopes the 9:00-20:00 floor to SMS MARKETING traffic, and an
+    //     UNCLASSIFIED SMS defaults INTO it — so without this an evening booking's confirmation
+    //     was blocked, and an immediate notice has no cron behind it to try again;
+    //   • frequency: routes both legs to the 'appointment' cap row (mig 136/137). While the
+    //     email leg was unclassified it counted against the OUTREACH row's 3-touches-a-day
+    //     ceiling, which the 24h+12h+1h cadence overruns — the 1-hour reminder email, the one
+    //     that matters most, was refused for anyone who resolves to a household member.
+    // The one thing purpose would ALSO decide — the email sending identity — is pinned below
+    // instead, so classifying changes no delivered email.
     //
-    // EMAIL deliberately stays unclassified: purpose also selects the sending stream
-    // (senders.ts streamForPurpose) and the marketing body wrap, so classifying the email leg
-    // would change live email behavior that this change has no business touching.
-    purpose: opts.channel === 'sms' ? APPOINTMENT_PURPOSE : undefined,
+    // It relaxes nothing: consent (the durable booking grant still ORs in), DNC/STOP, approval,
+    // personalization, the recommendation red line and the securities firewall all still run,
+    // and `suppressible: false` below already short-circuits business suppression either way.
+    // The branded email shell is purpose-independent and passes a full HTML document through
+    // untouched, so the delivered appointment email is byte-identical.
+    purpose: APPOINTMENT_PURPOSE,
+    // …with ONE thing the purpose does NOT get to decide: the email sending identity.
+    // senders.ts would route a non-marketing purpose to the transactional stream; the owner
+    // has chosen to keep appointment email on the marketing stream, so it is pinned here
+    // rather than left to fall out of the classification. Ignored for SMS. This is the whole
+    // visible difference purpose makes to an email — with it pinned, the delivered appointment
+    // email is identical to what it was before the classification, headers included.
+    emailStream: 'marketing',
     subject: opts.channel === 'email' ? tpl.subject ?? undefined : undefined,
     body: tpl.body,
     bodyText: opts.channel === 'email' ? tpl.body_text ?? undefined : undefined,

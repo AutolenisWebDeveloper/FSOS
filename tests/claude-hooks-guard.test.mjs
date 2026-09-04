@@ -195,42 +195,156 @@ for (const [label, input] of [['empty stdin', ''], ['non-JSON stdin', 'not json 
 //   2. The dirty marker must SURVIVE. An earlier version consumed it before running tsc, so
 //      a cancelled run destroyed the marker and skipped the typecheck permanently — the gate
 //      silently disarmed itself.
-console.log('\nStop gate survives an abrupt kill without orphaning the typecheck')
-check('killed gate leaves no orphan, and the marker survives', () => {
+console.log('\nStop gate survives cancellation without orphaning, lying, or disarming itself')
+// Four properties, each of which was broken at some point and each of which matters:
+//   orphan   - a cancelled hook must not leave `tsc` running (it burned CPU for up to 240s)
+//   marker   - it must SURVIVE, or the gate silently skips the typecheck from then on
+//   block    - a cancelled run must not emit a fabricated "TYPECHECK FAILED"
+//   stderr   - job-control noise must not be fed back to Claude as if it were tsc output
+// SIGTERM/SIGHUP are the modes that were broken: the trap killed the WATCHDOG rather than the
+// typecheck, then fell through and read the signal status as a type-check result.
+for (const signal of ['KILL', 'TERM', 'HUP']) {
+  check(`SIG${signal} on the hook: no orphan, marker kept, no false block`, () => {
+    const os = require$('node:os'), fs = require$('node:fs'), pathMod = require$('node:path')
+    const root = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'fsos-gate-'))
+    const proj = pathMod.join(root, 'proj')
+    const tmp = pathMod.join(root, 'tmp')
+    const bin = pathMod.join(root, 'bin')
+    const pidFile = pathMod.join(root, 'child.pid')
+    const hookPid = pathMod.join(root, 'hook.pid')
+    const errFile = pathMod.join(root, 'hook.err')
+    fs.mkdirSync(pathMod.join(proj, 'node_modules', 'typescript'), { recursive: true })
+    fs.mkdirSync(tmp); fs.mkdirSync(bin)
+    fs.writeFileSync(pathMod.join(bin, 'npx'), `#!/bin/sh\necho $$ > ${pidFile}\nexec sleep 30\n`)
+    fs.chmodSync(pathMod.join(bin, 'npx'), 0o755)
+    // `setsid` forks, so $! is the short-lived setsid, not the hook. An exec wrapper records
+    // the real pid — without this the test kills nothing and passes vacuously.
+    const launcher = pathMod.join(root, 'launch.sh')
+    fs.writeFileSync(launcher,
+      `echo $$ > ${hookPid}\nexec bash ${pathMod.join(REPO, '.claude/hooks/done-gate.sh')}\n`)
+
+    const key = execFileSync('bash', ['-c', `printf '%s' "${proj}" | cksum | cut -d' ' -f1`],
+      { encoding: 'utf8' }).trim()
+    const marker = pathMod.join(tmp, `fsos-claude-ts-dirty-${key}`)
+    fs.writeFileSync(marker, 'x.ts\n')
+
+    execFileSync('bash', ['-c', `
+      setsid env TMPDIR=${tmp} PATH=${bin}:$PATH CLAUDE_PROJECT_DIR=${proj} \
+        bash ${launcher} </dev/null >/dev/null 2>${errFile} &
+      sleep 2
+      kill -${signal} "$(cat ${hookPid})" 2>/dev/null
+      sleep 5`], { encoding: 'utf8', timeout: 40000 })
+
+    assert.ok(fs.existsSync(pidFile), 'the stubbed typecheck never started')
+    const childPid = Number(fs.readFileSync(pidFile, 'utf8').trim())
+    let alive = true
+    try { process.kill(childPid, 0) } catch { alive = false }
+    if (alive) { try { process.kill(childPid, 'SIGKILL') } catch {} }
+    assert.equal(alive, false, `typecheck pid ${childPid} was ORPHANED by the SIG${signal}ed gate`)
+
+    assert.ok(fs.existsSync(marker),
+      `SIG${signal} destroyed the dirty marker — the typecheck would be skipped from now on`)
+
+    const err = fs.existsSync(errFile) ? fs.readFileSync(errFile, 'utf8') : ''
+    assert.ok(!err.includes('TYPECHECK FAILED'),
+      `SIG${signal} produced a fabricated block; stderr was:\n${err}`)
+    assert.ok(!/while kill|ticks=|timeout 240 npx/.test(err),
+      `job-control noise leaked the hook's own source into stderr:\n${err}`)
+    fs.rmSync(root, { recursive: true, force: true })
+  })
+}
+
+check('killing only the watchdog does not fake a block or destroy the marker', () => {
+  // The watchdog is a single point of failure: if it dies while the hook lives, `wait`
+  // returns a SIGNAL status. Read as a typecheck result that becomes a fabricated
+  // "TYPECHECK FAILED" plus a consumed marker — the gate lying and disarming itself at once.
   const os = require$('node:os'), fs = require$('node:fs'), pathMod = require$('node:path')
-  const root = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'fsos-gate-'))
-  const proj = pathMod.join(root, 'proj')
-  const tmp = pathMod.join(root, 'tmp')
-  const bin = pathMod.join(root, 'bin')
-  const pidFile = pathMod.join(root, 'child.pid')
+  const root = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'fsos-wd-'))
+  const proj = pathMod.join(root, 'proj'), tmp = pathMod.join(root, 'tmp'), bin = pathMod.join(root, 'bin')
+  const hookPid = pathMod.join(root, 'hook.pid'), errFile = pathMod.join(root, 'e.txt')
   fs.mkdirSync(pathMod.join(proj, 'node_modules', 'typescript'), { recursive: true })
   fs.mkdirSync(tmp); fs.mkdirSync(bin)
-  // Stub npx: record the pid we must later prove is dead, then hang.
-  fs.writeFileSync(pathMod.join(bin, 'npx'), `#!/bin/sh\necho $$ > ${pidFile}\nexec sleep 30\n`)
+  fs.writeFileSync(pathMod.join(bin, 'npx'), '#!/bin/sh\nexec sleep 20\n')
   fs.chmodSync(pathMod.join(bin, 'npx'), 0o755)
-
+  const launcher = pathMod.join(root, 'launch.sh')
+  fs.writeFileSync(launcher,
+    `echo $$ > ${hookPid}\nexec bash ${pathMod.join(REPO, '.claude/hooks/done-gate.sh')}\n`)
   const key = execFileSync('bash', ['-c', `printf '%s' "${proj}" | cksum | cut -d' ' -f1`],
     { encoding: 'utf8' }).trim()
   const marker = pathMod.join(tmp, `fsos-claude-ts-dirty-${key}`)
   fs.writeFileSync(marker, 'x.ts\n')
 
-  // Launch the gate, let it get into the typecheck, then SIGKILL it (untrappable, the worst
-  // case) and give the in-job watchdog a beat to notice its parent is gone.
-  const script = `
-    TMPDIR=${tmp} PATH=${bin}:$PATH CLAUDE_PROJECT_DIR=${proj} \
-      bash ${pathMod.join(REPO, '.claude/hooks/done-gate.sh')} </dev/null >/dev/null 2>&1 & p=$!
-    sleep 2; kill -9 $p 2>/dev/null; wait $p 2>/dev/null; sleep 3; echo done`
-  execFileSync('bash', ['-c', script], { encoding: 'utf8', timeout: 30000 })
+  execFileSync('bash', ['-c', `
+    setsid env TMPDIR=${tmp} PATH=${bin}:$PATH CLAUDE_PROJECT_DIR=${proj} \
+      bash ${launcher} </dev/null >/dev/null 2>${errFile} &
+    sleep 2
+    hp="$(cat ${hookPid})"
+    wd="$(pgrep -P "$hp" | head -1)"
+    [ -n "$wd" ] && kill -9 "$wd"
+    sleep 3
+    kill -9 "$hp" 2>/dev/null; true`], { encoding: 'utf8', timeout: 40000 })
 
-  assert.ok(fs.existsSync(pidFile), 'the stubbed typecheck never started')
-  const childPid = Number(fs.readFileSync(pidFile, 'utf8').trim())
-  let alive = true
-  try { process.kill(childPid, 0) } catch { alive = false }
-  assert.equal(alive, false,
-    `typecheck pid ${childPid} was ORPHANED by the killed gate and is still running`)
+  const err = fs.existsSync(errFile) ? fs.readFileSync(errFile, 'utf8') : ''
+  assert.ok(!err.includes('TYPECHECK FAILED'),
+    `a dead watchdog produced a fabricated block; stderr was:\n${err}`)
   assert.ok(fs.existsSync(marker),
-    'the killed gate destroyed the dirty marker — the typecheck would be skipped permanently')
+    'a dead watchdog caused the marker to be consumed — the gate disarmed itself')
   fs.rmSync(root, { recursive: true, force: true })
+})
+
+console.log('\nStop gate still does its actual job (an orphan test alone can pass vacuously)')
+// The orphan checks above all pass if the gate kills the typecheck INSTANTLY and never
+// blocks — which is exactly the regression a subtle liveness bug produced. These pin the
+// behaviour the gate exists for, so "no orphan" can never be satisfied by doing nothing.
+const gateSandbox = (npxBody) => {
+  const os = require$('node:os'), fs = require$('node:fs'), pathMod = require$('node:path')
+  const root = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'fsos-fn-'))
+  const proj = pathMod.join(root, 'proj'), tmp = pathMod.join(root, 'tmp'), bin = pathMod.join(root, 'bin')
+  fs.mkdirSync(pathMod.join(proj, 'node_modules', 'typescript'), { recursive: true })
+  fs.mkdirSync(tmp); fs.mkdirSync(bin)
+  fs.writeFileSync(pathMod.join(bin, 'npx'), `#!/bin/bash\n${npxBody}\n`)
+  fs.chmodSync(pathMod.join(bin, 'npx'), 0o755)
+  const key = execFileSync('bash', ['-c', `printf '%s' "${proj}" | cksum | cut -d' ' -f1`],
+    { encoding: 'utf8' }).trim()
+  const marker = pathMod.join(tmp, `fsos-claude-ts-dirty-${key}`)
+  const run = () => {
+    fs.writeFileSync(marker, 'x.ts\n')
+    const err = pathMod.join(root, 'e.txt')
+    let code = 0
+    try {
+      execFileSync('bash', ['-c',
+        `TMPDIR=${tmp} PATH=${bin}:$PATH CLAUDE_PROJECT_DIR=${proj} ` +
+        `bash ${pathMod.join(REPO, '.claude/hooks/done-gate.sh')} </dev/null >/dev/null 2>${err}`],
+        { timeout: 30000 })
+    } catch (e) { code = e.status ?? -1 }
+    return { code, err: fs.existsSync(err) ? fs.readFileSync(err, 'utf8') : '', marker, root }
+  }
+  return run
+}
+
+check('a clean typecheck allows the stop and consumes the marker', () => {
+  const fs = require$('node:fs')
+  const r = gateSandbox('exit 0')()
+  assert.equal(r.code, 0, `expected exit 0, got ${r.code}`)
+  assert.ok(!fs.existsSync(r.marker), 'marker was not consumed on a clean run')
+  fs.rmSync(r.root, { recursive: true, force: true })
+})
+
+check('a REAL type error blocks and names the error', () => {
+  const fs = require$('node:fs')
+  const r = gateSandbox('echo "src/a.ts(1,14): error TS2322: nope"; exit 2')()
+  assert.equal(r.code, 2, `gate did not block on a type error (exit ${r.code}) — it is not typechecking`)
+  assert.match(r.err, /error TS2322/, `block message did not name the error:\n${r.err}`)
+  fs.rmSync(r.root, { recursive: true, force: true })
+})
+
+check('a non-type toolchain failure blocks WITH the real output', () => {
+  const fs = require$('node:fs')
+  const r = gateSandbox('echo "npm ERR! broken install" >&2; exit 7')()
+  assert.equal(r.code, 2, `expected a block, got ${r.code}`)
+  assert.match(r.err, /toolchain failure/, 'did not explain it was a toolchain failure')
+  assert.match(r.err, /broken install/, 'did not show the real output')
+  fs.rmSync(r.root, { recursive: true, force: true })
 })
 
 assert.equal(failures, 0, `${failures} enforcement check(s) failed`)

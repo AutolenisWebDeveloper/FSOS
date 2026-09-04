@@ -43,43 +43,31 @@ fi
 # check still happens once someone installs them.
 [ -d "$proj/node_modules/typescript" ] || exit 0
 
-# ORPHAN CONTROL. The CLI cancels a hook that reaches its timeout, and a cancelled or
-# SIGKILLed shell takes no traps with it — so a naively-spawned `tsc` is reparented to init
-# and keeps burning CPU until its own timeout fires. Two defences:
-#   1. `set -m` puts the child in its own process group, and the EXIT trap kills the GROUP,
-#      which covers every signal that can actually be trapped.
-#   2. SIGKILL cannot be trapped, so each run also reaps the previous run's orphan via a
-#      pidfile. The pid is only killed if its cmdline still looks like ours — a recycled pid
-#      must never be a casualty.
-pidfile="${TMPDIR:-/tmp}/fsos-claude-ts-gate-${key}.pid"
-
-if [ -f "$pidfile" ]; then
-  stale="$(cat "$pidfile" 2>/dev/null)"
-  case "$stale" in
-    ''|*[!0-9]*) ;;
-    *)
-      if kill -0 "$stale" 2>/dev/null &&
-         tr '\0' ' ' < "/proc/$stale/cmdline" 2>/dev/null | grep -q 'tsc'; then
-        kill -TERM -"$stale" 2>/dev/null || kill -TERM "$stale" 2>/dev/null
-      fi ;;
-  esac
-  rm -f "$pidfile" 2>/dev/null
-fi
-
-# A SIGKILLed run cannot run its trap, so it also leaves its capture file behind. Sweep this
-# project's strays older than 10 minutes. A per-file loop, not `find -delete`: a bulk delete
-# is exactly what block-danger.sh forbids, and the hooks should hold to the same rule.
-for stray in "${TMPDIR:-/tmp}"/fsos-claude-ts-out-*; do
-  [ -f "$stray" ] || continue
-  [ -n "$(find "$stray" -maxdepth 0 -mmin +10 2>/dev/null)" ] && rm -f "$stray" 2>/dev/null
-done
-
-#   3. A watchdog inside the job polls whether this hook is still alive and kills the
-#      typecheck if it is not. SIGKILL leaves no trap to run, so without this the last
-#      orphan idles until its own 240s timeout; the watchdog bounds that to ~1s.
-HOOK_PID=$$
-set -m                      # each background job gets its own process group
+# RUNNING THE TYPECHECK WITHOUT ORPHANING IT.
+#
+# A Stop hook can die three ways: SIGKILL (untrappable), a trappable signal (SIGTERM/SIGHUP on
+# cancellation or teardown), or a kill of its whole process group. A naively-spawned `tsc` then
+# survives, reparented to init, burning CPU for minutes.
+#
+# ONE mechanism handles all three: a watchdog subshell that owns the typecheck for its whole
+# life and tears it down the moment it notices this hook is gone. An earlier version stacked
+# three defences instead and they broke each other — the EXIT trap's group-kill killed the
+# WATCHDOG rather than the typecheck (GNU `timeout` calls setpgid on itself, so the typecheck
+# is never in the group the trap targeted), which removed the only thing that could clean up.
+# So: nothing here kills the watchdog. `set -m` gives it its OWN process group precisely so a
+# group-kill aimed at this hook cannot take it down with us.
+#
+# The pidfile "reap the previous run's orphan" layer is gone on purpose. It recorded the
+# watchdog's pid (cmdline `bash done-gate.sh`), so its `grep tsc` identity check could never
+# match its own target — and that same substring matches `tsconfig.json` on any argv, so it
+# could SIGTERM an innocent `next dev` or `vitest --watch`. A layer that cannot do its job but
+# can kill your dev server is worse than no layer.
 tmpout="${TMPDIR:-/tmp}/fsos-claude-ts-out-$$"
+[ -L "$tmpout" ] && rm -f "$tmpout" 2>/dev/null
+: > "$tmpout" 2>/dev/null || exit 0        # cannot capture output -> never block blindly
+
+HOOK_PID=$$
+set -m                                     # watchdog gets its own process group
 (
   if command -v timeout >/dev/null 2>&1; then
     timeout 240 npx --no-install tsc --noEmit > "$tmpout" 2>&1 &
@@ -87,35 +75,87 @@ tmpout="${TMPDIR:-/tmp}/fsos-claude-ts-out-$$"
     npx --no-install tsc --noEmit > "$tmpout" 2>&1 &
   fi
   inner=$!
+  # Signal BY PID, never by process group. Measured: `kill -TERM -$inner` delivers the signal
+  # to this watchdog as well — it is in that group — so the watchdog killed itself partway
+  # through the teardown and left the typecheck orphaned, the exact failure it exists to
+  # prevent. `kill $inner` reaches `timeout`, which forwards to the command it manages;
+  # `pkill -P` mops up the direct child for the no-`timeout` fallback branch, which also has
+  # no cap of its own — hence the tick budget below (960 * 0.25s = 240s).
+  # Liveness of the hook is decided by OUR OWN PARENT PID, not by `kill -0 $HOOK_PID`.
+  # A terminated-but-unreaped parent is a ZOMBIE, and a zombie still answers `kill -0` — so
+  # the old check stayed "alive" for as long as whoever spawned the hook took to reap it, and
+  # the typecheck ran on unsupervised. Whether that window exists depends on whether the
+  # launcher forked, which made the failure look intermittent. A dead parent, zombie or not,
+  # reparents its children immediately, so PPID flips the instant the hook exits.
+  # NOTE: capture BASHPID here, NOT inside the command substitutions below. Inside `$( )`
+  # BASHPID is the substitution subshell's own pid, so reading /proc/$BASHPID/stat there
+  # returns THAT process's ppid — i.e. the watchdog — which never equals HOOK_PID. The check
+  # then fires on the first tick, the typecheck is killed immediately, and the gate silently
+  # stops typechecking anything while every orphan test still passes.
+  WD_PID=$BASHPID
+  parent_gone() {
+    local pp=""
+    if [ -r "/proc/$WD_PID/stat" ]; then
+      # Skip past "comm", which may itself contain spaces or parens; then field 2 is ppid.
+      pp=$(sed 's/.*) //' "/proc/$WD_PID/stat" 2>/dev/null | cut -d' ' -f2)
+    else
+      pp=$(ps -o ppid= -p "$WD_PID" 2>/dev/null | tr -d ' ')
+    fi
+    [ -n "$pp" ] && [ "$pp" != "$HOOK_PID" ] && return 0
+    kill -0 "$HOOK_PID" 2>/dev/null || return 0
+    return 1
+  }
+
+  ticks=0
   while kill -0 "$inner" 2>/dev/null; do
-    if ! kill -0 "$HOOK_PID" 2>/dev/null; then
+    if parent_gone || [ "$ticks" -ge 960 ]; then
       kill -TERM "$inner" 2>/dev/null
+      pkill -TERM -P "$inner" 2>/dev/null
       sleep 1
       kill -KILL "$inner" 2>/dev/null
+      pkill -KILL -P "$inner" 2>/dev/null
       exit 143
     fi
-    sleep 1
+    sleep 0.25
+    ticks=$((ticks + 1))
   done
   wait "$inner" 2>/dev/null
   exit $?
 ) &
 child=$!
-printf '%s\n' "$child" > "$pidfile" 2>/dev/null
-trap 'kill -TERM -"$child" 2>/dev/null; rm -f "$pidfile" "$tmpout" 2>/dev/null' EXIT INT TERM HUP
-wait "$child" 2>/dev/null; status=$?
-set +m
-out="$(cat "$tmpout" 2>/dev/null)"
-rm -f "$tmpout" "$pidfile" 2>/dev/null
 
-# 124 = our own timeout fired. Leave the marker so the next Stop retries; do not block on it.
-if [ $status -eq 124 ]; then
-  echo "done-gate: typecheck exceeded 240s and was stopped; not blocking. Run 'npm run type-check' yourself." >&2
+# Leave without touching the watchdog, and WITHOUT falling through to the block logic below.
+# The earlier version's handler had no `exit`, so after a trapped signal the script resumed,
+# read status 143 as a typecheck result, deleted the marker and emitted a fabricated
+# "TYPECHECK FAILED" — it disarmed itself and lied about why.
+trap 'exec 2>/dev/null; rm -f "$tmpout" 2>/dev/null; exit 0' INT TERM HUP
+
+wait "$child" 2>/dev/null; status=$?
+out="$(cat "$tmpout" 2>/dev/null)"
+rm -f "$tmpout" 2>/dev/null
+
+# Sweep this project's strays from a previous SIGKILLed run (a per-file loop, not
+# `find -delete`: a bulk delete is what block-danger.sh forbids and the hooks hold to it too).
+for stray in "${TMPDIR:-/tmp}"/fsos-claude-ts-out-*; do
+  [ -f "$stray" ] || continue
+  [ -n "$(find "$stray" -maxdepth 0 -mmin +10 2>/dev/null)" ] && rm -f "$stray" 2>/dev/null
+done
+
+# 124 = the typecheck hit its own cap. >=128 = it was signalled, i.e. this run was cancelled.
+# Neither is a type error: do not block, and LEAVE the marker so the next Stop re-checks.
+if [ "$status" -eq 124 ] || [ "$status" -ge 128 ]; then
+  echo "done-gate: typecheck did not finish (status $status); not blocking, will re-check on the next Stop." >&2
   exit 0
 fi
 
-# Decision made — consume the marker now. From here a repeat block is impossible without a
-# fresh edit, which is the loop guard.
+# Consume the marker — this, and only this, is the loop guard. If it cannot be removed, do NOT
+# block: an unremovable marker would make EVERY future Stop block forever with no way out,
+# which is far worse than one missed typecheck.
 rm -f "$marker" 2>/dev/null
+if [ -e "$marker" ]; then
+  echo "done-gate: could not clear $marker, so a block could not be cleared either; allowing the stop." >&2
+  exit 0
+fi
 
 [ $status -eq 0 ] && exit 0
 

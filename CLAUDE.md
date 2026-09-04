@@ -3,7 +3,8 @@
 <!-- Durable facts and binding rules only. Procedures live in docs/ and .claude/skills/.
      The hard rules here are ENFORCED by .claude/settings.json, .claude/hooks/, and CI —
      not by this file. Keep it under ~200 lines: adherence drops as it grows.
-     NOTE: ~68 source files cite section NUMBERS from an older revision ("CLAUDE.md §6",
+     NOTE: 68 source files (and ~151 repo-wide, incl. docs/) cite section NUMBERS from an
+     older revision ("CLAUDE.md §6",
      "§4.3", ...). Those numbers no longer resolve. Headings here are named, not numbered:
      read the cited comment for intent, and this file for the current rule. -->
 
@@ -52,10 +53,11 @@ Three ways a green run can be lying to you:
 
 ## Architecture invariants (do not violate)
 
-- Mutating routes parse the body with `readJson()` (`src/lib/http.ts`) and feed the result to
-  a Zod schema. The schema import is indirect, so do NOT measure validation coverage by
-  grepping for `from 'zod'` — look for `.safeParse()`/`.parse()` on the `readJson` result.
-  `req.formData()` uploads are outside this path by design.
+- Mutating routes parse the body with `readJson()` (`src/lib/http.ts`) — which size-caps and
+  JSON-parses but does NOT itself validate — then feed the result to a Zod schema. Some routes
+  import `zod` directly and many pull a shared schema instead, so do NOT measure validation
+  coverage by grepping for `from 'zod'`: look for `.safeParse()`/`.parse()` on the `readJson`
+  result. `req.formData()` uploads are outside this path by design.
 - All model calls go through `runGateway()` (`src/lib/ai/gateway.ts:275`) — kill switch,
   provider fallback, cost telemetry. Importing `getAnthropic` outside `gateway.ts` and
   `src/lib/anthropic.ts` is a bypass; `tests/ai-gateway-seam.test.mjs` fails CI on it.
@@ -69,12 +71,17 @@ Three ways a green run can be lying to you:
 - **RLS is still the boundary** for `getBrowserDb()` (anon key) and for anything reaching
   Postgres directly, and it is the last line of defence behind every route. Keep policies
   correct; never weaken one to make a query work.
-- Domain and workflow logic lives in `src/lib/services/*`. Routes stay thin:
-  parse → authenticate/authorize → validate → call service → typed response.
-- All outbound messaging goes through the dispatcher (`src/lib/comms/dispatcher.ts:98`) and
-  the ordered compliance gate `evaluateGate()` (`src/lib/comms/gate.ts:252`), whose ~20
-  enumerated steps are the consent/quiet-hours/DNC/suppression/red-line checks. Never add a
-  second send path and never bypass a gate step.
+- Domain and workflow logic lives in the per-domain modules under `src/lib/<domain>/`
+  (`comms`, `compliance`, `ai`, `booking`, `fna`, `workshops`, ...), NOT in components or
+  route handlers. (`src/lib/services/` is a small deletion/reconcile-specific directory —
+  10 of 373 files — not the general home for domain logic.) Routes stay thin:
+  parse → authenticate/authorize → validate → call the domain module → typed response.
+- The single send chokepoint is `sendSms()`/`sendEmail()` in `src/lib/messaging.ts` — the
+  only code in FSOS that can actually put a message on the wire. `comms/dispatcher.ts:98` is
+  a thin forwarder onto it (see that file's own header). Compliance is the ordered
+  `evaluateGate()` (`src/lib/comms/gate.ts:252`), whose ~20 enumerated steps are the
+  consent / quiet-hours / DNC / suppression / red-line checks. Never add a second send path
+  and never bypass a gate step.
 - New comms work targets the `comm_campaigns` / `comm_sequences` engine, not the legacy drip
   system.
 
@@ -119,7 +126,9 @@ exists — stage, referring agency, commission fields, a non-substantive referen
 FFS-supervised system. FSOS is **not** the system of record: never store securities account
 numbers, order/transaction details, or suitability determinations
 (`src/lib/compliance/firewall.ts:71`). `is_security` applies to that opportunity, case, or
-communication — **not** automatically to every interaction with the contact (`:77`). Automated
+communication — **not** automatically to every interaction with the contact. `isSecurity()`
+(`:77`) only reads the flag off whatever entity you hand it, so passing the contact instead of
+the opportunity is how that rule gets broken. Automated
 securities messages are withheld from the campaign engine and routed to the licensed FSA. This
 boundary must never block unrelated CRM activity, appointment, administrative, or service
 messages.
@@ -128,7 +137,7 @@ messages.
 remind, follow up, support consented campaigns, summarize, and draft internal material. AI must
 **never** independently make an individualized product, policy, investment, replacement, or
 allocation recommendation, or a suitability or best-interest determination
-(`src/lib/compliance/guardrail.ts:108`; `GREEN_ZONE_ACTIONS`/`RED_LINE_ACTIONS` at `:14`) —
+(`src/lib/compliance/guardrail.ts:108`; `GREEN_ZONE_ACTIONS`/`RED_LINE_ACTIONS` at `:14-15`) —
 those escalate to the licensed FSA. AI client-facing messages must pass the existing validation
 and dispatch path; the validator judges that message in context, and must not broadly disable
 unrelated communications for the whole contact.
@@ -157,7 +166,9 @@ into restrictions elsewhere.
   **recipient-local via a resolved IANA timezone** (caller-supplied, else NPA/ZIP) — they are
   NOT state-aware; do not describe them as such. A timezone that cannot be resolved is itself
   a hard block (`timezone_unresolved`, `src/lib/comms/gate.ts:290`). The 9:00 a.m.–8:00 p.m.
-  window is FSOS's operating floor for SMS marketing, not a universal legal rule.
+  window is a **hard-coded conservative floor** (`src/lib/compliance/guardrail.ts:65`), not a
+  per-campaign setting and not a quotation of statute; an operator window may narrow it,
+  never widen it.
 - **Fail closed** when consent, sender configuration, approved template, or message content
   cannot be resolved: log the block, send nothing partial or blank, never silently switch
   channel.
@@ -169,8 +180,10 @@ into restrictions elsewhere.
 
 ## Protected paths & forbidden actions
 
-Also enforced by `.claude/settings.json` and `.claude/hooks/block-danger.sh`, which deny these
-regardless of what this file says.
+The first four are enforced by `.claude/settings.json` and `.claude/hooks/block-danger.sh`,
+which deny them regardless of what this file says. **The last line is not enforceable** — no
+hook can tell a production connection string from a local one, or authorize a push. It holds
+because you honour it.
 
 - **Never edit an existing file in `supabase/migrations/`** — it may already be applied. Add a
   NEW migration. (Creating a new one is expected; the hook blocks only edits to files that

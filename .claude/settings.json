@@ -44,7 +44,23 @@
       "Read(./.env.production.local)",
       "Edit(./.env)",
       "Edit(./.env.local)",
-      "Edit(./package-lock.json)"
+      "Edit(./package-lock.json)",
+      "Bash(rm -R*)",
+      "Bash(rm --recursive*)",
+      "Bash(rm -fR*)",
+      "Bash(rm -rF*)",
+      "Bash(git stash clear*)",
+      "Bash(git branch -D*)",
+      "Bash(find . -delete*)",
+      "Read(./.env.production)",
+      "Read(./.env.development)",
+      "Read(./.env.test)",
+      "Edit(./.env.production)",
+      "Edit(./.env.development)",
+      "Edit(./.env.test)",
+      "Edit(./.env.development.local)",
+      "Edit(./.env.test.local)",
+      "Edit(./.env.production.local)"
     ]
   },
   "hooks": {

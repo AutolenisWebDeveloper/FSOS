@@ -114,6 +114,26 @@ if [ "$tool" = "Bash" ] || { [ -z "$tool" ] && [ -n "$cmd" ]; }; then
         return 0 ;;
       xargs) analyze "$args"; return 0 ;;
 
+      # Package runners. `supabase` is not on PATH and is not a project dependency, so
+      # `npx supabase db push` is the ONLY realistic way to invoke it — without this arm the
+      # supabase rule below never fires and the protection is dead in practice.
+      npx|bunx|pnpx)
+        while [ $# -gt 0 ]; do
+          case "$1" in
+            -p|--package|--call|--node-options) shift 2 ;;
+            -*) shift ;;
+            *) break ;;
+          esac
+        done
+        [ $# -gt 0 ] && analyze "$*"
+        return 0 ;;
+      pnpm|yarn|bun)
+        # Only the "run an arbitrary package" subcommands; `pnpm install` is not a runner.
+        case "${1:-}" in
+          dlx|exec|x) shift; [ $# -gt 0 ] && analyze "$*" ;;
+        esac
+        return 0 ;;
+
       rm)
         for a in "$@"; do
           case "$a" in

@@ -116,6 +116,11 @@ const mustBlock = [
   ['drop database',                 bash('psql -c "drop database fsos"')],
   ['truncate table',                bash('psql -c "truncate table contacts"')],
   ['supabase db push',              bash('supabase db push')],
+  // `supabase` is not on PATH and is not a project dependency, so npx IS the real invocation.
+  // Without a package-runner arm the rule above never fires in practice.
+  ['npx supabase db push',          bash('npx supabase db push')],
+  ['npx -y supabase link',          bash('npx -y supabase link --project-ref abc')],
+  ['pnpm dlx supabase db reset',    bash('pnpm dlx supabase db reset')],
   ['reading a .env secret',         bash('cat .env.local')],
   ['reading .env by full path',     bash('cat /home/user/FSOS/.env')],
   ['writing a .env secret',         write('.env.local')],
@@ -145,6 +150,9 @@ const mustAllow = [
   ['git clean --dry-run',           bash('git clean --dry-run')],
   ['removing a single file',        bash('rm /tmp/scratch.txt')],
   ['git diff',                      bash('git diff --stat')],
+  ['npx tsc',                       bash('npx tsc --noEmit')],
+  ['npx tsx (how .mts run)',        bash('npx tsx tests/foo.test.mts')],
+  ['pnpm install',                  bash('pnpm install')],
   ['chained add + commit',          bash('git add -A && git commit -m wip')],
   // Commands that merely NAME a forbidden command are data, not an execution of it. A
   // substring scan blocks all of these, and a guard that blocks real work gets switched off.

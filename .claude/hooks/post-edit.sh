@@ -29,5 +29,16 @@ proj="${CLAUDE_PROJECT_DIR:-$PWD}"
 key="$(printf '%s' "$proj" | cksum | cut -d' ' -f1)"
 marker="${TMPDIR:-/tmp}/fsos-claude-ts-dirty-${key}"
 
+# The marker path is derivable (a cksum of the project dir) and, with TMPDIR unset, lands in
+# world-writable /tmp. `>>` follows symlinks, so anyone able to pre-create that name as a
+# symlink could have this hook append to a file of their choosing. Refuse to follow one, and
+# keep the marker private to its owner.
+if [ -L "$marker" ]; then
+  rm -f "$marker" 2>/dev/null || exit 0
+fi
+if [ ! -e "$marker" ]; then
+  (umask 077; : > "$marker") 2>/dev/null || exit 0
+fi
+[ -f "$marker" ] && [ ! -L "$marker" ] || exit 0
 printf '%s\n' "$path" >> "$marker" 2>/dev/null || true
 exit 0

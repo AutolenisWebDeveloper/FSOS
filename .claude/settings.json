@@ -22,7 +22,45 @@
       "mcp__Supabase__create_project",
       "mcp__Supabase__pause_project",
       "mcp__Supabase__restore_project",
-      "mcp__Supabase__confirm_cost"
+      "mcp__Supabase__confirm_cost",
+      "Bash(rm -rf *)",
+      "Bash(rm -fr *)",
+      "Bash(git reset --hard *)",
+      "Bash(git push --force *)",
+      "Bash(git push --force-with-lease *)",
+      "Bash(git push -f *)",
+      "Bash(git clean -f*)",
+      "Bash(git clean -d*)",
+      "Bash(git clean -x*)",
+      "Bash(git filter-branch *)",
+      "Bash(supabase db push *)",
+      "Bash(supabase db reset *)",
+      "Bash(supabase link *)",
+      "Bash(dropdb *)",
+      "Read(./.env)",
+      "Read(./.env.local)",
+      "Read(./.env.development.local)",
+      "Read(./.env.test.local)",
+      "Read(./.env.production.local)",
+      "Edit(./.env)",
+      "Edit(./.env.local)",
+      "Edit(./package-lock.json)",
+      "Bash(rm -R*)",
+      "Bash(rm --recursive*)",
+      "Bash(rm -fR*)",
+      "Bash(rm -rF*)",
+      "Bash(git stash clear*)",
+      "Bash(git branch -D*)",
+      "Bash(find . -delete*)",
+      "Read(./.env.production)",
+      "Read(./.env.development)",
+      "Read(./.env.test)",
+      "Edit(./.env.production)",
+      "Edit(./.env.development)",
+      "Edit(./.env.test)",
+      "Edit(./.env.development.local)",
+      "Edit(./.env.test.local)",
+      "Edit(./.env.production.local)"
     ]
   },
   "hooks": {
@@ -32,6 +70,41 @@
           {
             "type": "command",
             "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/block-danger.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/post-edit.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/done-gate.sh",
+            "timeout": 300
           }
         ]
       }

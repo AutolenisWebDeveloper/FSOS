@@ -1,398 +1,258 @@
-# CLAUDE.md — FSOS Engineering Guide
+# CLAUDE.md — FSOS Engineering Contract
 
-Read this file at the start of each Claude Code session.
+<!-- Durable facts and binding rules only. Procedures live in docs/ and .claude/skills/.
+     The hard rules here are ENFORCED by .claude/settings.json, .claude/hooks/, and CI —
+     not by this file. Keep it under ~200 lines: adherence drops as it grows.
+     NOTE: 68 source files (and ~151 repo-wide, incl. docs/) cite section NUMBERS from an
+     older revision ("CLAUDE.md §6",
+     "§4.3", ...). Those numbers no longer resolve. Headings here are named, not numbered:
+     read the cited comment for intent, and this file for the current rule. -->
 
-This guide exists to help Claude Code improve FSOS quickly, intelligently, and completely. It is
-not a regulatory manual, a frozen contract, a backlog, or a reason to block authorized work. The
-current request defines the scope. The repository provides the implementation truth. Relevant
-documentation and ADRs provide context when the task touches them.
+## What this repo is
 
----
-
-## 1. Product objective
-
-Build and continuously elevate FSOS into a premium, enterprise-grade Financial Services Operating
-System for a Farmers Financial Services Agent in McKinney, Texas, who partners with Farmers agency
-owners in a B2B2C operating model supporting life insurance and financial-services opportunities.
-
-FSOS supports the operating relationship:
+Next.js 15 (App Router) + TypeScript (strict) + Supabase (Postgres, RLS) + Vercel.
+FSOS is the operating system for a Farmers Financial Services Agent in McKinney, TX who
+partners with Farmers agency owners in a B2B2C model. The spine is:
 
 `Agency Partnership → Referral → Household → Review → Opportunity → Case → Commission`
 
-The Agency Partnership is the primary organizing context. FSOS includes CRM, communications,
-campaigns, appointments, referrals, opportunities, cases, documents, reporting, automation, AI,
-and related operating capabilities. Improve the existing product instead of turning it into a
-generic CRM or creating separate systems for functions FSOS already owns.
+Product identity: `PRODUCT.md`. Design system: `DESIGN.md`. Rationale: `docs/adr/`.
 
-The product standard is a modern Fortune 500 fintech experience: credible, polished, fast,
-reliable, secure, accessible, scalable, maintainable, and operationally clear across the frontend,
-backend, database, integrations, automations, and user experience.
+Improve the existing product. Do not turn it into a generic CRM, and do not build a second
+system for something FSOS already owns.
 
----
+## Commands (use these exactly; do not guess)
 
-## 2. Technology stack
-
-Confirm exact versions and scripts from `package.json` and the lockfile. Do not hard-code dependency
-versions in this guide.
-
-- **Next.js** App Router with strict **TypeScript**
-- **Supabase** for Postgres, Auth, Row-Level Security, Storage, and applicable platform services
-- **Vercel** for hosting and scheduled jobs
-- **Tailwind CSS** and **shadcn/ui**, with visuals resolved through the existing design tokens
-- **Twilio** for SMS and **Resend** for email
-- A **model-agnostic AI gateway** for model access; product features use the gateway rather than
-  calling model-provider SDKs directly from routes or components
-
-Extend the stack already implemented in the repository. Introduce a new dependency or provider only
-when the requested outcome requires it and the existing architecture does not already solve the
-problem cleanly.
-
----
-
-## 3. How Claude Code should operate
-
-Use the highest available reasoning level and the strongest relevant engineering, planning,
-frontend, debugging, testing, review, and verification capabilities.
-
-For non-trivial work:
-
-1. Understand the requested business outcome.
-2. Inspect the actual repository before deciding what must change.
-3. Trace the affected user journey, data flow, services, integrations, and dependencies.
-4. Create a concise implementation plan when the work has multiple steps.
-5. Implement the complete requested outcome at the correct architectural layers.
-6. Review the work critically for defects, duplication, security issues, usability gaps, and
-   unfinished behavior.
-7. Test, debug, and verify the result before reporting completion.
-
-Discover installed skills dynamically and use the relevant ones. Do not hard-code a skill count.
-Skills improve execution but do not replace repository inspection, principal-level judgment,
-working code, tests, or direct verification.
-
-Do not manufacture approval gates, restrictions, or blockers from vague or stale prose. When
-documentation conflicts with current code or the user’s authorized objective, investigate the
-conflict and use the narrowest sound resolution that delivers the requested result without damaging
-the existing system.
-
-Complete implementation requests with working functionality. Do not substitute a plan, mockup,
-placeholder, partial scaffold, or general advice unless that is what the user requested.
-
----
-
-## 4. Skill orchestration
-
-Skills are execution capabilities. Use them to improve analysis, planning, implementation, review,
-testing, and design—not to invent restrictions or avoid authorized work.
-
-At the start of a task, inspect `.claude/skills/` and discover the skills currently installed. Do
-not rely on a hard-coded total. Load the smallest complete set needed for the task, and combine
-skills when the work spans multiple domains.
-
-### Default workflow for non-trivial work
-
-1. **Understand:** `using-superpowers` plus the relevant FSOS, database, or integration skill.
-2. **Plan:** `brainstorming` when real design exploration is needed, then `writing-plans`.
-3. **Implement:** `executing-plans`, `test-driven-development`, `fsos-testing`, and the relevant
-   engineering or domain skills.
-4. **Debug:** `systematic-debugging` for defects, failed tests, or unexpected behavior.
-5. **Design and polish:** `frontend-design` for user-facing work, followed by `impeccable`.
-6. **Review and verify:** `requesting-code-review`, `receiving-code-review`, and
-   `verification-before-completion`.
-7. **Finish:** `finishing-a-development-branch` when branch, PR, or cleanup work is requested.
-
-### Engineering workflow skills
-
-| Skill | Use |
+| Purpose | Command |
 |---|---|
-| `using-superpowers` | Discover and sequence the best available workflow for the task. |
-| `brainstorming` | Explore requirements, product behavior, or architecture when the correct design is not yet clear. |
-| `writing-plans` | Produce an executable, phased plan for multi-step changes. |
-| `executing-plans` | Implement an approved plan with checkpoints and verification. |
-| `subagent-driven-development` | Coordinate delegated implementation when the environment and task support it. |
-| `dispatching-parallel-agents` | Run genuinely independent workstreams in parallel when authorized and available. |
-| `test-driven-development` | Define expected behavior with a failing test before implementing logic. |
-| `fsos-testing` | Apply FSOS test conventions: bare scripts under `tests/`, discovery through `scripts/run-tests.mjs`, `node:assert/strict`, runtime TypeScript compilation where used, and the unit/RLS split. Pair with `test-driven-development`. |
-| `systematic-debugging` | Reproduce, isolate, prove, and fix the root cause of failures. |
-| `verification-before-completion` | Verify the real result before claiming completion. |
-| `requesting-code-review` | Perform or request a structured review of material changes. |
-| `receiving-code-review` | Evaluate review feedback and apply justified corrections. |
-| `finishing-a-development-branch` | Complete requested branch, commit, PR, or cleanup work after verification. |
-| `using-git-worktrees` | Isolate parallel or high-risk implementation work when appropriate. |
-
-### Database and backend skills
-
-| Skill | Use |
-|---|---|
-| `supabase` | Supabase database, authentication, storage, realtime, and Edge Function work. |
-| `supabase-postgres-best-practices` | Schema design, SQL, indexes, query performance, migrations, and RLS. |
-| `fsos-security-audit` | Security review for authentication, authorization, data access, PII, RLS, APIs, and integrations. |
-
-### Frontend and design skills
-
-| Skill | Use |
-|---|---|
-| `frontend-design` | Information architecture, workflows, responsive UI, accessibility, hierarchy, and component design. |
-| `impeccable` | Final visual, interaction, accessibility, microcopy, and product-quality refinement. |
-| `farmers-brand-website` | Farmers-aligned public-site branding and presentation using approved project assets. |
-
-### FSOS product and domain skills
-
-| Skill | Use |
-|---|---|
-| `fsos-crm-workflows` | Agency partnerships, contacts, referrals, pipelines, workflows, and CRM operations. |
-| `fsos-financial-planning` | FNA calculations, models, assumptions, plans, scenarios, goals, and financial-planning workflows. |
-| `marketing-plan` | Campaign strategy, segmentation, cadence, channel planning, content themes, and measurement. |
-
-### Communications and deliverability skills
-
-| Skill | Use |
-|---|---|
-| `twilio-a2p-compliance` | A2P SMS configuration, consent, opt-out handling, quiet hours, sending behavior, and verification. |
-| `fsos-deliverability` | Email and SMS deliverability, sending streams, reputation, suppression, and routing. |
-| `fsos-dns-auth` | SPF, DKIM, DMARC, BIMI, MX, selectors, alignment, and sending-domain validation. |
-| `fsos-email-template-qa` | Responsive email HTML, plaintext parts, dark mode, accessibility, client rendering, and content QA. |
-
-### Skill development
-
-| Skill | Use |
-|---|---|
-| `skill-creator` | Create, update, optimize, validate, install, or remove a project skill. |
-| `writing-skills` | Author and refine skill instructions and supporting resources. |
-
-If a listed skill is not installed, continue with the strongest available equivalent. If the
-repository contains additional relevant skills, use them. Skill instructions guide execution; the
-current request defines the authorized outcome.
-
----
-
-## 5. Repository-first execution
-
-Before editing:
-
-- Read the files being changed and the code that calls them.
-- Inspect `package.json` and the lockfile for the actual stack and dependency versions.
-- Search for existing components, services, schemas, hooks, tables, routes, jobs, and utilities.
-- Read only the documentation, ADRs, and skills relevant to the task.
-- Check existing tests and establish the current behavior where practical.
-- Review the working tree and preserve unrelated user-owned changes.
-
-Prefer extending a working subsystem over creating a parallel one. FSOS should have one coherent
-design system, authentication model, data-access approach, communications path, campaign engine,
-AI gateway, appointment system, audit trail, and integration layer.
-
-Keep responsibilities clear:
-
-`UI → route or action → domain service → database or integration adapter`
-
-- The UI presents information, state, and actions.
-- Routes and actions authenticate, authorize, validate, call services, and shape responses.
-- Services own business rules, workflows, state transitions, and transactions.
-- Data and integration adapters own persistence and provider-specific behavior.
-
-Use established repository conventions such as the existing Supabase access helpers, validation
-schemas, shared components, design tokens, communication services, and AI gateway. Create a new
-primitive only when the existing architecture does not provide a clean responsibility for it.
-
-Apply these FSOS conventions where the current repository still establishes them:
-
-- Put domain and workflow logic in `src/lib/services/*`, not in React components or route handlers.
-- Keep routes focused on parse → authenticate/authorize → validate → call service → typed response.
-- Access Supabase through `getDb()` from `@/lib/supabase/client`; do not create a module-level client.
-- Parse JSON request bodies with `readJson(req)` from `@/lib/http`, then validate the result with the
-  established Zod schema. Validation may occur without importing `zod` directly in the route.
-- Use the existing communications dispatcher and sending services instead of creating a parallel
-  messaging path.
-- Before completion, run the repository-defined build, type-check, lint, and applicable test
-  commands. Use the actual script names from `package.json`.
-
----
-
-## 6. Principal-level engineering quality
-
-Produce secure, maintainable, production-grade code.
-
-- Preserve strict TypeScript and shared domain types.
-- Validate untrusted input at application boundaries.
-- Enforce authentication, authorization, ownership, and tenant scope on the server.
-- Keep business logic out of React components and thin route handlers.
-- Design database changes for existing data, deployment order, indexes, ownership, and RLS.
-- Prevent duplicate execution with transactions, constraints, idempotency, or state checks where
-  appropriate.
-- Treat background work as durable and observable; production automation must not depend on an open
-  Claude session.
-- Put provider-specific code behind the existing integration services.
-- Set timeouts, handle rate limits, validate external responses, and distinguish retryable failures
-  from terminal failures.
-- Handle partial failure without corrupting state or silently losing work.
-- Keep secrets and sensitive data out of client code, logs, fixtures, and documentation.
-- Use structured logs and existing audit mechanisms for important operations.
-- Avoid unbounded queries, N+1 access, unnecessary client JavaScript, duplicate fetching, and
-  uncontrolled retries or fan-out.
-
-Improve nearby code when required to complete the task cleanly, but avoid unrelated rewrites.
-
----
-
-## 7. Frontend and product experience
-
-Every user-facing surface should look and behave like one premium financial-services platform.
-Use `DESIGN.md`, the established design tokens, shared components, archetype layouts, Tailwind, and
-shadcn/ui patterns already present in the repository.
-
-Use the strongest available frontend-design and product-design skills to deliver:
-
-- Clear information architecture and navigation
-- Strong hierarchy, readable density, and useful decision support
-- Consistent layouts, controls, tables, forms, status patterns, and terminology
-- Responsive desktop, tablet, and mobile behavior
-- Accessible semantics, labels, keyboard operation, focus treatment, and contrast
-- Complete loading, empty, error, success, pending, disabled, and validation states
-- Clear primary actions, confirmation for destructive actions, and practical recovery paths
-- Server-first rendering with narrow client boundaries
-- Deliberate motion, microcopy, spacing, and visual refinement
-
-Do not leave fake controls, dead-end pages, decorative metrics, production placeholders, broken
-responsive layouts, or incomplete workflow states in the requested scope.
-
-Review the rendered interface after implementation. Inspect real pages for alignment, overflow,
-responsiveness, accessibility, interaction, content quality, and consistency—not only source code.
-
----
-
-## 8. A2P SMS campaign requirements
-
-This is the only campaign-specific compliance section in this file. It applies only to automated or
-bulk SMS campaigns. It does not govern email, CRM, frontend development, reporting, case management,
-documents, analytics, AI features, or unrelated FSOS work.
-
-For automated or bulk SMS campaigns:
-
-- Use the existing FSOS/Twilio sending path.
-- Send through the A2P brand, campaign, and sending number configured for FSOS.
-- Verify that the recipient has the recorded SMS consent required for that campaign before sending;
-  absence of an opt-out is not evidence of consent.
-- Clearly identify the sender or business in the initial campaign message.
-- Include the opt-out language required by the registered A2P campaign and approved template without
-  duplicating it when it is already present.
-- Support `STOP` and `HELP` processing and immediately suppress additional campaign SMS after an
-  opt-out.
-- Apply applicable DNC suppression, campaign frequency limits, and the configured recipient-local,
-  state-aware quiet-hours window. FSOS may use a conservative 9:00 a.m.–8:00 p.m. marketing window
-  as an internal operating setting; do not describe it as a universal legal rule.
-- Fail closed when consent, sender configuration, approved template, or message content cannot be
-  resolved. Log the block; do not send a blank or partial message and do not silently switch
-  channels.
-- Audit every campaign-SMS attempt—blocked or sent—with the actor, recipient, campaign/message,
-  timestamp, consent basis, and outcome.
-- Record send, delivery, failure, reply, and opt-out events in the existing communications history.
-- Keep A2P configuration, consent evidence, suppression, and delivery behavior testable and
-  auditable.
-- Verify `STOP`, `HELP`, suppression, status callbacks, and an end-to-end test send before activating
-  production campaign traffic.
-
-These controls exist to make A2P SMS dependable. Do not generalize them into restrictions on other
-FSOS features or channels.
-
----
-
-## 9. Securities and AI operating boundaries
-
-FSOS may track operational metadata showing that a securities opportunity or case exists, including
-its stage, referring agency, commission-tracking fields, and a non-substantive reference to the
-FFS-supervised system. FSOS is not the system of record for securities transactions and should not
-store securities account numbers, order or transaction details, or suitability determinations.
-
-The `is_security` flag applies to the securities opportunity, case, or communication—not
-automatically to every interaction with that contact. Automated messages concerning securities
-activity must be withheld from the general campaign engine and routed to the licensed FSA or the
-appropriate FFS-supervised workflow. This boundary must not block unrelated CRM activity,
-appointment communications, administrative follow-up, or non-securities service messages.
-
-AI may identify opportunities, provide general education, invite, schedule, remind, follow up,
-support consented campaigns, summarize information, and draft internal material. AI must not
-independently make an individualized product, policy, investment, replacement, or allocation
-recommendation or a suitability or best-interest determination. Requests requiring those judgments
-must be escalated to the licensed FSA.
-
-AI-generated client-facing communications must pass the existing validation and dispatch path before
-sending. The validator should evaluate the proposed message and its context rather than broadly
-disabling unrelated communications for the entire contact.
-
----
-
-## 10. Testing and debugging
-
-Use the repository’s actual test architecture. Confirm how tests are discovered before relying on a
-green result. If FSOS still uses `scripts/run-tests.mjs`, list the discovered tests and verify that
-new or renamed test files appear in the appropriate suite.
-
-Test the behavior changed by the task, including applicable validation, authorization, data access,
-state transitions, background jobs, integrations, retries, idempotency, failure recovery,
-accessibility, responsiveness, and user journeys.
-
-When fixing a defect:
-
-1. Reproduce it.
-2. Establish the expected behavior.
-3. Trace the earliest point where actual behavior diverges.
-4. Prove the root cause.
-5. Add a regression test when practical.
-6. Fix the correct layer.
-7. Re-run the original scenario and adjacent behavior.
-
-Do not conceal a defect with arbitrary delays, retries, casts, broad exception handling, or by
-weakening a legitimate test.
-
----
-
-## 11. Verification before completion
-
-Run the checks applicable to the change. Use scripts exactly as defined by the current repository,
-including targeted tests, relevant suites, type checking, linting, builds, migration validation,
-and manual end-to-end review.
-
-Before reporting completion, confirm that:
-
-- The requested outcome works end to end.
-- Existing architecture was reused where appropriate.
-- Relevant permissions, validation, failure paths, and data behavior were verified.
-- The rendered UI was reviewed when the task changed a user-facing surface.
-- No debug code, secrets, dead code, fake production data, or unfinished placeholders remain in
-  scope.
-- Unrelated files and user changes were preserved.
-- Documentation was updated only where the implemented behavior or architecture requires it.
-
-Report only checks that actually ran and their real results. If environment access prevents a
-check, identify the exact unverified item without presenting it as complete.
-
----
-
-## 12. Completion report
-
-End material tasks with a concise factual handoff:
-
-- What was implemented
-- Files changed
-- Tests and checks run, with actual results
-- Migrations, environment variables, or deployment actions required
-- Assumptions made
-- Known limitations or blocked verification
-
-Never present planned work as completed work.
-
----
-
-## 13. Relevant project references
-
-Load these only when the current task needs them:
-
-- `PRODUCT.md` — product identity and operating model
-- `DESIGN.md` — design system and interface standards
-- `docs/routes.md` and `docs/sitemap.md` — route structure
-- `docs/specs/rbac-matrix.md` — role and access context
-- `docs/adr/` — architectural rationale for affected systems
-- `.claude/skills/` — specialized execution workflows
-- `twilio-a2p-compliance` and the current SMS implementation — A2P SMS campaign work only
-
-Treat repository behavior as evidence, documentation as context, and the current authorized request
-as the outcome to deliver.
+| Unit tests (all) | `npm test` → `node scripts/run-tests.mjs unit` |
+| One test | `node tests/<name>.test.mjs` — but `.mts` needs `npx tsx tests/<name>.test.mts` |
+| List what will run | `node scripts/run-tests.mjs --list` (add `rls` for the other set) |
+| RLS tests — root Postgres; **only when asked** | `npm run test:rls` |
+| Typecheck | `npm run type-check` → `tsc --noEmit` |
+| Lint | `npm run lint` |
+| Build | `npm run build` |
+| E2E (Playwright) | `npm run test:e2e` |
+
+Tests are a **custom harness, not a framework**: bare `.mjs`/`.mts` scripts under `tests/`,
+auto-discovered by `scripts/run-tests.mjs`, asserting with `node:assert/strict`; several shell
+out to `npx tsc`. Do NOT introduce a test framework and do NOT use `describe`/`it` or
+`node:test`. The runner continues past failures so one run surfaces all of them.
+`tests/expected-failures.json` pins deliberately-red files: an unpinned failure fails the run,
+and **a pinned file that passes also fails the run** — delete its entry in the commit that
+legitimately turns it green. It is currently empty.
+
+Three ways a green run can be lying to you:
+- **Discovery is one level deep.** `readdirSync('tests')` — no recursion. A test placed in a
+  `tests/` subdirectory, or beside its source as `*.test.ts`, is never discovered and the
+  suite still reports green. Top-level `tests/*.mjs|.mts` only; confirm with `--list`.
+- **`npm test` is not everything.** It runs the `unit` set and deliberately excludes the RLS
+  set. Mode comes from the first positional arg, so `npm test -- rls` silently runs *unit*.
+- **`npm run test:rls` skips cleanly without Postgres.** Only `CI_REQUIRE_INFRA=1` (which CI
+  sets) turns a missing toolchain into a failure instead of a green no-op.
+
+## Architecture invariants (do not violate)
+
+- Mutating routes parse the body with `readJson()` (`src/lib/http.ts`) — which size-caps and
+  JSON-parses but does NOT itself validate — then feed the result to a Zod schema. Some routes
+  import `zod` directly and many pull a shared schema instead, so do NOT measure validation
+  coverage by grepping for `from 'zod'`: look for `.safeParse()`/`.parse()` on the `readJson`
+  result. `req.formData()` uploads are outside this path by design.
+- All model calls go through `runGateway()` (`src/lib/ai/gateway.ts:275`) — kill switch,
+  provider fallback, cost telemetry. Importing `getAnthropic` outside `gateway.ts` and
+  `src/lib/anthropic.ts` is a bypass; `tests/ai-gateway-seam.test.mjs` fails CI on it.
+- Reach Supabase through `getDb()` (`src/lib/supabase/client.ts:34`) or `getBrowserDb()`
+  (`:64`). Never construct a module-level client.
+- **Know which boundary protects you.** `getDb()` is the **service-role** client and
+  **bypasses RLS by design** (167 of 260 API routes use it). On a server route the boundary
+  is therefore the application layer — `requireApiRole(portal)` (`src/lib/auth/api.ts:33`,
+  used by 206 routes), which enforces session, role, and MFA/step-up. Never assume RLS is
+  protecting a route that calls `getDb()`; authorize explicitly.
+- **RLS is still the boundary** for `getBrowserDb()` (anon key) and for anything reaching
+  Postgres directly, and it is the last line of defence behind every route. Keep policies
+  correct; never weaken one to make a query work.
+- Domain and workflow logic lives in the per-domain modules under `src/lib/<domain>/`
+  (`comms`, `compliance`, `ai`, `booking`, `fna`, `workshops`, ...), NOT in components or
+  route handlers. (`src/lib/services/` is a small deletion/reconcile-specific directory —
+  10 of 373 files — not the general home for domain logic.) Routes stay thin:
+  parse → authenticate/authorize → validate → call the domain module → typed response.
+- The single send chokepoint is `sendSms()`/`sendEmail()` in `src/lib/messaging.ts` — the
+  only code in FSOS that can actually put a message on the wire. `comms/dispatcher.ts:98` is
+  a thin forwarder onto it (see that file's own header). Compliance is the ordered
+  `evaluateGate()` (`src/lib/comms/gate.ts:252`), whose ~20 enumerated steps are the
+  consent / quiet-hours / DNC / suppression / red-line checks. Never add a second send path
+  and never bypass a gate step.
+- New comms work targets the `comm_campaigns` / `comm_sequences` engine, not the legacy drip
+  system.
+
+## Investigation before implementation
+
+Before writing code:
+
+1. Restate the objective in one sentence.
+2. Trace the request end-to-end (route → `readJson` validation → handler → service → data
+   model/RLS → tests) and name the exact files and functions involved.
+3. Produce an **evidence table** for the material claims.
+4. State what you will reuse vs. create, and what must be preserved.
+
+Evidence, proportional to consequence. Cite `file:line` for architecture conclusions,
+security/authorization boundaries, database and RLS behavior, API contracts, workflow behavior,
+functionality being changed, and any assertion justifying a decision. Narration needs none.
+
+A Supabase claim sourced from a migration file is an **assumption** about the live database,
+not a verified fact, unless the live project was actually queried.
+
+The governing rule: **no material implementation decision may rest on an unverified assumption
+about this repository.** "I have not verified that" is a correct answer; guessing is not.
+
+## Resolving ambiguity (do not over-ask)
+
+Resolve low-risk ambiguity yourself from repository evidence and existing conventions — state
+the assumption and proceed. Stop and ask only when the ambiguity materially changes business
+behavior, security/compliance, data integrity, architecture, or scope, or when the action is
+irreversible.
+
+## Reuse before create
+
+**REUSE → EXTEND → CONSOLIDATE → CREATE ONLY WHAT IS MISSING.** Before adding a service,
+component, table, column, endpoint, job, or dependency, find the nearest existing example and
+match it. FSOS has one design system, auth model, data-access path, communications path,
+campaign engine, AI gateway, appointment system, and audit trail. No speculative infrastructure.
+
+## Compliance boundaries (non-negotiable)
+
+**Securities.** FSOS may track operational metadata that a securities opportunity or case
+exists — stage, referring agency, commission fields, a non-substantive reference to the
+FFS-supervised system. FSOS is **not** the system of record: never store securities account
+numbers, order/transaction details, or suitability determinations
+(`src/lib/compliance/firewall.ts:71`). `is_security` applies to that opportunity, case, or
+communication — **not** automatically to every interaction with the contact. `isSecurity()`
+(`:77`) only reads the flag off whatever entity you hand it, so passing the contact instead of
+the opportunity is how that rule gets broken. Automated
+securities messages are withheld from the campaign engine and routed to the licensed FSA. This
+boundary must never block unrelated CRM activity, appointment, administrative, or service
+messages.
+
+**The AI red line.** AI may identify opportunities, educate generally, invite, schedule,
+remind, follow up, support consented campaigns, summarize, and draft internal material. AI must
+**never** independently make an individualized product, policy, investment, replacement, or
+allocation recommendation, or a suitability or best-interest determination
+(`src/lib/compliance/guardrail.ts:108`; `GREEN_ZONE_ACTIONS`/`RED_LINE_ACTIONS` at `:14-15`) —
+those escalate to the licensed FSA. AI client-facing messages must pass the existing validation
+and dispatch path; the validator judges that message in context, and must not broadly disable
+unrelated communications for the whole contact.
+
+**Assumptions are labeled, never asserted.** Planning inputs such as term-conversion windows
+and carrier rules are config defaults carrying `is_assumption = true`, surfaced as "verify" —
+never presented as published Farmers/FFS figures.
+
+**Audit.** Important operations write through `writeAudit()` (`src/lib/audit/log.ts:75`) to the
+append-only audit log. Never suppress an audit write to make a flow succeed.
+
+## Outbound messaging and A2P SMS
+
+Applies to automated or bulk SMS campaigns. It does **not** govern email, CRM, frontend,
+reporting, case management, documents, analytics, or unrelated FSOS work — do not generalize it
+into restrictions elsewhere.
+
+- Send only through the existing FSOS/Twilio path, on the configured A2P brand, campaign, and
+  number.
+- Verify the recorded SMS consent that campaign requires. **Absence of an opt-out is not
+  consent.**
+- Identify the sender/business in the first campaign message. Include the registered campaign's
+  opt-out language, without duplicating it when already present.
+- Support `STOP` and `HELP`; suppress further campaign SMS immediately on opt-out.
+- Apply DNC suppression, frequency caps, and the quiet-hours window. Quiet hours are
+  **recipient-local via a resolved IANA timezone** (caller-supplied, else NPA/ZIP) — they are
+  NOT state-aware; do not describe them as such. A timezone that cannot be resolved is itself
+  a hard block (`timezone_unresolved`, `src/lib/comms/gate.ts:290`). The 9:00 a.m.–8:00 p.m.
+  window is a **hard-coded conservative floor** (`src/lib/compliance/guardrail.ts:65`), not a
+  per-campaign setting and not a quotation of statute; an operator window may narrow it,
+  never widen it.
+- **Fail closed** when consent, sender configuration, approved template, or message content
+  cannot be resolved: log the block, send nothing partial or blank, never silently switch
+  channel.
+- Audit every campaign-SMS attempt — blocked or sent — with actor, recipient, campaign/message,
+  timestamp, consent basis, and outcome. Record send, delivery, failure, reply, and opt-out in
+  the existing communications history.
+- Before production campaign traffic: verify `STOP`, `HELP`, suppression, status callbacks, and
+  an end-to-end test send.
+
+## Protected paths & forbidden actions
+
+The first four are enforced by `.claude/settings.json` and `.claude/hooks/block-danger.sh`,
+which deny them regardless of what this file says. **The last line is not enforceable** — no
+hook can tell a production connection string from a local one, or authorize a push. It holds
+because you honour it.
+
+- **Never edit an existing file in `supabase/migrations/`** — it may already be applied. Add a
+  NEW migration. (Creating a new one is expected; the hook blocks only edits to files that
+  already exist.)
+- Never read or write `.env*` secrets. `.env.local.example` is committed and safe to edit.
+- Never hand-edit `package-lock.json` — run the npm command that regenerates it. (Email/SMS
+  template *sources* under `src/emails/` and `src/lib/booking/sms-templates.ts` ARE
+  hand-edited; their build output is approved database rows, not checked-in files.)
+- Never run recursive force deletes, `git reset --hard`, force pushes, `git clean -fd`,
+  `drop database`, `truncate table`, or `supabase db push|reset|link`.
+- **Never run a migration against production. Never commit or push without approval.**
+
+## Verification cadence (do not pay full cost on every edit)
+
+- **During implementation:** edit freely. A `PostToolUse` hook only records that TypeScript
+  changed.
+- **At a checkpoint:** targeted tests for what you changed, then typecheck — `/verify`.
+- **At the end:** the relevant suite, lint, build, browser verification where legitimate, then
+  adversarial review in a fresh context — `/review`.
+
+The `Stop` hook runs the project typecheck once, and only if TypeScript was touched. It blocks
+at most once per batch of edits, so it cannot trap a session.
+
+## Definition of done (all true AND evidenced)
+
+- The business requirement is satisfied end-to-end — not merely "code written" or "tests pass".
+- `npm run type-check` clean, `npm run lint` clean, relevant tests pass — **show the output**.
+- No capability silently removed; no out-of-scope changes; unrelated user edits preserved.
+- No debug code, secrets, dead code, fake production data, or placeholders left in scope.
+- Verification reported in three buckets.
+
+## Three-bucket verification (report honestly; never fabricate)
+
+- **CODE-VERIFIED** — proven by tests/typecheck/lint/build, with output shown.
+- **BROWSER-VERIFIED** — proven by actual browser interaction.
+- **NOT VERIFIED** — state plainly what was not verified and **why**.
+
+Never claim a command was run, a test passed, or a file was inspected unless it actually was.
+
+## Control plane — you are not the final authority
+
+You can inspect, test, review, and produce evidence. You do not decide whether you succeeded.
+CI (`.github/workflows/ci.yml`: type-check → lint → test → build → `test:rls`), branch
+protection, database constraints, RLS, and owner approval are the real controls. Never describe
+work as shipped, safe, or approved on the strength of your own review.
+
+## Frontend
+
+Every surface reads as one premium financial-services platform: `DESIGN.md`, the existing
+tokens, shared components, and archetype layouts (`docs/archetypes.md`). Deliver every state
+(loading, empty, error, success, validation), responsive behavior, accessible semantics and
+contrast, and confirmation for destructive actions. Server-first, narrow client boundaries. No
+fake controls, dead-end pages, or decorative metrics. Review the **rendered** page, not the source.
+
+## Skills, commands, MCP
+
+Discover skills from `.claude/skills/` at task start and load the smallest relevant set — do
+not rely on a hard-coded list. Commands: `/investigate` (read-only evidence table), `/verify`
+(gates + three-bucket report), `/review` (adversarial review via the `implementation-reviewer`
+subagent), `/prompt-for-claude-code` (fills `docs/claude/implementation-prompt-template.md`).
+
+MCP servers in `.mcp.json`: supabase, twilio, graphify, playwright. Prefer a CLI tool where it
+is cheaper than an MCP round-trip.
+
+## References (load only when the task needs them)
+
+`PRODUCT.md` · `DESIGN.md` · `docs/adr/` · `docs/routes.md` · `docs/sitemap.md` ·
+`docs/specs/rbac-matrix.md` · `docs/archetypes.md` · `docs/claude/` (prompt templates) ·
+`docs/PROMPTS.md` (original phase build pack) · `.claude/skills/`
+
+Treat repository behavior as evidence, documentation as context, and the current authorized
+request as the outcome to deliver.

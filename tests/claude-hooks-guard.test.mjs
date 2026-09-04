@@ -123,6 +123,11 @@ const mustBlock = [
   ['pnpm dlx supabase db reset',    bash('pnpm dlx supabase db reset')],
   ['reading a .env secret',         bash('cat .env.local')],
   ['reading .env by full path',     bash('cat /home/user/FSOS/.env')],
+  // A literal `<<` inside a quoted string or a comment must not be read as a heredoc opener.
+  // It used to set a bogus terminator, which blanked every following line before scanning —
+  // so a destructive command on line 2 went unseen. Under-scanning is the dangerous direction.
+  ['<< in a quoted string',         bash('echo "shift: a << b"\nrm -rf /tmp/x')],
+  ['<< in a comment',               bash('# shift left << two\nrm -rf /tmp/x')],
   ['writing a .env secret',         write('.env.local')],
   ['hand-editing the lockfile',     edit('package-lock.json')],
 ]

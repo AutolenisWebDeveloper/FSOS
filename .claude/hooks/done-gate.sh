@@ -30,7 +30,13 @@ cd "$proj" 2>/dev/null || exit 0
 key="$(printf '%s' "$proj" | cksum | cut -d' ' -f1)"
 marker="${TMPDIR:-/tmp}/fsos-claude-ts-dirty-${key}"
 
-# No TypeScript touched this turn -> nothing to pay for.
+# No TypeScript touched this turn -> nothing to pay for. Refuse a symlink: the path is
+# derivable and lands in world-writable /tmp when TMPDIR is unset, so a pre-seeded symlink
+# could otherwise drive this gate off a file the session does not own.
+if [ -L "$marker" ]; then
+  rm -f "$marker" 2>/dev/null
+  exit 0
+fi
 [ -f "$marker" ] || exit 0
 
 # Cannot typecheck without dependencies installed — do not block, and keep the marker so the

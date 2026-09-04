@@ -62,14 +62,30 @@ strip_heredoc_bodies() {
         if (l == intag) intag = ""
         next
       }
-      line = $0
-      if (match(line, /<<-?[ \t]*[\047"]?[A-Za-z_][A-Za-z0-9_]*[\047"]?/)) {
-        pre = substr(line, 1, RSTART - 1)
-        t = substr(line, RSTART, RLENGTH)
-        # `<<<` — the third < lands inside the match; that is a herestring, not a heredoc.
-        if (substr(line, RSTART + 2, 1) != "<" && pre !~ /<$/) {
-          sub(/^<<-?[ \t]*/, "", t); gsub(/[\047"]/, "", t); intag = t
+      # Find a heredoc opener at a COMMAND position: `<<` that is not inside quotes, not in a
+      # comment, and not the `<<<` herestring operator. Matching `<<` anywhere on the line
+      # (the previous approach) let a literal `<<` inside a quoted string or a comment set a
+      # bogus terminator, which blanked every following line before scanning — a destructive
+      # command on line 2 then sailed through. On any ambiguity we do NOT strip: over-scanning
+      # can only over-block, while under-scanning misses a real command.
+      line = $0; n = length(line); sq = 0; dq = 0; i = 1
+      while (i <= n) {
+        ch = substr(line, i, 1)
+        if (ch == "\\" && !sq) { i += 2; continue }
+        if (ch == "\047" && !dq) { sq = !sq; i++; continue }
+        if (ch == "\"" && !sq)   { dq = !dq; i++; continue }
+        if (!sq && !dq && ch == "#" && (i == 1 || substr(line, i-1, 1) ~ /[ \t]/)) break
+        if (!sq && !dq && ch == "<" && substr(line, i+1, 1) == "<") {
+          if (substr(line, i+2, 1) == "<") { i += 3; continue }   # herestring
+          rest = substr(line, i+2)
+          sub(/^-/, "", rest)
+          sub(/^[ \t]+/, "", rest)
+          if (match(rest, /^[\047"]?[A-Za-z_][A-Za-z0-9_]*[\047"]?/)) {
+            t = substr(rest, RSTART, RLENGTH); gsub(/[\047"]/, "", t); intag = t
+          }
+          break
         }
+        i++
       }
       print
     }

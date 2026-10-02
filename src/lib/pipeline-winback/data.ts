@@ -67,16 +67,23 @@ export async function loadWinbackSnapshot(opportunityId: string): Promise<Winbac
   return (data as WinbackSnapshot | null) ?? null
 }
 
-/** True when the household has an OPEN comms conversation — shared suppression: an active
- *  advisor/AI conversation pauses win-back outreach (spec §4/§9). */
+/** True when the household is IN a conversation — shared suppression: an active advisor/AI
+ *  conversation pauses win-back outreach (spec §4/§9).
+ *
+ *  "In a conversation" = an open thread whose LAST message came from the client. A bare
+ *  `status = 'open'` matched the thread win-back's own first touch opened, so the campaign paused
+ *  itself after touch 1 on every household (audit E-06). An unreadable answer counts as in a
+ *  conversation (fail closed — the touch is held, never sent on a guess). */
 async function hasOpenConversation(householdId: string | null): Promise<boolean> {
   if (!householdId) return false
   const db = getDb()
-  const { count } = await db
+  const { count, error } = await db
     .from('comm_conversations')
     .select('id', { count: 'exact', head: true })
     .eq('household_id', householdId)
     .eq('status', 'open')
+    .eq('last_direction', 'inbound')
+  if (error) return true
   return (count ?? 0) > 0
 }
 

@@ -77,7 +77,7 @@ export default async function WorkflowDetailPage(props: { params: Promise<{ id: 
       title={w.name}
       description={w.description ?? undefined}
       breadcrumb={[{ label: 'FSA', href: '/app' }, { label: 'Workflows', href: '/app/workflows' }, { label: w.name }]}
-      status={w.enabled ? <StatusBadge status="won" label="enabled" /> : <StatusBadge status="draft" label="inactive" />}
+      status={w.enabled ? <StatusBadge status="pending" label="enabled · not executed" /> : <StatusBadge status="draft" label="design" />}
       actions={<WorkflowControls id={w.id} enabled={w.enabled} />}
       rail={
         <div className="space-y-3 text-sm">
@@ -118,7 +118,7 @@ export default async function WorkflowDetailPage(props: { params: Promise<{ id: 
         <CardHeader><CardTitle className="text-base">Conditions</CardTitle></CardHeader>
         <CardContent>
           {conditions.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No conditions — runs for every matching trigger.</p>
+            <p className="text-sm text-muted-foreground">No conditions — would apply to every matching trigger. Not executed: there is no workflow engine yet.</p>
           ) : (
             <ul className="space-y-1 text-sm">
               {conditions.map((c, i) => (
@@ -154,7 +154,7 @@ export default async function WorkflowDetailPage(props: { params: Promise<{ id: 
         <CardHeader><CardTitle className="text-base">Recent runs</CardTitle></CardHeader>
         <CardContent>
           {runs.length === 0 ? (
-            <EmptyState title="No runs yet" description="This workflow has not executed. Runs appear here once it fires." />
+            <EmptyState title="No runs" description="Workflows are not executed yet — there is no workflow engine, so no run will appear here." />
           ) : (
             <Table>
               <TableHeader>

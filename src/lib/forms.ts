@@ -31,6 +31,11 @@ export interface SendFormInput {
   client_name?: string | null
   customer_id?: string | null
   agency_id?: string | null
+  /**
+   * A staff member sent this from POST /api/forms/send (review finding 3b: may text a non-US number).
+   * Public callers (agency referral intake) leave it unset → treated as automated.
+   */
+  operatorInitiated?: boolean
 }
 
 export type SendFormResult =
@@ -197,6 +202,9 @@ export async function sendForm(input: SendFormInput): Promise<SendFormResult> {
         actor: 'system:forms',
         purpose: 'TRANSACTIONAL',
         humanAuthored: true,
+        // Only a staff send (POST /api/forms/send) is operator-initiated (finding 3b); the public agency
+        // referral intake is not.
+        operatorInitiated: input.operatorInitiated === true,
         isSecurity: false,
         entity: { type: 'form_submission', id: submission.submission_id },
         recipientContext: { full_name: client_name || null },

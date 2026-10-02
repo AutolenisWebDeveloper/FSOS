@@ -14,6 +14,9 @@
 export const CLOSED_WON_STAGES = ['placed_issued'] as const
 export const TERMINAL_LOST_STAGES = ['lost', 'cancelled'] as const
 
+/** household_policies.status values that mean the policy is IN FORCE (migration 009 CHECK). */
+export const IN_FORCE_POLICY_STATUSES = ['active', 'bound', 'renewed'] as const
+
 export type EligibilityReason =
   | 'securities_excluded'
   | 'opted_out'
@@ -22,6 +25,9 @@ export type EligibilityReason =
   | 'cooldown'
   | 'duplicate_active'
   | 'no_verified_deadline'
+  | 'appointment_booked'
+  | 'policy_inactive'
+  | 'policy_status_unknown'
 
 export interface EligibilityInput {
   /** Securities firewall flag from the DB policy row (§4.1) — never a caller literal downstream. */
@@ -40,6 +46,19 @@ export interface EligibilityInput {
   now: string
   /** The policy's verified conversion deadline (ISO) from v_conversions_due, or null. */
   conversionDeadline: string | null
+  /**
+   * The household has an upcoming scheduled appointment (native booking OR an FSA-scheduled
+   * review). A booked client has engaged; the advisor owns the relationship and the cadence must
+   * stop (audit D-02 / I-02). Optional: absent = no appointment known; null = the lookup failed
+   * (the tick defers that touch rather than exiting on a transient read error).
+   */
+  upcomingAppointment?: boolean | null
+  /**
+   * The policy is in force (IN_FORCE_POLICY_STATUSES). A lapsed, cancelled, non-renewed or merely
+   * quoted policy has no live conversion privilege, so the copy would assert something false
+   * (audit D-09). Optional: absent = not checked; null = the read failed.
+   */
+  policyInForce?: boolean | null
 }
 
 export interface EligibilityResult {
@@ -86,6 +105,9 @@ export function evaluateEligibility(input: EligibilityInput): EligibilityResult 
   }
 
   if (input.priorEnrollmentActive) reasons.push('duplicate_active')
+  if (input.upcomingAppointment === true) reasons.push('appointment_booked')
+  if (input.policyInForce === false) reasons.push('policy_inactive')
+  if (input.policyInForce === null) reasons.push('policy_status_unknown') // never enroll on a guess
 
   // Never manufacture urgency: no verified deadline → out (§4.3/§12).
   if (!input.conversionDeadline) reasons.push('no_verified_deadline')

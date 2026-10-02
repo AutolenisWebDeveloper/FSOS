@@ -12,6 +12,7 @@ export type GateStep =
   | 'message_content' // 0− — usable body + supported channel + no channel/content-type mismatch (F-2)
   | 'ownership' // 0 — authoritative ownership must resolve; unresolved → assignment review
   | 'consent' // 1
+  | 'non_us_recipient' // 1a — automated SMS to a number not shown to be in the US (review finding 3b)
   | 'timezone_unresolved' // 1b — the recipient's zone could not be resolved; quiet hours is unevaluable
   | 'quiet_hours' // 2 — legal TCPA floor (9–20 recipient-local) on SMS marketing/campaign sends
   | 'configured_window' // 2g — operator's per-campaign / per-worker window (narrows the floor; deferral)
@@ -70,6 +71,15 @@ export interface GateInput {
   collisionReason?: string
   /** 1 — valid channel consent on file. */
   hasConsent: boolean
+  /**
+   * 1a — review finding 3b (owner, 2026-10-02): an AUTOMATED SMS goes only to a US number. False
+   * when the destination is outside the US (non-+1, or a Canadian / Caribbean +1 code) or cannot be
+   * shown to be in the US (non-geographic or unparseable). Defaults to TRUE (email, operator-initiated
+   * 1:1 sends, and existing callers). A false is a HARD, ESCALATING block — never a deferral.
+   */
+  recipientInUS?: boolean
+  /** 1a — why the number is not treated as a US number (recipient-timezone.ts recipientCountry). */
+  recipientCountryReason?: string
   /** 2 — recipient-local hour (0–23). */
   recipientLocalHour: number
   /**
@@ -119,6 +129,13 @@ export interface GateInput {
    * recommendation (5), and the securities firewall (6) apply exactly as before.
    */
   quietHoursExempt?: boolean
+  /**
+   * The dispatch-policy resolver's own floor verdict. Set when the floor was evaluated with more
+   * than the hour alone — the Sunday-morning marketing hold, or several zones for an unresolved
+   * recipient (owner decisions 1–2) — so a verdict the hour cannot reproduce still blocks here.
+   */
+  floorBlocked?: boolean
+  floorReason?: string
   /**
    * 2b — inside the operator's configured hours of operation (business-local).
    * Defaults to true (no extra restriction) when omitted, so existing callers are
@@ -219,6 +236,7 @@ const BLOCK: Record<GateStep, string> = {
   collision: 'A higher-priority campaign or active conversation is underway — send paused.',
   delegation: 'No active, in-scope delegation to communicate on behalf of the agency owner.',
   consent: 'No valid channel consent on file.',
+  non_us_recipient: 'Automated SMS goes only to US numbers — this number is outside the US or cannot be shown to be in it; not sent.',
   timezone_unresolved: 'Recipient timezone could not be resolved — quiet hours cannot be evaluated; not sent.',
   quiet_hours: 'Outside permitted quiet hours (9:00–20:00 recipient-local).',
   configured_window: 'Outside the configured send window — held for the next opening.',
@@ -275,6 +293,9 @@ export function evaluateGate(input: GateInput): GateResult {
   // assignment-review queue instead of sending.
   if (input.ownershipResolved === false) return blocked('ownership', true, input.ownershipConflict)
   if (!input.hasConsent) return blocked('consent')
+  // 1a — automated SMS to a number outside the US (or not shown to be in it) is a hard block
+  // (review finding 3b). Before the timezone steps: no zone resolution can make it sendable.
+  if (input.recipientInUS === false) return blocked('non_us_recipient', true, input.recipientCountryReason)
   // The LEGAL TCPA quiet-hours floor (escalating) stays early. The operator's own hours
   // of operation (business_hours) is a NON-escalating operational deferral and is checked
   // LAST with frequency/collision — never here — so a firewall / DNC / recommendation /
@@ -289,8 +310,8 @@ export function evaluateGate(input: GateInput): GateResult {
   if (input.timezoneResolved === false) {
     return blocked('timezone_unresolved', true, input.timezoneReason)
   }
-  if (input.quietHoursExempt !== true && !withinQuietHours(input.recipientLocalHour)) {
-    return blocked('quiet_hours')
+  if (input.quietHoursExempt !== true && (input.floorBlocked === true || !withinQuietHours(input.recipientLocalHour))) {
+    return blocked('quiet_hours', true, input.floorBlocked === true ? input.floorReason : undefined)
   }
   // 2c — on-behalf-of authority. Checked before content approval / recommendation:
   // a message the FSA is not authorized to send at all must never reach content checks.
@@ -376,4 +397,27 @@ export const DEFERRAL_GATE_STEPS: ReadonlySet<GateStep> = new Set<GateStep>([
 /** True when a blocked step is an operational deferral the schedule owner should retry. */
 export function isDeferralGateStep(step: string | null | undefined): boolean {
   return !!step && DEFERRAL_GATE_STEPS.has(step as GateStep)
+}
+
+/** Owner decision 3: how long a scheduled marketing touch may be HELD past its due time. */
+export const MARKETING_HOLD_MAX_MS = 72 * 3600 * 1000
+
+/**
+ * PURE. Owner decision 3 (docs/ops/automation-inventory.md §10): a scheduled marketing touch the
+ * gate withholds at `quiet_hours` (the 09:00–20:00 floor or the Sunday-morning marketing hold) is
+ * HELD for the next window rather than burned — the gate's verdict is unchanged; this only tells
+ * the schedule owner what to do with it. The hold is bounded: more than 72h past due it EXPIRES
+ * and is recorded with that reason. A touch with no readable due time cannot be bounded, so it
+ * expires rather than holding forever. Any other step → null (the caller's existing handling).
+ * The release re-runs the whole tick for the touch — stop conditions, eligibility, the gate.
+ */
+export function quietHoursHold(
+  blockedStep: string | null | undefined,
+  dueAtISO: string | null | undefined,
+  nowISO: string,
+): 'hold' | 'expired' | null {
+  if (blockedStep !== 'quiet_hours') return null
+  const due = dueAtISO ? Date.parse(dueAtISO) : NaN
+  if (!Number.isFinite(due)) return 'expired'
+  return Date.parse(nowISO) - due <= MARKETING_HOLD_MAX_MS ? 'hold' : 'expired'
 }

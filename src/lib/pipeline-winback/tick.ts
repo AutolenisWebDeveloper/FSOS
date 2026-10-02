@@ -13,7 +13,7 @@
 import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
 import { sendMessage, isTemplateApproved } from '@/lib/comms/send'
-import { isDeferralGateStep } from '@/lib/comms/gate'
+import { isDeferralGateStep, quietHoursHold } from '@/lib/comms/gate'
 import { campaignDispatchContext, campaignIdentityContext } from '@/lib/comms/campaign'
 import { smsA2pApproved } from '@/lib/comms/a2p'
 import { getOrCreateConversation } from '@/lib/comms/conversations'
@@ -46,6 +46,8 @@ interface EnrollmentRow {
   agency_id: string | null
   baseline_date: string
   current_touch_no: number
+  /** When the current touch fell due — bounds a quiet-hours hold (owner decision 3). */
+  next_touch_at?: string | null
 }
 
 export interface WinbackTickResult {
@@ -81,7 +83,7 @@ export async function pipelineWinbackTick(): Promise<WinbackTickResult> {
 
     const { data: due } = await db
       .from('pipeline_winback_enrollments')
-      .select('id, campaign_id, opportunity_id, member_id, contact_id, household_id, agency_id, baseline_date, current_touch_no')
+      .select('id, campaign_id, opportunity_id, member_id, contact_id, household_id, agency_id, baseline_date, current_touch_no, next_touch_at')
       .eq('campaign_id', c.id)
       .eq('status', 'active')
       .lte('next_touch_at', nowISO)
@@ -321,10 +323,18 @@ export async function fireMessageTouch(
     await db.from('pipeline_winback_executions').delete().eq('enrollment_id', e.id).eq('touch_no', touchNo)
     return 'deferred'
   }
+  // Owner decision 3: a quiet-hours withhold (floor or Sunday hold) is HELD for the next window,
+  // not burned — up to 72h past due, then recorded as expired. Released by the next tick, which
+  // re-runs the stop conditions and the gate. (gate.ts quietHoursHold)
+  const qh = outcome.sent ? null : quietHoursHold(outcome.gate.blockedStep, e.next_touch_at, nowISO)
+  if (qh === 'hold') {
+    await db.from('pipeline_winback_executions').delete().eq('enrollment_id', e.id).eq('touch_no', touchNo)
+    return 'deferred'
+  }
   await markExecution(db, e.id, touchNo, outcome.sent ? 'sent' : 'suppressed', {
     channel,
     kind: touch.kind,
-    reason: outcome.reason,
+    reason: qh === 'expired' ? 'quiet_hours_hold_expired' : outcome.reason,
     messageId: outcome.messageId,
     ...(isAi ? { ai_armed: aiArmed } : {}),
   })

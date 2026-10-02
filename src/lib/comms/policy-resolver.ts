@@ -109,8 +109,11 @@ export async function resolveFrequency(
   const weekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString()
   try {
     const db = getDb()
+    // A touch counts once the provider ACCEPTED it (sent_at is stamped only then, send.ts). Never
+    // filter on delivery_status: the delivery callback moves 'sent' → 'delivered', and a status
+    // filter would uncount every message that worked (audit A-03).
     const base = () =>
-      db.from('comm_messages').select('id', { count: 'exact', head: true }).eq('direction', 'outbound').eq('delivery_status', 'sent').eq('member_id', memberId)
+      db.from('comm_messages').select('id', { count: 'exact', head: true }).eq('direction', 'outbound').not('sent_at', 'is', null).eq('member_id', memberId)
 
     const [smsToday, sms7, mktToday, mkt7, combinedToday, lastSend] = await Promise.all([
       base().eq('channel', 'sms').gte('sent_at', dayAgo),
@@ -118,7 +121,7 @@ export async function resolveFrequency(
       base().eq('channel', 'email').in('purpose', MARKETING_PURPOSES as unknown as string[]).gte('sent_at', dayAgo),
       base().eq('channel', 'email').in('purpose', MARKETING_PURPOSES as unknown as string[]).gte('sent_at', weekAgo),
       base().gte('sent_at', dayAgo),
-      db.from('comm_messages').select('sent_at').eq('direction', 'outbound').eq('delivery_status', 'sent').eq('member_id', memberId).not('sent_at', 'is', null).order('sent_at', { ascending: false }).limit(1).maybeSingle(),
+      db.from('comm_messages').select('sent_at').eq('direction', 'outbound').eq('member_id', memberId).not('sent_at', 'is', null).order('sent_at', { ascending: false }).limit(1).maybeSingle(),
     ])
     const minutesSinceLastSend = lastSend.data?.sent_at
       ? Math.floor((now - Date.parse(lastSend.data.sent_at)) / 60000)

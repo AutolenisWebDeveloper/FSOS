@@ -49,6 +49,7 @@ export async function resolveContact(channel: Channel, contact: string): Promise
         .from('household_members')
         .select('id, household_id')
         .ilike('email', contact)
+        .order('id', { ascending: true }) // deterministic when several members share an address
         .limit(1)
         .maybeSingle()
       if (data) {
@@ -62,6 +63,7 @@ export async function resolveContact(channel: Channel, contact: string): Promise
           .from('household_members')
           .select('id, household_id, phone')
           .ilike('phone', `%${tail}%`)
+          .order('id', { ascending: true }) // deterministic when several members share a number
           .limit(5)
         const hit = (data ?? []).find((r: { phone: string | null }) => last10(r.phone ?? '') === tail)
         if (hit) {
@@ -84,6 +86,36 @@ export async function resolveContact(channel: Channel, contact: string): Promise
     return { memberId, householdId, agencyId }
   } catch {
     return empty
+  }
+}
+
+/**
+ * EVERY household member reachable at this address — several people (a couple, a parent and
+ * child) can share one mobile or one email. A reply or stop request arriving from that address
+ * must reach each of their automations, not just the one member the thread happens to be linked
+ * to (audit B-04). Exact email (case-insensitive) or same last-10 digits. Deterministic order;
+ * [] on any failure (callers still act on the thread's own member).
+ */
+export async function resolveAllMemberIds(channel: Channel, contact: string): Promise<string[]> {
+  try {
+    const db = getDb()
+    if (channel === 'email') {
+      const { data, error } = await db.from('household_members').select('id').ilike('email', contact).order('id', { ascending: true }).limit(25)
+      if (error) return []
+      return (data ?? []).map((r: { id: string }) => r.id)
+    }
+    const tail = last10(contact)
+    if (tail.length < 10) return []
+    const { data, error } = await db
+      .from('household_members')
+      .select('id, phone')
+      .ilike('phone', `%${tail}%`)
+      .order('id', { ascending: true })
+      .limit(25)
+    if (error) return []
+    return (data ?? []).filter((r: { phone: string | null }) => last10(r.phone ?? '') === tail).map((r: { id: string }) => r.id)
+  } catch {
+    return []
   }
 }
 

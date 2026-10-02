@@ -63,7 +63,15 @@ export async function POST(req: NextRequest) {
 
     // Schedule → appointment (manual fallback; Google Calendar 🔌 when connected) + prep task.
     if (scheduledAt) {
-      await db.from('appointments').insert({ household_id: v.data.household_id, review_id: data.id, scheduled_at: scheduledAt, status: 'scheduled' })
+      const { data: appt } = await db
+        .from('appointments')
+        .insert({ household_id: v.data.household_id, review_id: data.id, scheduled_at: scheduledAt, status: 'scheduled' })
+        .select('id')
+        .maybeSingle()
+      // An FSA-scheduled review is a booking too: stop every prospecting cadence for the
+      // household, exactly as the public scheduler does (audit D-02 / I-02).
+      const { onAppointmentBooked } = await import('@/lib/booking/appointment-booked')
+      await onAppointmentBooked({ householdId: v.data.household_id, actor, appointmentId: (appt?.id as string | undefined) ?? null })
     }
     await db.from('work_tasks').insert({
       title: `Prep ${v.data.type.replace(/_/g, ' ')} review`,

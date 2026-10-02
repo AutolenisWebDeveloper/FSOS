@@ -323,6 +323,20 @@ console.log('\nConfig read error fails CLOSED (WS-068: an unreadable kill switch
     !db.calls.some((c) => c.table === 'workshop_sessions') && globalThis.__gateCalls.length === 0)
 }
 
+{
+  // G-07: supabase-js RESOLVES { data: null, error } on a read failure — it does not throw — so
+  // the throw-only guard above never fired for it and the engine fell back to enabled defaults.
+  globalThis.__gateCalls = []
+  const db = fakeDb({ workshop_comms_config: [{ __error: { message: 'canceling statement due to statement timeout' } }] })
+  const { installDb: _install } = await import('./helpers/workshop-harness.mjs')
+  _install(db)
+  const res = await engine.runReminderPass()
+  _install(null)
+  ok('a RETURNED config read error also disables the engine for the tick', res && res.ok === true && /disabled/.test(String(res.note ?? '')))
+  ok('nothing was selected or sent under the returned read error',
+    !db.calls.some((c) => c.table === 'workshop_sessions') && globalThis.__gateCalls.length === 0)
+}
+
 console.log('\nThe class boundary (SETTLED model): marketing kinds need the ROW opt-in; reminders never do')
 {
   // A nurture (marketing-class) kind WITHOUT marketing_opt_in → blocked BEFORE the gate.

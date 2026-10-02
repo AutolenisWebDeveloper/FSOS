@@ -6,7 +6,7 @@
 // opportunities, households, life_campaign_enrollments). All reads go through getDb().
 import { getDb } from '@/lib/supabase/client'
 import type { EligibilityInput } from './eligibility'
-import { TERMINAL_LOST_STAGES, CLOSED_WON_STAGES } from './eligibility'
+import { TERMINAL_LOST_STAGES, CLOSED_WON_STAGES, IN_FORCE_POLICY_STATUSES } from './eligibility'
 
 export interface CampaignConfig {
   id: string
@@ -108,7 +108,17 @@ export async function loadEligibilityInput(
     optedOut = hh?.do_not_contact === true
   }
 
+  const { upcomingAppointmentState } = await import('@/lib/booking/appointment-booked')
+  const apptState = snap?.household_id ? await upcomingAppointmentState(snap.household_id, nowISO) : 'no'
+  const upcomingAppointment = apptState === 'unknown' ? null : apptState === 'yes'
+
+  // The policy must still be in force (audit D-09). null = the read failed (the tick defers).
+  const { data: pol, error: polError } = await db.from('household_policies').select('status').eq('id', policyId).maybeSingle()
+  const policyInForce = polError ? null : pol ? (IN_FORCE_POLICY_STATUSES as readonly string[]).includes(String(pol.status)) : false
+
   return {
+    upcomingAppointment,
+    policyInForce,
     isSecurity: snap ? snap.is_security === true : true, // firewall-closed if no row
     openOpportunities,
     priorEnrollmentActive: !!prior,

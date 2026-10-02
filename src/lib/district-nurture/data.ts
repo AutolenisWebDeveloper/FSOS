@@ -93,16 +93,33 @@ async function isOptedOut(email: string | null, phone: string | null): Promise<b
   return false
 }
 
-/** True when a live (open) conversation exists for this agency — ADR-018 reply pause. */
-async function hasOpenConversation(agencyId: string | null): Promise<boolean> {
-  if (!agencyId) return false
+/**
+ * True when the AGENT is in a live conversation with us — ADR-018 reply pause.
+ *
+ * Keyed on the agency owner's OWN address (their email, or their phone on its trailing 10 digits —
+ * how conversations and DNC rows are matched), on an open thread whose last message came from
+ * them. It used to be "any open thread under the agency": the agent's own reply never paused the
+ * cadence (it is not an agency-scoped client thread), while any unrelated client thread under the
+ * agency paused it indefinitely (audit B-11 / H-06 / H-07). A read error counts as in a
+ * conversation (fail closed — the touch is held).
+ */
+async function hasOpenConversation(email: string | null, phone: string | null): Promise<boolean> {
   const db = getDb()
-  const { count } = await db
-    .from('comm_conversations')
-    .select('id', { count: 'exact', head: true })
-    .eq('agency_id', agencyId)
-    .eq('status', 'open')
-  return (count ?? 0) > 0
+  const em = (email ?? '').trim().toLowerCase()
+  const tail = phoneTail(phone)
+  const base = () =>
+    db.from('comm_conversations').select('id').eq('status', 'open').eq('last_direction', 'inbound')
+  if (em) {
+    const { data, error } = await base().eq('channel', 'email').eq('contact', em).limit(1)
+    if (error) return true
+    if ((data ?? []).length > 0) return true
+  }
+  if (tail.length === 10) {
+    const { data, error } = await base().eq('channel', 'sms').ilike('contact', `%${tail}`).limit(1)
+    if (error) return true
+    if ((data ?? []).length > 0) return true
+  }
+  return false
 }
 
 /**
@@ -146,7 +163,7 @@ export async function loadNurtureEligibilityInput(
   }
 
   const optedOut = snap ? await isOptedOut(snap.email, snap.phone) : true
-  const inActiveConversation = await hasOpenConversation(snap?.agency_id ?? null)
+  const inActiveConversation = await hasOpenConversation(snap?.email ?? null, snap?.phone ?? null)
 
   const input: NurtureEligibilityInput = {
     reachable: snap ? snap.reachable === true : false,

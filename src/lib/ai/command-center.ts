@@ -18,6 +18,8 @@
 //     ranked "needs your attention" entry so nothing automated fails silently.
 
 /** One row of v_workforce_today (per outreach agent, today). */
+import { isCampaignEngineOwned, type OutreachAgentKey } from './outreach'
+
 export interface WorkforceRow {
   agent_key: string
   agent_enabled: boolean
@@ -105,9 +107,11 @@ export function executiveStatus(workforce: WorkforceRow[]): ExecutiveStatus {
   let paused = 0
   let off = 0
   for (const r of workers) {
-    if (!r.agent_enabled) off += 1
-    else if (!r.target_enabled) paused += 1
-    else active += 1
+    const st = statusOf(r)
+    if (st === 'agent_off') off += 1
+    else if (st === 'paused') paused += 1
+    else if (st === 'working') active += 1
+    // 'idle' and 'stands_down' are neither active nor switched off.
   }
   const sum = (pick: (r: WorkforceRow) => number) => workers.reduce((s, r) => s + pick(r), 0)
   return {
@@ -150,7 +154,13 @@ export function resultsToday(workforce: WorkforceRow[]): ResultsToday {
 
 // ─── Roster health ────────────────────────────────────────────────────────────
 
-export type WorkerStatus = 'working' | 'paused' | 'agent_off'
+/**
+ * From EVIDENCE, not flags (audit F-15 / I-11): 'working' needs work queued or handled today; an
+ * enabled agent with none is 'idle'. Agents whose audience the campaign engines own (owner
+ * decision 7: cross_sell, term_conversion, life_winback) 'stands_down' — the workforce queues
+ * nothing for them however the switches are set.
+ */
+export type WorkerStatus = 'working' | 'idle' | 'paused' | 'agent_off' | 'stands_down'
 export type WorkerHealth = 'healthy' | 'degraded' | 'idle'
 
 export interface RosterEntry {
@@ -173,9 +183,22 @@ export interface RosterEntry {
 export const DEGRADED_ERROR_RATE = 0.25
 
 function statusOf(r: WorkforceRow): WorkerStatus {
+  if (isCampaignEngineOwned(r.agent_key as OutreachAgentKey)) return 'stands_down'
   if (!r.agent_enabled) return 'agent_off'
   if (!r.target_enabled) return 'paused'
-  return 'working'
+  const handledToday = r.queued_total + r.sent + r.blocked + r.escalated + r.skipped
+  return handledToday > 0 ? 'working' : 'idle'
+}
+
+/** Operator-facing label for a worker status. */
+export function workerStatusLabel(s: WorkerStatus): string {
+  switch (s) {
+    case 'working': return 'working'
+    case 'idle': return 'idle — nothing queued today'
+    case 'paused': return 'paused'
+    case 'agent_off': return 'agent off'
+    case 'stands_down': return 'stands down — campaign owns audience'
+  }
 }
 
 function healthOf(r: WorkforceRow, errorRate: number, status: WorkerStatus): WorkerHealth {

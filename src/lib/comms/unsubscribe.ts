@@ -15,6 +15,7 @@
 import { getDb } from '../supabase/client'
 import { recordConsentChange } from './consent-events'
 import { smsTail } from './contact-consent'
+import { armDncEntry } from './opt-out'
 import { siteUrl, CONTACT } from '../site'
 import {
   type UnsubChannel,
@@ -96,15 +97,20 @@ export async function suppressContact(
   const source = provenance.source ?? 'unsubscribe'
   const reason = provenance.reason ?? 'unsubscribe opt-out'
   const channels: ('email' | 'sms')[] = channel === 'all' ? ['email', 'sms'] : [channel === 'sms' ? 'sms' : 'email']
-  const rows = channels.map((ch) => ({
-    contact: normFor(ch, contact),
-    channel: ch,
-    scope: 'internal' as const,
-    reason: dncReason,
-  }))
   try {
     const db = getDb()
-    await db.from('dnc_entries').upsert(rows, { onConflict: 'contact,channel' })
+    // The ENFORCED part, through the shared DNC writer: a row already on file keeps its first
+    // reason (a STOP is never relabelled "unsubscribe", a complaint never "hard_bounce") and is
+    // re-armed if a START had lifted it; the opt-out is also recorded as contact-level revoke
+    // evidence, which keeps a later bare START from lifting it. supabase-js resolves { error }
+    // rather than throwing — a failed write is never reported as success (audit B-14).
+    for (const ch of channels) {
+      const res = await armDncEntry({ contact: normFor(ch, contact), channel: ch, reason: dncReason })
+      if (!res.ok) {
+        console.error('[unsubscribe] DNC write failed', { channel: ch, message: res.error })
+        return { ok: false, channels }
+      }
+    }
     // Best-effort: resolve the member/household this contact belongs to so the opt-out is
     // anchored on the customer 360 timeline (not only audit-only). A bare contact with no
     // member (e.g. a public email with no household) is still audited via recordConsentChange.

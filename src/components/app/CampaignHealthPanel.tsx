@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { runState, RUN_STATE_DOT, RUN_STATE_LABEL } from '@/lib/ops/automation-status'
 
 // Shared monitoring & health panel for the native campaign engines (Life Conversion, Pipeline
 // Win-Back, Cross-Sell Life). Fetched client-side so a health-endpoint outage never blocks the
@@ -103,7 +104,11 @@ export function CampaignHealthPanel({ endpoint }: { endpoint: string }) {
   // problem (> 0) is reported even if another metric is unknown, but we only claim Healthy when
   // EVERY problem metric is known and zero (an unknown metric must not read as healthy).
   const problemValues = [...PROBLEM_KEYS].map((k) => counts[k])
-  const anyProblem = problemValues.some((v) => typeof v === 'number' && v > 0)
+  // A FAILED latest cron run is a problem too (audit I-06): the panel used to judge health on
+  // the counts alone, so a job failing every run still read "Healthy".
+  const nowMs = health?.checked_at ? Date.parse(health.checked_at) : Date.now()
+  const anyFailedRun = cronEntries.some(([, run]) => runState(run, nowMs) === 'failed')
+  const anyProblem = anyFailedRun || problemValues.some((v) => typeof v === 'number' && v > 0)
   const allKnown = problemValues.every((v) => typeof v === 'number')
   const dotClass = anyProblem ? 'bg-status-lost' : allKnown ? 'bg-status-won' : 'bg-status-pending'
   const statusLabel = anyProblem ? 'Attention needed' : allKnown ? 'Healthy' : 'Monitoring degraded'
@@ -140,17 +145,13 @@ export function CampaignHealthPanel({ endpoint }: { endpoint: string }) {
           <ul className="space-y-1.5">
             {cronEntries.map(([job, run]) => (
               <li key={job} className="flex items-start gap-2 text-sm">
-                <span
-                  className={`mt-1 inline-block h-2 w-2 shrink-0 rounded-full ${
-                    !run ? 'bg-muted-foreground/40' : run.status === 'ok' || run.status === 'success' ? 'bg-status-won' : 'bg-status-pending'
-                  }`}
-                  aria-hidden
-                />
+                <span className={`mt-1 inline-block h-2 w-2 shrink-0 rounded-full ${RUN_STATE_DOT[runState(run, nowMs)]}`} aria-hidden />
                 <span>
                   <span className="font-medium">{humanize(job)}</span>
                   <span className="text-muted-foreground">
                     {' — '}
-                    {run ? `${run.status}, ${formatTime(run.finished_at ?? run.started_at)}` : 'no run recorded yet'}
+                    {RUN_STATE_LABEL[runState(run, nowMs)]}
+                    {run ? `, ${formatTime(run.finished_at ?? run.started_at)}` : ''}
                   </span>
                 </span>
               </li>

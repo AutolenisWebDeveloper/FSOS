@@ -922,7 +922,7 @@ try {
   }
 
   // ── SCENARIO 4: START ─────────────────────────────────────────────────────────
-  section('4. START clears DNC but does NOT auto-resume promotional enrollments')
+  section('4. START lifts a KEYWORD opt-out (never deletes it) and does NOT auto-resume promotional enrollments')
   {
     const db = freshDb({ armed: true })
     // A real reply PAUSES the enrollment (conversation mode). This scenario is about whether a
@@ -934,14 +934,26 @@ try {
     // A DNC entry to clear: written by a STOP on a DIFFERENT contact-linked path would also do,
     // but the honest setup is a real STOP — on a second thread, so this member's PAUSED drip
     // row survives for the re-enrolment question below.
-    q(db, `insert into dnc_entries (contact, channel, scope, reason) values ('${PHONE}','sms','internal','test STOP')`)
-    q(db, `update consents set status='revoked' where member_id='${IDS.member}' and channel='sms'`)
+    // The reason a real inbound STOP writes (opt-out.ts) — owner decision 4: a bare START restores
+    // only a KEYWORD opt-out; an operator/bounce/complaint row is never lifted (proven below).
+    q(db, `insert into dnc_entries (contact, channel, scope, reason, created_at) values ('${PHONE}','sms','internal','inbound STOP (conv test)', '2026-08-06T10:00:00Z')`)
+    // created_at is pinned BEFORE the harness's frozen clock (IN_HOURS): the app stamps lifted_at
+    // from that clock, and in production the app and database clocks agree.
+    // …with the source the real STOP writer records (opt-out.ts): START restores member consent only
+    // while the STOP's own revoke is still the member's latest state (a later operator revoke stands).
+    q(db, `update consents set status='revoked', source='inbound_stop' where member_id='${IDS.member}' and channel='sms'`)
+    // The evidence a real STOP writes (opt-out.ts): the member's consent BEFORE the opt-out, on the
+    // append-only revoke row. Owner decision 4: START restores only documented prior consent.
+    q(db, `insert into comm_contact_consents (contact, channel, action, consent_text, consent_version, captured_at)
+           values ('${PHONE}','sms','revoked','Inbound STOP keyword (member consent before this opt-out: granted)','opt-out','2026-08-06T10:00:00Z')`)
     aiCalls.length = 0; twilioCalls.length = 0
     const r = await processInbound({ channel: 'sms', from: PHONE, body: 'START', provider: 'twilio', providerId: 'SM_start_4' })
 
     check('START is classified as an opt-in', () => { assert.equal(r.optedIn, true); assert.equal(r.intent, 'start') })
-    check('the DNC entry is cleared', () => {
-      assert.equal(q(db, `select count(*) from dnc_entries where contact='${PHONE}' and scope='internal'`), '0')
+    check('the keyword DNC row is LIFTED, never deleted (owner decision 4)', () => {
+      assert.equal(q(db, `select count(*) from dnc_entries where contact='${PHONE}' and scope='internal'`), '1',
+        'START deleted the DNC row — re-opt-in must be recorded, not erase the opt-out')
+      assert.equal(q(db, `select (lifted_at is not null and lifted_at > created_at)::text from dnc_entries where contact='${PHONE}'`), 'true')
     })
     check('channel consent is restored to granted', () => {
       assert.equal(q(db, `select status from consents where member_id='${IDS.member}' and channel='sms'`), 'granted')
@@ -952,6 +964,17 @@ try {
         'START silently re-enrolled the contact into promotional automation')
     })
     check('START never triggers an AI reply', () => { assert.equal(aiCalls.length, 0); assert.equal(twilioCalls.length, 0) })
+
+    // A non-keyword opt-out (operator / carrier-other / complaint) is NOT restorable by START.
+    const dbN = freshDb({ armed: true })
+    q(dbN, `insert into dnc_entries (contact, channel, scope, reason) values ('${PHONE}','sms','internal','operator: client asked by phone')`)
+    q(dbN, `update consents set status='revoked' where member_id='${IDS.member}' and channel='sms'`)
+    const rN = await processInbound({ channel: 'sms', from: PHONE, body: 'START', provider: 'twilio', providerId: 'SM_start_4n' })
+    check('START does NOT lift a non-keyword opt-out, and does not create consent', () => {
+      assert.equal(rN.optedIn, false)
+      assert.equal(q(dbN, `select (lifted_at is null)::text from dnc_entries where contact='${PHONE}'`), 'true')
+      assert.equal(q(dbN, `select status from consents where member_id='${IDS.member}' and channel='sms'`), 'revoked')
+    })
   }
 
   // ── SCENARIO 5: securities firewall ───────────────────────────────────────────
@@ -1115,15 +1138,21 @@ try {
       assert.equal(twilioCalls.length, 1, 'no SMS was placed with the provider')
     })
 
-    // (b) 19:30 recipient-local — INSIDE the TCPA floor (9–20), OUTSIDE the seeded hours of
-    //     operation (9–19, Mon–Sat). This is the window the Phase 4 question is about.
-    freezeClock('2026-08-07T01:30:00.000Z')
+    // (b) INSIDE the quiet-hours floor for the recipient, OUTSIDE the seeded hours of operation
+    //     (9–19, Mon–Sat). This is the window the Phase 4 question is about. Two clocks apply:
+    //     quiet hours are recipient-local by code default (owner decision 1 — +1 214 resolves to
+    //     America/Chicago, CDT in August, UTC−5), while hours of operation use the operator's
+    //     fixed comm_hours_policy.timezone_offset_hours (−6, no DST; hours.ts). The window where
+    //     the first allows and the second refuses is 14:00–15:00Z: 14:30Z is 09:30 for the
+    //     recipient and 08:30 on the operator clock. (01:30Z, the old fixture, is 20:30 CDT for
+    //     the recipient — outside the floor — and only read as "19:30" on the fixed −6 clock.)
+    freezeClock('2026-08-06T14:30:00.000Z')
     const dbB = freshDb({ armed: true })
     const convB = q(dbB, `select id from comm_conversations where contact='${PHONE}'`)
     twilioCalls.length = 0
     const lateOutcome = await sendMessage(replyCtx(convB))
-    console.log(`    → 19:30 local: sent=${lateOutcome.sent} step=${lateOutcome.gate.blockedStep ?? '-'} escalate=${lateOutcome.gate.escalate}`)
-    check('19:30 local — the reply is held at gate step business_hours, NOT quiet_hours', () => {
+    console.log(`    → 09:30 recipient / 08:30 operator: sent=${lateOutcome.sent} step=${lateOutcome.gate.blockedStep ?? '-'} escalate=${lateOutcome.gate.escalate}`)
+    check('09:30 recipient / 08:30 operator — the reply is held at gate step business_hours, NOT quiet_hours', () => {
       assert.equal(lateOutcome.sent, false)
       assert.equal(lateOutcome.gate.blockedStep, 'business_hours',
         `blocked at ${lateOutcome.gate.blockedStep} instead: ${lateOutcome.gate.reason}`)
@@ -1132,38 +1161,34 @@ try {
     // The GATE does not escalate a business_hours hold (it is an operational deferral, not a
     // compliance failure). Case (e) below shows the conversation path escalates on top of it,
     // so a held REPLY is not invisible — a held CAMPAIGN touch is.
-    check('19:30 local — the gate itself does NOT escalate a business_hours hold', () => {
+    check('09:30 recipient / 08:30 operator — the gate itself does NOT escalate a business_hours hold', () => {
       assert.equal(lateOutcome.gate.escalate, false,
         'business_hours is documented as a non-escalating deferral')
       assert.equal(q(dbB, `select count(*) from agent_actions where kind='escalation'`), '0')
     })
-    check('19:30 local — the held reply is recorded on the message row for the operator', () => {
+    check('09:30 recipient / 08:30 operator — the held reply is recorded on the message row for the operator', () => {
       assert.equal(q(dbB, `select coalesce(delivery_status,'-')||'|'||coalesce(blocked_step,'-') from comm_messages where direction='outbound' order by created_at desc limit 1`),
         'blocked|business_hours')
     })
 
     // (c) 21:30 recipient-local (02:30Z resolves DST-correctly to 21:30 America/Chicago,
     //     CDT) — deep in the night, outside BOTH the operator's hours of operation (9–19)
-    //     and the legal quiet-hours floor (9–20). A SERVICING reply is quiet-hours-EXEMPT
-    //     (the floor gates SMS marketing/campaign purposes only — owner directive
-    //     2026-08-07, purpose.ts quietHoursApply), so the *earliest* window it violates is
-    //     the operator's hours of operation: the gate holds it at business_hours, a
-    //     non-escalating operational deferral. The quiet-hours floor itself — that a
-    //     MARKETING SMS at hour ≥20 blocks on quiet_hours and escalates — is proven
-    //     directly in tests/quiet-hours-scope.test.mjs (the pure-gate unit proof); this
-    //     e2e case pins the servicing-reply behavior through the real send path.
+    //     and the quiet-hours floor (9–20). Owner decision 2 (docs/ops/automation-inventory.md
+    //     §10) widened the floor to every automated SMS purpose except the strictly
+    //     transactional set (purpose.ts QUIET_HOURS_EXEMPT_PURPOSES), so a SERVICING reply is
+    //     now held at the TERMINAL quiet_hours step, which escalates to the FSA. The pure-gate
+    //     proof lives in tests/quiet-hours-scope.test.mjs; this pins the real send path.
     freezeClock('2026-08-07T02:30:00.000Z')
     const dbC2 = freshDb({ armed: true })
     const convC = q(dbC2, `select id from comm_conversations where contact='${PHONE}'`)
     twilioCalls.length = 0
     const nightOutcome = await sendMessage(replyCtx(convC))
     console.log(`    → 21:30 local: sent=${nightOutcome.sent} step=${nightOutcome.gate.blockedStep ?? '-'} escalate=${nightOutcome.gate.escalate}`)
-    check('21:30 local — a servicing reply is quiet-hours-exempt and held at business_hours', () => {
+    check('21:30 local — a servicing reply is held at the quiet-hours floor (owner decision 2)', () => {
       assert.equal(nightOutcome.sent, false)
-      assert.equal(nightOutcome.gate.blockedStep, 'business_hours',
+      assert.equal(nightOutcome.gate.blockedStep, 'quiet_hours',
         `blocked at ${nightOutcome.gate.blockedStep} instead: ${nightOutcome.gate.reason}`)
-      assert.equal(nightOutcome.gate.escalate, false,
-        'business_hours is a non-escalating operational deferral')
+      assert.equal(nightOutcome.gate.escalate, true, 'quiet_hours is a terminal, escalating block')
       assert.equal(twilioCalls.length, 0)
     })
 
@@ -1181,22 +1206,22 @@ try {
       assert.equal(twilioCalls.length, 0)
     })
 
-    // (e) The same 19:30 hold, driven through the REAL inbound path, to establish what the
-    //     FSA actually sees when a live reply is held outside hours of operation.
-    freezeClock('2026-08-07T01:30:00.000Z')
+    // (e) The same out-of-hours hold, driven through the REAL inbound path, to establish what
+    //     the FSA actually sees when a live reply is held outside hours of operation.
+    freezeClock('2026-08-06T14:30:00.000Z')
     const dbE = freshDb({ armed: true })
     twilioCalls.length = 0
     const rE = await processInbound({ channel: 'sms', from: PHONE, body: 'What is term life insurance?', provider: 'twilio', providerId: 'SM_hours_inbound' })
     const escRow = q(dbE, `select coalesce(reason,'-')||'|'||coalesce(note,'-') from agent_actions where kind='escalation' order by created_at desc limit 1`)
     const msgRow = q(dbE, `select coalesce(delivery_status,'-')||'|'||coalesce(blocked_step,'-') from comm_messages where direction='outbound' order by created_at desc limit 1`)
-    console.log(`    → 19:30 via processInbound: sent=${rE.autoReplied} row=${msgRow}`)
+    console.log(`    → out-of-hours via processInbound: sent=${rE.autoReplied} row=${msgRow}`)
     console.log(`    → FSA queue entry: ${escRow}`)
-    check('19:30 via processInbound — the reply is held and nothing reaches the contact', () => {
+    check('out-of-hours via processInbound — the reply is held and nothing reaches the contact', () => {
       assert.equal(rE.autoReplied, false)
       assert.equal(twilioCalls.length, 0)
       assert.equal(msgRow, 'blocked|business_hours')
     })
-    check('19:30 via processInbound — the FSA queue DOES get an entry naming the gate step', () => {
+    check('out-of-hours via processInbound — the FSA queue DOES get an entry naming the gate step', () => {
       assert.match(escRow, /^gate_blocked:business_hours\|/, `escalation row was: ${escRow}`)
       assert.equal(rE.escalated, true)
     })
@@ -1209,21 +1234,25 @@ try {
   section('9. AI workforce queue excludes a business-suppressed (reply-terminated) recipient')
   {
     const db = freshDb({ armed: false })
-    // Enable ONLY the life_winback agent so the build is deterministic (buildQueue skips any
-    // disabled agent without reading its view). life_winback's candidate source is the
-    // `contacts` win-back book, which is the simplest to seed end-to-end.
+    // Enable ONLY referral_followup so the build is deterministic (buildQueue skips any disabled
+    // agent without reading its view). Owner decision 7 gives cross_sell / term_conversion /
+    // life_winback audiences to the campaign engines, so referral_followup is the one agent that
+    // still queues — life_winback is ALSO enabled below to prove it now stands down.
     q(db, `update agent_daily_targets set enabled=false`)
-    q(db, `update agent_daily_targets set enabled=true, channel='email', daily_target=5, is_assumption=false where agent_key='life_winback'`)
+    q(db, `update agent_daily_targets set enabled=true, channel='email', daily_target=5, is_assumption=false where agent_key in ('referral_followup','life_winback')`)
 
-    // Two former-life households, each with an email-consented member and a win-back contact.
+    // Two fresh referrals, each household with an email-consented member and a contact.
     // Household B's contact is BUSINESS-SUPPRESSED — exactly what a reply-driven campaign
     // termination (FSOS-020) writes — so the workforce must NOT queue B.
     const HA = 'a0000000-0000-0000-0000-0000000000a1', MA = 'a0000000-0000-0000-0000-0000000000a2', CA = 'a0000000-0000-0000-0000-0000000000a3'
     const HB = 'b0000000-0000-0000-0000-0000000000b1', MB = 'b0000000-0000-0000-0000-0000000000b2', CB = 'b0000000-0000-0000-0000-0000000000b3'
+    const RA = 'a0000000-0000-0000-0000-0000000000a4', RB = 'b0000000-0000-0000-0000-0000000000b4'
+    // Received the day before the frozen clock: inside the 14-day automated-contact window.
+    const received = '2026-08-05T19:00:00Z'
     // Insert order respects FKs: households → contacts → members (source_contact_id → contacts)
-    // → consents → suppression (contact_id → contacts).
+    // → consents → suppression (contact_id → contacts) → referrals.
     q(db, `
-      insert into households (id, primary_name) values ('${HA}','Winback A'), ('${HB}','Winback B');
+      insert into households (id, primary_name) values ('${HA}','Referral A'), ('${HB}','Referral B');
       insert into contacts (id, full_name, first_name, contact_type, email, email_lc, source, status, household_id) values
         ('${CA}','Casey Clean','Casey','client','casey.clean@example.com','casey.clean@example.com','winback_life','active','${HA}'),
         ('${CB}','Blake Blocked','Blake','client','blake.blocked@example.com','blake.blocked@example.com','winback_life','active','${HB}');
@@ -1234,49 +1263,57 @@ try {
         ('${MA}','${HA}','email','granted','test_seed'),
         ('${MB}','${HB}','email','granted','test_seed');
       insert into comm_client_suppressions (contact_id, status, reason) values ('${CB}','blocked','reply_stop_request');
+      insert into referrals (id, household_id, referred_name, status, received_at) values
+        ('${RA}','${HA}','Casey Clean','received','${received}'),
+        ('${RB}','${HB}','Blake Blocked','received','${received}');
     `)
 
     await buildQueue()
 
-    check('the CLEAN winback recipient is queued for the workforce', () => {
-      assert.equal(q(db, `select count(*) from outreach_queue where agent_key='life_winback' and household_id='${HA}'`), '1',
-        'the consented, non-suppressed winback recipient should be queued')
+    check('the CLEAN referral recipient is queued for the workforce', () => {
+      assert.equal(q(db, `select count(*) from outreach_queue where agent_key='referral_followup' and household_id='${HA}'`), '1',
+        'the consented, non-suppressed referral recipient should be queued')
     })
     check('the BUSINESS-SUPPRESSED (reply-terminated) recipient is EXCLUDED from the queue', () => {
-      assert.equal(q(db, `select count(*) from outreach_queue where agent_key='life_winback' and household_id='${HB}'`), '0',
+      assert.equal(q(db, `select count(*) from outreach_queue where agent_key='referral_followup' and household_id='${HB}'`), '0',
         'a reply-terminated / business-suppressed contact was queued for autonomous outreach')
-      assert.equal(q(db, `select count(*) from outreach_queue where entity_id='${CB}'`), '0',
-        'the suppressed contact entity must never enter the queue')
+      assert.equal(q(db, `select count(*) from outreach_queue where household_id='${HB}'`), '0',
+        'the suppressed household must never enter the queue')
+    })
+    check('an enabled campaign-engine-owned agent (life_winback) queues nothing (owner decision 7)', () => {
+      assert.equal(q(db, `select count(*) from outreach_queue where agent_key='life_winback'`), '0')
     })
     await buildQueue() // second run — must not double-queue
     check('re-running buildQueue is idempotent (no duplicate queue rows)', () => {
-      assert.equal(q(db, `select count(*) from outreach_queue where agent_key='life_winback'`), '1',
+      assert.equal(q(db, `select count(*) from outreach_queue where agent_key='referral_followup'`), '1',
         'a second build double-queued — the unique(queue_date,agent,entity) idempotency failed')
     })
 
     // DISPATCH-TIME BACKSTOP: prove that even if a suppressed contact's row reaches the queue
     // (e.g. a reply-termination lands AFTER the build, or a row is inserted by another path), the
     // dispatch loop skips it BEFORE any draft/send — independent of the gate's purpose-scoped
-    // suppression step (which is skipped for transactional purposes like term_conversion's
-    // POLICY_DEADLINE). Force ONLY a suppressed row for the agent and run the real dispatcher.
-    q(db, `update ai_agents set enabled=true where key='life_winback'`) // lift the per-agent kill switch for this run
-    q(db, `delete from outreach_queue where agent_key='life_winback'`)
+    // suppression step. Force ONLY a suppressed row for the agent and run the real dispatcher.
+    q(db, `update ai_agents set enabled=true where key='referral_followup'`) // lift the per-agent kill switch for this run
+    q(db, `delete from outreach_queue where agent_key='referral_followup'`)
     // queue_date is pinned to the FROZEN clock's date (runOutreachAgent filters by today =
     // new Date()…, which the harness freezes to IN_HOURS) so the dispatcher actually sees the row —
     // in production new Date() and current_date agree; the pin only compensates for the frozen clock.
     const frozenDay = IN_HOURS.slice(0, 10)
     q(db, `insert into outreach_queue (queue_date, agent_key, source, entity_type, entity_id, household_id, member_id, channel, priority, reason, is_security, status)
-           values ('${frozenDay}','life_winback','win_back','contact','${CB}','${HB}','${MB}','email',10,'forced post-build suppression',false,'queued')`)
+           values ('${frozenDay}','referral_followup','referral_followup','referral','${RB}','${HB}','${MB}','email',10,'forced post-build suppression',false,'queued')`)
     aiCalls.length = 0; twilioCalls.length = 0
-    await runOutreachAgent('life_winback')
+    await runOutreachAgent('referral_followup')
     check('dispatch SKIPS a suppressed queue row before any draft/send (agent-agnostic backstop)', () => {
-      assert.equal(q(db, `select status||'|'||coalesce(block_reason,'-') from outreach_queue where entity_id='${CB}'`),
+      assert.equal(q(db, `select status||'|'||coalesce(block_reason,'-') from outreach_queue where entity_id='${RB}'`),
         'skipped|business_suppressed', 'the dispatch loop did not skip a business-suppressed contact')
     })
     check('no model draft and no send occurred for the suppressed contact', () => {
       assert.equal(aiCalls.length, 0, 'the gateway was called for a suppressed contact (guard runs before drafting)')
       assert.equal(q(db, `select count(*) from comm_messages where direction='outbound' and member_id='${MB}'`), '0',
         'an outbound message was created for a suppressed contact')
+    })
+    check('the suppressed referral is NOT stamped as first-touched', () => {
+      assert.equal(q(db, `select (first_touch_at is null)::text from referrals where id='${RB}'`), 'true')
     })
   }
   // ── SCENARIO 10: FSOS-030/032 — deterministic callback correlation + event dedupe ─

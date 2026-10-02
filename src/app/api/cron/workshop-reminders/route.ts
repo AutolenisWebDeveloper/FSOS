@@ -12,8 +12,9 @@
 // DNC, quiet-hours, approved-template, recommendation, securities). is_security workshops
 // are excluded and route to FFS. Nothing sends while templates are placeholders.
 //
-// Auth mirrors /api/cron/[job]: Vercel Cron header OR a Bearer CRON_SECRET.
+// Auth: Bearer CRON_SECRET only (cronAuthorized, src/lib/http.ts).
 import { NextRequest, NextResponse } from 'next/server'
+import { cronAuthorized } from '@/lib/http'
 import { runReminderPass, runChangePass, runNurturePass } from '@/lib/workshops/comms-engine'
 
 export const dynamic = 'force-dynamic'
@@ -25,14 +26,9 @@ export const runtime = 'nodejs'
 // CRON_SECRET, full stop (Vercel sends `Authorization: Bearer <CRON_SECRET>` on cron
 // invocations when the env var is provisioned — a go-live checklist item). No secret
 // configured → the route refuses everything (fail closed), never header-trust.
-function authorized(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET
-  if (!secret) return false
-  return (req.headers.get('authorization') || '') === `Bearer ${secret}`
-}
 
 export async function GET(req: NextRequest) {
-  if (!authorized(req)) {
+  if (!cronAuthorized(req)) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
   try {

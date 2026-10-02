@@ -49,12 +49,14 @@ export async function GET(_req: NextRequest) {
     }
 
     return NextResponse.json({
+      // A failed count is UNKNOWN (null), never 0: 0 read as "Healthy" when the query had failed
+      // (audit I-07). The panel shows null as "Monitoring degraded". Same for an unreadable job_runs.
       counts: {
-        dead_letter_executions: deadLetter.count ?? 0,
-        scheduled_stuck_executions: stuck.count ?? 0,
-        running_enrollments: running.count ?? 0,
+        dead_letter_executions: deadLetter.error ? null : (deadLetter.count ?? 0),
+        scheduled_stuck_executions: stuck.error ? null : (stuck.count ?? 0),
+        running_enrollments: running.error ? null : (running.count ?? 0),
       },
-      cron: lastRun,
+      cron: jobRows.error ? {} : lastRun,
       checked_at: nowISO,
     })
   } catch (e) {

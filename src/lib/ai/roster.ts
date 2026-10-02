@@ -79,17 +79,17 @@ export const AGENT_ROSTER: Record<string, AgentDef> = {
 //                           label over that job, not a gateway/runAgent execution.
 //   • routing_label       — a contactRouter classification label / UI grouping only; never run.
 //   • roadmap             — defined metadata with NO runtime path yet (not wired).
+//   • engine_owned        — the workforce stands this agent down: a campaign engine owns its
+//                           audience (owner decision 7, src/lib/ai/outreach.ts CAMPAIGN_ENGINE_OWNED_AGENTS).
 // This corrects the Phase-1 FSOS-050 census, which mis-listed executive_intelligence and pipeline
 // as non-executing: both ARE live (executive_intelligence via the FSA assistant + household
 // next-action runGateway routes; pipeline as the Pipeline Win-Back campaign's AI-author key).
-export type AgentSurface = 'active' | 'disabled_by_default' | 'detection_job' | 'routing_label' | 'roadmap'
+export type AgentSurface = 'active' | 'disabled_by_default' | 'detection_job' | 'routing_label' | 'roadmap' | 'engine_owned'
 
 export const AGENT_SURFACE: Record<string, AgentSurface> = {
   // Live autonomous / user-triggered / gate execution
   executive_intelligence: 'active', // runGateway: /api/app/assistant + households/[id]/next-action
   pipeline: 'active',               // aiAuthorAgentKey of the scheduled pipeline-winback tick
-  cross_sell: 'active',             // workforce runAgent (workforce-orchestrator)
-  term_conversion: 'active',        // workforce runAgent
   referral_followup: 'active',      // workforce runAgent
   marketing_automation: 'active',   // campaign-dispatch actor
   compliance_guardrail: 'active',   // the hard-block validator on every outbound
@@ -97,8 +97,10 @@ export const AGENT_SURFACE: Record<string, AgentSurface> = {
   contact_router: 'active',         // runGateway on contact upload
   content_drafter: 'active',        // runGateway on FSA draft request
   engagement_triager: 'active',     // runGateway on social engagement
-  // Wired but shipped OFF pending operator verification
-  life_winback: 'disabled_by_default', // seed enabled=false (consent mapping pending)
+  // The workforce stands down — the campaign engines own these audiences (owner decision 7)
+  cross_sell: 'engine_owned',       // Cross-Sell Life campaign
+  term_conversion: 'engine_owned',  // Life Conversion campaign
+  life_winback: 'engine_owned',     // Pipeline Win-Back campaign
   // Scheduled detection/SQL jobs (the "agent" is a label over the job)
   data_quality: 'detection_job',    // data-quality cron
   commission_reconciliation: 'detection_job', // commission-reconcile cron (SQL status transition)
@@ -124,6 +126,7 @@ export function agentSurfaceLabel(s: AgentSurface): string {
     case 'detection_job': return 'Detection job'
     case 'routing_label': return 'Routing only'
     case 'roadmap': return 'Roadmap'
+    case 'engine_owned': return 'Stands down — campaign owns audience'
   }
 }
 

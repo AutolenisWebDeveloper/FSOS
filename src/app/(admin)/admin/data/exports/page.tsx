@@ -53,8 +53,8 @@ export default async function DataExportsPage() {
       <div className="space-y-6">
         <p className="text-sm text-muted-foreground">
           Exports exist so the FSA owns and can port their own data. PII stays governed by Row-Level Security and
-          retention rules; securities substantive data is never exported (firewall). File generation runs as a
-          background job — a request appears here as “requested”, then “ready” once the file is built.
+          retention rules; securities substantive data is never exported (firewall). A request is recorded here as
+          “requested”. No background job builds the file yet, so a request does not become “ready” on its own.
         </p>
 
         <Card>

@@ -24,7 +24,7 @@
 import { getDb } from '@/lib/supabase/client'
 import { runAgent } from '@/jobs/agent-runner'
 import { sendMessage } from '@/lib/comms/send'
-import { isDeferralGateStep } from '@/lib/comms/gate'
+import { isDeferralGateStep, quietHoursHold } from '@/lib/comms/gate'
 import { resolveEffectiveSuppression } from '@/lib/comms/suppression'
 import { isWithinOperatingHours } from '@/lib/comms/hours'
 import { searchKnowledge, renderKnowledgeContext } from '@/lib/knowledge/library'
@@ -36,7 +36,9 @@ import {
   OUTREACH_MESSAGE_CLASS,
   buildDraftUserContent,
   isOutreachSource,
+  isCampaignEngineOwned,
   outreachPurpose,
+  referralFirstTouchExclusion,
   priorityOf,
   selectForQuota,
   type OutreachAgentKey,
@@ -89,6 +91,12 @@ async function resolveRecipient(
   householdId: string | null,
   channel: 'sms' | 'email',
   fallbackName?: string | null,
+  /**
+   * Dispatch pins the member the queue row was BUILT for (audit F-04/E-03): consent is read for
+   * that member, so the message must go to that member's own address — never to whichever member
+   * the unordered household lookup returns at send time.
+   */
+  pinnedMemberId?: string | null,
 ): Promise<Recipient> {
   const empty: Recipient = { memberId: null, name: fallbackName ?? null, contact: null, hasConsent: false, onDNC: false, contactable: false, suppressed: false }
   if (!householdId) return empty
@@ -104,7 +112,9 @@ async function resolveRecipient(
     .limit(25)
 
   const field = channel === 'sms' ? 'phone' : 'email'
-  const member = (members ?? []).find((m) => (m as Record<string, string | null>)[field])
+  const member = (members ?? []).find(
+    (m) => (!pinnedMemberId || (m as { id: string }).id === pinnedMemberId) && (m as Record<string, string | null>)[field],
+  )
   if (!member) return { ...empty, name: fallbackName ?? null }
 
   const contact = (member as Record<string, string | null>)[field] as string
@@ -233,6 +243,52 @@ async function lifeWinbackCandidates(channel: 'sms' | 'email'): Promise<Outreach
   return out
 }
 
+/**
+ * The durable first-touch record for a referral (owner decision 7): any outreach_queue row for
+ * this referral that reached the provider. Fails CLOSED — an unreadable history counts as touched,
+ * so the referral is never re-contacted on a guess.
+ */
+async function referralAlreadyTouched(referralId: string): Promise<boolean> {
+  const { count, error } = await getDb()
+    .from('outreach_queue')
+    .select('id', { count: 'exact', head: true })
+    .eq('agent_key', 'referral_followup')
+    .eq('entity_type', 'referral')
+    .eq('entity_id', referralId)
+    .eq('status', 'sent')
+  if (error) return true
+  return (count ?? 0) > 0
+}
+
+/** An upcoming scheduled appointment for the household. Fails CLOSED (treated as booked). */
+async function householdHasUpcomingAppointment(householdId: string | null): Promise<boolean> {
+  if (!householdId) return false
+  const nowISO = new Date().toISOString()
+  const { count, error } = await getDb()
+    .from('appointments')
+    .select('id', { count: 'exact', head: true })
+    .eq('household_id', householdId)
+    .eq('status', 'scheduled')
+    // Native bookings carry starts_at; FSA review-created appointments carry only scheduled_at.
+    .or(`starts_at.gt.${nowISO},scheduled_at.gt.${nowISO}`)
+  if (error) return true
+  return (count ?? 0) > 0
+}
+
+/** The member messaged us within the conversation quiet window. Fails CLOSED (treated as replied). */
+async function memberRepliedWithin(memberId: string | null, days: number): Promise<boolean> {
+  if (!memberId) return false
+  const since = new Date(Date.now() - days * 86400000).toISOString()
+  const { count, error } = await getDb()
+    .from('comm_messages')
+    .select('id', { count: 'exact', head: true })
+    .eq('member_id', memberId)
+    .eq('direction', 'inbound')
+    .gte('created_at', since)
+  if (error) return true
+  return (count ?? 0) > 0
+}
+
 async function referralFollowupCandidates(channel: 'sms' | 'email'): Promise<OutreachCandidate[]> {
   const db = getDb()
   const { data } = await db
@@ -245,11 +301,20 @@ async function referralFollowupCandidates(channel: 'sms' | 'email'): Promise<Out
     .limit(CAP_PER_SOURCE)
   const now = Date.now()
   const out: OutreachCandidate[] = []
+  const { data: pol } = await db.from('comm_conversation_policy').select('resume_quiet_days').eq('id', 'global').maybeSingle()
+  const quietDays = Number(pol?.resume_quiet_days ?? 5)
   for (const r of data ?? []) {
     const rec = await resolveRecipient(r.household_id, channel, r.referred_name)
-    const ageHours = r.received_at ? (now - new Date(r.received_at).getTime()) / 3600000 : 0
+    const ageHours = r.received_at ? (now - new Date(r.received_at).getTime()) / 3600000 : Number.POSITIVE_INFINITY
     const slaBreached = !!(r.sla_due_at && new Date(r.sla_due_at).getTime() < now)
+    const exclusionReason = referralFirstTouchExclusion({
+      ageDays: ageHours / 24,
+      alreadyTouched: await referralAlreadyTouched(r.id),
+      upcomingAppointment: await householdHasUpcomingAppointment(r.household_id),
+      recentInbound: await memberRepliedWithin(rec.memberId, quietDays),
+    })
     out.push({
+      exclusionReason,
       source: 'referral_followup', agentKey: 'referral_followup', entityType: 'referral', entityId: r.id,
       householdId: r.household_id, memberId: rec.memberId, channel,
       contactable: rec.contactable, hasConsent: rec.hasConsent, onDNC: rec.onDNC, suppressed: rec.suppressed, isSecurity: false,
@@ -292,6 +357,8 @@ export async function buildQueue(): Promise<BuildQueueResult> {
   for (const agentKey of OUTREACH_AGENTS) {
     const t = targets[agentKey]
     if (!t || !t.enabled || t.daily_target <= 0) { byAgent[agentKey] = { queued: 0, skipped: 0 }; continue }
+    // Owner decision 7: the campaign engines own this audience — the agent queues nothing.
+    if (isCampaignEngineOwned(agentKey)) { byAgent[agentKey] = { queued: 0, skipped: 0 }; continue }
 
     const candidates = await candidatesFor(agentKey, t.channel)
     const { selected, skipped } = selectForQuota(candidates, t.daily_target)
@@ -355,6 +422,16 @@ export async function runOutreachAgent(agentKey: OutreachAgentKey): Promise<{ se
   const t = targets[agentKey]
   const stats = { sent: 0, blocked: 0, escalated: 0, skipped: 0 }
   if (!t || !t.enabled || t.daily_target <= 0) return stats
+  // Owner decision 7: the campaign engines own this audience. Nothing dispatches; any row still
+  // queued for this agent (built before the stand-down) is retired with its reason — never sent.
+  if (isCampaignEngineOwned(agentKey)) {
+    await db
+      .from('outreach_queue')
+      .update({ status: 'skipped', block_reason: 'campaign_engine_owns', updated_at: new Date().toISOString() })
+      .eq('agent_key', agentKey)
+      .eq('status', 'queued')
+    return stats
+  }
 
   // Hours-of-operation pre-check: outside the operator's configured window the
   // workforce does NOT contact anyone (the daily cron runs mid-morning; a manual
@@ -423,8 +500,10 @@ export async function runOutreachAgent(agentKey: OutreachAgentKey): Promise<{ se
           continue
         }
 
-        // Resolve the recipient contact fresh (the gate re-checks consent/DNC anyway).
-        const rec = await resolveRecipient(item.household_id, item.channel, null)
+        // Resolve the recipient contact fresh (the gate re-checks consent/DNC anyway), PINNED to
+        // the member the row was built for: consent is evaluated for item.member_id, so the
+        // message may only go to that member's own address (audit F-04/E-03).
+        const rec = await resolveRecipient(item.household_id, item.channel, null, item.member_id)
         if (!rec.contact || !rec.memberId) {
           await db.from('outreach_queue').update({ status: 'skipped', block_reason: 'no_contact_method', updated_at: new Date().toISOString() }).eq('id', item.id)
           stats.skipped++
@@ -499,8 +578,20 @@ export async function runOutreachAgent(agentKey: OutreachAgentKey): Promise<{ se
         if (outcome.sent) {
           await db.from('outreach_queue').update({ status: 'sent', message_id: outcome.messageId ?? null, dispatched_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', item.id)
           await ctx.recordAction({ kind: `outreach:${item.source}`, targetType: item.entity_type, targetId: item.entity_id, outcome: 'sent', note: item.reason ?? undefined })
+          // The durable one-time first-touch record (owner decision 7, audit H-01/I-01): stamp the
+          // referral so referral-sla and the referral page see it, and it is never re-selected.
+          if (item.entity_type === 'referral') {
+            const nowISO = new Date().toISOString()
+            await db.from('referrals').update({ first_touch_at: nowISO, updated_at: nowISO }).eq('id', item.entity_id).is('first_touch_at', null)
+            await writeAudit({ actor: `agent:${agentKey}`, action: 'entity.updated', entity: 'referral', entityId: item.entity_id, diff: { first_touch_at: nowISO, via: 'referral_followup' } })
+          }
           stats.sent++
-        } else if (isDeferralGateStep(outcome.gate.blockedStep)) {
+        } else if (
+          isDeferralGateStep(outcome.gate.blockedStep) ||
+          // Owner decision 3: quiet hours HOLDS rather than blocks. Rows dispatched here are
+          // today's queue (due now); tomorrow's buildQueue re-evaluates the target from scratch.
+          quietHoursHold(outcome.gate.blockedStep, new Date().toISOString(), new Date().toISOString()) === 'hold'
+        ) {
           // DEFERRAL (configured window / business hours / frequency / collision / A2P
           // hold): a self-clearing hold, not a verdict on this outreach. 'held' (allowed
           // by the outreach_queue status CHECK) instead of terminal 'blocked', so the

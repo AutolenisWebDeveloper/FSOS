@@ -248,12 +248,17 @@ ok('atomic claim before dispatch (executable insert + guarded retry update)', /s
 
 // The additive-OR consent rule moved with enforcement: it now lives at the dispatch
 // chokepoint's policy resolver, where it applies to EVERY send rather than only to callers
-// that went through the old wrapper. The invariant is unchanged — a durable domain grant
-// (the workshop registrant's own consent store) can only ADD consent, never remove it.
+// that went through the old wrapper. A durable domain grant (the workshop registrant's own
+// consent store) can only ADD consent — EXCEPT over a recorded revoke: owner decision 5
+// (2026-10-02) makes the most recent revoke win until a newer, documented opt-in.
 const policy = readFileSync(join(root, 'src/lib/comms/dispatch-policy.ts'), 'utf8')
 ok(
-  'dispatch-policy consent is additive OR (member consent OR public-intake grant OR durable grant OR waiver — never reduces)',
-  /memberConsentOk \|\| contactConsentOk \|\| ctx\.durableConsentGranted === true \|\| waiverApplies/.test(policy),
+  'dispatch-policy consent is additive OR (member consent OR public-intake grant OR durable grant OR waiver)',
+  /memberConsentOk \|\| contactConsentOk \|\| durableApplies \|\| waiverApplies/.test(policy),
+)
+ok(
+  'a durable grant never overrides a recorded revoke (owner decision 5)',
+  /const durableApplies = ctx\.durableConsentGranted === true && !basisRevoked/.test(policy),
 )
 
 console.log(`\n${passed} checks passed.`)

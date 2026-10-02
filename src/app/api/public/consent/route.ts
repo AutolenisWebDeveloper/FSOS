@@ -5,6 +5,7 @@ import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { rateLimit, clientIp } from '@/lib/http/rate-limit'
 import { writeAudit } from '@/lib/audit/log'
 import { consentContactKey } from '@/lib/comms/contact-consent'
+import { armDncEntry } from '@/lib/comms/opt-out'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -34,20 +35,13 @@ export async function POST(req: NextRequest) {
     const db = getDb()
     const actor = 'public'
 
-    // Upsert into the internal DNC list. If a conflict arises (already listed),
-    // ignore it — the opt-out is idempotent from the caller's perspective.
-    const { error } = await db
-      .from('dnc_entries')
-      .upsert(
-        { contact: v.data.contact, channel: v.data.channel, scope: 'internal', reason: 'public opt-out' },
-        { onConflict: 'contact,channel', ignoreDuplicates: true },
-      )
-    if (error) {
-      // A conflict on a constraint we can't upsert against is not fatal — the goal
-      // (contact is on the list) is still met. Other errors surface as 500.
-      const conflict = /duplicate|conflict|unique/i.test(error.message)
-      if (!conflict) return dbErrorResponse('public/consent', error)
-    }
+    // The internal DNC list, through the shared writer: an existing row keeps its first reason (never
+    // relabelled) and is RE-ARMED if a bare START had lifted it. The key is normalized exactly as the
+    // gate reads it — a mixed-case email or a punctuated phone stored raw never matched the send.
+    // This route writes its own contact-level evidence rows below, so the writer adds none.
+    const dncKey = consentContactKey(v.data.contact.includes('@') ? 'email' : 'sms', v.data.contact)
+    const dnc = await armDncEntry({ contact: dncKey, channel: v.data.channel, reason: 'public opt-out', evidence: false })
+    if (!dnc.ok) return dbErrorResponse('public/consent', { message: dnc.error ?? 'DNC write failed' })
 
     // Keep the durable per-contact consent store consistent with the opt-out. The ENFORCED
     // revocation is the dnc_entries write above (checked at gate step `dnc` for every send);
@@ -56,7 +50,9 @@ export async function POST(req: NextRequest) {
     const revokeChannels =
       v.data.channel === 'all' ? (['sms', 'email'] as const) : v.data.channel === 'call' ? [] : ([v.data.channel] as const)
     if (revokeChannels.length) {
-      await db.from('comm_contact_consents').insert(
+      // CHECKED: this evidence row is what keeps a later bare START from lifting a STOP-labelled row
+      // this opt-out re-armed (inbound.ts applyOptIn). A lost row must fail the request, not succeed.
+      const { error: evidenceError } = await db.from('comm_contact_consents').insert(
         revokeChannels.map((ch) => ({
           contact: consentContactKey(ch, v.data.contact),
           channel: ch,
@@ -66,6 +62,7 @@ export async function POST(req: NextRequest) {
           source_url: 'https://www.markistfsa.com/optout',
         })),
       )
+      if (evidenceError) return dbErrorResponse('public/consent evidence', evidenceError)
     }
 
     await writeAudit({

@@ -529,6 +529,50 @@ await t('a booking made inside an offset window does not get that reminder', asy
   assert.equal(smsCalls().length, 0, 'a reminder minutes after the confirmation is noise')
 })
 
+console.log('\n3b. Reminder SMS respect the 09:00–20:00 floor (owner decisions 2 + 3)')
+// A 09:00 CDT appointment with a 12h reminder: the configured time is 21:00 CDT the night before.
+// Reminders do not HOLD — the SMS moves to the nearest allowed time before the appointment (the end
+// of the previous evening's window), or is skipped when none remains.
+const NIGHT_APPT = '2026-09-02T14:00:00.000Z' // 09:00 CDT
+function nightSetup() {
+  const state = setup()
+  state.config = { offsets_minutes: [720], email_enabled: false, sms_enabled: true }
+  state.appointments[0].booked_at = '2026-08-20T00:00:00.000Z'
+  state.appointments[0].starts_at = NIGHT_APPT
+  return state
+}
+await t('the configured time (21:00 local) is quiet hours: nothing is sent then', async () => {
+  nightSetup()
+  await notify.runBookingReminderPass(new Date('2026-09-02T02:00:00.000Z')) // 21:00 CDT
+  assert.equal(smsCalls().length, 0, 'a reminder SMS went out at 21:00 recipient-local')
+})
+await t('it moves EARLIER, to the end of the evening window, and fires once', async () => {
+  nightSetup()
+  for (let i = 0; i < 3; i++) await notify.runBookingReminderPass(new Date('2026-09-02T00:30:00.000Z')) // 19:30 CDT
+  assert.equal(smsCalls().length, 1)
+})
+await t('before the shifted time nothing fires (18:00 local)', async () => {
+  nightSetup()
+  await notify.runBookingReminderPass(new Date('2026-08-31T23:00:00.000Z')) // a day early
+  await notify.runBookingReminderPass(new Date('2026-09-01T23:00:00.000Z')) // 18:00 CDT
+  assert.equal(smsCalls().length, 0)
+})
+const { reminderSmsTiming } = require(join(out, 'lib/booking/notify-events.js'))
+const dayOnly = (ms) => { const h = new Date(ms).getUTCHours(); return h >= 9 && h < 20 } // UTC-as-local for the pure cases
+const H = 3600_000, D0 = Date.parse('2026-09-02T00:00:00.000Z')
+await t('pure: allowed configured time → due from then; later → next allowed start before the appointment', () => {
+  assert.equal(reminderSmsTiming({ windowOpenMs: D0 + 10 * H, startMs: D0 + 34 * H, anchorMs: null, nowMs: D0 + 10 * H }, dayOnly), 'due')
+  // 06:00 configured, appointment 11:00 → 09:00 is nearer than 19:30 the night before
+  assert.equal(reminderSmsTiming({ windowOpenMs: D0 + 6 * H, startMs: D0 + 11 * H, anchorMs: null, nowMs: D0 + 6 * H }, dayOnly), 'not_yet')
+  assert.equal(reminderSmsTiming({ windowOpenMs: D0 + 6 * H, startMs: D0 + 11 * H, anchorMs: null, nowMs: D0 + 9 * H }, dayOnly), 'due')
+})
+await t('pure: no allowed instant before the appointment → skip; an earlier shift never precedes the booking', () => {
+  // configured 02:00, appointment 05:00, booked at 01:00 → no allowed time in [booking, start)
+  assert.equal(reminderSmsTiming({ windowOpenMs: D0 + 2 * H, startMs: D0 + 5 * H, anchorMs: D0 + 1 * H, nowMs: D0 + 2 * H }, dayOnly), 'skip')
+  // a tick past the target but at night with no window left before the start → skip
+  assert.equal(reminderSmsTiming({ windowOpenMs: D0 + 18 * H, startMs: D0 + 22 * H, anchorMs: null, nowMs: D0 + 21 * H }, dayOnly), 'skip')
+})
+
 console.log('\n4. Rescheduled appointments')
 await t('a reschedule sends the RESCHEDULED template, never a fresh confirmation', async () => {
   setup()
@@ -566,8 +610,10 @@ await t('the NEW time re-arms the reminder, and fires it exactly once', async ()
   await notify.runBookingReminderPass(NOW)
   assert.equal(smsCalls().length, 1, 'too early for the new time\'s reminder')
 
-  // …and once it opens, the new version fires exactly once however many ticks run.
-  const later = new Date(NOW.getTime() + 2.5 * 24 * 60 * 60_000)
+  // …and once it opens, the new version fires exactly once however many ticks run. (A daytime
+  // tick: NOW + 2.25 days is 16:00 CDT. NOW + 2.5 days would be 22:00 CDT, where an SMS reminder
+  // now waits for the floor to open — owner decision 3, proven in section 3b below.)
+  const later = new Date(NOW.getTime() + 2.25 * 24 * 60 * 60_000)
   for (let i = 0; i < 4; i++) await notify.runBookingReminderPass(later)
   assert.equal(smsCalls().length, 2, 'the new time re-arms the reminder, once')
   assert.deepEqual(

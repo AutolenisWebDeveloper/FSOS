@@ -25,7 +25,10 @@ import { sendVisitorAck } from '@/lib/notifications/transactional'
 import { signManageToken, manageTokenKey, MANAGE_TOKEN_TTL_MS } from './manage-tokens'
 import { buildBookingContext, buildBookingFallbackContent } from './notify-core'
 import { loadReminderConfig, reminderLeadHours } from './notification-config'
-import { type LifecycleEvent, sourceKeyFor, dueReminderOffsets } from './notify-events'
+import { type LifecycleEvent, sourceKeyFor, dueReminderOffsets, reminderSmsTiming } from './notify-events'
+import { withinQuietHours } from '../compliance/guardrail'
+// Relative (not @/): pure helpers the standalone-tsc booking tests must emit alongside notify.ts.
+import { CONTINENTAL_US_ZONES, localPartsInZone } from '../comms/recipient-timezone'
 import { smsA2pApproved } from '@/lib/comms/a2p'
 import { isDeferralGateStep } from '@/lib/comms/gate'
 import type { MessagePurpose } from '@/lib/comms/purpose'
@@ -584,7 +587,9 @@ export async function runBookingReminderPass(
   const limit = Math.min(Math.max(1, opts.limit ?? 200), 1000)
   const nowIso = now.toISOString()
   const maxOffsetMin = Math.max(...config.offsets)
-  const windowEndIso = new Date(now.getTime() + maxOffsetMin * 60_000).toISOString()
+  // +24h: an SMS reminder whose configured time lands in quiet hours may move EARLIER to the end of
+  // the previous allowed span (owner decision 3), so the scan must reach those appointments too.
+  const windowEndIso = new Date(now.getTime() + maxOffsetMin * 60_000 + (config.smsEnabled ? 24 * 3600_000 : 0)).toISOString()
 
   // Scan every scheduled appointment whose start falls inside the WIDEST offset window; the
   // per-appointment/per-offset due decision (and the ledger fire-once claim) narrows from there.
@@ -614,7 +619,10 @@ export async function runBookingReminderPass(
       config.offsets,
       now,
     )
-    if (due.length === 0) {
+    // SMS offsets follow the quiet-hours floor (owner decisions 2 + 3); email offsets are unchanged.
+    const smsDue = config.smsEnabled ? smsReminderOffsetsDue(appt, anchor, config.offsets, now) : { due: [], skipped: 0 }
+    result.skipped += smsDue.skipped
+    if (due.length === 0 && smsDue.due.length === 0) {
       result.skipped++
       continue
     }
@@ -626,8 +634,8 @@ export async function runBookingReminderPass(
       result.skipped++
       continue
     }
-    for (const offset of due) {
-      if (emailEligible) {
+    for (const offset of [...new Set([...due, ...smsDue.due])].sort((a, b) => a - b)) {
+      if (emailEligible && due.includes(offset)) {
         const emailOutcome = await deliverLeg(db, appt, {
           event: 'reminder',
           offsetMinutes: offset,
@@ -642,7 +650,7 @@ export async function runBookingReminderPass(
       // SMS reminder leg — independent of the email leg in every way. The affirmative SMS
       // opt-in, A2P go-live, DNC/STOP, quiet-hours scope and template approval are each
       // enforced by the gate itself; nothing here waives any of them.
-      if (config.smsEnabled) {
+      if (config.smsEnabled && smsDue.due.includes(offset)) {
         const smsOutcome = await deliverLeg(db, appt, {
           event: 'reminder',
           offsetMinutes: offset,
@@ -657,6 +665,53 @@ export async function runBookingReminderPass(
     }
   }
   return result
+}
+
+/**
+ * True when `ms` is inside the 09:00–20:00 floor for this booker: in their booking-form zone when
+ * it is a valid IANA zone, otherwise in EVERY continental zone (owner decision 1 — an unresolved
+ * recipient is never messaged in their unknown local night).
+ */
+function reminderAllowedAt(bookerTimezone: string | null): (ms: number) => boolean {
+  let zones: readonly string[] = CONTINENTAL_US_ZONES
+  if (bookerTimezone) {
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: bookerTimezone })
+      zones = [bookerTimezone]
+    } catch {
+      /* not an IANA zone — fall back to every continental zone */
+    }
+  }
+  return (ms) => zones.every((z) => withinQuietHours(localPartsInZone(z, new Date(ms)).hour))
+}
+
+/** Which SMS reminder offsets are due now under the floor; counts the ones with no allowed time left. */
+function smsReminderOffsetsDue(
+  appt: ApptRow,
+  anchorIso: string | null,
+  offsets: readonly number[],
+  now: Date,
+): { due: number[]; skipped: number } {
+  const startMs = appt.starts_at ? Date.parse(appt.starts_at) : NaN
+  if (appt.status !== 'scheduled' || !Number.isFinite(startMs)) return { due: [], skipped: 0 }
+  const anchorMs = anchorIso ? Date.parse(anchorIso) : NaN
+  const allowedAt = reminderAllowedAt(appt.booker_timezone)
+  const out: number[] = []
+  let skipped = 0
+  for (const raw of new Set(offsets.map((o) => Math.trunc(o)))) {
+    if (!Number.isFinite(raw) || raw <= 0) continue
+    const windowOpenMs = startMs - raw * 60_000
+    // Same suppression as dueReminderOffsets: a booking made inside this offset's window was
+    // already covered by its confirmation.
+    if (Number.isFinite(anchorMs) && anchorMs >= windowOpenMs) continue
+    const verdict = reminderSmsTiming(
+      { windowOpenMs, startMs, anchorMs: Number.isFinite(anchorMs) ? anchorMs : null, nowMs: now.getTime() },
+      allowedAt,
+    )
+    if (verdict === 'due') out.push(raw)
+    else if (verdict === 'skip' && now.getTime() >= windowOpenMs) skipped++
+  }
+  return { due: out.sort((a, b) => a - b), skipped }
 }
 
 /** How far back a missed lifecycle SMS is re-driven. Older than this ⇒ left alone. */

@@ -75,13 +75,9 @@ export async function enrollContact(input: EnrollInput): Promise<EnrollResult> {
     eligInput.conversionDeadline &&
     !earlyEnrollmentFits(eligInput.conversionDeadline, today, campaign.early_enrollment_buffer_days)
   ) {
-    // Do NOT enroll in the full campaign — route to an advisor/compressed path (not built here).
-    await db.from('work_tasks').insert({
-      title: 'Life Conversion — deadline too close for full campaign; advisor review',
-      entity_type: 'policy',
-      entity_id: input.policyId,
-      source: 'workflow',
-    })
+    // Do NOT enroll in the full campaign — route to the advisor. One task per policy, ever.
+    const { ensureInsufficientTimeTask } = await import('./tick')
+    await ensureInsufficientTimeTask(db, input.policyId)
     return { enrolled: false, reasons: ['insufficient_time'] }
   }
 

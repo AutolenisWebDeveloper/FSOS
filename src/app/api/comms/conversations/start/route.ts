@@ -121,6 +121,8 @@ export async function POST(req: NextRequest) {
         // Opt-out-safe (an explicit revoke still blocks) and the opener still clears the AI-
         // authority matrix + DNC/quiet-hours/securities/recommendation gate steps.
         consentWaived: true,
+        // A person started this conversation with this one contact (review finding 3b).
+        operatorInitiated: true,
         purpose: d.purpose as MessagePurpose,
         sourceKind: 'agent_seed',
         sourceCampaignKey,

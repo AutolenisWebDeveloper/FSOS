@@ -109,6 +109,7 @@ export async function POST(req: NextRequest) {
             // (ADR-033) — you don't consent to yourself. Every other gate step still runs.
             consentWaived: true,
             isTest: true,
+            operatorInitiated: true,
             sourceKind: 'test',
             sourceCampaignKey: d.campaign_key ?? null,
             sourceAssetId: asset?.assetId ?? null,
@@ -144,6 +145,7 @@ export async function POST(req: NextRequest) {
         actor,
         templateId,
         humanAuthored,
+        operatorInitiated: true,
         // Verified-self test destination — consent-on-file is waived (ADR-033). Opt-out-safe;
         // quiet-hours/DNC/securities/recommendation/A2P still apply exactly as for a live send.
         consentWaived: true,

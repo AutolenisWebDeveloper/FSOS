@@ -13,6 +13,7 @@ import {
   attentionItems,
   heldCount,
   type WorkforceRow,
+  workerStatusLabel,
   type QueueRow,
   type EscalationRow,
   type ComplianceEventRow,
@@ -249,8 +250,8 @@ export default async function CommandCenterPage() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={r.status === 'working' ? 'active' : 'lost'}>
-                        {r.status === 'agent_off' ? 'agent off' : r.status === 'paused' ? 'paused' : 'working'}
+                      <Badge variant={r.status === 'working' ? 'active' : r.status === 'agent_off' || r.status === 'paused' ? 'lost' : 'outline'}>
+                        {workerStatusLabel(r.status)}
                       </Badge>
                     </TableCell>
                   </TableRow>

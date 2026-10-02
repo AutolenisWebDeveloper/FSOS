@@ -27,6 +27,51 @@ export const OUTREACH_AGENTS = [
 ] as const
 export type OutreachAgentKey = (typeof OUTREACH_AGENTS)[number]
 
+/**
+ * Owner decision 7 (docs/ops/automation-inventory.md §10, 2026-10-02): the CAMPAIGN ENGINES own
+ * automated sends for term conversion (Life Conversion), cross-sell (Cross-Sell Life) and win-back
+ * (Pipeline Win-Back). The workforce agents for those audiences STAND DOWN — they queue nothing and
+ * dispatch nothing. No existing hook hands their candidates to campaign enrollment (each engine
+ * runs its own enrollment sweep), so none is built. This differs from the operating documentation
+ * that routes these audiences through the term_conversion / marketing_automation agents.
+ */
+export const CAMPAIGN_ENGINE_OWNED_AGENTS: ReadonlySet<OutreachAgentKey> = new Set<OutreachAgentKey>([
+  'cross_sell',
+  'term_conversion',
+  'life_winback',
+])
+
+export function isCampaignEngineOwned(agentKey: OutreachAgentKey): boolean {
+  return CAMPAIGN_ENGINE_OWNED_AGENTS.has(agentKey)
+}
+
+/** No automated contact for a referral older than this (owner addition, 2026-10-02). */
+export const REFERRAL_MAX_AGE_DAYS = 14
+
+export interface ReferralFirstTouchFacts {
+  /** Days since the referral was received. */
+  ageDays: number
+  /** A first touch is already recorded: referrals.first_touch_at, or a 'sent' outreach row. */
+  alreadyTouched: boolean
+  /** The household has an upcoming scheduled appointment. */
+  upcomingAppointment: boolean
+  /** The referred member messaged us within the conversation quiet window. */
+  recentInbound: boolean
+}
+
+/**
+ * Why a referral must NOT get an automated first touch, or null when it may. A workforce first
+ * touch is ONE-TIME per target per workflow (owner decision 7) — the durable record is the
+ * referral's first_touch_at plus the outreach_queue history, never a per-day key.
+ */
+export function referralFirstTouchExclusion(f: ReferralFirstTouchFacts): string | null {
+  if (f.alreadyTouched) return 'first_touch_already_sent'
+  if (!(f.ageDays <= REFERRAL_MAX_AGE_DAYS)) return 'referral_older_than_14_days'
+  if (f.upcomingAppointment) return 'appointment_booked'
+  if (f.recentInbound) return 'recent_reply'
+  return null
+}
+
 /** Which detection signal a candidate came from. */
 export type OutreachSource = 'cross_sell' | 'term_conversion' | 'referral_followup' | 'win_back'
 
@@ -58,6 +103,8 @@ export interface OutreachCandidate {
   /** Raw source signal used to rank (e.g. cross-sell gap score, days remaining). */
   signal: OutreachSignal
   reason: string
+  /** A stand-down rule excluded this candidate (one-time first touch, age, booking, reply). */
+  exclusionReason?: string | null
   recipientName?: string | null
 }
 
@@ -126,6 +173,7 @@ export function isSelectable(c: OutreachCandidate): boolean {
     c.hasConsent &&       // TCPA — no consent, no proactive contact
     !c.onDNC &&           // internal/external DNC
     !c.suppressed &&      // business suppression (incl. FSOS-020 reply-termination)
+    !c.exclusionReason && // stand-down rule (owner decision 7)
     c.memberId !== null
   )
 }
@@ -156,6 +204,9 @@ export function selectForQuota(candidates: OutreachCandidate[], dailyTarget: num
 
   for (const c of ranked) {
     if (c.isSecurity) { skipped.push({ candidate: c, reason: 'securities_firewall' }); continue }
+    // A stand-down rule (one-time first touch, referral age, booking, recent reply) — skipped
+    // with its reason so the quota rolls to the next candidate instead of repeating the top N.
+    if (c.exclusionReason) { skipped.push({ candidate: c, reason: c.exclusionReason }); continue }
     if (!c.contactable || c.memberId === null) { skipped.push({ candidate: c, reason: 'no_contact_method' }); continue }
     if (c.onDNC) { skipped.push({ candidate: c, reason: 'on_dnc' }); continue }
     if (c.suppressed) { skipped.push({ candidate: c, reason: 'business_suppressed' }); continue }

@@ -48,6 +48,16 @@ export interface SendResult {
   blockedStep?: string
   /** Operator-facing reason. */
   reason?: string
+  /**
+   * The provider's own error code on a rejected send (Twilio `code`, e.g. '21610'; Resend error
+   * `name`). Present only when the provider answered and refused — never on a policy block.
+   */
+  providerCode?: string
+  /**
+   * True when the provider rejection is about the RECIPIENT and retrying the same message can
+   * never succeed (unsubscribed, invalid or non-mobile number). Audit A-07 / B-06.
+   */
+  permanent?: boolean
   /** Whether this block was raised to the human-FSA queue. */
   escalated?: boolean
   /** The exact body transmitted (SMS includes the appended opt-out footer). */
@@ -141,6 +151,11 @@ export interface MessagingDeps {
     to: string; body: string; sid: string; token: string
     from?: string; messagingServiceSid?: string; statusCallback?: string
   }): Promise<SendResult>
+  /**
+   * Hand a synchronous provider rejection code to the carrier-opt-out writer, which applies it
+   * only for an unsubscribe (Twilio 21610) and ignores every other code. Never throws.
+   */
+  recordCarrierOptOut(to: string, code: string): Promise<void>
 }
 
 export const defaultMessagingDeps: MessagingDeps = {
@@ -206,7 +221,10 @@ export const defaultMessagingDeps: MessagingDeps = {
         ...(headers ? { headers } : {}),
         ...(attachments?.length ? { attachments } : {}),
       })
-      if (error) return { ok: false, error: error.message || String(error) }
+      if (error) {
+        const name = (error as { name?: string }).name
+        return { ok: false, error: error.message || String(error), ...(name ? { providerCode: name } : {}), permanent: false }
+      }
       return { ok: true, id: data?.id }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
@@ -235,13 +253,47 @@ export const defaultMessagingDeps: MessagingDeps = {
         },
         body: new URLSearchParams(params),
       })
-      if (!res.ok) return { ok: false, error: `Twilio ${res.status}: ${(await res.text()).slice(0, 200)}` }
+      if (!res.ok) return twilioRejection(res.status, await res.text().catch(() => ''))
       const json = (await res.json().catch(() => ({}))) as { sid?: string }
       return { ok: true, id: json.sid }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
     }
   },
+  async recordCarrierOptOut(to, code) {
+    try {
+      const { recordCarrierOptOut } = await import('./comms/opt-out')
+      await recordCarrierOptOut(to, code)
+    } catch {
+      /* best-effort: the DNC write is the enforced step and it logs its own failure */
+    }
+  },
+}
+
+/**
+ * Twilio error codes that are about the RECIPIENT, so the same message can never succeed on
+ * retry: 21610 unsubscribed, 21211 invalid To, 21614 not a mobile number, 21612 unreachable from
+ * this sender, 21408 region not enabled. Anything else (auth, rate limit, 5xx) is transient or
+ * operational. Flagging the NUMBER itself on 21211/21614 is policy question Q13 — not done here.
+ */
+const TWILIO_PERMANENT_CODES: ReadonlySet<string> = new Set(['21610', '21211', '21614', '21612', '21408'])
+
+/** PURE: classify a non-2xx Twilio Messages response from its JSON body `{ code, message }`. */
+export function twilioRejection(status: number, text: string): SendResult {
+  let code: string | undefined
+  let message = text.slice(0, 200)
+  try {
+    const j = JSON.parse(text) as { code?: number | string; message?: string }
+    if (j.code != null) code = String(j.code)
+    if (j.message) message = j.message.slice(0, 200)
+  } catch {
+    /* non-JSON body: keep the raw text */
+  }
+  return {
+    ok: false,
+    error: `Twilio ${status}${code ? ` ${code}` : ''}: ${message}`,
+    ...(code ? { providerCode: code, permanent: TWILIO_PERMANENT_CODES.has(code) } : { permanent: false }),
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -477,5 +529,10 @@ export async function sendSms(
     to, body: wireBody, sid, token, from, messagingServiceSid, statusCallback,
   })
   await deps.auditSent(ctx, result)
+  // A SYNCHRONOUS 21610 is the same carrier opt-out the status callback reports — Twilio refuses
+  // the create call outright when the number is already unsubscribed, so no callback ever comes.
+  // Apply it here too, or the number keeps being retried (audit B-05).
+  // recordCarrierOptOut applies only the unambiguous opt-out code (opt-out.ts isCarrierOptOutCode).
+  if (!result.ok && result.providerCode) await deps.recordCarrierOptOut(to, result.providerCode)
   return { ...result, sentBody: result.ok ? wireBody : undefined, timezone: decision.timezone, resolved: decision.resolved }
 }

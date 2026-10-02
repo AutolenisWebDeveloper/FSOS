@@ -799,7 +799,11 @@ export async function sendMessage(ctx: SendContext): Promise<SendOutcome> {
   // this late 'sent' never regresses `delivered`/`failed` (audit A-11 / B-09).
   if (messageId) {
     try {
-      const status = result.sent ? 'sent' : 'blocked'
+      // A policy withhold is 'blocked'; a send the gate CLEARED that the provider then refused is a
+      // delivery 'failed' — recording it as blocked misreported a carrier rejection as a
+      // compliance hold (audit A-07).
+      const providerRejected = !result.sent && result.gate.allowed
+      const status = result.sent ? 'sent' : providerRejected ? 'failed' : 'blocked'
       const outcome = {
         blocked_step: result.gate.blockedStep ?? null,
         block_reason: result.gate.reason ?? null,
@@ -832,6 +836,7 @@ export async function sendMessage(ctx: SendContext): Promise<SendOutcome> {
             }
           : {}),
         error: result.error ?? null,
+        ...(providerRejected ? { failed_at: new Date().toISOString(), provider_status: result.providerCode ?? 'rejected' } : {}),
         updated_at: new Date().toISOString(),
       }
       const { data: claimed, error: claimErr } = await db

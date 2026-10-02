@@ -22,7 +22,9 @@
 // Best-effort by contract: an opt-out must never throw into a webhook handler and cause the
 // provider to retry. The DNC write is first precisely because it is the enforced one.
 
-import { getDb } from '@/lib/supabase/client'
+// Relative (not the @/ alias): messaging.ts imports this module lazily, so it is part of the
+// standalone-tsc chokepoint compile (tests/helpers/chokepoint.mjs), which has no path aliases.
+import { getDb } from '../supabase/client'
 import { recordConsentChange } from './consent-events'
 
 export type OptOutChannel = 'sms' | 'email'
@@ -111,4 +113,29 @@ const CARRIER_OPT_OUT_CODES: ReadonlySet<string> = new Set(['21610'])
 /** True when a Twilio ErrorCode means the recipient is unsubscribed at the carrier. */
 export function isCarrierOptOutCode(code: string | null | undefined): boolean {
   return !!code && CARRIER_OPT_OUT_CODES.has(String(code).trim())
+}
+
+/**
+ * Apply a carrier-reported SMS opt-out (Twilio 21610) for a raw recipient number, wherever it was
+ * learned: the delivery status callback, or a synchronous REST rejection at send time. Resolves
+ * the household-member link so the member-keyed stores are revoked too. Never throws.
+ */
+export async function recordCarrierOptOut(toRaw: string, errorCode: string): Promise<void> {
+  if (!toRaw || !isCarrierOptOutCode(errorCode)) return
+  try {
+    const { normalizeContact, resolveContact } = await import('./conversations')
+    const contact = normalizeContact('sms', toRaw)
+    const link = await resolveContact('sms', contact)
+    await recordChannelOptOut({
+      contact,
+      channel: 'sms',
+      source: 'carrier_opt_out',
+      reason: `Twilio ErrorCode ${errorCode} — recipient unsubscribed at the carrier`,
+      consentText: `Carrier-reported opt-out (Twilio ${errorCode})`,
+      memberId: link.memberId,
+      householdId: link.householdId,
+    })
+  } catch {
+    /* best-effort: never throw into a webhook or the send path */
+  }
 }

@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyTwilioSignature, requestUrl } from '@/lib/comms/twilio'
 import { findMessageById, findMessageByProviderId, recordMessageEvent, normalizeProviderEvent } from '@/lib/comms/events'
-import { isCarrierOptOutCode, recordChannelOptOut } from '@/lib/comms/opt-out'
-import { normalizeContact, resolveContact } from '@/lib/comms/conversations'
+import { isCarrierOptOutCode, recordCarrierOptOut } from '@/lib/comms/opt-out'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -66,21 +65,7 @@ export async function POST(req: NextRequest) {
   // unambiguous 21610 (see isCarrierOptOutCode); filtering and unreachable-handset codes are
   // delivery problems, and treating them as opt-outs would unsubscribe people silently.
   if (isCarrierOptOutCode(params.ErrorCode) && params.To) {
-    try {
-      const contact = normalizeContact('sms', params.To)
-      const link = await resolveContact('sms', contact)
-      await recordChannelOptOut({
-        contact,
-        channel: 'sms',
-        source: 'carrier_opt_out',
-        reason: `Twilio ErrorCode ${params.ErrorCode} — recipient unsubscribed at the carrier`,
-        consentText: 'Carrier-reported opt-out (Twilio 21610)',
-        memberId: link.memberId,
-        householdId: link.householdId,
-      })
-    } catch (err) {
-      console.error('[twilio:status] carrier opt-out handling failed:', err)
-    }
+    await recordCarrierOptOut(params.To, String(params.ErrorCode))
   }
 
   return NextResponse.json({ received: true })

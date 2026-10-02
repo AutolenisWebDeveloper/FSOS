@@ -10,7 +10,7 @@
 import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
 import { sendMessage, isTemplateApproved } from '@/lib/comms/send'
-import { isDeferralGateStep } from '@/lib/comms/gate'
+import { isDeferralGateStep, quietHoursHold } from '@/lib/comms/gate'
 import { campaignDispatchContext, campaignIdentityContext } from '@/lib/comms/campaign'
 import { smsA2pApproved } from '@/lib/comms/a2p'
 import { getOrCreateConversation } from '@/lib/comms/conversations'
@@ -42,6 +42,8 @@ interface EnrollmentRow {
   agency_id: string | null
   baseline_date: string
   current_touch_no: number
+  /** When the current touch fell due — bounds a quiet-hours hold (owner decision 3). */
+  next_touch_at?: string | null
 }
 
 export interface TickResult {
@@ -74,7 +76,7 @@ export async function crossSellLifeTick(): Promise<TickResult> {
 
     const { data: due } = await db
       .from('xsell_life_campaign_enrollments')
-      .select('id, campaign_id, campaign_version, member_id, household_id, agency_id, baseline_date, current_touch_no')
+      .select('id, campaign_id, campaign_version, member_id, household_id, agency_id, baseline_date, current_touch_no, next_touch_at')
       .eq('campaign_id', c.id)
       .eq('status', 'running')
       .lte('next_touch_at', nowISO)
@@ -177,7 +179,7 @@ export async function fireMessageTouch(
   touchNo: number,
   touch: TouchRow,
   dispatchCtx: Awaited<ReturnType<typeof campaignDispatchContext>>,
-  _nowISO: string,
+  nowISO: string,
 ): Promise<'sent' | 'blocked' | 'deferred'> {
   // Unapproved/empty template → skip the send but keep the timeline moving (never stall, §6).
   if (!touch.template_id || !(await isTemplateApproved(touch.template_id))) {
@@ -281,11 +283,19 @@ export async function fireMessageTouch(
     await db.from('xsell_life_campaign_executions').delete().eq('enrollment_id', e.id).eq('touch_no', touchNo)
     return 'deferred'
   }
+  // Owner decision 3: a quiet-hours withhold (floor or Sunday hold) is HELD for the next window,
+  // not burned — up to 72h past due, then recorded as expired. Released by the next tick, which
+  // re-runs the stop conditions and the gate. (gate.ts quietHoursHold)
+  const qh = outcome.sent ? null : quietHoursHold(outcome.gate.blockedStep, e.next_touch_at, nowISO)
+  if (qh === 'hold') {
+    await db.from('xsell_life_campaign_executions').delete().eq('enrollment_id', e.id).eq('touch_no', touchNo)
+    return 'deferred'
+  }
   await markExecution(db, e.id, touchNo, outcome.sent ? 'sent' : 'suppressed', {
     channel,
     kind: touch.kind,
     playbook_key: touch.playbook_key,
-    reason: outcome.reason,
+    reason: qh === 'expired' ? 'quiet_hours_hold_expired' : outcome.reason,
     messageId: outcome.messageId,
     template_version: (tpl as { version?: number } | null)?.version ?? null,
     ...(isAi ? { ai_armed: aiArmed } : {}),

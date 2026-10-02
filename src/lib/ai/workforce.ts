@@ -24,7 +24,7 @@
 import { getDb } from '@/lib/supabase/client'
 import { runAgent } from '@/jobs/agent-runner'
 import { sendMessage } from '@/lib/comms/send'
-import { isDeferralGateStep } from '@/lib/comms/gate'
+import { isDeferralGateStep, quietHoursHold } from '@/lib/comms/gate'
 import { resolveEffectiveSuppression } from '@/lib/comms/suppression'
 import { isWithinOperatingHours } from '@/lib/comms/hours'
 import { searchKnowledge, renderKnowledgeContext } from '@/lib/knowledge/library'
@@ -586,7 +586,12 @@ export async function runOutreachAgent(agentKey: OutreachAgentKey): Promise<{ se
             await writeAudit({ actor: `agent:${agentKey}`, action: 'entity.updated', entity: 'referral', entityId: item.entity_id, diff: { first_touch_at: nowISO, via: 'referral_followup' } })
           }
           stats.sent++
-        } else if (isDeferralGateStep(outcome.gate.blockedStep)) {
+        } else if (
+          isDeferralGateStep(outcome.gate.blockedStep) ||
+          // Owner decision 3: quiet hours HOLDS rather than blocks. Rows dispatched here are
+          // today's queue (due now); tomorrow's buildQueue re-evaluates the target from scratch.
+          quietHoursHold(outcome.gate.blockedStep, new Date().toISOString(), new Date().toISOString()) === 'hold'
+        ) {
           // DEFERRAL (configured window / business hours / frequency / collision / A2P
           // hold): a self-clearing hold, not a verdict on this outreach. 'held' (allowed
           // by the outreach_queue status CHECK) instead of terminal 'blocked', so the

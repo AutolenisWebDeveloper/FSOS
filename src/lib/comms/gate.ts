@@ -384,3 +384,26 @@ export const DEFERRAL_GATE_STEPS: ReadonlySet<GateStep> = new Set<GateStep>([
 export function isDeferralGateStep(step: string | null | undefined): boolean {
   return !!step && DEFERRAL_GATE_STEPS.has(step as GateStep)
 }
+
+/** Owner decision 3: how long a scheduled marketing touch may be HELD past its due time. */
+export const MARKETING_HOLD_MAX_MS = 72 * 3600 * 1000
+
+/**
+ * PURE. Owner decision 3 (docs/ops/automation-inventory.md §10): a scheduled marketing touch the
+ * gate withholds at `quiet_hours` (the 09:00–20:00 floor or the Sunday-morning marketing hold) is
+ * HELD for the next window rather than burned — the gate's verdict is unchanged; this only tells
+ * the schedule owner what to do with it. The hold is bounded: more than 72h past due it EXPIRES
+ * and is recorded with that reason. A touch with no readable due time cannot be bounded, so it
+ * expires rather than holding forever. Any other step → null (the caller's existing handling).
+ * The release re-runs the whole tick for the touch — stop conditions, eligibility, the gate.
+ */
+export function quietHoursHold(
+  blockedStep: string | null | undefined,
+  dueAtISO: string | null | undefined,
+  nowISO: string,
+): 'hold' | 'expired' | null {
+  if (blockedStep !== 'quiet_hours') return null
+  const due = dueAtISO ? Date.parse(dueAtISO) : NaN
+  if (!Number.isFinite(due)) return 'expired'
+  return Date.parse(nowISO) - due <= MARKETING_HOLD_MAX_MS ? 'hold' : 'expired'
+}

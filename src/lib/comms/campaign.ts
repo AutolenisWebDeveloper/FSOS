@@ -19,7 +19,7 @@ import type { MessagePurpose } from './purpose'
 import type { IdentityContext } from './identity-resolver'
 import { FSA_SENDER_ID } from '@/lib/site'
 import { campaignSendConfig, delegationSendContext } from './campaign-config'
-import { isDeferralGateStep } from './gate'
+import { isDeferralGateStep, quietHoursHold } from './gate'
 import { campaignClaimKeys, buildDataConfidence } from './claims'
 import { resolveClaimFields } from './claim-resolver'
 import { segmentMemberIds } from '@/lib/segments/resolve'
@@ -302,7 +302,13 @@ export async function dispatchCampaign(campaignId: string, actor: string): Promi
     if (outcome.sent) {
       counts.sent++
       await db.from('comm_campaign_enrollments').update({ status: 'sent', last_sent_at: new Date().toISOString() }).eq('campaign_id', campaignId).eq('member_id', r.member_id)
-    } else if (isDeferralGateStep(outcome.gate.blockedStep)) {
+    } else if (
+      isDeferralGateStep(outcome.gate.blockedStep) ||
+      // Owner decision 3: quiet hours HOLDS marketing rather than suppressing the recipient. A
+      // broadcast has no schedule of its own (it is due when dispatched), so the hold releases the
+      // claim exactly like a deferral and the next dispatch re-runs the gate for them.
+      quietHoursHold(outcome.gate.blockedStep, new Date().toISOString(), new Date().toISOString()) === 'hold'
+    ) {
       // DEFERRAL (configured window / business hours / frequency / collision / A2P hold):
       // a self-clearing hold, not a suppression. RELEASE the enrollment claim — a terminal
       // 'suppressed' row makes the unique (campaign_id, member_id) insert conflict forever,

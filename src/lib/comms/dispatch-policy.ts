@@ -173,15 +173,11 @@ export interface DispatchPolicyDecision {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * QUIET_HOURS_RECIPIENT_LOCAL — the migration switch for recipient-local quiet hours.
- *
- * OFF (default) reproduces today's behavior EXACTLY: the local hour is computed in
- * `America/Chicago`, the practice's own zone, and the timezone step can never block. ON
- * resolves the recipient's real zone from their NPA or ZIP and fails closed when it cannot.
- *
- * This flag selects RESOLVER BEHAVIOR inside one code path. It does not branch the dispatch
- * path: the same function runs, the same gate is evaluated, the same audit is written. Two
- * dispatch paths would be a second send path, which is the thing this whole change removes.
+ * Recipient-local quiet hours — always on (owner decision 1, 2026-10-02). The former
+ * QUIET_HOURS_RECIPIENT_LOCAL env switch is no longer read: the recipient's zone is resolved from
+ * the address (ZIP), then the area code, and an unresolvable zone is evaluated in every
+ * continental US zone. Kept as a function so resolveDispatchTimeZone's single code path and its
+ * legacy `flagOn=false` branch (reachable only from tests) stay unchanged.
  */
 export function recipientLocalQuietHoursEnabled(): boolean {
   // Owner decision 1 (docs/ops/automation-inventory.md §10): quiet hours are recipient-local BY

@@ -38,22 +38,24 @@ export async function durableContactConsentGranted(contact: string, channel: Cha
     if (channel === 'sms') {
       const tail = smsTail(contact)
       if (tail.length < 10) return false
-      const { data } = await db
+      const { data, error } = await db
         .from('comm_contact_consents')
         .select('action, captured_at')
         .eq('channel', 'sms')
         .ilike('contact', `%${tail}`)
         .order('captured_at', { ascending: false })
         .limit(1)
+      if (error) return false // fail closed — a returned error is not a grant
       return latestConsentGranted(data as { action: string; captured_at: string }[] | null)
     }
-    const { data } = await db
+    const { data, error } = await db
       .from('comm_contact_consents')
       .select('action, captured_at')
       .eq('channel', channel)
       .eq('contact', contact.toLowerCase())
       .order('captured_at', { ascending: false })
       .limit(1)
+    if (error) return false // fail closed
     return latestConsentGranted(data as { action: string; captured_at: string }[] | null)
   } catch {
     return false // fail closed — never grant on a lookup failure
@@ -78,40 +80,44 @@ export async function contactConsentRevoked(
   try {
     const db = getDb()
     if (memberId) {
-      const { data } = await db.from('consents').select('status').eq('member_id', memberId).eq('channel', channel).maybeSingle()
+      const { data, error } = await db.from('consents').select('status').eq('member_id', memberId).eq('channel', channel).maybeSingle()
+      if (error) return true // fail safe: an unreadable revoke state counts as revoked
       if (data?.status === 'revoked') return true
       if (purpose) {
         const consentPurpose = purposeToConsentPurpose(purpose, channel)
-        const { data: pr } = await db
+        const { data: pr, error: prError } = await db
           .from('comm_consent_purposes')
           .select('status')
           .eq('member_id', memberId)
           .eq('channel', channel)
           .eq('purpose', consentPurpose)
           .maybeSingle()
+        if (prError) return true // fail safe
         if (pr?.status === 'revoked') return true
       }
     }
     if (channel === 'sms') {
       const tail = smsTail(contact)
       if (tail.length < 10) return false
-      const { data } = await db
+      const { data, error } = await db
         .from('comm_contact_consents')
         .select('action, captured_at')
         .eq('channel', 'sms')
         .ilike('contact', `%${tail}`)
         .order('captured_at', { ascending: false })
         .limit(1)
+      if (error) return true // fail safe
       const rows = data as { action: string; captured_at: string }[] | null
       return Array.isArray(rows) && rows.length > 0 && !latestConsentGranted(rows) && rows[0]?.action === 'revoked'
     }
-    const { data } = await db
+    const { data, error } = await db
       .from('comm_contact_consents')
       .select('action, captured_at')
       .eq('channel', channel)
       .eq('contact', contact.toLowerCase())
       .order('captured_at', { ascending: false })
       .limit(1)
+    if (error) return true // fail safe
     const rows = data as { action: string; captured_at: string }[] | null
     return Array.isArray(rows) && rows.length > 0 && !latestConsentGranted(rows) && rows[0]?.action === 'revoked'
   } catch {
@@ -131,18 +137,21 @@ export async function isOnDNC(to: string, channel: Channel): Promise<boolean> {
       const digits = to.replace(/[^\d]/g, '')
       const tail = digits.slice(-10)
       if (tail.length < 10) {
-        const { data } = await db.from('dnc_entries').select('id').eq('contact', to).in('channel', ['sms', 'all']).limit(1)
+        const { data, error } = await db.from('dnc_entries').select('id').eq('contact', to).in('channel', ['sms', 'all']).limit(1)
+        if (error) return true // fail safe: a returned error is not "not on DNC"
         return Array.isArray(data) && data.length > 0
       }
-      const { data } = await db
+      const { data, error } = await db
         .from('dnc_entries')
         .select('id')
         .in('channel', ['sms', 'all'])
         .ilike('contact', `%${tail}`)
         .limit(1)
+      if (error) return true // fail safe
       return Array.isArray(data) && data.length > 0
     }
-    const { data } = await db.from('dnc_entries').select('id').eq('contact', to).in('channel', ['email', 'all']).limit(1)
+    const { data, error } = await db.from('dnc_entries').select('id').eq('contact', to).in('channel', ['email', 'all']).limit(1)
+    if (error) return true // fail safe
     return Array.isArray(data) && data.length > 0
   } catch {
     return true // fail safe

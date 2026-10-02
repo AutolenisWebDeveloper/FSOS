@@ -15,6 +15,7 @@
 import { getDb } from '../supabase/client'
 import { recordConsentChange } from './consent-events'
 import { smsTail } from './contact-consent'
+import { armDncEntry } from './opt-out'
 import { siteUrl, CONTACT } from '../site'
 import {
   type UnsubChannel,
@@ -96,23 +97,19 @@ export async function suppressContact(
   const source = provenance.source ?? 'unsubscribe'
   const reason = provenance.reason ?? 'unsubscribe opt-out'
   const channels: ('email' | 'sms')[] = channel === 'all' ? ['email', 'sms'] : [channel === 'sms' ? 'sms' : 'email']
-  const rows = channels.map((ch) => ({
-    contact: normFor(ch, contact),
-    channel: ch,
-    scope: 'internal' as const,
-    reason: dncReason,
-    // RE-ARM: a row a bare START had lifted is active again only when created_at is newer than
-    // lifted_at (contact-consent.ts isDncLifted). Every opt-out writer refreshes it.
-    created_at: new Date().toISOString(),
-  }))
   try {
     const db = getDb()
-    // supabase-js resolves { error } rather than throwing: an unchecked upsert reported a failed
-    // suppression as success (audit B-14). The DNC row is the enforced part — fail on it.
-    const { error: dncError } = await db.from('dnc_entries').upsert(rows, { onConflict: 'contact,channel' })
-    if (dncError) {
-      console.error('[unsubscribe] DNC write failed', { channels, message: dncError.message })
-      return { ok: false, channels }
+    // The ENFORCED part, through the shared DNC writer: a row already on file keeps its first
+    // reason (a STOP is never relabelled "unsubscribe", a complaint never "hard_bounce") and is
+    // re-armed if a START had lifted it; the opt-out is also recorded as contact-level revoke
+    // evidence, which keeps a later bare START from lifting it. supabase-js resolves { error }
+    // rather than throwing — a failed write is never reported as success (audit B-14).
+    for (const ch of channels) {
+      const res = await armDncEntry({ contact: normFor(ch, contact), channel: ch, reason: dncReason })
+      if (!res.ok) {
+        console.error('[unsubscribe] DNC write failed', { channel: ch, message: res.error })
+        return { ok: false, channels }
+      }
     }
     // Best-effort: resolve the member/household this contact belongs to so the opt-out is
     // anchored on the customer 360 timeline (not only audit-only). A bare contact with no

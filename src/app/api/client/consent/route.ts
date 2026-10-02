@@ -5,6 +5,8 @@ import { requireApiRole, actorOf } from '@/lib/auth/api'
 import { z } from 'zod'
 import { recordConsentChange } from '@/lib/comms/consent-events'
 import { householdIdFor } from '@/lib/portal/scope'
+import { armDncEntry } from '@/lib/comms/opt-out'
+import { consentContactKey } from '@/lib/comms/contact-consent'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -44,8 +46,14 @@ export async function POST(req: NextRequest) {
       // Revocation → add to DNC so the gate blocks before the next send anywhere.
       if (v.data.status === 'revoked') {
         const contact = v.data.channel === 'email' ? m.email : m.phone
-        // created_at re-arms a row a bare START had lifted (contact-consent.ts isDncLifted).
-        if (contact) await db.from('dnc_entries').upsert({ contact, channel: v.data.channel === 'call' ? 'call' : v.data.channel, scope: 'internal', reason: 'client opt-out', created_at: new Date().toISOString() }, { onConflict: 'contact,channel' })
+        // The shared DNC writer: never relabels an existing row, re-arms one a bare START had lifted,
+        // and records the opt-out as contact-level evidence so a later START cannot lift it.
+        if (contact) {
+          const ch = v.data.channel
+          const key = ch === 'call' ? contact : consentContactKey(ch, contact)
+          const dnc = await armDncEntry({ contact: key, channel: ch, reason: 'client opt-out' })
+          if (!dnc.ok) return NextResponse.json({ error: 'Could not record the opt-out. Please try again.' }, { status: 500 })
+        }
       }
       // ONE consent-logging path → audit_log AND the CRM timeline (§C).
       await recordConsentChange({

@@ -81,7 +81,10 @@ function makeDb() {
       gt: () => b,
       lt: () => b,
       gte: () => b,
-      ilike: () => b,
+      ilike: (col, val) => {
+        filters[`${col}~`] = val
+        return b
+      },
       is: () => b,
       order: () => b,
       limit: () => b,
@@ -144,6 +147,18 @@ function makeDb() {
         }
         // The append-only consent history a START consults: was there a documented grant before
         // the opt-out? (owner decision 4 — restore, never create)
+        // A START also reads the REVOKE evidence for the address (a non-keyword opt-out blocks the lift):
+        // those are the revoke rows actually written so far.
+        if (table === 'comm_contact_consents' && op === 'select' && filters.action === 'revoked') {
+          const marker = (filters['consent_text~'] ?? '').replace(/%/g, '')
+          return resolve({
+            data: state.writes
+              .filter((w) => w.table === 'comm_contact_consents' && w.op === 'insert' && w.row.action === 'revoked')
+              .map((w) => w.row)
+              .filter((r) => !marker || (r.consent_text ?? '').includes(marker)),
+            error: null,
+          })
+        }
         if (table === 'comm_contact_consents' && op === 'select') return resolve({ data: state.priorGrants ?? [], error: null })
         if (table === 'household_members') return resolve({ data: state.members, error: null })
         if (table === 'contacts') return resolve({ data: state.contacts, error: null })
@@ -239,7 +254,8 @@ await t('it is keyed the way the capture side and the gate both key it', async (
 await t('the revoke carries evidence text and a version, as the column requires', async () => {
   const row = consentWrites()[0].row
   assert.ok(row.consent_text && row.consent_text.length > 0)
-  assert.equal(row.consent_version, 'opt-out')
+  // The keyword stamp is what a later bare START recognises as liftable evidence.
+  assert.equal(row.consent_version, 'opt-out-keyword')
 })
 
 console.log('\nSTART / UNSTOP — a documented grant (e.g. the booking-form SMS opt-in) predates the STOP')
@@ -255,7 +271,8 @@ await t('the inbound START is classified and applied', async () => {
 })
 await t('the keyword DNC row is LIFTED, never deleted (owner decision 4)', async () => {
   assert.equal(dncWrites('delete').length, 0, 'no DNC row is ever deleted')
-  const lifts = dncWrites('update')
+  // The STOP's own update only re-arms created_at; the START's update is the one that lifts.
+  const lifts = dncWrites('update').filter((w) => w.row.lifted_at)
   assert.equal(lifts.length, 1)
   assert.ok(lifts[0].row.lifted_at, 'lifted_at is stamped')
   assert.match(lifts[0].row.lifted_reason, /inbound START/)
@@ -282,7 +299,7 @@ const revokesOnly = consentWrites().length
 const startNoPrior = await processInbound({ channel: 'sms', from: PHONE, body: 'START' })
 await t('the keyword opt-out is lifted…', async () => {
   assert.equal(startNoPrior.optedIn, true)
-  assert.equal(dncWrites('update').length, 1)
+  assert.equal(dncWrites('update').filter((w) => w.row.lifted_at).length, 1)
 })
 await t('…but no granted row and no member consent are written', async () => {
   assert.equal(consentWrites().length, revokesOnly, 'START created consent where none was documented')

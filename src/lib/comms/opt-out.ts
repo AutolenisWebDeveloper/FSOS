@@ -26,7 +26,7 @@
 // standalone-tsc chokepoint compile (tests/helpers/chokepoint.mjs), which has no path aliases.
 import { getDb } from '../supabase/client'
 import { recordConsentChange } from './consent-events'
-import { isKeywordOptOutReason, PRIOR_MEMBER_GRANT_MARKER } from './contact-consent'
+import { PRIOR_MEMBER_GRANT_MARKER, KEYWORD_OPT_OUT_VERSION } from './contact-consent'
 
 export type OptOutChannel = 'sms' | 'email'
 
@@ -46,6 +46,60 @@ export interface ChannelOptOut {
   householdId?: string | null
 }
 
+const KEYWORD_SOURCES: ReadonlySet<string> = new Set(['inbound_stop', 'carrier_opt_out'])
+
+export interface DncEntry {
+  /** Normalized contact key (as the gate reads it). */
+  contact: string
+  /** 'sms' | 'email' | 'call' | 'all'. */
+  channel: string
+  /** Recorded only when this writer CREATES the row. */
+  reason: string
+  /**
+   * Append a contact-level REVOKE evidence row (comm_contact_consents) recording this opt-out, so a
+   * later bare START can see that a non-keyword opt-out happened even when the DNC row's first
+   * reason is a STOP. Default true; a caller that writes its own evidence row passes false.
+   */
+  evidence?: boolean
+}
+
+/**
+ * THE shared DNC writer (every opt-out path). Two properties, proven exhaustively over event
+ * orderings by tests/optout-consent-property.test.mjs:
+ *   • NEVER RELABEL — an existing row keeps the reason its first opt-out recorded; a later opt-out
+ *     only re-arms it. Overwriting the reason erased the earlier opt-out (e.g. a STOP became
+ *     "unsubscribe", a complaint became "hard_bounce").
+ *   • ALWAYS RE-ARM — `created_at` is refreshed, so a row a bare START had lifted is active again
+ *     (lifted_at < created_at; contact-consent.ts isDncLifted). Rows are never deleted.
+ * Returns ok:false when either enforced write returned an error (supabase-js does not throw).
+ */
+export async function armDncEntry(e: DncEntry): Promise<{ ok: boolean; error?: string }> {
+  const db = getDb()
+  const now = new Date().toISOString()
+  try {
+    const ins = await db
+      .from('dnc_entries')
+      .upsert({ contact: e.contact, channel: e.channel, scope: 'internal', reason: e.reason, created_at: now }, { onConflict: 'contact,channel', ignoreDuplicates: true })
+    if (ins?.error) return { ok: false, error: ins.error.message }
+    const arm = await db.from('dnc_entries').update({ created_at: now }).eq('contact', e.contact).eq('channel', e.channel)
+    if (arm?.error) return { ok: false, error: arm.error.message }
+    if (e.evidence !== false && (e.channel === 'sms' || e.channel === 'email')) {
+      const ev = await db.from('comm_contact_consents').insert({
+        contact: e.contact,
+        channel: e.channel,
+        action: 'revoked',
+        consent_text: e.reason,
+        consent_version: 'opt-out',
+        captured_at: now,
+      })
+      if (ev?.error) return { ok: false, error: ev.error.message }
+    }
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
 /**
  * Apply a channel opt-out across every store, and log it once through the shared consent-change
  * recorder (audit_log + the CRM timeline). Never throws.
@@ -60,33 +114,10 @@ export async function recordChannelOptOut(o: ChannelOptOut): Promise<{ ok: boole
   const now = new Date().toISOString()
   const failures: string[] = []
   try {
-    // 1. The ENFORCED suppression. First, so a failure later still leaves the send blocked.
-    //    `created_at: now` RE-ARMS a row a START had lifted (lifted_at < created_at ⇒ active again;
-    //    contact-consent.ts isDncLifted). Rows are never deleted (owner decision 4).
-    //    A row ALREADY on file for another reason (unsubscribe, web/portal opt-out, operator,
-    //    bounce, complaint) keeps that reason: relabelling it as a keyword opt-out would let a
-    //    later bare START lift a suppression decision 4 says START may never lift. Unreadable →
-    //    a non-keyword reason (fail closed: not START-liftable).
-    //    The read is isolated: a throw here must never skip the enforced write below.
-    let existing: unknown = null
-    let existingErr = false
-    try {
-      const r = await db.from('dnc_entries').select('reason').eq('contact', o.contact).eq('channel', o.channel).limit(1)
-      existing = r.data
-      existingErr = !!r.error
-    } catch {
-      existingErr = true
-    }
-    const prior = Array.isArray(existing) ? (existing[0] as { reason?: string | null } | undefined) : undefined
-    const reason = existingErr
-      ? `opt-out (prior entry unreadable): ${o.reason}`
-      : prior && prior.reason && !isKeywordOptOutReason(prior.reason)
-        ? prior.reason
-        : o.reason
-    const dnc = await db
-      .from('dnc_entries')
-      .upsert({ contact: o.contact, channel: o.channel, scope: 'internal', reason, created_at: now }, { onConflict: 'contact,channel' })
-    if (dnc?.error) failures.push(`dnc_entries: ${dnc.error.message}`)
+    // 1. The ENFORCED suppression. First, so a failure later still leaves the send blocked. The
+    //    shared writer never relabels a row already on file and re-arms one a START had lifted.
+    const dnc = await armDncEntry({ contact: o.contact, channel: o.channel, reason: o.reason, evidence: false })
+    if (!dnc.ok) failures.push(`dnc_entries: ${dnc.error}`)
 
     // 2. The contact-resolvable evidence store (append-only; latest action wins). The member's
     //    consent BEFORE this opt-out is recorded on the revoke row: the member store is overwritten
@@ -105,7 +136,8 @@ export async function recordChannelOptOut(o: ChannelOptOut): Promise<{ ok: boole
       channel: o.channel,
       action: 'revoked',
       consent_text: priorMemberGranted ? `${o.consentText} (${PRIOR_MEMBER_GRANT_MARKER})` : o.consentText,
-      consent_version: o.consentVersion ?? 'opt-out',
+      // The keyword stamp is what lets a later bare START recognise this evidence as liftable.
+      consent_version: o.consentVersion ?? (KEYWORD_SOURCES.has(o.source) ? KEYWORD_OPT_OUT_VERSION : 'opt-out'),
       captured_at: now,
     })
     if (cc?.error) failures.push(`comm_contact_consents: ${cc.error.message}`)

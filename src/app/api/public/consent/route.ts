@@ -5,6 +5,7 @@ import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { rateLimit, clientIp } from '@/lib/http/rate-limit'
 import { writeAudit } from '@/lib/audit/log'
 import { consentContactKey } from '@/lib/comms/contact-consent'
+import { armDncEntry } from '@/lib/comms/opt-out'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -34,21 +35,13 @@ export async function POST(req: NextRequest) {
     const db = getDb()
     const actor = 'public'
 
-    // Upsert into the internal DNC list. NOT ignoreDuplicates: an existing row a bare START had
-    // lifted must be RE-ARMED (created_at newer than lifted_at — contact-consent.ts isDncLifted)
-    // and relabelled as a web opt-out, which START can never lift (owner decision 4).
-    const { error } = await db
-      .from('dnc_entries')
-      .upsert(
-        { contact: v.data.contact, channel: v.data.channel, scope: 'internal', reason: 'public opt-out', created_at: new Date().toISOString() },
-        { onConflict: 'contact,channel' },
-      )
-    if (error) {
-      // A conflict on a constraint we can't upsert against is not fatal — the goal
-      // (contact is on the list) is still met. Other errors surface as 500.
-      const conflict = /duplicate|conflict|unique/i.test(error.message)
-      if (!conflict) return dbErrorResponse('public/consent', error)
-    }
+    // The internal DNC list, through the shared writer: an existing row keeps its first reason (never
+    // relabelled) and is RE-ARMED if a bare START had lifted it. The key is normalized exactly as the
+    // gate reads it — a mixed-case email or a punctuated phone stored raw never matched the send.
+    // This route writes its own contact-level evidence rows below, so the writer adds none.
+    const dncKey = consentContactKey(v.data.contact.includes('@') ? 'email' : 'sms', v.data.contact)
+    const dnc = await armDncEntry({ contact: dncKey, channel: v.data.channel, reason: 'public opt-out', evidence: false })
+    if (!dnc.ok) return dbErrorResponse('public/consent', { message: dnc.error ?? 'DNC write failed' })
 
     // Keep the durable per-contact consent store consistent with the opt-out. The ENFORCED
     // revocation is the dnc_entries write above (checked at gate step `dnc` for every send);

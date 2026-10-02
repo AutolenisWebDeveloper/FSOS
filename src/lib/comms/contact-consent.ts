@@ -95,3 +95,24 @@ export function isKeywordOptOutReason(reason: string | null | undefined): boolea
   const r = reason ?? ''
   return r.startsWith('inbound STOP') || r.startsWith('Twilio ErrorCode 21610')
 }
+
+/** consent_version stamped on the contact-level REVOKE evidence row a STOP keyword writes. */
+export const KEYWORD_OPT_OUT_VERSION = 'opt-out-keyword'
+
+/**
+ * True when a comm_contact_consents REVOKE evidence row was written by a STOP keyword (inbound, or
+ * the carrier's 21610) — the only opt-out a bare START may undo (owner decision 4). Rows written
+ * before the version stamp are recognised by the keyword writer's own text. Every other opt-out
+ * (unsubscribe, one-click, web/portal, bounce, complaint, DNC add) records non-keyword evidence,
+ * and its presence keeps START from lifting the address's DNC row even when that row was first
+ * written by a STOP (the DNC row keeps its first reason; it is never relabelled).
+ */
+export function isKeywordRevokeEvidence(row: { consent_version?: string | null; consent_text?: string | null } | null | undefined): boolean {
+  if (!row) return false
+  if (row.consent_version === KEYWORD_OPT_OUT_VERSION) return true
+  const t = row.consent_text ?? ''
+  return t.startsWith('Inbound STOP keyword') || t.startsWith('Carrier-reported opt-out')
+}
+
+/** consents.source values the STOP-keyword writers record (inbound STOP, carrier 21610). */
+export const KEYWORD_OPT_OUT_SOURCES: readonly string[] = ['inbound_stop', 'carrier_opt_out']

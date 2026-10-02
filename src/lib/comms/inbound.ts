@@ -31,7 +31,7 @@ import { shouldPauseOnReply } from './conversation-mode'
 import { recordConsentChange } from './consent-events'
 import { recordChannelOptOut } from './opt-out'
 import { terminateActiveEnrollments } from './stop-fanout'
-import { isDncLifted, isKeywordOptOutReason, PRIOR_MEMBER_GRANT_MARKER } from './contact-consent'
+import { isDncLifted, isKeywordOptOutReason, isKeywordRevokeEvidence, KEYWORD_OPT_OUT_SOURCES, PRIOR_MEMBER_GRANT_MARKER } from './contact-consent'
 import { BUSINESS, CONTACT } from '@/lib/site'
 
 /** The HELP keyword auto-response (WS-033): identity, contact, opt-out — nothing else. */
@@ -245,6 +245,18 @@ async function applyOptIn(conv: Conversation, contact: string): Promise<boolean>
     if (error) return false
     const row = (rows ?? [])[0] as { id: string; reason?: string | null; created_at?: string | null; lifted_at?: string | null } | undefined
     if (!row || !isKeywordOptOut(row) || isDncLifted(row)) return false
+    // The DNC row keeps its FIRST reason (it is never relabelled), so a STOP-labelled row may also
+    // carry a later unsubscribe / web / portal / bounce / complaint / DNC add. Each of those leaves
+    // contact-level revoke evidence; any non-keyword evidence for this address means START may not
+    // lift it. Unreadable history → no lift (fail closed).
+    const tail = conv.channel === 'sms' ? contact.replace(/[^\d]/g, '').slice(-10) : ''
+    const revokesQ = db.from('comm_contact_consents').select('consent_text, consent_version').eq('channel', conv.channel).eq('action', 'revoked')
+    const { data: revokes, error: revokesErr } = await (conv.channel === 'sms' && tail.length === 10
+      ? revokesQ.ilike('contact', `%${tail}`)
+      : revokesQ.eq('contact', contact)
+    ).limit(500)
+    if (revokesErr || !Array.isArray(revokes)) return false
+    if (revokes.some((r) => !isKeywordRevokeEvidence(r as { consent_text?: string | null; consent_version?: string | null }))) return false
     const now = new Date().toISOString()
     const { error: liftError } = await db
       .from('dnc_entries')
@@ -266,7 +278,17 @@ async function applyOptIn(conv: Conversation, contact: string): Promise<boolean>
       (!priorErr && Array.isArray(priorGrants) && priorGrants.length > 0) ||
       (!memberErr && Array.isArray(priorMember) && priorMember.length > 0)
     if (!hadPriorGrant) return true // opt-out lifted; no consent created
+    // The member store keeps no history: restore it only while the STOP's own revoke is still its
+    // latest state. A later operator or portal revoke overwrote it with another source, and START
+    // must not undo that (proven by tests/optout-consent-property.test.mjs).
+    let memberRestorable = false
     if (conv.member_id) {
+      const { data: mc, error: mcErr } = await db.from('consents').select('status, source').eq('member_id', conv.member_id).eq('channel', conv.channel).maybeSingle()
+      const cur = mc as { status?: string; source?: string | null } | null
+      memberRestorable = !mcErr && cur?.status === 'revoked' && KEYWORD_OPT_OUT_SOURCES.includes(cur.source ?? '')
+      if (!mcErr && cur?.status === 'revoked' && !memberRestorable) return true // lifted; the later revoke stands
+    }
+    if (conv.member_id && memberRestorable) {
       await db
         .from('consents')
         .upsert(

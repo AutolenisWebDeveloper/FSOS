@@ -939,7 +939,9 @@ try {
     q(db, `insert into dnc_entries (contact, channel, scope, reason, created_at) values ('${PHONE}','sms','internal','inbound STOP (conv test)', '2026-08-06T10:00:00Z')`)
     // created_at is pinned BEFORE the harness's frozen clock (IN_HOURS): the app stamps lifted_at
     // from that clock, and in production the app and database clocks agree.
-    q(db, `update consents set status='revoked' where member_id='${IDS.member}' and channel='sms'`)
+    // …with the source the real STOP writer records (opt-out.ts): START restores member consent only
+    // while the STOP's own revoke is still the member's latest state (a later operator revoke stands).
+    q(db, `update consents set status='revoked', source='inbound_stop' where member_id='${IDS.member}' and channel='sms'`)
     // The evidence a real STOP writes (opt-out.ts): the member's consent BEFORE the opt-out, on the
     // append-only revoke row. Owner decision 4: START restores only documented prior consent.
     q(db, `insert into comm_contact_consents (contact, channel, action, consent_text, consent_version, captured_at)

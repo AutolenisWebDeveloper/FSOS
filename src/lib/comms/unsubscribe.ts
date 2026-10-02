@@ -101,6 +101,9 @@ export async function suppressContact(
     channel: ch,
     scope: 'internal' as const,
     reason: dncReason,
+    // RE-ARM: a row a bare START had lifted is active again only when created_at is newer than
+    // lifted_at (contact-consent.ts isDncLifted). Every opt-out writer refreshes it.
+    created_at: new Date().toISOString(),
   }))
   try {
     const db = getDb()

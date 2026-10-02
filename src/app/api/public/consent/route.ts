@@ -34,13 +34,14 @@ export async function POST(req: NextRequest) {
     const db = getDb()
     const actor = 'public'
 
-    // Upsert into the internal DNC list. If a conflict arises (already listed),
-    // ignore it — the opt-out is idempotent from the caller's perspective.
+    // Upsert into the internal DNC list. NOT ignoreDuplicates: an existing row a bare START had
+    // lifted must be RE-ARMED (created_at newer than lifted_at — contact-consent.ts isDncLifted)
+    // and relabelled as a web opt-out, which START can never lift (owner decision 4).
     const { error } = await db
       .from('dnc_entries')
       .upsert(
-        { contact: v.data.contact, channel: v.data.channel, scope: 'internal', reason: 'public opt-out' },
-        { onConflict: 'contact,channel', ignoreDuplicates: true },
+        { contact: v.data.contact, channel: v.data.channel, scope: 'internal', reason: 'public opt-out', created_at: new Date().toISOString() },
+        { onConflict: 'contact,channel' },
       )
     if (error) {
       // A conflict on a constraint we can't upsert against is not fatal — the goal

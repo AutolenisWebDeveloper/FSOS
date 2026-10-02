@@ -26,6 +26,7 @@
 // standalone-tsc chokepoint compile (tests/helpers/chokepoint.mjs), which has no path aliases.
 import { getDb } from '../supabase/client'
 import { recordConsentChange } from './consent-events'
+import { isKeywordOptOutReason, PRIOR_MEMBER_GRANT_MARKER } from './contact-consent'
 
 export type OptOutChannel = 'sms' | 'email'
 
@@ -62,17 +63,48 @@ export async function recordChannelOptOut(o: ChannelOptOut): Promise<{ ok: boole
     // 1. The ENFORCED suppression. First, so a failure later still leaves the send blocked.
     //    `created_at: now` RE-ARMS a row a START had lifted (lifted_at < created_at ⇒ active again;
     //    contact-consent.ts isDncLifted). Rows are never deleted (owner decision 4).
+    //    A row ALREADY on file for another reason (unsubscribe, web/portal opt-out, operator,
+    //    bounce, complaint) keeps that reason: relabelling it as a keyword opt-out would let a
+    //    later bare START lift a suppression decision 4 says START may never lift. Unreadable →
+    //    a non-keyword reason (fail closed: not START-liftable).
+    //    The read is isolated: a throw here must never skip the enforced write below.
+    let existing: unknown = null
+    let existingErr = false
+    try {
+      const r = await db.from('dnc_entries').select('reason').eq('contact', o.contact).eq('channel', o.channel).limit(1)
+      existing = r.data
+      existingErr = !!r.error
+    } catch {
+      existingErr = true
+    }
+    const prior = Array.isArray(existing) ? (existing[0] as { reason?: string | null } | undefined) : undefined
+    const reason = existingErr
+      ? `opt-out (prior entry unreadable): ${o.reason}`
+      : prior && prior.reason && !isKeywordOptOutReason(prior.reason)
+        ? prior.reason
+        : o.reason
     const dnc = await db
       .from('dnc_entries')
-      .upsert({ contact: o.contact, channel: o.channel, scope: 'internal', reason: o.reason, created_at: now }, { onConflict: 'contact,channel' })
+      .upsert({ contact: o.contact, channel: o.channel, scope: 'internal', reason, created_at: now }, { onConflict: 'contact,channel' })
     if (dnc?.error) failures.push(`dnc_entries: ${dnc.error.message}`)
 
-    // 2. The contact-resolvable evidence store (append-only; latest action wins).
+    // 2. The contact-resolvable evidence store (append-only; latest action wins). The member's
+    //    consent BEFORE this opt-out is recorded on the revoke row: the member store is overwritten
+    //    below and keeps no history, and a later bare START may restore only a documented grant.
+    let priorMemberGranted = false
+    if (o.memberId) {
+      try {
+        const r = await db.from('consents').select('status').eq('member_id', o.memberId).eq('channel', o.channel).maybeSingle()
+        priorMemberGranted = !r.error && (r.data as { status?: string } | null)?.status === 'granted'
+      } catch {
+        /* unreadable → no evidence recorded (START will not restore from it) */
+      }
+    }
     const cc = await db.from('comm_contact_consents').insert({
       contact: o.contact,
       channel: o.channel,
       action: 'revoked',
-      consent_text: o.consentText,
+      consent_text: priorMemberGranted ? `${o.consentText} (${PRIOR_MEMBER_GRANT_MARKER})` : o.consentText,
       consent_version: o.consentVersion ?? 'opt-out',
       captured_at: now,
     })

@@ -304,10 +304,11 @@ export async function dispatchCampaign(campaignId: string, actor: string): Promi
       await db.from('comm_campaign_enrollments').update({ status: 'sent', last_sent_at: new Date().toISOString() }).eq('campaign_id', campaignId).eq('member_id', r.member_id)
     } else if (
       isDeferralGateStep(outcome.gate.blockedStep) ||
-      // Owner decision 3: quiet hours HOLDS marketing rather than suppressing the recipient. A
-      // broadcast has no schedule of its own (it is due when dispatched), so the hold releases the
-      // claim exactly like a deferral and the next dispatch re-runs the gate for them.
-      quietHoursHold(outcome.gate.blockedStep, new Date().toISOString(), new Date().toISOString()) === 'hold'
+      // Owner decision 3: quiet hours HOLDS marketing rather than suppressing the recipient: the
+      // claim is released like a deferral and the next dispatch re-runs the gate. The hold is
+      // bounded from when the broadcast was due (its schedule_at, else when it was created): past
+      // 72 h the recipient falls through to the terminal branch below (suppressed, quiet_hours).
+      quietHoursHold(outcome.gate.blockedStep, (campaign.schedule_at as string | null) ?? (campaign.created_at as string | null), new Date().toISOString()) === 'hold'
     ) {
       // DEFERRAL (configured window / business hours / frequency / collision / A2P hold):
       // a self-clearing hold, not a suppression. RELEASE the enrollment claim — a terminal

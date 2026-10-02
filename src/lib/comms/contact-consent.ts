@@ -77,3 +77,21 @@ export function isDncLifted(row: { created_at?: string | null; lifted_at?: strin
   if (Number.isNaN(armed)) return false
   return lifted > armed
 }
+
+/**
+ * True when a DNC row's reason says it was written by a STOP KEYWORD (inbound STOP, or the carrier
+ * reporting 21610) — the only kind of opt-out a bare START may restore (owner decision 4). Every
+ * other writer (unsubscribe link, web/portal opt-out, bounce, complaint, operator) records its own
+ * reason, and opt-out.ts never relabels such a row as a keyword one, so it can never be lifted.
+ */
+/**
+ * Evidence marker on the append-only `comm_contact_consents` REVOKE row an opt-out writes: the
+ * member-keyed consent that existed BEFORE the opt-out overwrote it. A bare START restores consent
+ * only from documented prior evidence (owner decision 4), and the member store keeps no history.
+ */
+export const PRIOR_MEMBER_GRANT_MARKER = 'member consent before this opt-out: granted'
+
+export function isKeywordOptOutReason(reason: string | null | undefined): boolean {
+  const r = reason ?? ''
+  return r.startsWith('inbound STOP') || r.startsWith('Twilio ErrorCode 21610')
+}

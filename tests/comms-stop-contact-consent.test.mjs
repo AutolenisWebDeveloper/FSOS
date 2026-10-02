@@ -79,6 +79,8 @@ function makeDb() {
       },
       in: () => b,
       gt: () => b,
+      lt: () => b,
+      gte: () => b,
       ilike: () => b,
       is: () => b,
       order: () => b,
@@ -140,6 +142,9 @@ function makeDb() {
             error: null,
           })
         }
+        // The append-only consent history a START consults: was there a documented grant before
+        // the opt-out? (owner decision 4 — restore, never create)
+        if (table === 'comm_contact_consents' && op === 'select') return resolve({ data: state.priorGrants ?? [], error: null })
         if (table === 'household_members') return resolve({ data: state.members, error: null })
         if (table === 'contacts') return resolve({ data: state.contacts, error: null })
         if (table === 'appointments') return resolve({ data: state.upcoming, error: null })
@@ -237,8 +242,9 @@ await t('the revoke carries evidence text and a version, as the column requires'
   assert.equal(row.consent_version, 'opt-out')
 })
 
-console.log('\nSTART / UNSTOP')
+console.log('\nSTART / UNSTOP — a documented grant (e.g. the booking-form SMS opt-in) predates the STOP')
 state = makeState()
+state.priorGrants = [{ id: 'grant-before-stop' }]
 await processInbound({ channel: 'sms', from: PHONE, body: 'STOP' })
 const beforeStart = consentWrites().length
 const startResult = await processInbound({ channel: 'sms', from: PHONE, body: 'START' })
@@ -267,6 +273,20 @@ await t('the two writes are ordered revoked → granted, so latest-wins restores
     consentWrites().map((w) => w.row.action),
     ['revoked', 'granted'],
   )
+})
+
+console.log('\nSTART with NO documented prior grant lifts the opt-out but creates no consent (owner decision 4)')
+state = makeState()
+await processInbound({ channel: 'sms', from: PHONE, body: 'STOP' })
+const revokesOnly = consentWrites().length
+const startNoPrior = await processInbound({ channel: 'sms', from: PHONE, body: 'START' })
+await t('the keyword opt-out is lifted…', async () => {
+  assert.equal(startNoPrior.optedIn, true)
+  assert.equal(dncWrites('update').length, 1)
+})
+await t('…but no granted row and no member consent are written', async () => {
+  assert.equal(consentWrites().length, revokesOnly, 'START created consent where none was documented')
+  assert.equal(state.writes.filter((w) => w.table === 'consents' && w.row?.status === 'granted').length, 0)
 })
 
 console.log('\nSTART never creates consent (owner decision 4)')

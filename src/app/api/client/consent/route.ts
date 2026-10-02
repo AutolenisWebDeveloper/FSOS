@@ -44,7 +44,8 @@ export async function POST(req: NextRequest) {
       // Revocation → add to DNC so the gate blocks before the next send anywhere.
       if (v.data.status === 'revoked') {
         const contact = v.data.channel === 'email' ? m.email : m.phone
-        if (contact) await db.from('dnc_entries').upsert({ contact, channel: v.data.channel === 'call' ? 'call' : v.data.channel, scope: 'internal', reason: 'client opt-out' }, { onConflict: 'contact,channel' })
+        // created_at re-arms a row a bare START had lifted (contact-consent.ts isDncLifted).
+        if (contact) await db.from('dnc_entries').upsert({ contact, channel: v.data.channel === 'call' ? 'call' : v.data.channel, scope: 'internal', reason: 'client opt-out', created_at: new Date().toISOString() }, { onConflict: 'contact,channel' })
       }
       // ONE consent-logging path → audit_log AND the CRM timeline (§C).
       await recordConsentChange({

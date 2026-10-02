@@ -31,7 +31,7 @@ import { shouldPauseOnReply } from './conversation-mode'
 import { recordConsentChange } from './consent-events'
 import { recordChannelOptOut } from './opt-out'
 import { terminateActiveEnrollments } from './stop-fanout'
-import { isDncLifted } from './contact-consent'
+import { isDncLifted, isKeywordOptOutReason, PRIOR_MEMBER_GRANT_MARKER } from './contact-consent'
 import { BUSINESS, CONTACT } from '@/lib/site'
 
 /** The HELP keyword auto-response (WS-033): identity, contact, opt-out — nothing else. */
@@ -219,14 +219,15 @@ async function applyClientSuppression(conv: Conversation, contact: string, reaso
 
 /** True when a DNC row was written by a STOP keyword (inbound, or reported by the carrier as 21610). */
 function isKeywordOptOut(row: { reason?: string | null }): boolean {
-  const r = row.reason ?? ''
-  return r.startsWith('inbound STOP') || r.startsWith('Twilio ErrorCode 21610')
+  return isKeywordOptOutReason(row.reason)
 }
 
 /**
  * START handling (owner decision 4). A bare opt-in keyword RESTORES a keyword opt-out and does
  * nothing else:
- *   • it never CREATES consent — with no keyword opt-out on file there is nothing to restore;
+ *   • it never CREATES consent — consent is restored only when a documented grant for this address
+ *     PREDATES the opt-out (the append-only comm_contact_consents history); otherwise the DNC row is
+ *     lifted and nothing is granted, so a message still needs a consent captured some other way;
  *   • it never lifts a bounce / complaint / unsubscribe / operator suppression;
  *   • it never DELETES a DNC or consent row — the DNC row is marked lifted (`lifted_at`) and the
  *     re-opt-in is appended as a new event. A later STOP re-arms the same row (opt-out.ts).
@@ -250,6 +251,21 @@ async function applyOptIn(conv: Conversation, contact: string): Promise<boolean>
       .update({ lifted_at: now, lifted_reason: `inbound START (conversation ${conv.id})` })
       .eq('id', row.id)
     if (liftError) return false
+    // RESTORE, never create (owner decision 4): consent comes back only from documented evidence
+    // that it existed before this opt-out — a contact-level grant captured before the opt-out was
+    // armed, or the member grant the opt-out writer recorded on its revoke row (opt-out.ts). An
+    // unreadable history restores nothing (fail closed).
+    const armedAt = row.created_at ?? now
+    const [{ data: priorGrants, error: priorErr }, { data: priorMember, error: memberErr }] = await Promise.all([
+      db.from('comm_contact_consents').select('id').eq('contact', contact).eq('channel', conv.channel)
+        .eq('action', 'granted').lt('captured_at', armedAt).limit(1),
+      db.from('comm_contact_consents').select('id').eq('contact', contact).eq('channel', conv.channel)
+        .eq('action', 'revoked').gte('captured_at', armedAt).ilike('consent_text', `%${PRIOR_MEMBER_GRANT_MARKER}%`).limit(1),
+    ])
+    const hadPriorGrant =
+      (!priorErr && Array.isArray(priorGrants) && priorGrants.length > 0) ||
+      (!memberErr && Array.isArray(priorMember) && priorMember.length > 0)
+    if (!hadPriorGrant) return true // opt-out lifted; no consent created
     if (conv.member_id) {
       await db
         .from('consents')

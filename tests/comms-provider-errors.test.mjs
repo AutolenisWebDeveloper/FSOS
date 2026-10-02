@@ -94,6 +94,8 @@ const db = {
       upsert(row) { writes.push({ table, op: 'upsert', row }); return Promise.resolve({ error: null }) },
       insert(row) { writes.push({ table, op: 'insert', row }); return Promise.resolve({ error: null }) },
       update(row) { writes.push({ table, op: 'update', row }); return q },
+      select() { return q },
+      limit() { return q },
       eq() { return q },
       then(res, rej) { return Promise.resolve({ error: null }).then(res, rej) },
     }

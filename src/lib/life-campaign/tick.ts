@@ -42,7 +42,12 @@ interface EnrollmentRow {
   agency_id: string | null
   baseline_date: string
   current_touch_no: number
+  /** When the touch now being attempted fell due (drives the template-hold expiry). */
+  next_touch_at?: string | null
 }
+
+/** A touch held for an unapproved template is skipped once it is this far past due (owner decision 3). */
+export const TEMPLATE_HOLD_MAX_MS = 72 * 3600 * 1000
 
 export interface TickResult {
   ok: boolean
@@ -81,7 +86,7 @@ export async function lifeCampaignTick(): Promise<TickResult> {
 
     const { data: due } = await db
       .from('life_campaign_enrollments')
-      .select('id, campaign_id, member_id, household_id, policy_id, agency_id, baseline_date, current_touch_no')
+      .select('id, campaign_id, member_id, household_id, policy_id, agency_id, baseline_date, current_touch_no, next_touch_at')
       .eq('campaign_id', c.id)
       .eq('status', 'active')
       .lte('next_touch_at', nowISO)
@@ -277,9 +282,18 @@ export async function fireMessageTouch(
   dispatchCtx: Awaited<ReturnType<typeof campaignDispatchContext>>,
   nowISO: string,
 ): Promise<'sent' | 'blocked' | 'deferred'> {
-  // Unapproved/empty template → skip the send but keep the timeline moving (never stall).
+  // Unapproved template → HOLD the touch (release the claim, keep the cursor) so it sends once the
+  // template is approved, instead of burning it (audit D-06). The hold is bounded: once the touch
+  // is more than 72h past due it is skipped with the reason recorded (owner decision 3's expiry),
+  // so an abandoned template can never stall the cadence forever. No template at all is skipped.
   if (!touch.template_id || !(await isTemplateApproved(touch.template_id))) {
-    await markExecution(db, e.id, touchNo, 'skipped', { reason: 'template_not_approved' })
+    const dueAt = e.next_touch_at ? Date.parse(e.next_touch_at) : NaN
+    const withinHold = !!touch.template_id && Number.isFinite(dueAt) && Date.parse(nowISO) - dueAt <= TEMPLATE_HOLD_MAX_MS
+    if (withinHold) {
+      await db.from('life_campaign_executions').delete().eq('enrollment_id', e.id).eq('touch_no', touchNo)
+      return 'deferred'
+    }
+    await markExecution(db, e.id, touchNo, 'skipped', { reason: touch.template_id ? 'template_not_approved_hold_expired' : 'template_not_approved' })
     return 'blocked'
   }
   // comm_templates has no `subject` column — the subject rides on the body's leading

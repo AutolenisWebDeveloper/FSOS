@@ -191,17 +191,29 @@ async function enrollSweep(db: ReturnType<typeof getDb>, cfg: CampaignConfig, no
   // starve the batch. Most-urgent first (soonest verified deadline). Exclude firewall rows up
   // front (enrollContact fails them closed too). Never manufacture urgency — the view only
   // surfaces policies that carry a real conversion_deadline.
+  // Only policies whose full 180-day cadence still FITS before the deadline (schedule.ts
+  // earlyEnrollmentFits: 179 days + buffer). Asking for the soonest deadlines first used to fill
+  // the whole over-fetch with policies that could never fit, so nothing enrolled and each one
+  // raised a fresh advisor task every day (audit D-04).
+  const minDays = 179 + Number(cfg.early_enrollment_buffer_days ?? 0)
   const { data: candidates } = await db
     .from('v_conversions_due')
     .select('policy_id, household_id, days_remaining, is_security')
     .eq('is_security', false)
+    .gte('days_remaining', minDays)
     .order('days_remaining', { ascending: true })
     .limit(remaining * 4)
+
+  // Policies already enrolled in this campaign in ANY state (incl. completed/exited) are never
+  // re-swept — the unique (campaign, member) constraint would refuse them anyway.
+  const { data: existing } = await db.from('life_campaign_enrollments').select('policy_id').eq('campaign_id', cfg.id).limit(5000)
+  const alreadyEnrolled = new Set((existing ?? []).map((r: { policy_id: string | null }) => r.policy_id).filter(Boolean))
 
   let enrolled = 0
   for (const cand of candidates ?? []) {
     if (enrolled >= remaining) break
     if (!cand.policy_id || !cand.household_id) continue
+    if (alreadyEnrolled.has(cand.policy_id as string)) continue
     // Resolve the household's primary (first-created) member as the enrollment subject; the send
     // gate still enforces per-recipient consent/quiet-hours/DNC before anything is delivered.
     const { data: member } = await db
@@ -220,7 +232,37 @@ async function enrollSweep(db: ReturnType<typeof getDb>, cfg: CampaignConfig, no
     })
     if (r.enrolled) enrolled++
   }
+
+  // Policies too close to their deadline for the full cadence: ONE advisor-review task each,
+  // idempotent across days (the previous path inserted a new one every day).
+  const { data: tooClose } = await db
+    .from('v_conversions_due')
+    .select('policy_id')
+    .eq('is_security', false)
+    .gte('days_remaining', 0)
+    .lt('days_remaining', minDays)
+    .order('days_remaining', { ascending: true })
+    .limit(50)
+  for (const p of tooClose ?? []) {
+    if (p.policy_id) await ensureInsufficientTimeTask(db, p.policy_id as string)
+  }
   return enrolled
+}
+
+const INSUFFICIENT_TIME_TASK = 'Life Conversion — deadline too close for full campaign; advisor review'
+
+/** One advisor-review task per policy, ever — select-before-insert (renewal-watch pattern). */
+export async function ensureInsufficientTimeTask(db: ReturnType<typeof getDb>, policyId: string): Promise<void> {
+  const { data: exists, error } = await db
+    .from('work_tasks')
+    .select('id')
+    .eq('entity_type', 'policy')
+    .eq('entity_id', policyId)
+    .eq('title', INSUFFICIENT_TIME_TASK)
+    .limit(1)
+    .maybeSingle()
+  if (error || exists) return
+  await db.from('work_tasks').insert({ title: INSUFFICIENT_TIME_TASK, entity_type: 'policy', entity_id: policyId, source: 'workflow' })
 }
 
 // Exported for the fail-closed regression proof (tests/campaign-template-failclosed.test.mjs),

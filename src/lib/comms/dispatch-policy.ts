@@ -34,7 +34,7 @@
 import { evaluateGate, type GateInput, type GateResult } from './gate'
 import { quietHoursApply, sundayMarketingHoldApplies, type MessagePurpose } from './purpose'
 import { evaluateQuietHours, combineQuietHoursDecisions, type HoursWindow, type QuietHoursDecision } from './quiet-hours-window'
-import { resolveRecipientTimeZone, type TimezoneResolution } from './recipient-timezone'
+import { resolveRecipientTimeZone, CONTINENTAL_US_ZONES, localPartsInZone, type TimezoneResolution } from './recipient-timezone'
 import { DEFAULT_TIMEZONE } from './local-time'
 import { isBusinessSuppressible } from './suppression'
 
@@ -186,18 +186,9 @@ export function recipientLocalQuietHoursEnabled(): boolean {
   return true
 }
 
-/**
- * Every continental US zone (owner decision 1). A recipient whose zone resolves from neither the
- * address nor the area code may be messaged only at an instant inside the floor in ALL of these
- * — never in their unknown local night. Phoenix is listed because it does not observe DST.
- */
-export const CONTINENTAL_US_ZONES: readonly string[] = [
-  'America/New_York',
-  'America/Chicago',
-  'America/Denver',
-  'America/Phoenix',
-  'America/Los_Angeles',
-]
+// CONTINENTAL_US_ZONES and localPartsInZone live in the import-free recipient-timezone.ts so pure
+// modules (booking reminder timing) can share them; re-exported here for existing importers.
+export { CONTINENTAL_US_ZONES, localPartsInZone } from './recipient-timezone'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Injectable readers (all DB access goes through here)
@@ -406,19 +397,6 @@ export const defaultPolicyDeps: PolicyDeps = {
 // Timezone
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Local hour + day-of-week in an IANA zone. DST-correct via Intl. */
-export function localPartsInZone(timeZone: string, at: Date = new Date()): { hour: number; day: number } {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    hourCycle: 'h23',
-    hour: '2-digit',
-    weekday: 'short',
-  }).formatToParts(at)
-  const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '12')
-  const wd = parts.find((p) => p.type === 'weekday')?.value ?? 'Sun'
-  const days: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
-  return { hour: Number.isFinite(hour) ? hour : 12, day: days[wd] ?? 0 }
-}
 
 /**
  * Resolve the zone this send's quiet hours is evaluated in.

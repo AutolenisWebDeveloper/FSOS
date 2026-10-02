@@ -509,3 +509,30 @@ export function resolveRecipientTimeZone(input: TimezoneResolutionInput): Timezo
   const reason: TimezoneUnresolvedReason = npaReason ?? zipReason ?? 'no_input'
   return { resolved: false, reason, attempted }
 }
+
+/**
+ * Every continental US zone (owner decision 1). A recipient whose zone resolves from neither the
+ * address nor the area code may be messaged only at an instant inside the floor in ALL of these
+ * — never in their unknown local night. Phoenix is listed because it does not observe DST.
+ */
+export const CONTINENTAL_US_ZONES: readonly string[] = [
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Phoenix',
+  'America/Los_Angeles',
+]
+
+/** Local hour + day-of-week in an IANA zone. DST-correct via Intl. */
+export function localPartsInZone(timeZone: string, at: Date = new Date()): { hour: number; day: number } {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    hour: '2-digit',
+    weekday: 'short',
+  }).formatToParts(at)
+  const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '12')
+  const wd = parts.find((p) => p.type === 'weekday')?.value ?? 'Sun'
+  const days: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
+  return { hour: Number.isFinite(hour) ? hour : 12, day: days[wd] ?? 0 }
+}

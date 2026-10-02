@@ -120,3 +120,54 @@ export function dueReminderOffsets(
   }
   return due.sort((a, b) => a - b)
 }
+
+/** How far ahead of a quiet-hours boundary an earlier-shifted reminder targets (≥ two 15-min ticks). */
+const EARLY_SHIFT_MARGIN_MS = 30 * MS_PER_MINUTE
+/** Scan granularity for the nearest allowed instant — the reminder cron runs every 15 minutes. */
+const SCAN_STEP_MS = 15 * MS_PER_MINUTE
+
+/**
+ * PURE. Owner decisions 2 + 3 (docs/ops/automation-inventory.md §10): a reminder SMS respects the
+ * 09:00–20:00 floor, and it does not HOLD — one whose configured time (`windowOpenMs`, i.e.
+ * start − offset) lands in quiet hours moves to the NEAREST allowed time before the appointment,
+ * or is skipped when there is none.
+ *
+ *   • configured time allowed → due from then (unchanged behaviour);
+ *   • otherwise the nearer of: the end of the previous allowed span (minus a 30-minute margin so a
+ *     15-minute tick lands inside it, and never before the booking/reschedule anchor), or the start
+ *     of the next allowed span (only if it is before the appointment);
+ *   • neither → 'skip'.
+ * At any instant the send also needs `allowedAt(now)`, so a tick that falls outside the floor after
+ * the target waits for the next allowed tick rather than sending at night, and skips once no
+ * allowed instant remains before the start. `allowedAt` is supplied by the caller (recipient zone,
+ * or every continental zone when unresolved — owner decision 1).
+ */
+export function reminderSmsTiming(
+  c: { windowOpenMs: number; startMs: number; anchorMs: number | null; nowMs: number },
+  allowedAt: (ms: number) => boolean,
+): 'due' | 'not_yet' | 'skip' {
+  const { windowOpenMs, startMs, anchorMs, nowMs } = c
+  if (!(nowMs < startMs)) return 'skip'
+  let target: number | null = null
+  if (allowedAt(windowOpenMs)) {
+    target = windowOpenMs
+  } else {
+    let prev: number | null = null
+    for (let t = windowOpenMs - SCAN_STEP_MS; t > windowOpenMs - 24 * 60 * MS_PER_MINUTE; t -= SCAN_STEP_MS) {
+      if (allowedAt(t)) { prev = t - EARLY_SHIFT_MARGIN_MS; break }
+    }
+    if (prev !== null && (!allowedAt(prev) || (anchorMs !== null && prev <= anchorMs))) prev = null
+    let next: number | null = null
+    for (let t = windowOpenMs + SCAN_STEP_MS; t < startMs; t += SCAN_STEP_MS) {
+      if (allowedAt(t)) { next = t; break }
+    }
+    if (prev !== null && next !== null) target = windowOpenMs - prev <= next - windowOpenMs ? prev : next
+    else target = prev ?? next
+  }
+  if (target === null) return 'skip'
+  if (nowMs < target) return 'not_yet'
+  if (allowedAt(nowMs)) return 'due'
+  // Past the target but outside the floor: wait for the next allowed tick, if one remains.
+  for (let t = nowMs + SCAN_STEP_MS; t < startMs; t += SCAN_STEP_MS) if (allowedAt(t)) return 'not_yet'
+  return 'skip'
+}

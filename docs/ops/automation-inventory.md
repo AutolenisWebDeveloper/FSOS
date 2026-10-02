@@ -436,3 +436,4 @@ here on production reads are wrapped in a read-only transaction.
 | Date | Change |
 |---|---|
 | 2026-10-02 | Inventory created (phase 1). No code changes. |
+| 2026-10-02 | Checkpoint decisions recorded (§10). Repairs implemented per §10 on `fix/automation-e2e`, one commit per repair with its regression test; migrations 138–141 added (not applied). Results, statuses and remaining items: [`automation-audit-report.md`](automation-audit-report.md). |

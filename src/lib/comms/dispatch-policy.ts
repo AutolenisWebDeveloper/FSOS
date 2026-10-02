@@ -34,7 +34,7 @@
 import { evaluateGate, type GateInput, type GateResult } from './gate'
 import { quietHoursApply, sundayMarketingHoldApplies, type MessagePurpose } from './purpose'
 import { evaluateQuietHours, combineQuietHoursDecisions, type HoursWindow, type QuietHoursDecision } from './quiet-hours-window'
-import { resolveRecipientTimeZone, CONTINENTAL_US_ZONES, localPartsInZone, type TimezoneResolution } from './recipient-timezone'
+import { resolveRecipientTimeZone, recipientCountry, CONTINENTAL_US_ZONES, localPartsInZone, type TimezoneResolution } from './recipient-timezone'
 import { DEFAULT_TIMEZONE } from './local-time'
 import { isBusinessSuppressible } from './suppression'
 
@@ -107,6 +107,13 @@ export interface DispatchPolicyContext {
    */
   businessHoursExempt?: boolean
   isTest?: boolean
+  /**
+   * A person started this send from an operator surface (console 1:1 send, conversation reply,
+   * conversation start, test send, staff form link). Review finding 3b: only these may text a
+   * number outside the US; everything else is AUTOMATED and goes only to US numbers. Absent →
+   * automated (fail closed).
+   */
+  operatorInitiated?: boolean
   isConversationReply?: boolean
   activeCampaignPurpose?: MessagePurpose | null
   ownershipResolved?: boolean
@@ -704,12 +711,20 @@ export async function resolveDispatchPolicy(
     ? `Recipient timezone unresolved (${tzRes.reason}); quiet hours cannot be evaluated.`
     : undefined
 
+  // Review finding 3b: an automated SMS goes only to a US number. Destructured for the non-strict
+  // test compile (see tzRes above).
+  const country = ctx.channel === 'sms' && ctx.operatorInitiated !== true ? recipientCountry(ctx.to) : null
+  const recipientInUS = country ? country.us : true
+  const recipientCountryReason = country && country.us === false ? `Automated SMS only to US numbers: ${country.reason}.` : undefined
+
   const gateInput: GateInput = {
     draft: ctx.body,
     channel: ctx.channel,
     ownershipResolved: ctx.ownershipResolved,
     ownershipConflict: ctx.ownershipConflict,
     hasConsent: consent,
+    recipientInUS,
+    recipientCountryReason,
     // When the floor applies the hour is real (the failing zone's hour on a dual-zone
     // disagreement); otherwise the step is exempt and the value is inert. Never pass a
     // fabricated in-window hour while claiming the floor applies.

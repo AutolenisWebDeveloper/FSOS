@@ -113,6 +113,7 @@ export async function POST(req: NextRequest) {
       actor,
       templateId,
       humanAuthored: true,
+      operatorInitiated: true,
       isTest: true,
       sourceKind: 'test',
     })

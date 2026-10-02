@@ -163,12 +163,22 @@ into restrictions elsewhere.
   opt-out language, without duplicating it when already present.
 - Support `STOP` and `HELP`; suppress further campaign SMS immediately on opt-out.
 - Apply DNC suppression, frequency caps, and the quiet-hours window. Quiet hours are
-  **recipient-local via a resolved IANA timezone** (caller-supplied, else NPA/ZIP) — they are
-  NOT state-aware; do not describe them as such. A timezone that cannot be resolved is itself
-  a hard block (`timezone_unresolved`, `src/lib/comms/gate.ts:290`). The 9:00 a.m.–8:00 p.m.
+  **recipient-local via a resolved IANA timezone**, always on (owner decision 1,
+  `resolveDispatchTimeZone` in `src/lib/comms/dispatch-policy.ts`): a caller-supplied zone wins;
+  otherwise the contact's address (ZIP), then the phone's area code. They are NOT state-aware;
+  do not describe them as such. When the address and area code resolve to **different** zones,
+  the send must be inside the floor in **both**. A **US** number whose zone resolves from
+  neither is evaluated in **every continental US zone** and may go only at an instant inside the
+  floor in all of them (the `timezone_unresolved` gate step still exists but is no longer
+  reached on that path). The 9:00 a.m.–8:00 p.m.
   window is a **hard-coded conservative floor** (`src/lib/compliance/guardrail.ts:65`), not a
   per-campaign setting and not a quotation of statute; an operator window may narrow it,
-  never widen it.
+  never widen it. Marketing SMS is also held until 12:00 recipient-local on Sundays.
+- **Automated SMS goes only to US numbers.** A number outside the US — including +1 numbers in
+  Canada and the Caribbean — or one that cannot be shown to be in the US (toll-free and other
+  non-geographic codes, unparseable values) is a hard block (`non_us_recipient`,
+  `recipientCountry` in `src/lib/comms/recipient-timezone.ts`). US territories are the US. Only
+  an operator-initiated 1:1 send (`operatorInitiated`) is outside this rule.
 - **Fail closed** when consent, sender configuration, approved template, or message content
   cannot be resolved: log the block, send nothing partial or blank, never silently switch
   channel.

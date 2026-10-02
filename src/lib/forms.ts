@@ -197,6 +197,8 @@ export async function sendForm(input: SendFormInput): Promise<SendFormResult> {
         actor: 'system:forms',
         purpose: 'TRANSACTIONAL',
         humanAuthored: true,
+        // Staff-initiated per-client form link (POST /api/forms/send), not automation (finding 3b).
+        operatorInitiated: true,
         isSecurity: false,
         entity: { type: 'form_submission', id: submission.submission_id },
         recipientContext: { full_name: client_name || null },

@@ -145,6 +145,12 @@ export interface SendContext {
    */
   humanAuthored?: boolean
   /**
+   * A person started this send from an operator surface (1:1 console send, conversation reply or
+   * start, test send, staff form link). Only these may text a number outside the US (review
+   * finding 3b); absent → automated. Never set it for bulk/campaign/AI sends.
+   */
+  operatorInitiated?: boolean
+  /**
    * Delegated on-behalf-of context (Slice 1). Set ONLY when the FSA is communicating on
    * behalf of an agency owner. When present, send.ts resolves the ACTIVE, in-scope
    * delegation FRESH at send time (ownership.ts → delegation.ts) and passes the result
@@ -756,6 +762,7 @@ export async function sendMessage(ctx: SendContext): Promise<SendOutcome> {
       suppressible: ctx.suppressible,
       businessHoursExempt: ctx.businessHoursExempt,
       isTest: ctx.isTest,
+      operatorInitiated: ctx.operatorInitiated === true,
       isConversationReply: ctx.isConversationReply,
       activeCampaignPurpose: ctx.activeCampaignPurpose ?? null,
       recipientZip: ctx.recipientZip ?? null,

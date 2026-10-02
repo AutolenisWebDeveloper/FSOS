@@ -90,6 +90,7 @@ const BLOCKS = [
   'message_content',
   'ownership',
   'consent',
+  'non_us_recipient',
   'timezone_unresolved',
   // A configured-window stack that can NEVER open (empty intersection) has no self-clearing
   // condition, so it escalates as a distinct configuration error — never an unbounded defer.

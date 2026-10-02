@@ -59,7 +59,7 @@ await t('with QUIET_HOURS_RECIPIENT_LOCAL unset, the RECIPIENT zone is used (not
 // EARLY_PT: 15:00 UTC → 10:00 New_York (inside) but 07:00 Los_Angeles (outside).
 const EARLY_PT = new Date(Date.UTC(2026, 0, 15, 15, 0))
 await t('UNRESOLVABLE zone → evaluated in EVERY continental zone: 07:00 Pacific is outside the floor → held', async () => {
-  const { r, calls } = await smsTo('+18005550147', { recipientLocation: { phone: null, zip: null } }, {}, EARLY_PT)
+  const { r, calls } = await smsTo('+13575550147', { recipientLocation: { phone: null, zip: null } }, {}, EARLY_PT)
   assert.equal(r.ok, false)
   assert.equal(r.blockedStep, 'quiet_hours', 'a floor verdict, not the old blanket timezone_unresolved block')
   assert.equal(calls.sms.length, 0, 'provider never reached')
@@ -67,7 +67,7 @@ await t('UNRESOLVABLE zone → evaluated in EVERY continental zone: 07:00 Pacifi
 })
 
 await t('UNRESOLVABLE zone at an instant inside the floor in ALL continental zones → sends', async () => {
-  const { r } = await smsTo('+18005550147', { recipientLocation: { phone: null, zip: null } }, {}, NOON_ALL)
+  const { r } = await smsTo('+13575550147', { recipientLocation: { phone: null, zip: null } }, {}, NOON_ALL)
   assert.equal(r.ok, true)
 })
 
@@ -97,7 +97,7 @@ await t('an East-coast recipient at 23:00 local is blocked even though it is 22:
 })
 
 await t('an unresolvable phone with a household ZIP resolves from the ADDRESS', async () => {
-  const { r } = await smsTo('+18005550147', { recipientLocation: { phone: null, zip: '90001' } }, {}, LA_EVE)
+  const { r } = await smsTo('+13575550147', { recipientLocation: { phone: null, zip: '90001' } }, {}, LA_EVE)
   assert.equal(r.ok, true, 'ZIP resolved Los Angeles; 18:30 local sends')
   assert.equal(r.timezone.resolution.method, 'zip')
   assert.equal(r.timezone.resolution.input, '900')
@@ -171,7 +171,7 @@ await t('owner decision 2: POLICY_DEADLINE (Life Conversion / term conversion) S
 })
 
 await t('a configured window on an exempt purpose with an UNKNOWN zone must hold in every continental zone', async () => {
-  const { r } = await smsTo('+18005550147', {
+  const { r } = await smsTo('+13575550147', {
     hoursWindows: { 'campaign:term_conv': { startHour: 9, endHour: 20, days: [0, 1, 2, 3, 4, 5, 6] } },
   }, { campaignKey: 'term_conv', purpose: 'APPOINTMENT', suppressible: false }, EARLY_PT)
   assert.equal(r.ok, false, '07:00 Pacific is outside the configured window in one continental zone')
@@ -246,7 +246,7 @@ await t('inside the floor in both zones → sent, and both zones are recorded', 
 })
 
 await t('an unresolvable area code next to a resolved address does not add a zone', async () => {
-  const { r } = await smsTo('+18005550147', { recipientLocation: { phone: '+18005550147', zip: '75201' } }, {}, NOON)
+  const { r } = await smsTo('+13575550147', { recipientLocation: { phone: '+13575550147', zip: '75201' } }, {}, NOON)
   assert.equal(r.timezone.zone, 'America/Chicago')
   assert.equal(r.timezone.secondaryZone, null)
 })

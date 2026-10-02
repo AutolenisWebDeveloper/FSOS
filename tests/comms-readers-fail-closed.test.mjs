@@ -65,4 +65,25 @@ await t('contactConsentRevoked → false on a clean empty result', async () => {
 await t('durableContactConsentGranted(sms) → false on error', async () => { result = ERR; assert.equal(await durableContactConsentGranted('+15125551234', 'sms'), false) })
 await t('durableContactConsentGranted(email) → false on error', async () => { result = ERR; assert.equal(await durableContactConsentGranted('a@example.com', 'email'), false) })
 
+console.log('\nA START-lifted keyword opt-out (migration 138) — never deleted, re-armed by STOP')
+await t('a row lifted after it was armed is not active → not on DNC', async () => {
+  result = { data: [{ id: 'd1', created_at: '2026-10-01T10:00:00Z', lifted_at: '2026-10-01T11:00:00Z' }], error: null }
+  assert.equal(await isOnDNC('+15125551234', 'sms'), false)
+})
+await t('a row re-armed by a later STOP (created_at > lifted_at) is active', async () => {
+  result = { data: [{ id: 'd1', created_at: '2026-10-01T12:00:00Z', lifted_at: '2026-10-01T11:00:00Z' }], error: null }
+  assert.equal(await isOnDNC('+15125551234', 'sms'), true)
+})
+await t('a row read without lifted_at (column not migrated yet) stays active', async () => {
+  result = { data: [{ id: 'd1', created_at: '2026-10-01T12:00:00Z' }], error: null }
+  assert.equal(await isOnDNC('a@example.com', 'email'), true)
+})
+await t('one lifted row never masks another active row for the same address', async () => {
+  result = { data: [
+    { id: 'd1', created_at: '2026-10-01T10:00:00Z', lifted_at: '2026-10-01T11:00:00Z' },
+    { id: 'd2', created_at: '2026-10-01T10:00:00Z' },
+  ], error: null }
+  assert.equal(await isOnDNC('+15125551234', 'sms'), true)
+})
+
 console.log(`\nAll ${passed} assertions passed.`)

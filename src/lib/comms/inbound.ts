@@ -28,6 +28,7 @@ import { checkTurnLimit, type TurnLimitDecision } from './turn-limit'
 import { shouldPauseOnReply } from './conversation-mode'
 import { recordConsentChange } from './consent-events'
 import { recordChannelOptOut } from './opt-out'
+import { isDncLifted } from './contact-consent'
 import { BUSINESS, CONTACT } from '@/lib/site'
 
 /** The HELP keyword auto-response (WS-033): identity, contact, opt-out — nothing else. */
@@ -247,33 +248,57 @@ async function applyClientSuppression(conv: Conversation, contact: string, reaso
   }
 }
 
-/** Clear internal DNC + re-grant consent (START handling). */
-async function applyOptIn(conv: Conversation, contact: string): Promise<void> {
+/** True when a DNC row was written by a STOP keyword (inbound, or reported by the carrier as 21610). */
+function isKeywordOptOut(row: { reason?: string | null }): boolean {
+  const r = row.reason ?? ''
+  return r.startsWith('inbound STOP') || r.startsWith('Twilio ErrorCode 21610')
+}
+
+/**
+ * START handling (owner decision 4). A bare opt-in keyword RESTORES a keyword opt-out and does
+ * nothing else:
+ *   • it never CREATES consent — with no keyword opt-out on file there is nothing to restore;
+ *   • it never lifts a bounce / complaint / unsubscribe / operator suppression;
+ *   • it never DELETES a DNC or consent row — the DNC row is marked lifted (`lifted_at`) and the
+ *     re-opt-in is appended as a new event. A later STOP re-arms the same row (opt-out.ts).
+ * Returns true only when an opt-out was actually restored.
+ */
+async function applyOptIn(conv: Conversation, contact: string): Promise<boolean> {
   const db = getDb()
   try {
-    await db.from('dnc_entries').delete().eq('contact', contact).eq('channel', conv.channel).eq('scope', 'internal')
+    const { data: rows, error } = await db
+      .from('dnc_entries')
+      .select('*')
+      .eq('contact', contact)
+      .eq('channel', conv.channel)
+      .limit(1)
+    if (error) return false
+    const row = (rows ?? [])[0] as { id: string; reason?: string | null; created_at?: string | null; lifted_at?: string | null } | undefined
+    if (!row || !isKeywordOptOut(row) || isDncLifted(row)) return false
+    const now = new Date().toISOString()
+    const { error: liftError } = await db
+      .from('dnc_entries')
+      .update({ lifted_at: now, lifted_reason: `inbound START (conversation ${conv.id})` })
+      .eq('id', row.id)
+    if (liftError) return false
     if (conv.member_id) {
       await db
         .from('consents')
         .upsert(
-          { member_id: conv.member_id, household_id: conv.household_id, channel: conv.channel, status: 'granted', source: 'inbound_start', updated_at: new Date().toISOString() },
+          { member_id: conv.member_id, household_id: conv.household_id, channel: conv.channel, status: 'granted', source: 'inbound_start', updated_at: now },
           { onConflict: 'member_id,channel' },
         )
     }
-    // The mirror of the STOP write, and REQUIRED for correctness now that STOP appends a
-    // contact-level revoke: comm_contact_consents is latest-wins, so without this a non-member
-    // who texted STOP and then START would stay blocked at the consent step forever even though
-    // the DNC row was cleared and they explicitly asked to be messaged again.
+    // comm_contact_consents is append-only and latest-wins: the restore is a NEW granted event.
     await db.from('comm_contact_consents').insert({
       contact,
       channel: conv.channel,
       action: 'granted',
-      consent_text: 'Inbound START keyword (opt-in restored)',
+      consent_text: 'Inbound START keyword (keyword opt-out restored)',
       consent_version: 'opt-in',
     })
-    // Consent RESTORED via START: records the grant to audit_log + the CRM timeline. This
-    // clears the opt-out for future manual/1:1 sends but does NOT auto-resume any paused
-    // promotional enrollment — re-enrollment stays an explicit, authorized admin action.
+    // Consent RESTORED via START: records the grant to audit_log + the CRM timeline. This does
+    // NOT auto-resume any paused promotional enrollment — that stays an explicit admin action.
     await recordConsentChange({
       actor: 'system',
       channel: conv.channel,
@@ -284,8 +309,9 @@ async function applyOptIn(conv: Conversation, contact: string): Promise<void> {
       memberId: conv.member_id,
       householdId: conv.household_id,
     })
+    return true
   } catch {
-    /* best-effort */
+    return false
   }
 }
 
@@ -409,8 +435,7 @@ export async function processInbound(input: InboundInput): Promise<InboundResult
     return result
   }
   if (result.intent === 'start') {
-    await applyOptIn(conv, contact)
-    result.optedIn = true
+    result.optedIn = await applyOptIn(conv, contact)
     return result
   }
   if (result.intent === 'help' && input.channel === 'sms') {

@@ -52,9 +52,11 @@ export async function recordChannelOptOut(o: ChannelOptOut): Promise<void> {
   const now = new Date().toISOString()
   try {
     // 1. The ENFORCED suppression. First, so a failure later still leaves the send blocked.
+    //    `created_at: now` RE-ARMS a row a START had lifted (lifted_at < created_at ⇒ active again;
+    //    contact-consent.ts isDncLifted). Rows are never deleted (owner decision 4).
     await db
       .from('dnc_entries')
-      .upsert({ contact: o.contact, channel: o.channel, scope: 'internal', reason: o.reason }, { onConflict: 'contact,channel' })
+      .upsert({ contact: o.contact, channel: o.channel, scope: 'internal', reason: o.reason, created_at: now }, { onConflict: 'contact,channel' })
 
     // 2. The contact-resolvable evidence store (append-only; latest action wins).
     await db.from('comm_contact_consents').insert({

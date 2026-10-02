@@ -18,7 +18,7 @@
 // resolve to "allowed".
 
 import { getDb } from '../supabase/client'
-import { latestConsentGranted, smsTail } from './contact-consent'
+import { latestConsentGranted, smsTail, isDncLifted } from './contact-consent'
 import { purposeToConsentPurpose, type MessagePurpose } from './purpose'
 
 export type Channel = 'sms' | 'email'
@@ -131,28 +131,33 @@ export async function contactConsentRevoked(
  * normalized address. Fails SAFE (blocked) on any error — never send blindly.
  */
 export async function isOnDNC(to: string, channel: Channel): Promise<boolean> {
+  // `select('*')` (not a column list): `lifted_at` arrives with migration 138, and naming a column
+  // that does not exist yet would error — which now fails closed and would block every send.
+  // Several matching rows are read so one lifted row can never mask another active one.
+  const active = (data: unknown): boolean =>
+    Array.isArray(data) && data.some((r) => !isDncLifted(r as { created_at?: string | null; lifted_at?: string | null }))
   try {
     const db = getDb()
     if (channel === 'sms') {
       const digits = to.replace(/[^\d]/g, '')
       const tail = digits.slice(-10)
       if (tail.length < 10) {
-        const { data, error } = await db.from('dnc_entries').select('id').eq('contact', to).in('channel', ['sms', 'all']).limit(1)
+        const { data, error } = await db.from('dnc_entries').select('*').eq('contact', to).in('channel', ['sms', 'all']).limit(10)
         if (error) return true // fail safe: a returned error is not "not on DNC"
-        return Array.isArray(data) && data.length > 0
+        return active(data)
       }
       const { data, error } = await db
         .from('dnc_entries')
-        .select('id')
+        .select('*')
         .in('channel', ['sms', 'all'])
         .ilike('contact', `%${tail}`)
-        .limit(1)
+        .limit(10)
       if (error) return true // fail safe
-      return Array.isArray(data) && data.length > 0
+      return active(data)
     }
-    const { data, error } = await db.from('dnc_entries').select('id').eq('contact', to).in('channel', ['email', 'all']).limit(1)
+    const { data, error } = await db.from('dnc_entries').select('*').eq('contact', to).in('channel', ['email', 'all']).limit(10)
     if (error) return true // fail safe
-    return Array.isArray(data) && data.length > 0
+    return active(data)
   } catch {
     return true // fail safe
   }

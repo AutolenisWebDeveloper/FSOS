@@ -62,3 +62,18 @@ export function latestConsentGranted(rows: ConsentActionRow[] | null | undefined
   }
   return best?.action === 'granted'
 }
+
+/**
+ * A DNC row is LIFTED when a bare START restored a keyword opt-out after the row was last armed
+ * (owner decision 4: never delete a DNC row). A later STOP re-arms the same row by refreshing
+ * `created_at` (opt-out.ts), so `lifted_at` must be strictly newer than `created_at`. A row read
+ * without a `lifted_at` field (column not yet migrated) is NOT lifted — the restrictive default.
+ */
+export function isDncLifted(row: { created_at?: string | null; lifted_at?: string | null } | null | undefined): boolean {
+  if (!row || !row.lifted_at) return false
+  const lifted = Date.parse(row.lifted_at)
+  const armed = row.created_at ? Date.parse(row.created_at) : NaN
+  if (Number.isNaN(lifted)) return false
+  if (Number.isNaN(armed)) return false
+  return lifted > armed
+}

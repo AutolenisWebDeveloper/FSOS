@@ -431,9 +431,14 @@ Supabase organization), project `ynxaqeejjmeilpwmuuie`. It connects as role **`p
 not superuser, `transaction_read_only = off`). **The path can write.** Every query in this audit was a SELECT; from
 here on production reads are wrapped in a read-only transaction.
 
+**Round 2 (owner, 2026-10-02).** Decisions on review findings 3a, 3b and 5, the property-test requirement and the
+pre-merge questions are recorded in [`automation-audit-report.md` §1a](automation-audit-report.md#1a-checkpoint-decisions--round-2-owner-2026-10-02).
+Canary contacts, `CRON_SECRET` and `SMS_A2P_APPROVED` remain **UNANSWERED** (placeholders).
+
 ## 11. Change log
 
 | Date | Change |
 |---|---|
 | 2026-10-02 | Inventory created (phase 1). No code changes. |
 | 2026-10-02 | Checkpoint decisions recorded (§10). Repairs implemented per §10 on `fix/automation-e2e`, one commit per repair with its regression test; migrations 138–141 added (not applied). Results, statuses and remaining items: [`automation-audit-report.md`](automation-audit-report.md). |
+| 2026-10-02 | Round-2 owner decisions recorded (report §1a): findings 3a, 3b, 5, opt-out property test, pre-merge questions. |

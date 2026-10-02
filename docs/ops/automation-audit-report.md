@@ -16,6 +16,22 @@ Production today sends nothing (0 outbound messages in 30 days). That is mostly 
 or draft, and the consent stores the engines read are empty. The repairs below are therefore mostly about what happens
 **when an owner turns something on**. That is where the defects were, and where they would have fired.
 
+## 1a. Checkpoint decisions — round 2 (owner, 2026-10-02)
+
+Decisions on the open review findings (§9), recorded before implementation. Values the reply left as unfilled
+placeholders are recorded as **UNANSWERED**; nothing is inferred for them.
+
+| # | Decision |
+|---|---|
+| Finding 5 | **Approved.** Move the Life Conversion, Win-Back and Cross-Sell text crons (`life-conversion-tick`, `pipeline-winback-tick`, `cross-sell-life-tick`) to 17:00 UTC, as decision 8 did for `campaign-dispatch` and `district-nurture-tick`. Decision 8's hourly option stands: if the Vercel plan allows hourly crons, run these dispatch crons hourly; if kept daily because of a plan limit, say which. |
+| Finding 3a | **Stricter rule.** When the phone's and the address's time zones disagree, send only when the time is inside the floor in **both**. |
+| Finding 3b | **Keep decision 1** for US numbers whose zone cannot be resolved (continental intersection). **Numbers outside the US — including +1 numbers in Canada and the Caribbean — are a hard block for automated SMS.** Update CLAUDE.md to match decision 1 and this rule. Report how many contacts resolve to unknown or non-US today, ids only. |
+| Property test | Before merge: an exhaustive property test of the opt-out/consent logic over every sequence of up to 4 events per channel, drawn from STOP, START, unsubscribe link, one-click unsubscribe, web/portal opt-out, operator opt-out, bounce, complaint, DNC add and documented re-consent. Invariants: appending an opt-out never makes a send allowed; START makes a send allowed only when the latest blocking event is a STOP and consent was on record before it; START never lifts DNC, bounce, complaint, unsubscribe, web/portal or operator opt-outs; no event deletes or relabels an earlier opt-out. |
+| Questions | Confirm migrations 138–141 are safe to apply while current production code runs; name what in the repo applies migrations to production; list everything that would send if `marketing_automation` were turned on today, with every campaign's current state; how production was read; what was found about the unmatched Resend sender. |
+| Canary contacts | **UNANSWERED** — both arrived as blank placeholders again (`+1 [___-___-____]`, `[___@___]`). No live send is possible. |
+| `CRON_SECRET` (Vercel Production) | **UNANSWERED** — the reply kept the template text `[set \| not set yet; I'll set it before merging]`. Merge stays blocked on it. |
+| `SMS_A2P_APPROVED` (Vercel Production) | **UNANSWERED** — `[value]` placeholder. |
+
 ## 2. What changed (one commit per repair, each with its regression test)
 
 | Area | Repair | Audit IDs | Commit |

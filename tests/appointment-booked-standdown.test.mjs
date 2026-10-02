@@ -117,7 +117,22 @@ await t('an upcoming appointment makes the enrollment ineligible (appointment_bo
 })
 await t('no appointment → unchanged eligibility', async () => { assert.equal(evaluateEligibility({ ...base, upcomingAppointment: false }).eligible, true) })
 await t('the tick defers (does not exit) when the lookup is unknown', async () => {
-  assert.match(readFileSync('src/lib/life-campaign/tick.ts', 'utf8'), /if \(eligInput\.upcomingAppointment === null\) continue/)
+  assert.match(readFileSync('src/lib/life-campaign/tick.ts', 'utf8'), /if \(eligInput\.upcomingAppointment === null \|\|/)
+})
+
+console.log('\nLife Conversion stops when the policy is no longer in force (audit D-09)')
+await t('a lapsed/cancelled/non-renewed/quoted policy is ineligible (policy_inactive)', async () => {
+  const r = evaluateEligibility({ ...base, policyInForce: false })
+  assert.equal(r.eligible, false)
+  assert.ok(r.reasons.includes('policy_inactive'))
+})
+await t('an unreadable policy status never enrolls (policy_status_unknown), and the tick defers', async () => {
+  assert.ok(evaluateEligibility({ ...base, policyInForce: null }).reasons.includes('policy_status_unknown'))
+  assert.match(readFileSync('src/lib/life-campaign/tick.ts', 'utf8'), /eligInput\.policyInForce === null\) continue/)
+})
+await t('in force (active / bound / renewed) stays eligible', async () => {
+  assert.equal(evaluateEligibility({ ...base, policyInForce: true }).eligible, true)
+  assert.match(readFileSync('src/lib/life-campaign/eligibility.ts', 'utf8'), /IN_FORCE_POLICY_STATUSES = \['active', 'bound', 'renewed'\]/)
 })
 
 console.log('\nEvery appointment-creating path calls the fan-out')

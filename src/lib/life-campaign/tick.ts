@@ -113,9 +113,9 @@ export async function lifeCampaignTick(): Promise<TickResult> {
 
       // Re-check eligibility BEFORE the touch (ownership recheck).
       const eligInput = await loadEligibilityInput(cfg, e.policy_id, e.member_id, nowISO, e.id)
-      // The appointment lookup failed: hold this touch for the next run rather than exiting the
+      // The appointment or policy-status lookup failed: hold this touch for the next run rather than exiting the
       // enrollment (terminal) on a transient read error — and never send while it is unknown.
-      if (eligInput.upcomingAppointment === null) continue
+      if (eligInput.upcomingAppointment === null || eligInput.policyInForce === null) continue
       const elig = evaluateEligibility(eligInput)
       if (!elig.eligible) {
         await handleIneligible(db, e.id, elig.reasons, nowISO)

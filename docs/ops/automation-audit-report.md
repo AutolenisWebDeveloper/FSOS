@@ -32,6 +32,202 @@ placeholders are recorded as **UNANSWERED**; nothing is inferred for them.
 | `CRON_SECRET` (Vercel Production) | **UNANSWERED** — the reply kept the template text `[set \| not set yet; I'll set it before merging]`. Merge stays blocked on it. |
 | `SMS_A2P_APPROVED` (Vercel Production) | **UNANSWERED** — `[value]` placeholder. |
 
+## 1b. Round 2 — what was implemented, and the answers
+
+| Item | Status | Commit |
+|---|---|---|
+| Finding 3a — both zones | **Done.** The address zone stays primary; a resolved area-code zone that differs is evaluated as a second instant, so the send must be inside the floor (and the Sunday hold) in both. Both zones are recorded on the send. Regression: `tests/dispatch-chokepoint.test.mjs` (the new cases fail on the previous source). | `e66eeca` |
+| Finding 3b — US only | **Done.** New gate step `non_us_recipient` (hard, escalating, after consent). CLAUDE.md updated. Regression: `tests/recipient-country.test.mjs`. | `402cd60` |
+| Opt-out property test | **Done; it found two defect classes, both fixed** (below). `tests/optout-consent-property.test.mjs`: 88,880 sequences, 168,872 invariant checks, about 17 s. | `2c982ea` |
+| Finding 5 — cron move | **Not done: blocked.** The session's permission classifier refused the `vercel.json` cron edit; cron changes are also on the brief's hard-stop list. Needs your explicit go-ahead on the exact schedule (below). | — |
+
+### Finding 5: the schedule I propose, pending your go-ahead
+
+- **The Vercel plan allows hourly crons.** `vercel.json` on `main` already runs `referral-sla` hourly, the four retry sweeps
+  at `:30` every hour, and three crons every 5–15 minutes. Deployments with those crons succeed: the Vercel check on
+  this PR is green. Vercel Hobby rejects sub-daily crons (ASSUMPTION from Vercel's documentation; I cannot read the
+  plan: the Vercel connector has no access to the project).
+- **Proposed:** run `campaign-dispatch`, `district-nurture-tick`, `life-conversion-tick`, `pipeline-winback-tick` and
+  `cross-sell-life-tick` **hourly from 17:00 to 23:00 UTC** (`0 17-23 * * *`), not round the clock.
+  - Every hour in that range is inside 09:00–20:00 in every continental zone, in both standard and daylight time.
+    Hours outside it would only produce quiet-hours holds, and each one escalates.
+  - Within the range, a touch held on a Sunday morning or by an operator window is released the same day, not
+    the next day.
+- **One guard ships with it:** at most one touch per enrollment per UTC day.
+  - Today the daily cron gives that for free. Hourly runs would let a touch released from a hold fire, and the
+    next overdue touch fire an hour later.
+  - The guard sets the next due time to no earlier than the start of the next UTC day, in each engine's cursor
+    advance and in the drip advance.
+- If you prefer plain daily `0 17 * * *` for the three ticks, exactly as written in finding 5, no guard is needed.
+
+### Finding 3b: interpretation and what changes
+
+- **"Automated"** means every SMS except one a person starts from an operator surface: the console 1:1 send, a
+  conversation reply, conversation start, test sends, and the staff form link. Those set `operatorInitiated`; a
+  static check pins that list. Anything that omits the flag is treated as automated (fail closed).
+- **Blocked:**
+  - non-+1 numbers;
+  - Canadian +1 area codes, including the non-geographic 600/622/633;
+  - the Caribbean and Bermuda +1 codes;
+  - +1 numbers whose country cannot be established: toll-free and other non-geographic codes, and unparseable
+    values.
+  The non-US list is taken from libphonenumber-js 1.13.14 metadata. One gap can let a send through: a newly assigned
+  Canadian or Caribbean code that is not on the list reads as US. It is then held to the continental window, not
+  blocked. Refresh the list when NANPA announces new codes.
+- **US territories are the US:** PR 787/939, USVI 340, Guam 671, CNMI 670 and American Samoa 684 resolve to their own
+  zones.
+- **A behaviour change to note:** automated appointment SMS (booking confirmations and reminders) to a Canadian
+  booker are now blocked too. The booking email still goes.
+
+**How many contacts resolve to unknown or non-US today.** Production, read-only. Phones were classified with the
+code's own lists; only ids and categories were read.
+
+| Store | Rows with a phone | US, zone resolved | US, zone unknown (decision 1) | Non-US | Country not establishable |
+|---|---|---|---|---|---|
+| `household_members` (with household ZIP) | 4 | 4 | 0 | 0 | 0 |
+| `contacts` (with own ZIP) | 4 | 4 | 0 | 0 | 0 |
+| `referrals.referred_phone` | 6 | 5 | 0 | 0 | 1: `26f8f8de` (toll-free or fictional area code) |
+| `workshop_registrations.phone` | 4 | 2 | 0 | 0 | 2: `047a18f9`, `53585032` (11 digits, not a valid +1 form) |
+| `comm_contact_consents` (SMS) / `comm_conversations` (SMS) | 8 / 109 | 8 / 109 | 0 | 0 | 0 |
+| `agency_referrals`, `customers` | 1 / 1 | 1 / 1 | 0 | 0 | 0 |
+
+**Unknown zone: 0. Non-US: 0. Not establishable: 3** (ids above). `agency_owners`, `district_nurture_enrollments`
+and `form_responses` hold no phones.
+
+### What the property test found, and the fixes
+
+Two defect classes. Both are event-ordering bugs, and neither appeared in the example tests.
+
+1. **Every DNC writer relabelled an earlier opt-out (I4).** The upsert overwrote `reason`. Affected writers:
+   - the STOP writer, including STOP → STOP;
+   - unsubscribe link and one-click;
+   - web and portal opt-out;
+   - bounce and complaint, which relabelled each other;
+   - DNC add.
+
+   **Fix:** one shared writer, `armDncEntry` in `src/lib/comms/opt-out.ts`. It inserts only if absent, then only
+   re-arms `created_at`. It never touches an existing reason and never deletes. Every non-keyword writer now also
+   appends contact-level revoke evidence (append-only).
+2. **START undid an operator opt-out (I2/I3).** Sequence: STOP, then operator opt-out, then START.
+   - The operator's bulk revoke skipped the member as "already revoked", so it recorded nothing.
+   - START then restored the member grant documented before the STOP.
+
+   **Fix:**
+   - The operator revoke always appends revoke evidence.
+   - START lifts a STOP-labelled DNC row only when all revoke evidence for the address comes from keyword opt-outs.
+   - START restores member consent only while the STOP's own revoke is still the member's latest state.
+
+**Also fixed, pinned in the same test:** the web opt-out stored the address as typed. A mixed-case email or a
+punctuated phone therefore never matched the send. It is now normalized exactly as the gate reads it.
+
+**Two interpretations of the invariants, written into the test header:**
+- "Consent on record" for I2 means a grant before the STOP, or a documented re-consent after it. START itself never
+  creates one.
+- A documented re-consent supersedes an operator opt-out, because it re-grants the member store. It does not lift a
+  DNC-based opt-out: no code path does, by decision 4.
+
+**Not changed (policy, for you):** a documented re-consent after a DNC-based opt-out (unsubscribe, web/portal,
+bounce, complaint, DNC add) never takes effect. No path lifts that DNC row. That is over-restrictive, not a
+send-when-shouldn't.
+
+### Are migrations 138–141 safe to apply while current production code runs?
+
+**Yes for 138, 140 and 141. 139 is safe, but better applied with the deploy.** Traced against `main`; nothing was
+applied anywhere.
+
+| Mig | What it does | Effect on the code running today (`main`) |
+|---|---|---|
+| 138 | adds nullable `dnc_entries.lifted_at`, `lifted_reason` | None. `main` never reads them. Metadata-only `ALTER`, brief lock. |
+| 139 | sets `purpose = 'MARKETING'` on `life_campaigns` and `xsell_life_campaigns` | Production today: Life Conversion `POLICY_DEADLINE`, Cross-Sell `CLIENT_CARE_CROSS_SELL` (an invalid purpose, so every `main` cross-sell send is blocked). After 139 on `main`, Life Conversion gets the stricter marketing treatment, and **Cross-Sell becomes sendable under `main`'s unrepaired engine** if someone unpauses it. Both are paused with 0 enrollments, so nothing changes today. Apply 139 with or after the deploy, and keep both paused until then. |
+| 140 | new `automation_switches` table, RLS, `callback_engine_state` = off | None. `main` does not read it. |
+| 141 | seeds `engine_retry_redispatch` = off | None. |
+
+**Ledger gaps (production `schema_migrations`):**
+- 131 files are recorded, the last on 2026-08-31.
+- 128–134 are **not recorded, but their objects exist**: applied out of band.
+- **137 (`booking_reminder_cadence`, already on `main`) is not applied.** `offsets_minutes` still defaults to
+  `{1440}`.
+- Apply 137 before or with 138–141. The ledger should be reconciled, but that is a production write; it is not done.
+
+### What in the repo applies migrations to production
+
+**Nothing automatic.**
+- `npm run migrate` (`scripts/migrate.mjs`) applies `supabase/migrations/*.sql` through `psql`, but only when someone
+  runs it with `DATABASE_URL` set. It records each file in `schema_migrations`.
+- `.github/workflows/ci.yml` never applies migrations:
+  - it proves the chain on an ephemeral Postgres;
+  - its production drift check is read-only and unarmed (no `DATABASE_URL` secret).
+- **Outside the repo,** the Supabase GitHub integration is connected:
+  - it posts the "Supabase Preview" check;
+  - the `main` branch record is `MIGRATIONS_FAILED`, last updated 2026-09-03;
+  - the Supabase-side ledger (`list_migrations`) holds only 14 entries.
+  Whether that integration deploys migrations to production on merge is a dashboard setting I cannot read. Check
+  it before merging, or a merge could attempt to apply the whole chain.
+
+### If `marketing_automation` were turned on today
+
+**It already is on.** `ai_agents.marketing_automation.enabled = true` and the AI gateway is enabled. The §4 note
+saying it is seeded disabled described the migration default, not production; corrected below.
+
+What the switch gates:
+- **On this branch:** only `campaign-dispatch`, meaning broadcasts and drips.
+- **On `main`, which is running now:** nothing. `campaign-dispatch` does not read it (C-05).
+- The engine ticks (Life Conversion, Win-Back, Cross-Sell, District nurture) send as `agent:marketing_automation`
+  but are gated by their own campaign status, not by this switch.
+
+Every campaign, as read from production:
+
+| Campaign | Engine | Status | Purpose | Enrollments (live) | Would send today? |
+|---|---|---|---|---|---|
+| Life Conversion Campaign `f1c00000` | life tick | **paused** | `POLICY_DEADLINE` (→ MARKETING with 139) | 0 (0) | No: paused |
+| Win-Back Campaign `e2f00000` | win-back tick | **paused** | MARKETING | 0 (0) | No: paused |
+| Cross-Sell Life `f5c00000` | cross-sell tick | **paused** | `CLIENT_CARE_CROSS_SELL` (invalid; → MARKETING with 139) | 0 (0) | No: paused |
+| The Second Conversation `d1a00000` | district nurture tick | **draft** | MARKETING | 0 (0) | No: draft |
+| 4 engine-registry rows in `comm_campaigns` | campaign-dispatch | paused, **archived** | — | 0 | No: not active |
+| Broadcasts / drips | campaign-dispatch | 0 active campaigns, 0 sequences, 0 enrollments | — | — | No |
+| Legacy `campaigns` (`/api/campaigns/run`) | manual | 0 rows | — | — | No |
+
+**Nothing would send because of `marketing_automation`.** What can send today without any switch change is the list
+in §6, mainly booking notices and operator sends.
+
+### How production was read
+
+Unchanged from §6:
+- **Tool:** the claude.ai Supabase connector (`execute_sql`, `list_migrations`, `list_branches`), project
+  `ynxaqeejjmeilpwmuuie`.
+- **Credential:** its OAuth link through the Vercel-marketplace Supabase organization. No key was handled in this
+  session.
+- **Database role:** `postgres` (`rolbypassrls = true`, not superuser).
+- **Can it write?** Yes; the path itself is not read-only.
+- **How it was used:** every statement in both rounds was a SELECT inside `begin read only … commit`. Only aggregates,
+  ids (first 8 characters) and configuration were returned.
+
+### The unmatched Resend sender
+
+`comm_message_events` holds **118 email sends with no FSOS message record**:
+- 27 Jul to 2 Oct; the latest arrived today, 15:40 UTC;
+- each has one `sent` and one `delivered` event; **0 bounces, 0 complaints**;
+- **none** matches a `comm_messages` row.
+
+Matching against FSOS's own activity:
+
+| Bucket | Sends | What it is |
+|---|---|---|
+| Provider id found in FSOS's audit log | 12 | 11 booking appointment notices (`system:notify`), 1 morning briefing |
+| FSOS `comms.*` audit row within 2 min | 1 | a booking notice |
+| An appointment created within 3 min | 22 | very likely FSOS booking notices or FSA alerts sent without an audit row (ASSUMPTION) |
+| A Supabase Auth event within 3 min | 3 | likely Supabase Auth email (invite / recovery / sign-in) sent through Resend SMTP (ASSUMPTION) |
+| No FSOS activity at all | **80** | **sender unidentified** |
+
+The 80 cannot be attributed without the Resend dashboard (sending domain, `from` address and API key per message).
+No Resend connector is available.
+
+**What this means for clients:**
+- Every FSOS email path goes through `sendEmail`, so an FSOS send cannot bypass the gate.
+- If the 80 come from another application or key on the same Resend account, they are outside FSOS's gate entirely.
+  Per your earlier decision, if they reach clients that is P0.
+- **Next step:** in Resend, filter those days' sends by API key and domain.
+
 ## 2. What changed (one commit per repair, each with its regression test)
 
 | Area | Repair | Audit IDs | Commit |
@@ -115,12 +311,13 @@ Statuses refer to the code on this branch. **Enablement is exactly as found**: n
 ## 4. Deploy order and prerequisites (owner)
 
 1. **Set `CRON_SECRET` in Vercel before merging**, or every cron answers 401 (decision 9; status UNANSWERED).
-2. Apply migrations **138, 139, 140, 141** before or with the code. Each is additive or a config row and carries a
+2. Apply **137** (on `main`, not yet in production), then migrations **138, 139, 140, 141** before or with the code
+   (139 with or after it — §1b). Check first whether the Supabase GitHub integration deploys migrations on merge (§1b). Each is additive or a config row and carries a
    `-- ROLLBACK:` block, proven on real Postgres by `tests/automation-migrations-rollback.test.mjs`. Roll back 141
    before 140. The code is safe without 138 (no row ever reads as lifted) and without 140/141 (a missing switch row is
    off).
-3. `marketing_automation` is seeded **disabled** (mig 010): broadcasts and drips halt until the owner enables it on
-   `/app/ai` (C-05 now honours it).
+3. `marketing_automation` is seeded disabled by migration 010, **but production has it enabled** (read 2026-10-02, §1b).
+   On this branch, broadcasts and drips run only while it stays enabled; today there is nothing for them to send.
 4. Leave both switches **off** until the canary checks pass; then `canary`, then `on`.
 
 ## 5. Owner decisions recorded but left unanswered, and policy questions not acted on
@@ -283,10 +480,10 @@ server-side TypeScript, and the typecheck is clean after it.
 | 1 | P0 | After a START lifted a keyword DNC row, a later web, portal or unsubscribe opt-out did not suppress again. Only the STOP writer refreshed `created_at`; the public route used `ignoreDuplicates`. A regression against main, where START deleted the row. | **Fixed** `37d495d`: every DNC writer re-arms; the public route no longer ignores duplicates. Test: `comms-optout-rearm`. |
 | 2a | P1 | START created consent (decision 4 says restore only). | **Fixed** `37d495d`: consent is restored only from documented prior evidence (a contact grant before the opt-out, or the member grant the STOP writer now records on its revoke row). Otherwise START lifts the opt-out and creates nothing. Tests: `comms-stop-contact-consent`, e2e §3b/§4. |
 | 2b | P1 | A STOP relabelled an existing unsubscribe/operator row as a keyword opt-out, making it START-liftable. | **Fixed** `37d495d`: an existing non-keyword reason is kept; an unreadable prior row gets a non-liftable reason. |
-| 3a | P2 | Phone/ZIP zone disagreement: the ZIP zone alone now governs. The earlier flag-on mode required both. | **Owner question.** Decision 1 says "address, then area code". Narrowing to the intersection would be stricter; confirm intent. |
-| 3b | P2 | An unresolved zone now sends inside the continental intersection; Alaska/Hawaii/foreign numbers are not covered. CLAUDE.md still describes a hard block. | **Owner question / CLAUDE.md update.** As decided (decision 1); listed in §10. |
+| 3a | P2 | Phone/ZIP zone disagreement: the ZIP zone alone now governs. The earlier flag-on mode required both. | **Decided (round 2): both zones. Fixed** `e66eeca`. |
+| 3b | P2 | An unresolved zone now sends inside the continental intersection; Alaska/Hawaii/foreign numbers are not covered. CLAUDE.md still describes a hard block. | **Decided (round 2): decision 1 kept for US numbers; non-US is a hard block. Fixed** `402cd60`; CLAUDE.md updated. |
 | 4 | P2 | A broadcast's quiet-hours hold never expired (due = now). | **Fixed** `37d495d`: bounded from `schedule_at`, else `created_at`. |
-| 5 | P2 | The Life / Win-Back (15:00 UTC) and Cross-Sell (16:00 UTC) ticks fall before 09:00 Pacific and Arizona, and are never inside the window for unresolved zones. With decision 2 those SMS touches are held each day, escalated, and written off after 72 h. | **Owner decision needed:** move these ticks to 17:00 UTC like decision 8 (a cron change is a hard stop). Pinned in `tests/cron-send-window.test.mjs`. |
+| 5 | P2 | The Life / Win-Back (15:00 UTC) and Cross-Sell (16:00 UTC) ticks fall before 09:00 Pacific and Arizona, and are never inside the window for unresolved zones. With decision 2 those SMS touches are held each day, escalated, and written off after 72 h. | **Approved (round 2), not yet applied:** the cron edit was refused by the session's permission controls; schedule awaiting confirmation (§1b). Still pinned in `tests/cron-send-window.test.mjs`. |
 | 6 | P3 | The floor also holds conversational SERVICING AI replies, wider than "campaign SMS". | Left as is. It fails safe and was chosen when widening the exempt set; owner may narrow. |
 | 7 | P3 | "Most recent revoke wins" ignores a newer opt-in not recorded in `comm_contact_consents`. | Left as is. Over-restrictive, not looser. |
 | 8 | P3 | A synchronous 21610 whose DNC write fails is only logged; there is no webhook to retry it. | Left as is. The next send gets 21610 again and retries the write. |
@@ -308,11 +505,13 @@ The reviewer found no material findings in:
 
 **Remaining items for the owner:**
 
-- set `CRON_SECRET`;
-- apply migrations 138–141;
-- decide review findings 3a, 3b and 5;
+- set `CRON_SECRET` (still UNANSWERED);
+- apply 137, then migrations 138–141 (§4);
+- confirm the finding-5 schedule (§1b); 3a and 3b are implemented;
+- check whether the Supabase GitHub integration deploys migrations on merge (§1b);
+- identify the 80 unattributed Resend sends in the Resend dashboard (§1b);
 - answer the open questions in §5;
-- provide verified canary contacts;
+- provide verified canary contacts (still blank);
 - isolate Preview (§6).
 
 ## 10. Out-of-scope findings (recorded, not acted on)

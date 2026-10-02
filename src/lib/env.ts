@@ -24,11 +24,6 @@ export function supabaseAnonKey(): string | undefined {
   return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 }
 
-/** Shared secret for Vercel Cron / manual cron triggers. */
-export function cronSecret(): string | undefined {
-  return process.env.CRON_SECRET
-}
-
 /**
  * True on any DEPLOYED runtime (production or a Vercel preview, both of which serve
  * real data). The canonical signal for fail-closed decisions — mirrors the logic in

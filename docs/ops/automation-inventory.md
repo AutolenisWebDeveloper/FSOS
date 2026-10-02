@@ -391,7 +391,47 @@ only) in Vercel.
 | C9 | Workforce first touch, once | canary household with a coverage gap + member SMS consent | wait for the 15:00 UTC run | agents are already enabled for everyone in prod (as found) | one `outreach_queue` `sent` row; **no second invite the next day** (Task 4) |
 | C10 | Callback → engine state | canary enrollment | — (permanent-failure branches are mock-only; a real number cannot produce 21610 on demand) | `callback_engine_state` `canary` | PARTIAL: only the `delivered` branch is live-verifiable |
 
-## 10. Change log
+## 10. Checkpoint decisions (owner, 2026-10-02)
+
+Plan approved as presented, with these changes. Values the owner's reply left as unfilled placeholders are recorded
+as **UNANSWERED**; nothing is inferred for them.
+
+| # | Decision |
+|---|---|
+| 1 | Quiet hours are **recipient-local by code default** (no env dependence). Zone from the contact's address, then the phone's area code. If neither resolves: send only at times inside the 09:00–20:00 floor in **every continental US zone** (ET/CT/MT/PT). Production value of `QUIET_HOURS_RECIPIENT_LOCAL`: **UNANSWERED** (placeholder). |
+| 2 | The floor covers **all automated campaign SMS**, Life Conversion and term conversion included. Marketing SMS also held until **12:00 recipient-local on Sundays** (Texas solicitation hours; counsel to confirm). Appointment reminders respect the floor (see 3). |
+| 3 | **Marketing: hold**, not skip. On release re-run the gate and stop conditions, spread releases within A2P throughput, expire anything still held after **72 h** with the reason recorded. **Reminders do not hold**: a reminder landing in quiet hours moves to the nearest allowed time still before the appointment, or is skipped if none exists. |
+| 4 | START/YES: only a **bare keyword** counts; it only **restores a keyword opt-out**, never creates consent. **Never delete** DNC or consent rows; record the re-opt-in as a new event. |
+| 5 | The **most recent revoke wins** over durable consent until a newer, documented opt-in. |
+| 6 | Life Conversion is **marketing** for consent, suppression and quiet hours. Counsel question logged: can a deadline notice with no product pitch be servicing? |
+| 7 | **Campaign engines own** automated sends for term conversion, cross-sell and win-back. Workforce agents do not send to those audiences (reuse an existing hand-off-to-enrollment hook only if one exists; don't build one). A workforce first touch is **one-time per target per workflow, recorded durably**. Report must note this differs from operating documentation that routes these through `term_conversion` / `marketing_automation`. |
+| 8 | `campaign-dispatch` and `district-nurture-tick` move to **17:00 UTC** (inside the floor in every continental zone year-round), or hourly if the Vercel plan allows. |
+| 9 | Cron routes **require `CRON_SECRET`** (approved). Production status of `CRON_SECRET`: **UNANSWERED** (placeholder: "set \| not set, and I'll add it before merging"). Merge is blocked on it being set. |
+| 10 | Cross-Sell Life purpose = **marketing**: the valid purpose with full marketing treatment at the gate (strictest if several fit). |
+
+Additions:
+
+- Any repair that lets a path send where it cannot today ships **behind the new switch, off** — including the agents'
+  consent lookup.
+- The 143 open threads are backlog; nothing advances them on deploy. Propose a disposition before Win-Back is unpaused.
+- No automated contact for any referral older than 14 days; the 5 are listed for FSA follow-up in the report (no task
+  mechanism).
+- The 6 past-dated appointments: report only; the owner updates them.
+- The other gate-policy questions in §6: code left as is; listed in the report.
+- `SMS_A2P_APPROVED` production value: **UNANSWERED**. Report lists everything that would send SMS if it were on.
+- Unmatched Resend sender: **UNANSWERED**; if it reaches clients it is P0 and goes through the gate.
+- Report how production was read (see below) and whether that path can write.
+- If Supabase Preview creates a branch database once the PR carries migrations, report what Vercel Preview uses for
+  database and provider keys; flag any reach to production data or live keys; propose an isolated DB for E2E.
+- Optional FNA switch task: marked "[optional]" in the reply — **not started** pending explicit confirmation.
+- Canary contacts: **still blank placeholders** — no live verification possible.
+
+**How production was read.** The claude.ai Supabase connector (`execute_sql`, OAuth through the Vercel-marketplace
+Supabase organization), project `ynxaqeejjmeilpwmuuie`. It connects as role **`postgres`** (`rolbypassrls = true`,
+not superuser, `transaction_read_only = off`). **The path can write.** Every query in this audit was a SELECT; from
+here on production reads are wrapped in a read-only transaction.
+
+## 11. Change log
 
 | Date | Change |
 |---|---|

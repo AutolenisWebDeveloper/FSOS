@@ -793,46 +793,64 @@ export async function sendMessage(ctx: SendContext): Promise<SendOutcome> {
   const result = await dispatch(req)
 
   // Patch the pre-inserted row with the outcome + provider id.
+  // A provider status callback can land BEFORE this patch (Twilio `delivered` routinely does).
+  // The status is therefore written only while the row is still the pre-inserted 'queued'; if a
+  // callback already advanced it, the rest of the record is patched and its status kept, so
+  // this late 'sent' never regresses `delivered`/`failed` (audit A-11 / B-09).
   if (messageId) {
     try {
-      await db
+      const status = result.sent ? 'sent' : 'blocked'
+      const outcome = {
+        blocked_step: result.gate.blockedStep ?? null,
+        block_reason: result.gate.reason ?? null,
+        provider: result.sent ? (ctx.channel === 'sms' ? 'twilio' : 'resend') : null,
+        provider_id: result.providerId ?? null,
+        sent_at: result.sent ? new Date().toISOString() : null,
+        // Persist the EXACT transmitted body so the audit record includes the SMS
+        // opt-out footer the dispatcher appended at send (§13.9 audit fidelity).
+        ...(result.sent && result.sentBody ? { body: result.sentBody } : {}),
+        // The consent the chokepoint actually resolved, and the timezone the quiet-hours
+        // decision was made in — recorded so a send is reconstructible after the fact.
+        ...(result.resolved ? { consent_at_send: result.resolved.consent } : {}),
+        ...(result.timezone
+          ? {
+              // On an NPA/ZIP zone DISAGREEMENT both zones are recorded, joined as
+              // '<npaZone>+<zipZone>' — the decision had to hold in both (mig 124).
+              resolved_timezone: result.timezone.secondaryZone
+                ? `${result.timezone.zone}+${result.timezone.secondaryZone}`
+                : result.timezone.zone,
+              // Method/input are recorded ONLY for a map resolution (a real NPA or ZIP3).
+              // A caller-supplied zone and the legacy flag-off default record the zone
+              // with a null method — mig 123's contract for "not evidence-resolved".
+              ...(result.timezone.resolution.resolved &&
+              !['caller', 'caller_offset', 'legacy_default'].includes(result.timezone.resolution.input)
+                ? {
+                    tz_resolution_method: result.timezone.resolution.method,
+                    tz_resolution_input: result.timezone.resolution.input,
+                  }
+                : { tz_resolution_method: null, tz_resolution_input: null }),
+            }
+          : {}),
+        error: result.error ?? null,
+        updated_at: new Date().toISOString(),
+      }
+      const { data: claimed, error: claimErr } = await db
         .from('comm_messages')
-        .update({
-          delivery_status: result.sent ? 'sent' : 'blocked',
-          blocked_step: result.gate.blockedStep ?? null,
-          block_reason: result.gate.reason ?? null,
-          provider: result.sent ? (ctx.channel === 'sms' ? 'twilio' : 'resend') : null,
-          provider_id: result.providerId ?? null,
-          sent_at: result.sent ? new Date().toISOString() : null,
-          // Persist the EXACT transmitted body so the audit record includes the SMS
-          // opt-out footer the dispatcher appended at send (§13.9 audit fidelity).
-          ...(result.sent && result.sentBody ? { body: result.sentBody } : {}),
-          // The consent the chokepoint actually resolved, and the timezone the quiet-hours
-          // decision was made in — recorded so a send is reconstructible after the fact.
-          ...(result.resolved ? { consent_at_send: result.resolved.consent } : {}),
-          ...(result.timezone
-            ? {
-                // On an NPA/ZIP zone DISAGREEMENT both zones are recorded, joined as
-                // '<npaZone>+<zipZone>' — the decision had to hold in both (mig 124).
-                resolved_timezone: result.timezone.secondaryZone
-                  ? `${result.timezone.zone}+${result.timezone.secondaryZone}`
-                  : result.timezone.zone,
-                // Method/input are recorded ONLY for a map resolution (a real NPA or ZIP3).
-                // A caller-supplied zone and the legacy flag-off default record the zone
-                // with a null method — mig 123's contract for "not evidence-resolved".
-                ...(result.timezone.resolution.resolved &&
-                !['caller', 'caller_offset', 'legacy_default'].includes(result.timezone.resolution.input)
-                  ? {
-                      tz_resolution_method: result.timezone.resolution.method,
-                      tz_resolution_input: result.timezone.resolution.input,
-                    }
-                  : { tz_resolution_method: null, tz_resolution_input: null }),
-              }
-            : {}),
-          error: result.error ?? null,
-          updated_at: new Date().toISOString(),
-        })
+        .update({ ...outcome, delivery_status: status })
         .eq('id', messageId)
+        .eq('delivery_status', 'queued')
+        .select('id')
+      if (claimErr) {
+        // The guarded write itself failed: record the outcome unguarded so the message of
+        // record never sits at 'queued' after a real send.
+        await db
+          .from('comm_messages')
+          .update({ ...outcome, delivery_status: status })
+          .eq('id', messageId)
+      } else if (!claimed || claimed.length === 0) {
+        // A callback already advanced the status: record everything else, keep its status.
+        await db.from('comm_messages').update(outcome).eq('id', messageId)
+      }
     } catch {
       /* best-effort */
     }

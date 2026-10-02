@@ -311,6 +311,10 @@ export async function updateSettings(input: { campaignId: string; actor: string;
 
   const clean: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(input.patch)) if (EDITABLE_SETTINGS.has(k)) clean[k] = v
+  // Owner decision 10: Cross-Sell Life is marketing. Only MARKETING is accepted as its purpose
+  // (the tick dispatches as MARKETING regardless), so the setting can never drift to a value
+  // that reads as something else on the campaign page.
+  if ('purpose' in clean && clean.purpose !== 'MARKETING') return { ok: false, error: 'purpose_must_be_marketing' }
   if (Object.keys(clean).length === 0) return { ok: false, error: 'no_editable_fields' }
   clean.updated_at = new Date().toISOString()
   await db.from('xsell_life_campaigns').update(clean).eq('id', input.campaignId)

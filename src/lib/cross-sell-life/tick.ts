@@ -83,7 +83,11 @@ export async function crossSellLifeTick(): Promise<TickResult> {
     const dispatchCtx = await campaignDispatchContext({
       id: cfg.id,
       type: 'drip',
-      purpose: cfg.purpose,
+      // Owner decision 6 (docs/ops/automation-inventory.md §10): Cross-Sell Life is MARKETING for
+      // consent, business suppression and quiet hours — enforced here so a stale or edited
+      // campaign row (seeded POLICY_DEADLINE) cannot take it out of
+      // marketing treatment. Migration 139 aligns the stored rows.
+      purpose: 'MARKETING',
       delegation_id: cfg.delegation_id,
       represented_agency_owner_id: cfg.represented_agency_owner_id,
       sequencePurpose: null,

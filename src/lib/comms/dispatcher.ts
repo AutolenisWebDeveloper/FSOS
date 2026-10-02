@@ -132,6 +132,9 @@ export async function dispatch(req: DispatchRequest): Promise<DispatchResult> {
       : await sendEmail(req.to, req.subject ?? '', req.body, req.bodyText, {
           policy,
           ...(req.attachments?.length ? { attachments: req.attachments } : {}),
+          // One Resend Idempotency-Key per message of record (audit A-10). Twilio has no
+          // create-time idempotency; duplicate SMS stay prevented by the callers' claims.
+          ...(req.correlationId ? { idempotencyKey: `fsos-msg-${req.correlationId}` } : {}),
           ...(await resolveEmailEnvelope(req)),
         })
 

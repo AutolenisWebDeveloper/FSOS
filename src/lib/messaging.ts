@@ -124,6 +124,11 @@ export interface EmailSendOptions {
   headers?: Record<string, string>
   /** File attachments (WS-022: the .ics on the workshop instant ack). */
   attachments?: EmailAttachment[]
+  /**
+   * Sent as Resend's `Idempotency-Key` so a retried create (timeout, redelivered job) cannot
+   * mail the same message twice. Pass the comm_messages id — one key per message (audit A-10).
+   */
+  idempotencyKey?: string
   /** Dispatch policy context. Absent → everything is resolved from the address. */
   policy?: SendPolicyOptions
 }
@@ -145,7 +150,7 @@ export interface MessagingDeps {
   deliverEmail(args: {
     to: string; from: string; subject: string; html: string; text?: string
     replyTo?: string; headers?: Record<string, string>; apiKey: string
-    attachments?: EmailAttachment[]
+    attachments?: EmailAttachment[]; idempotencyKey?: string
   }): Promise<SendResult>
   deliverSms(args: {
     to: string; body: string; sid: string; token: string
@@ -184,7 +189,7 @@ export const defaultMessagingDeps: MessagingDeps = {
   },
   escalate: (ctx, outcome, extra) => escalateBlockedSend(ctx, outcome, extra),
   auditSent: (ctx, result) => auditSentMessage(ctx, result),
-  async deliverEmail({ to, from, subject, html, text, replyTo, headers, apiKey, attachments }) {
+  async deliverEmail({ to, from, subject, html, text, replyTo, headers, apiKey, attachments, idempotencyKey }) {
     // CAPTURED TRANSPORT (test-only). Placed HERE, inside the delivery seam, so every
     // step above it still runs — policy resolution, the gate, quiet hours, escalation —
     // and only the provider call itself is replaced. A capture-write failure FAILS THE
@@ -220,7 +225,7 @@ export const defaultMessagingDeps: MessagingDeps = {
         ...(replyTo ? { replyTo } : {}),
         ...(headers ? { headers } : {}),
         ...(attachments?.length ? { attachments } : {}),
-      })
+      }, idempotencyKey ? { idempotencyKey } : undefined)
       if (error) {
         const name = (error as { name?: string }).name
         return { ok: false, error: error.message || String(error), ...(name ? { providerCode: name } : {}), permanent: false }
@@ -426,6 +431,7 @@ export async function sendEmail(
   const result = await deps.deliverEmail({
     to, from, subject, html, text, replyTo, headers: opts?.headers, apiKey,
     attachments: opts?.attachments,
+    ...(opts?.idempotencyKey ? { idempotencyKey: opts.idempotencyKey } : {}),
   })
   await deps.auditSent(ctx, result)
   return { ...result, sentBody: result.ok ? html : undefined, timezone: decision.timezone, resolved: decision.resolved }

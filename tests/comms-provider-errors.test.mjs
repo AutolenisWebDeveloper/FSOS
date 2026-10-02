@@ -6,7 +6,8 @@
 //   • recordCarrierOptOut applies ONLY 21610 — filtering/unreachable/rate-limit codes are
 //     delivery problems, and suppressing on them would silently opt people out.
 //   • send.ts records a provider rejection as delivery 'failed', not a compliance 'blocked'.
-// Audit A-07 / B-05 / B-06 (docs/ops/automation-inventory.md).
+//   • every dispatched email carries a per-message Resend Idempotency-Key (A-10).
+// Audit A-07 / A-10 / B-05 / B-06 (docs/ops/automation-inventory.md).
 // Run: node tests/comms-provider-errors.test.mjs
 import assert from 'node:assert/strict'
 import { execSync } from 'node:child_process'
@@ -138,6 +139,21 @@ await t("send.ts records a cleared-but-rejected send as 'failed', a policy withh
 await t('the Twilio status webhook delegates to the same carrier-opt-out writer', () => {
   const route = readFileSync('src/app/api/webhooks/twilio/status/route.ts', 'utf8')
   assert.match(route, /await recordCarrierOptOut\(params\.To, String\(params\.ErrorCode\)\)/)
+})
+
+console.log('\nResend idempotency key — one per message of record (audit A-10)')
+await t('sendEmail forwards the caller key to the provider seam', async () => {
+  const { messagingDeps, calls } = makeMessagingDeps(mod, {}, { now: NOON_CT })
+  const res = await mod.messaging.sendEmail('a@example.com', 'Your review', '<p>Confirmed.</p>', 'Confirmed.',
+    { policy: { actor: 'test', purpose: 'TRANSACTIONAL' }, idempotencyKey: 'fsos-msg-m1' }, messagingDeps)
+  assert.equal(res.ok, true, JSON.stringify(res))
+  assert.equal(calls.email[0].idempotencyKey, 'fsos-msg-m1')
+})
+await t('the real Resend call passes it as the SDK request option, and dispatch keys it on the message id', () => {
+  const msg = readFileSync('src/lib/messaging.ts', 'utf8')
+  assert.match(msg, /\}, idempotencyKey \? \{ idempotencyKey \} : undefined\)/)
+  const disp = readFileSync('src/lib/comms/dispatcher.ts', 'utf8')
+  assert.match(disp, /idempotencyKey: `fsos-msg-\$\{req\.correlationId\}`/)
 })
 
 console.log(`\nAll ${passed} assertions passed.`)

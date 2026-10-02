@@ -120,6 +120,13 @@ export interface GateInput {
    */
   quietHoursExempt?: boolean
   /**
+   * The dispatch-policy resolver's own floor verdict. Set when the floor was evaluated with more
+   * than the hour alone — the Sunday-morning marketing hold, or several zones for an unresolved
+   * recipient (owner decisions 1–2) — so a verdict the hour cannot reproduce still blocks here.
+   */
+  floorBlocked?: boolean
+  floorReason?: string
+  /**
    * 2b — inside the operator's configured hours of operation (business-local).
    * Defaults to true (no extra restriction) when omitted, so existing callers are
    * unaffected. A false here is a soft DEFERRAL (escalate=false), not a compliance
@@ -289,8 +296,8 @@ export function evaluateGate(input: GateInput): GateResult {
   if (input.timezoneResolved === false) {
     return blocked('timezone_unresolved', true, input.timezoneReason)
   }
-  if (input.quietHoursExempt !== true && !withinQuietHours(input.recipientLocalHour)) {
-    return blocked('quiet_hours')
+  if (input.quietHoursExempt !== true && (input.floorBlocked === true || !withinQuietHours(input.recipientLocalHour))) {
+    return blocked('quiet_hours', true, input.floorBlocked === true ? input.floorReason : undefined)
   }
   // 2c — on-behalf-of authority. Checked before content approval / recommendation:
   // a message the FSA is not authorized to send at all must never reach content checks.

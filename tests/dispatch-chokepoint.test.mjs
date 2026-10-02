@@ -42,32 +42,43 @@ function smsTo(phone, state = {}, policy = {}, now = NOON) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-console.log('FLAG OFF (default) — current behavior reproduced exactly')
+console.log('CODE DEFAULT — recipient-local with no env flag (owner decision 1)')
 delete process.env.QUIET_HOURS_RECIPIENT_LOCAL
 
-await t('quiet hours evaluates in America/Chicago regardless of the recipient’s real zone', async () => {
-  // A Los Angeles number at LA_EVE: 18:30 THEIR time (inside the floor), but 20:30 agency
-  // time (outside). Flag OFF must block — that IS today's (wrong-but-current) behavior.
+// NOON_ALL: 21:00 UTC → 16:00 New_York, 15:00 Chicago, 14:00 Denver/Phoenix, 13:00 Los_Angeles —
+// inside the floor in every continental zone.
+const NOON_ALL = new Date(Date.UTC(2026, 0, 15, 21, 0))
+
+await t('with QUIET_HOURS_RECIPIENT_LOCAL unset, the RECIPIENT zone is used (not America/Chicago)', async () => {
   const { r } = await smsTo('+13105550147', {}, {}, LA_EVE)
+  assert.equal(r.ok, true, '18:30 Los Angeles is inside the floor')
+  assert.equal(r.timezone.zone, 'America/Los_Angeles')
+  assert.equal(r.timezone.legacy, false, 'the legacy fixed-zone path is no longer the default')
+})
+
+// EARLY_PT: 15:00 UTC → 10:00 New_York (inside) but 07:00 Los_Angeles (outside).
+const EARLY_PT = new Date(Date.UTC(2026, 0, 15, 15, 0))
+await t('UNRESOLVABLE zone → evaluated in EVERY continental zone: 07:00 Pacific is outside the floor → held', async () => {
+  const { r, calls } = await smsTo('+18005550147', { recipientLocation: { phone: null, zip: null } }, {}, EARLY_PT)
   assert.equal(r.ok, false)
-  assert.equal(r.blockedStep, 'quiet_hours')
-  assert.equal(r.timezone.zone, 'America/Chicago', 'legacy zone recorded')
-  assert.equal(r.timezone.legacy, true, 'marked as the legacy fixed-zone resolution')
+  assert.equal(r.blockedStep, 'quiet_hours', 'a floor verdict, not the old blanket timezone_unresolved block')
+  assert.equal(calls.sms.length, 0, 'provider never reached')
+  assert.match(r.reason, /every continental US zone/)
 })
 
-await t('flag OFF: an unresolvable recipient (toll-free, no ZIP) STILL SENDS — no new blocking', async () => {
-  const { r } = await smsTo('+18005550147', {}, {}, NOON)
-  assert.equal(r.ok, true, 'flag off must not introduce the timezone_unresolved block')
-})
-
-await t('flag OFF: the NPA map is not what feeds the hour (legacy resolution marked on the result)', async () => {
-  const { r } = await smsTo('+12125550147', {}, {}, NOON) // NYC number
+await t('UNRESOLVABLE zone at an instant inside the floor in ALL continental zones → sends', async () => {
+  const { r } = await smsTo('+18005550147', { recipientLocation: { phone: null, zip: null } }, {}, NOON_ALL)
   assert.equal(r.ok, true)
-  assert.equal(r.timezone.zone, 'America/Chicago', 'agency-local, not America/New_York')
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-console.log('\nFLAG ON — recipient-local resolution, fail closed')
+console.log('\nRecipient-local resolution (the env flag no longer changes anything)')
+process.env.QUIET_HOURS_RECIPIENT_LOCAL = 'false'
+await t('setting the env flag to false does NOT bring back the fixed Chicago zone', async () => {
+  const { r } = await smsTo('+12125550147', {}, {}, LATE)
+  assert.equal(r.ok, false, '23:00 New York is outside the floor even with the flag "false"')
+  assert.equal(r.timezone.zone, 'America/New_York')
+})
 process.env.QUIET_HOURS_RECIPIENT_LOCAL = 'true'
 
 await t('the SAME send now evaluates in the RECIPIENT’s zone (LA evening sends; Chicago would have blocked)', async () => {
@@ -85,18 +96,7 @@ await t('an East-coast recipient at 23:00 local is blocked even though it is 22:
   assert.equal(r.timezone.zone, 'America/New_York')
 })
 
-await t('UNRESOLVABLE NPA → no send + ESCALATION + the DISTINCT timezone_unresolved outcome', async () => {
-  const { r, calls } = await smsTo('+18005550147', {}, {}, NOON) // toll-free, no ZIP on file
-  assert.equal(r.ok, false, 'fail closed')
-  assert.equal(r.blockedStep, 'timezone_unresolved', 'NOT quiet_hours — separable in reporting')
-  assert.equal(r.escalated, true, 'a human must fix the contact record')
-  assert.equal(calls.escalate.length, 1, 'escalation fired')
-  assert.equal(calls.escalate[0].outcome.escalate, true)
-  assert.equal(calls.sms.length, 0, 'provider never reached')
-  assert.match(r.reason, /non_geographic_npa/, 'the resolution failure is named')
-})
-
-await t('unresolvable phone FALLS BACK to the household ZIP before failing', async () => {
+await t('an unresolvable phone with a household ZIP resolves from the ADDRESS', async () => {
   const { r } = await smsTo('+18005550147', { recipientLocation: { phone: null, zip: '90001' } }, {}, LA_EVE)
   assert.equal(r.ok, true, 'ZIP resolved Los Angeles; 18:30 local sends')
   assert.equal(r.timezone.resolution.method, 'zip')
@@ -148,10 +148,10 @@ await t('worker window applies under agent:<key> for an AI-worker send', async (
   assert.equal(r.blockedStep, 'configured_window')
 })
 
-await t('EXEMPT PURPOSE (POLICY_DEADLINE) + configured window + out-of-window → DEFERRED, not suppressed', async () => {
+await t('EXEMPT PURPOSE (APPOINTMENT) + configured window + out-of-window → DEFERRED, not suppressed', async () => {
   const { r, calls } = await smsTo('+12145550147', {
     hoursWindows: { 'campaign:term_conv': { startHour: 14, endHour: 18, days: [0, 1, 2, 3, 4, 5, 6] } },
-  }, { campaignKey: 'term_conv', purpose: 'POLICY_DEADLINE', suppressible: false }, NOON)
+  }, { campaignKey: 'term_conv', purpose: 'APPOINTMENT', suppressible: false }, NOON)
   assert.equal(r.ok, false)
   assert.equal(r.blockedStep, 'configured_window', 'the deferral step, never suppression')
   assert.equal(r.escalated, false)
@@ -159,17 +159,23 @@ await t('EXEMPT PURPOSE (POLICY_DEADLINE) + configured window + out-of-window �
   assert.match(r.reason, /deferred to the next opening/, 'the deferral names its recovery')
 })
 
-await t('EXEMPT PURPOSE with NO configured window is untouched (default = no behavior change)', async () => {
-  const { r } = await smsTo('+12145550147', {}, { purpose: 'POLICY_DEADLINE', suppressible: false }, LATE)
-  assert.equal(r.ok, true, '22:00 local sends — POLICY_DEADLINE has no floor and nothing was configured')
+await t('EXEMPT PURPOSE (APPOINTMENT notice) with NO configured window is untouched', async () => {
+  const { r } = await smsTo('+12145550147', {}, { purpose: 'APPOINTMENT', suppressible: false }, LATE)
+  assert.equal(r.ok, true, '22:00 local sends — an immediate appointment notice has no floor')
 })
 
-await t('a configured window makes the timezone REQUIRED even on an exempt purpose (fail closed)', async () => {
+await t('owner decision 2: POLICY_DEADLINE (Life Conversion / term conversion) SMS now keeps the floor', async () => {
+  const { r } = await smsTo('+12145550147', {}, { purpose: 'POLICY_DEADLINE', suppressible: false }, LATE)
+  assert.equal(r.ok, false, '22:00 local is outside the floor')
+  assert.equal(r.blockedStep, 'quiet_hours')
+})
+
+await t('a configured window on an exempt purpose with an UNKNOWN zone must hold in every continental zone', async () => {
   const { r } = await smsTo('+18005550147', {
     hoursWindows: { 'campaign:term_conv': { startHour: 9, endHour: 20, days: [0, 1, 2, 3, 4, 5, 6] } },
-  }, { campaignKey: 'term_conv', purpose: 'POLICY_DEADLINE', suppressible: false }, NOON)
-  assert.equal(r.ok, false)
-  assert.equal(r.blockedStep, 'timezone_unresolved', 'a window cannot be evaluated in an unknown zone')
+  }, { campaignKey: 'term_conv', purpose: 'APPOINTMENT', suppressible: false }, EARLY_PT)
+  assert.equal(r.ok, false, '07:00 Pacific is outside the configured window in one continental zone')
+  assert.equal(r.blockedStep, 'configured_window')
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -192,38 +198,30 @@ await t('EMPTY INTERSECTION (campaign 7–9 ∩ floor 9–20, Honolulu recipient
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-console.log('\nNPA/ZIP dual resolution — agreement records both; disagreement binds BOTH zones')
+console.log('\nAddress first, then area code (owner decision 1)')
 
-await t('AGREEMENT: one zone, method both, both inputs recorded — the send itself unchanged', async () => {
+await t('phone and ZIP AGREE: the address zone is used (method zip)', async () => {
   const { r } = await smsTo('+12145550147', { recipientLocation: { phone: '+12145550147', zip: '75201' } }, {}, NOON)
-  assert.equal(r.ok, true, '12:00 America/Chicago sends exactly as with the NPA alone')
+  assert.equal(r.ok, true, '12:00 America/Chicago')
   assert.equal(r.timezone.zone, 'America/Chicago')
-  assert.equal(r.timezone.secondaryZone ?? null, null, 'agreement carries no second zone')
-  assert.equal(r.timezone.resolution.method, 'both')
-  assert.equal(r.timezone.resolution.input, '214+752', 'both pieces of evidence on the send record')
-})
-
-await t('DISAGREEMENT NARROWS: the LA-evening send that passed on NPA alone BLOCKS when the ZIP says Chicago', async () => {
-  // Same phone + instant as the flag-ON happy case above (18:30 Los_Angeles — allowed), but
-  // now the household ZIP resolves Dallas, where it is 20:30 — outside the floor. Neither
-  // input can be trusted alone, so BOTH zones must allow; the result is never wider than
-  // either alone.
-  const { r, calls } = await smsTo('+13105550147', { recipientLocation: { phone: '+13105550147', zip: '75201' } }, {}, LA_EVE)
-  assert.equal(r.ok, false, 'allowed in the NPA zone, outside the floor in the ZIP zone → blocked')
-  assert.equal(r.blockedStep, 'quiet_hours', 'a statutory miss in EITHER zone is the statutory verdict')
-  assert.equal(r.escalated, true)
-  assert.equal(calls.sms.length, 0)
-  assert.equal(r.timezone.zone, 'America/Los_Angeles', 'the NPA zone stays primary on the record')
-  assert.equal(r.timezone.secondaryZone, 'America/Chicago', 'the disagreeing ZIP zone is recorded, never discarded')
-  assert.equal(r.timezone.resolution.method, 'both')
-  assert.equal(r.timezone.resolution.input, '310+752')
-})
-
-await t('ONE-RESOLVES is unchanged: toll-free + ZIP still resolves method zip (no phantom second zone)', async () => {
-  const { r } = await smsTo('+18005550147', { recipientLocation: { phone: '+18005550147', zip: '90001' } }, {}, LA_EVE)
-  assert.equal(r.ok, true)
   assert.equal(r.timezone.resolution.method, 'zip')
   assert.equal(r.timezone.secondaryZone ?? null, null)
+})
+
+await t('phone and ZIP DISAGREE: the ADDRESS zone governs (Dallas 20:30 → held, though LA is 18:30)', async () => {
+  const { r, calls } = await smsTo('+13105550147', { recipientLocation: { phone: '+13105550147', zip: '75201' } }, {}, LA_EVE)
+  assert.equal(r.ok, false)
+  assert.equal(r.blockedStep, 'quiet_hours')
+  assert.equal(calls.sms.length, 0)
+  assert.equal(r.timezone.zone, 'America/Chicago', 'the address zone, not the area code')
+  assert.equal(r.timezone.resolution.method, 'zip')
+})
+
+await t('no ZIP on file: the AREA CODE zone is used (method npa)', async () => {
+  const { r } = await smsTo('+13105550147', { recipientLocation: { phone: '+13105550147', zip: null } }, {}, LA_EVE)
+  assert.equal(r.ok, true)
+  assert.equal(r.timezone.zone, 'America/Los_Angeles')
+  assert.equal(r.timezone.resolution.method, 'npa')
 })
 
 // ─────────────────────────────────────────────────────────────────────────────

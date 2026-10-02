@@ -32,7 +32,7 @@
 // under the runtime-tsc test harness without eagerly pulling Supabase.
 
 import { evaluateGate, type GateInput, type GateResult } from './gate'
-import { quietHoursApply, type MessagePurpose } from './purpose'
+import { quietHoursApply, sundayMarketingHoldApplies, type MessagePurpose } from './purpose'
 import { evaluateQuietHours, combineQuietHoursDecisions, type HoursWindow, type QuietHoursDecision } from './quiet-hours-window'
 import { resolveRecipientTimeZone, type TimezoneResolution } from './recipient-timezone'
 import { DEFAULT_TIMEZONE } from './local-time'
@@ -184,9 +184,24 @@ export interface DispatchPolicyDecision {
  * dispatch paths would be a second send path, which is the thing this whole change removes.
  */
 export function recipientLocalQuietHoursEnabled(): boolean {
-  const v = (process.env.QUIET_HOURS_RECIPIENT_LOCAL || '').trim().toLowerCase()
-  return v === 'true' || v === '1' || v === 'yes'
+  // Owner decision 1 (docs/ops/automation-inventory.md §10): quiet hours are recipient-local BY
+  // CODE DEFAULT and no longer depend on QUIET_HOURS_RECIPIENT_LOCAL. The legacy fixed-Chicago
+  // branch in resolveDispatchTimeZone remains reachable only by passing flagOn=false directly.
+  return true
 }
+
+/**
+ * Every continental US zone (owner decision 1). A recipient whose zone resolves from neither the
+ * address nor the area code may be messaged only at an instant inside the floor in ALL of these
+ * — never in their unknown local night. Phoenix is listed because it does not observe DST.
+ */
+export const CONTINENTAL_US_ZONES: readonly string[] = [
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Phoenix',
+  'America/Los_Angeles',
+]
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Injectable readers (all DB access goes through here)
@@ -455,7 +470,16 @@ export function resolveDispatchTimeZone(
     }
   }
 
-  const resolution = resolveRecipientTimeZone({ phone: location.phone, zip: location.zip })
+  // Owner decision 1: the zone comes from the contact's ADDRESS (ZIP) first, then the phone's
+  // AREA CODE. Neither resolving is reported unresolved; the resolver then evaluates the floor in
+  // every continental US zone (CONTINENTAL_US_ZONES) rather than blocking outright.
+  const byAddress = location.zip ? resolveRecipientTimeZone({ zip: location.zip }) : null
+  const byPhone = location.phone ? resolveRecipientTimeZone({ phone: location.phone }) : null
+  const resolution = byAddress?.resolved
+    ? byAddress
+    : byPhone?.resolved
+      ? byPhone
+      : resolveRecipientTimeZone({ phone: location.phone, zip: location.zip })
   if (!resolution.resolved) {
     return { resolution, zone: null, localHour: null, localDay: null, secondaryZone: null, legacy: false }
   }
@@ -465,8 +489,7 @@ export function resolveDispatchTimeZone(
     zone: resolution.timeZone,
     localHour: hour,
     localDay: day,
-    // The ZIP's zone when the two inputs DISAGREE — quiet hours must then hold in both.
-    secondaryZone: resolution.secondaryTimeZone ?? null,
+    secondaryZone: null,
     legacy: false,
   }
 }
@@ -606,42 +629,49 @@ export async function resolveDispatchPolicy(
   // statutory floor and no configured window has nothing to evaluate, so it must not be
   // blocked for a zone it never needed — that would newly break every transactional email.
   const timezoneNeeded = floorApplies || hasConfiguredWindow
-  const timezoneResolved = !timezoneNeeded || timezone.resolution.resolved
+  // Owner decision 1: an unresolvable zone no longer blocks outright — the floor is evaluated in
+  // EVERY continental US zone and must hold in all of them (the intersection: 09:00 Pacific to
+  // 20:00 Eastern, i.e. 09:00–17:00 Pacific). That is at least as narrow as any single zone, so the
+  // fallback can only hold sends a resolved zone would allow, never the reverse.
+  const continentalFallback = timezoneNeeded && !timezone.resolution.resolved
+  const timezoneResolved = !timezoneNeeded || timezone.resolution.resolved || continentalFallback
+  const sundayMarketingHold = sundayMarketingHoldApplies(ctx.channel, ctx.purpose)
 
   let quietHours: QuietHoursDecision | undefined
   let configuredWindowOk: boolean | undefined
   let configuredWindowReason: string | undefined
   let windowMisconfigured: boolean | undefined
   let quietHoursExempt = !floorApplies
-  // The hour the GATE re-derives the floor from. Primary-zone hour, except on a dual-zone
-  // send where only the SECOND zone misses the floor — the gate must then see the failing
-  // hour, or the combined verdict would be silently un-blocked by the passing zone's clock.
+  // The hour the GATE re-derives the floor from: the FAILING zone's hour when any evaluated zone
+  // misses the floor, so the combined verdict is never un-blocked by a passing zone's clock.
   let gateLocalHour = timezone.localHour
-  if (timezoneNeeded && timezone.localHour != null && timezone.localDay != null) {
-    quietHours = evaluateQuietHours({
-      localHour: timezone.localHour,
-      localDay: timezone.localDay,
+  const instants: Array<{ hour: number; day: number }> = !timezoneNeeded
+    ? []
+    : continentalFallback
+      ? CONTINENTAL_US_ZONES.map((z) => localPartsInZone(z, now))
+      : timezone.localHour != null && timezone.localDay != null
+        ? [{ hour: timezone.localHour, day: timezone.localDay }]
+        : []
+  for (const [i, at] of instants.entries()) {
+    const decision = evaluateQuietHours({
+      localHour: at.hour,
+      localDay: at.day,
       floorApplies,
+      sundayMarketingHold,
       campaignWindow,
       workerWindow,
     })
-    // NPA/ZIP DISAGREEMENT: the phone and the address place this recipient in different
-    // zones, so neither hour can be trusted alone. Evaluate in the second zone too and
-    // require BOTH to permit — the intersection of the two zones' windows, always at least
-    // as narrow as either alone (combineQuietHoursDecisions).
-    if (timezone.secondaryZone) {
-      const second = localPartsInZone(timezone.secondaryZone, now)
-      const secondDecision = evaluateQuietHours({
-        localHour: second.hour,
-        localDay: second.day,
-        floorApplies,
-        campaignWindow,
-        workerWindow,
-      })
-      if (quietHours.outcome !== 'outside_floor' && secondDecision.outcome === 'outside_floor') {
-        gateLocalHour = second.hour
-      }
-      quietHours = combineQuietHoursDecisions(quietHours, secondDecision)
+    if (i === 0 || !quietHours) {
+      quietHours = decision
+      gateLocalHour = at.hour
+      continue
+    }
+    if (quietHours.outcome !== 'outside_floor' && decision.outcome === 'outside_floor') gateLocalHour = at.hour
+    quietHours = combineQuietHoursDecisions(quietHours, decision)
+  }
+  if (quietHours) {
+    if (continentalFallback && !quietHours.allowed && quietHours.reason) {
+      quietHours = { ...quietHours, reason: `${quietHours.reason} Recipient zone unresolved — evaluated in every continental US zone.` }
     }
     // The floor verdict is expressed through the gate's existing quiet_hours step so the
     // established escalating-block behavior and its audit action are unchanged.
@@ -701,6 +731,8 @@ export async function resolveDispatchPolicy(
     // fabricated in-window hour while claiming the floor applies.
     recipientLocalHour: gateLocalHour ?? 12,
     quietHoursExempt,
+    floorBlocked: quietHours?.outcome === 'outside_floor',
+    floorReason: quietHours?.outcome === 'outside_floor' ? quietHours.reason : undefined,
     timezoneResolved,
     timezoneReason: unresolvedTimezoneReason,
     configuredWindowOk,

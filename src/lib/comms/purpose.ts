@@ -58,10 +58,8 @@ export function isMarketingPurpose(purpose: MessagePurpose): boolean {
 }
 
 /**
- * Purposes whose SMS sends are subject to the 9:00–20:00 recipient-local quiet-hours
- * floor (gate step 2). Marketing-class outreach only: MARKETING and WORKSHOP (the
- * `isMarketingPurpose` set) plus BIRTHDAY and RELATIONSHIP — automated relationship
- * touches are proactive outreach, not a reply or a transaction, so they keep the floor.
+ * Marketing-class purposes (MARKETING and WORKSHOP — the `isMarketingPurpose` set — plus BIRTHDAY
+ * and RELATIONSHIP, which are proactive relationship outreach). Used for the Sunday-morning hold.
  */
 export const QUIET_HOURS_GATED_PURPOSES: MessagePurpose[] = [
   'MARKETING',
@@ -71,19 +69,42 @@ export const QUIET_HOURS_GATED_PURPOSES: MessagePurpose[] = [
 ]
 
 /**
- * Whether the quiet-hours floor (gate step 2) applies to a send. Owner-directed scope
- * (2026-08-07): quiet hours gate SMS MARKETING/CAMPAIGN sends only.
+ * SMS purposes EXEMPT from the 9:00–20:00 floor: notices a person's own action or account event
+ * triggers, sent immediately — a transactional receipt, an appointment confirmation/change,
+ * application status, a document request. Appointment REMINDERS are scheduled, not immediate:
+ * the reminder scheduler moves them inside the floor (owner decision 3), so the gate exemption
+ * here covers only the immediate notices.
+ */
+export const QUIET_HOURS_EXEMPT_PURPOSES: MessagePurpose[] = [
+  'TRANSACTIONAL',
+  'APPOINTMENT',
+  'APPLICATION_STATUS',
+  'DOCUMENT_REQUEST',
+]
+
+/**
+ * Whether the quiet-hours floor (gate step 2) applies to a send. Owner decision 2
+ * (docs/ops/automation-inventory.md §10, 2026-10-02) widened the 2026-08-07 scope: the floor
+ * covers ALL automated campaign SMS — Life Conversion and term conversion (POLICY_DEADLINE) and
+ * SERVICING-tagged campaigns included.
  *   • email — never quiet-hours gated (any purpose);
- *   • SMS with a transactional/servicing-class purpose (TRANSACTIONAL, APPOINTMENT,
- *     SERVICING, APPLICATION_STATUS, DOCUMENT_REQUEST, POLICY_DEADLINE) — not gated;
- *   • SMS with a marketing-class purpose (QUIET_HOURS_GATED_PURPOSES) — gated;
- *   • SMS with NO purpose — gated (the unclassified campaign path defaults to
- *     marketing; unclassified traffic must never widen the floor).
- * Consent, DNC/STOP, the recommendation red-line, and the securities firewall are
- * enforced independently of this scoping and are unaffected by it.
+ *   • SMS with an immediate-notice purpose (QUIET_HOURS_EXEMPT_PURPOSES) — not gated;
+ *   • every other SMS purpose, and SMS with NO purpose — gated.
+ * Consent, DNC/STOP, the recommendation red-line, and the securities firewall are enforced
+ * independently of this scoping and are unaffected by it.
  */
 export function quietHoursApply(channel: Channel, purpose?: MessagePurpose | null): boolean {
   if (channel === 'email') return false
+  if (!purpose) return true
+  return !QUIET_HOURS_EXEMPT_PURPOSES.includes(purpose)
+}
+
+/**
+ * Marketing SMS is also held until 12:00 recipient-local on SUNDAYS (owner decision 2 — Texas
+ * solicitation hours; counsel to confirm). Marketing-class purposes and unclassified SMS.
+ */
+export function sundayMarketingHoldApplies(channel: Channel, purpose?: MessagePurpose | null): boolean {
+  if (channel !== 'sms') return false
   if (!purpose) return true
   return QUIET_HOURS_GATED_PURPOSES.includes(purpose)
 }

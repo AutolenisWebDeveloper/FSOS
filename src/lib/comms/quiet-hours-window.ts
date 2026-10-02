@@ -130,6 +130,11 @@ export interface QuietHoursInput {
    * SMS are exempt from the FLOOR — but not from a configured window.
    */
   floorApplies: boolean
+  /**
+   * Marketing SMS: also outside the floor on SUNDAY before 12:00 recipient-local (owner decision
+   * 2, Texas solicitation hours). Only meaningful when `floorApplies`.
+   */
+  sundayMarketingHold?: boolean
   /** Operator's campaign-scoped window, when one is configured and enabled. */
   campaignWindow?: HoursWindow | null
   /** Operator's worker(agent)-scoped window, when one is configured and enabled. */
@@ -186,6 +191,19 @@ export function evaluateQuietHours(input: QuietHoursInput): QuietHoursDecision {
       effective: STATUTORY_FLOOR,
       hoursUntilOpen: hoursUntilWindowOpens(localHour, localDay, STATUTORY_FLOOR),
       reason: 'Outside permitted quiet hours (9:00–20:00 recipient-local).',
+    }
+  }
+
+  // ── 1b. Sunday-morning marketing hold — part of the floor (escalating), owner decision 2. ──
+  if (floorApplies && input.sundayMarketingHold === true && localDay === 0 && localHour < 12) {
+    return {
+      outcome: 'outside_floor',
+      allowed: false,
+      escalate: true,
+      blockedBy: 'floor',
+      effective: STATUTORY_FLOOR,
+      hoursUntilOpen: 12 - localHour,
+      reason: 'Marketing SMS is held until 12:00 recipient-local on Sundays.',
     }
   }
 

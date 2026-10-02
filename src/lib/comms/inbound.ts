@@ -16,6 +16,7 @@ import {
   getOrCreateConversation,
   touchConversation,
   normalizeContact,
+  resolveContact,
   resolveAllMemberIds,
   type Channel,
   type Conversation,
@@ -71,6 +72,12 @@ export interface InboundResult {
    *  inbound message — delivered regardless of opt-out state, and not an outbound API
    *  send). Recorded in the conversation history here. */
   helpResponse?: string
+  /**
+   * A STOP whose enforced opt-out write FAILED (audit B-13/B-14). The webhook answers 5xx so the
+   * delivery is retried; the opt-out runs before the idempotency short-circuit, so a retry
+   * re-applies it rather than being skipped as a duplicate.
+   */
+  optOutFailed?: boolean
 }
 
 /**
@@ -82,16 +89,20 @@ export interface InboundResult {
  * only consent record lives in comm_contact_consents, which this keeps in step with the DNC row
  * — previously the enforced suppression was written and the evidence store still read `granted`.
  */
-async function applyOptOut(conv: Conversation, contact: string): Promise<void> {
-  await recordChannelOptOut({
+async function applyOptOut(channel: Channel, contact: string, providerId: string | null | undefined): Promise<boolean> {
+  // Keyed on the sender ADDRESS alone (no conversation needed), so it runs before threading.
+  // The 'inbound STOP' reason prefix is what lets a later bare START lift it (owner decision 4).
+  const link = await resolveContact(channel, contact)
+  const { ok } = await recordChannelOptOut({
     contact,
-    channel: conv.channel,
+    channel,
     source: 'inbound_stop',
-    reason: `inbound STOP (conversation ${conv.id})`,
+    reason: `inbound STOP (${providerId ? `message ${providerId}` : 'no provider id'})`,
     consentText: 'Inbound STOP keyword',
-    memberId: conv.member_id,
-    householdId: conv.household_id,
+    memberId: link.memberId,
+    householdId: link.householdId,
   })
+  return ok
 }
 
 /**
@@ -350,6 +361,16 @@ export async function processInbound(input: InboundInput): Promise<InboundResult
     escalated: false,
   }
 
+  // STOP FIRST — keyed on the sender address, before the idempotency short-circuit and before
+  // threading. Previously it ran after both, so a threading failure lost it, and a provider retry
+  // of a message whose first pass died part-way was short-circuited as a duplicate with the
+  // opt-out never written (audit B-13). Every write here is idempotent (upsert / append-only).
+  if (result.intent === 'stop') {
+    const ok = await applyOptOut(input.channel as Channel, contact, input.providerId)
+    result.optedOut = ok
+    if (!ok) result.optOutFailed = true
+  }
+
   // Idempotency: providers (Twilio, Resend) retry a webhook on any non-2xx/timeout, so
   // the same inbound message can arrive more than once. If we've already recorded this
   // provider message, short-circuit — never create a duplicate conversation message or
@@ -413,8 +434,7 @@ export async function processInbound(input: InboundInput): Promise<InboundResult
 
   // Keyword handling (SMS-style, also honored on email replies).
   if (result.intent === 'stop') {
-    await applyOptOut(conv, contact)
-    result.optedOut = true
+    // The opt-out itself was applied at the top of this function (before threading).
     // CANCEL / END / QUIT are carrier STOP keywords, and an appointment text that says
     // "Reschedule or cancel: <link>" invites exactly that reply. The opt-out above stands
     // unconditionally; this only tells a HUMAN that the client may have meant their

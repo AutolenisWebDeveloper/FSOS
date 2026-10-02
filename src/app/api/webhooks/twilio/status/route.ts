@@ -65,7 +65,10 @@ export async function POST(req: NextRequest) {
   // unambiguous 21610 (see isCarrierOptOutCode); filtering and unreachable-handset codes are
   // delivery problems, and treating them as opt-outs would unsubscribe people silently.
   if (isCarrierOptOutCode(params.ErrorCode) && params.To) {
-    await recordCarrierOptOut(params.To, String(params.ErrorCode))
+    const optOut = await recordCarrierOptOut(params.To, String(params.ErrorCode))
+    // A lost opt-out must not be acknowledged: 5xx so the callback is retried (audit B-14). The
+    // ledger upsert above is idempotent, so a redelivery cannot double-record the event.
+    if (!optOut.ok) return NextResponse.json({ error: 'opt-out write failed' }, { status: 503 })
   }
 
   return NextResponse.json({ received: true })

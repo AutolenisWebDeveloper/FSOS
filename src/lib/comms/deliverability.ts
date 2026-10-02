@@ -32,7 +32,7 @@ export interface DeliverabilitySuppressionInput {
  */
 export async function applyDeliverabilitySuppression(
   input: DeliverabilitySuppressionInput,
-): Promise<{ suppressed: boolean; reason?: DeliverabilityReason }> {
+): Promise<{ suppressed: boolean; reason?: DeliverabilityReason; failed?: boolean }> {
   const decision = classifyDeliverabilityEvent(input.event, input.bounce ?? null)
   if (!decision) return { suppressed: false }
 
@@ -40,5 +40,7 @@ export async function applyDeliverabilitySuppression(
   if (!email) return { suppressed: false }
 
   const res = await suppressContact(email, 'email', suppressionProvenanceFor(decision.reason))
-  return { suppressed: res.ok, reason: decision.reason }
+  // `failed`: the event warranted suppression and the write did not land — the webhook answers
+  // 5xx so the provider redelivers it (audit B-14), instead of acknowledging a lost suppression.
+  return { suppressed: res.ok, reason: decision.reason, ...(res.ok ? {} : { failed: true }) }
 }

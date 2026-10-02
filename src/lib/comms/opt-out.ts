@@ -48,20 +48,27 @@ export interface ChannelOptOut {
 /**
  * Apply a channel opt-out across every store, and log it once through the shared consent-change
  * recorder (audit_log + the CRM timeline). Never throws.
+ *
+ * Returns `ok: false` when any ENFORCED write failed — the DNC row, the contact-consent revoke
+ * or the member consent revoke, each of which a later send's gate reads. supabase-js resolves
+ * `{ error }` instead of throwing, so these were previously reported as success while nothing
+ * was written (audit B-14). The caller decides how to surface it (a webhook answers 5xx).
  */
-export async function recordChannelOptOut(o: ChannelOptOut): Promise<void> {
+export async function recordChannelOptOut(o: ChannelOptOut): Promise<{ ok: boolean }> {
   const db = getDb()
   const now = new Date().toISOString()
+  const failures: string[] = []
   try {
     // 1. The ENFORCED suppression. First, so a failure later still leaves the send blocked.
     //    `created_at: now` RE-ARMS a row a START had lifted (lifted_at < created_at ⇒ active again;
     //    contact-consent.ts isDncLifted). Rows are never deleted (owner decision 4).
-    await db
+    const dnc = await db
       .from('dnc_entries')
       .upsert({ contact: o.contact, channel: o.channel, scope: 'internal', reason: o.reason, created_at: now }, { onConflict: 'contact,channel' })
+    if (dnc?.error) failures.push(`dnc_entries: ${dnc.error.message}`)
 
     // 2. The contact-resolvable evidence store (append-only; latest action wins).
-    await db.from('comm_contact_consents').insert({
+    const cc = await db.from('comm_contact_consents').insert({
       contact: o.contact,
       channel: o.channel,
       action: 'revoked',
@@ -69,21 +76,24 @@ export async function recordChannelOptOut(o: ChannelOptOut): Promise<void> {
       consent_version: o.consentVersion ?? 'opt-out',
       captured_at: now,
     })
+    if (cc?.error) failures.push(`comm_contact_consents: ${cc.error.message}`)
 
     // 3. The member-keyed stores, when the number belongs to an existing client. The channel
     //    revoke is the floor and the scoped grants are cascaded so the two cannot disagree.
     if (o.memberId) {
-      await db
+      const mc = await db
         .from('consents')
         .upsert(
           { member_id: o.memberId, household_id: o.householdId ?? null, channel: o.channel, status: 'revoked', source: o.source, updated_at: now },
           { onConflict: 'member_id,channel' },
         )
-      await db
+      if (mc?.error) failures.push(`consents: ${mc.error.message}`)
+      const sp = await db
         .from('comm_consent_purposes')
         .update({ status: 'revoked', updated_at: now })
         .eq('member_id', o.memberId)
         .eq('channel', o.channel)
+      if (sp?.error) failures.push(`comm_consent_purposes: ${sp.error.message}`)
     }
 
     // 4. ONE consent-logging path → audit_log AND the CRM timeline.
@@ -97,9 +107,14 @@ export async function recordChannelOptOut(o: ChannelOptOut): Promise<void> {
       memberId: o.memberId ?? null,
       householdId: o.householdId ?? null,
     })
-  } catch {
-    /* best-effort: a webhook must not retry on a logging failure */
+  } catch (err) {
+    failures.push(err instanceof Error ? err.message : String(err))
   }
+  if (failures.length) {
+    console.error('[opt-out] enforced write failed', { channel: o.channel, source: o.source, failures })
+    return { ok: false }
+  }
+  return { ok: true }
 }
 
 /**
@@ -118,15 +133,16 @@ export function isCarrierOptOutCode(code: string | null | undefined): boolean {
 /**
  * Apply a carrier-reported SMS opt-out (Twilio 21610) for a raw recipient number, wherever it was
  * learned: the delivery status callback, or a synchronous REST rejection at send time. Resolves
- * the household-member link so the member-keyed stores are revoked too. Never throws.
+ * the household-member link so the member-keyed stores are revoked too. Never throws; `ok: false`
+ * when an enforced write failed (the status webhook then answers 5xx so the provider retries).
  */
-export async function recordCarrierOptOut(toRaw: string, errorCode: string): Promise<void> {
-  if (!toRaw || !isCarrierOptOutCode(errorCode)) return
+export async function recordCarrierOptOut(toRaw: string, errorCode: string): Promise<{ ok: boolean }> {
+  if (!toRaw || !isCarrierOptOutCode(errorCode)) return { ok: true } // nothing to apply
   try {
     const { normalizeContact, resolveContact } = await import('./conversations')
     const contact = normalizeContact('sms', toRaw)
     const link = await resolveContact('sms', contact)
-    await recordChannelOptOut({
+    return await recordChannelOptOut({
       contact,
       channel: 'sms',
       source: 'carrier_opt_out',
@@ -136,6 +152,6 @@ export async function recordCarrierOptOut(toRaw: string, errorCode: string): Pro
       householdId: link.householdId,
     })
   } catch {
-    /* best-effort: never throw into a webhook or the send path */
+    return { ok: false } // never throw into a webhook or the send path
   }
 }

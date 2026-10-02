@@ -104,7 +104,13 @@ export async function suppressContact(
   }))
   try {
     const db = getDb()
-    await db.from('dnc_entries').upsert(rows, { onConflict: 'contact,channel' })
+    // supabase-js resolves { error } rather than throwing: an unchecked upsert reported a failed
+    // suppression as success (audit B-14). The DNC row is the enforced part — fail on it.
+    const { error: dncError } = await db.from('dnc_entries').upsert(rows, { onConflict: 'contact,channel' })
+    if (dncError) {
+      console.error('[unsubscribe] DNC write failed', { channels, message: dncError.message })
+      return { ok: false, channels }
+    }
     // Best-effort: resolve the member/household this contact belongs to so the opt-out is
     // anchored on the customer 360 timeline (not only audit-only). A bare contact with no
     // member (e.g. a public email with no household) is still audited via recordConsentChange.

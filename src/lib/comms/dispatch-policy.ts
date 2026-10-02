@@ -517,11 +517,16 @@ export async function resolveDispatchPolicy(
     deps.conversationIsSecurity(ctx.conversationId ?? null, householdId),
   ])
 
-  const waiverRevoked = ctx.consentWaived === true
+  // A caller-asserted basis — the console waiver OR a durable consent record (booking, workshop
+  // registration) — never outranks a recorded revoke: the most recent revoke wins until a newer,
+  // documented opt-in (owner decision 5, audit G-08). consentRevoked is latest-wins on the contact
+  // store and reads the member channel/purpose rows, and fails safe (true) on any read failure.
+  const basisRevoked = ctx.consentWaived === true || ctx.durableConsentGranted === true
     ? await deps.consentRevoked(memberId, ctx.to, ctx.channel, ctx.purpose)
     : false
-  const waiverApplies = ctx.consentWaived === true && !waiverRevoked
-  let consent = memberConsentOk || contactConsentOk || ctx.durableConsentGranted === true || waiverApplies
+  const waiverApplies = ctx.consentWaived === true && !basisRevoked
+  const durableApplies = ctx.durableConsentGranted === true && !basisRevoked
+  let consent = memberConsentOk || contactConsentOk || durableApplies || waiverApplies
 
   // ── Gate step 4: approved content. ──
   const approved =
@@ -548,7 +553,7 @@ export async function resolveDispatchPolicy(
   let collisionReason: string | undefined
   if (ctx.purpose) {
     if (policy.consentForPurpose !== null) {
-      consent = policy.consentForPurpose || ctx.durableConsentGranted === true || waiverApplies
+      consent = policy.consentForPurpose || durableApplies || waiverApplies
     }
     collisionPaused = !policy.collision.allowed
     collisionReason = policy.collision.reason

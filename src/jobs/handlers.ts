@@ -135,6 +135,16 @@ export async function commissionReconcile(): Promise<JobResult> {
 // then advance any due drip-sequence enrollments (also gated). Metrics are refreshed
 // so the campaign cards show live delivery/open/click counts.
 export async function campaignDispatch(): Promise<JobResult> {
+  // The marketing_automation agent switch on /app/ai and the global AI gateway switch had no
+  // runtime reader here: turning them off halted nothing (audit C-05 / F-13). Honour both, fail
+  // closed (an unreadable switch is off) — the same check every gateway-driven agent uses.
+  try {
+    const { assertKillSwitch } = await import('@/lib/ai/gateway')
+    await assertKillSwitch('marketing_automation')
+  } catch (err) {
+    const which = err instanceof Error ? err.message : 'kill switch'
+    return { ok: true, handled: 0, note: `campaign-dispatch: halted — ${which} (broadcasts and drips not run)` }
+  }
   const db = getDb()
   const nowISO = new Date().toISOString()
   const { data } = await db.from('comm_campaigns').select('id, schedule_at').eq('status', 'active').is('archived_at', null).limit(100)
@@ -182,7 +192,12 @@ export async function dripAdvance(): Promise<JobResult> {
 
     const { data: seq } = await db.from('comm_sequences').select('steps, status, purpose').eq('id', camp.sequence_id).maybeSingle()
     const steps = (seq?.steps ?? []) as Array<{ delay_days: number; template_id?: string; subject?: string }>
-    if (!seq || seq.status !== 'active' || e.current_step >= steps.length) {
+    // A sequence that is not active (draft, paused) or could not be read HOLDS its enrollments at
+    // their current step. It used to mark them 'completed' — every enrollment of a not-yet-active
+    // sequence silently finished without a single send (audit C-01). Only a genuinely finished
+    // sequence completes.
+    if (!seq || seq.status !== 'active') continue
+    if (e.current_step >= steps.length) {
       await db.from('comm_campaign_enrollments').update({ status: 'completed' }).eq('id', e.id)
       continue
     }

@@ -50,7 +50,9 @@ export async function POST(req: NextRequest) {
     const revokeChannels =
       v.data.channel === 'all' ? (['sms', 'email'] as const) : v.data.channel === 'call' ? [] : ([v.data.channel] as const)
     if (revokeChannels.length) {
-      await db.from('comm_contact_consents').insert(
+      // CHECKED: this evidence row is what keeps a later bare START from lifting a STOP-labelled row
+      // this opt-out re-armed (inbound.ts applyOptIn). A lost row must fail the request, not succeed.
+      const { error: evidenceError } = await db.from('comm_contact_consents').insert(
         revokeChannels.map((ch) => ({
           contact: consentContactKey(ch, v.data.contact),
           channel: ch,
@@ -60,6 +62,7 @@ export async function POST(req: NextRequest) {
           source_url: 'https://www.markistfsa.com/optout',
         })),
       )
+      if (evidenceError) return dbErrorResponse('public/consent evidence', evidenceError)
     }
 
     await writeAudit({

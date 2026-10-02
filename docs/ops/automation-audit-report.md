@@ -106,8 +106,9 @@ Two defect classes. Both are event-ordering bugs, and neither appeared in the ex
    - DNC add.
 
    **Fix:** one shared writer, `armDncEntry` in `src/lib/comms/opt-out.ts`. It inserts only if absent, then only
-   re-arms `created_at`. It never touches an existing reason and never deletes. Every non-keyword writer now also
-   appends contact-level revoke evidence (append-only).
+   re-arms `created_at`. It never touches an existing reason and never deletes. Every non-keyword SMS or email
+   opt-out now also appends contact-level revoke evidence (append-only, written before the re-arm and checked).
+   'call'-channel opt-outs write none; START never touches them.
 2. **START undid an operator opt-out (I2/I3).** Sequence: STOP, then operator opt-out, then START.
    - The operator's bulk revoke skipped the member as "already revoked", so it recorded nothing.
    - START then restored the member grant documented before the STOP.
@@ -129,6 +130,32 @@ punctuated phone therefore never matched the send. It is now normalized exactly 
 **Not changed (policy, for you):** a documented re-consent after a DNC-based opt-out (unsubscribe, web/portal,
 bounce, complaint, DNC add) never takes effect. No path lifts that DNC row. That is over-restrictive, not a
 send-when-shouldn't.
+
+### Round-2 adversarial review (fresh reviewer that wrote none of it)
+
+**No P0. One P1, fixed.**
+
+| # | Sev | Finding | Disposition |
+|---|---|---|---|
+| R1 | P1 | The web opt-out's evidence insert was unchecked. If it failed, the route answered 200, and a later START could lift the STOP-labelled row the opt-out had re-armed. Reproduced. | **Fixed:** the insert is checked, and a failure answers 500 so the person retries. Regression added to the property test (injected write failure). |
+| R2 | P2 | Race: the re-arm ran before the evidence insert, so a START between the two could lift a fresh opt-out. | **Fixed:** evidence is written before the re-arm. Pinned in `comms-optout-rearm`. |
+| R3 | P2 | A portal revoke whose DNC write failed returned before auditing that member, and skipped the rest of the household. | **Fixed:** every member is processed and audited, then the request fails with 500. |
+| R4 | P2 | After any non-keyword revoke, START stays disabled for the address, even after documented re-consent (e.g. operator opt-out → re-consent → STOP → START stays blocked). | **Left as is: fails closed.** Owner decision: should a documented re-consent re-enable START for a later STOP? START support is an A2P expectation. |
+| R5 | P3 | On a phone/ZIP disagreement, the send record used a different format from migration 124's documented `'<npaZone>+<zipZone>'`, method `both`. | **Fixed:** recorded in the documented form; both zones are still evaluated. |
+| R6 | P3 | Operator revoke evidence is keyed by address, so household members sharing a phone or email inherit it. | Left as is: over-blocks, never sends. |
+| R7 | P3 | The bulk revoke threw before its summary audit when evidence failed. | **Fixed:** the summary audit records the error, then it throws. |
+| R8 | P3 | Reserved Canadian non-geographic codes 644/655/677/688 were not listed. | **Fixed:** added; listing a reserved code costs nothing. |
+| R9 | P3 | `sendForm` hard-coded `operatorInitiated`, and a public caller (agency referral intake) shares it. | **Fixed:** only the staff route passes it; the public caller is pinned not to. |
+| R10 | P3 | `conversations/start` sends an AI-drafted opener as operator-initiated, so it can reach a non-US number. | **Owner question.** The operator picks the recipient and starts it; the AI replies that follow are automated and blocked. |
+
+Areas the reviewer checked and found sound:
+- 3a: the address zone is never dropped.
+- 3b classification: no US number misclassified; territories are US.
+- No automated path sets `operatorInitiated`.
+- `armDncEntry` against the unique key and `all` rows.
+- The rewritten tests are not weakened.
+- The property test is not vacuous.
+- The CLAUDE.md paragraph matches the code.
 
 ### Are migrations 138–141 safe to apply while current production code runs?
 

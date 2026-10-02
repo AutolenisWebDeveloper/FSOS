@@ -168,9 +168,13 @@ export async function revokeConsentForMembers(
       })
     }
   }
+  let evidenceError: { message: string } | null = null
   for (const echunk of chunk(evidence, WRITE_CHUNK)) {
     const { error } = await db.from('comm_contact_consents').insert(echunk)
-    if (error) throw error
+    if (error) {
+      evidenceError = error
+      break
+    }
   }
 
   // The bulk revoke is itself an audited event — one summary row with the report.
@@ -188,8 +192,11 @@ export async function revokeConsentForMembers(
       sms_revoked: written.smsRevoked,
       email_revoked: written.emailRevoked,
       skipped_already_revoked: written.skippedAlreadyRevoked,
+      ...(evidenceError ? { evidence_error: evidenceError.message } : {}),
     },
   })
+  // Audited first (above), then surfaced: the revokes landed but START could still undo them.
+  if (evidenceError) throw evidenceError
 
   return { ...written, source, channels, capturedAt }
 }

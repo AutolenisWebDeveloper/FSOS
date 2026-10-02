@@ -81,8 +81,8 @@ export async function armDncEntry(e: DncEntry): Promise<{ ok: boolean; error?: s
       .from('dnc_entries')
       .upsert({ contact: e.contact, channel: e.channel, scope: 'internal', reason: e.reason, created_at: now }, { onConflict: 'contact,channel', ignoreDuplicates: true })
     if (ins?.error) return { ok: false, error: ins.error.message }
-    const arm = await db.from('dnc_entries').update({ created_at: now }).eq('contact', e.contact).eq('channel', e.channel)
-    if (arm?.error) return { ok: false, error: arm.error.message }
+    // Evidence BEFORE the re-arm: a START reading between the two must already see this opt-out's
+    // evidence (it refuses to lift on any non-keyword evidence), never a re-armed row without it.
     if (e.evidence !== false && (e.channel === 'sms' || e.channel === 'email')) {
       const ev = await db.from('comm_contact_consents').insert({
         contact: e.contact,
@@ -94,6 +94,8 @@ export async function armDncEntry(e: DncEntry): Promise<{ ok: boolean; error?: s
       })
       if (ev?.error) return { ok: false, error: ev.error.message }
     }
+    const arm = await db.from('dnc_entries').update({ created_at: now }).eq('contact', e.contact).eq('channel', e.channel)
+    if (arm?.error) return { ok: false, error: arm.error.message }
     return { ok: true }
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) }

@@ -515,7 +515,8 @@ export function resolveRecipientTimeZone(input: TimezoneResolutionInput): Timezo
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * +1 area codes that are NOT the United States: Canada (incl. its non-geographic 600/622/633)
+ * +1 area codes that are NOT the United States: Canada (incl. its non-geographic 600/622/633 and
+ * the reserved 644/655/677/688)
  * and the NANP member countries of the Caribbean and Bermuda. US territories (PR 787/939,
  * USVI 340, Guam 671, CNMI 670, American Samoa 684) are the United States and are NOT here.
  * Source: libphonenumber-js 1.13.14 metadata (country leading digits for calling code 1;
@@ -531,6 +532,9 @@ export const NON_US_NANP_NPAS: Readonly<Record<string, readonly string[]>> = {
     '506', '514', '519', '548', '579', '581', '584', '587', '600', '604', '613', '622', '633',
     '639', '647', '672', '683', '705', '709', '742', '753', '778', '780', '782', '807', '819',
     '825', '867', '873', '879', '902', '905', '942',
+    // Canadian non-geographic codes reserved beyond 600/622/633 (not in the metadata yet). Listing a
+    // reserved code costs nothing; missing one would read it as US (review P3).
+    '644', '655', '677', '688',
   ],
   AG: ['268'], AI: ['264'], BB: ['246'], BM: ['441'], BS: ['242'], DM: ['767'],
   DO: ['809', '829', '849'], GD: ['473'], JM: ['658', '876'], KN: ['869'], KY: ['345'],

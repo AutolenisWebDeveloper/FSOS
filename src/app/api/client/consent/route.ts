@@ -38,6 +38,9 @@ export async function POST(req: NextRequest) {
       .from('household_members')
       .select('id, email, phone, consents(channel, status)')
       .eq('household_id', householdId)
+    // A failed DNC write must not leave the member's consent change unaudited or skip the other
+    // members: record every change, then fail the request so the client retries.
+    let dncFailed = false
     for (const m of members ?? []) {
       const prior = (m as { consents?: { channel: string; status: string }[] }).consents?.find(
         (c) => c.channel === v.data.channel,
@@ -52,7 +55,7 @@ export async function POST(req: NextRequest) {
           const ch = v.data.channel
           const key = ch === 'call' ? contact : consentContactKey(ch, contact)
           const dnc = await armDncEntry({ contact: key, channel: ch, reason: 'client opt-out' })
-          if (!dnc.ok) return NextResponse.json({ error: 'Could not record the opt-out. Please try again.' }, { status: 500 })
+          if (!dnc.ok) dncFailed = true
         }
       }
       // ONE consent-logging path → audit_log AND the CRM timeline (§C).
@@ -67,6 +70,7 @@ export async function POST(req: NextRequest) {
         householdId,
       })
     }
+    if (dncFailed) return NextResponse.json({ error: 'Could not record the opt-out. Please try again.' }, { status: 500 })
     return NextResponse.json({ ok: true })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed' }, { status: 500 })

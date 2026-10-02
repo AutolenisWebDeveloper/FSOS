@@ -57,6 +57,15 @@ await t('unsubscribe / deliverability (suppressContact) go through the shared wr
   assert.equal(ev?.payload.action, 'revoked', 'non-keyword revoke evidence is recorded for START to see')
   assert.equal(consent.isKeywordRevokeEvidence(ev.payload), false)
 })
+await t('evidence is written BEFORE the re-arm (no window where START sees a re-armed row without it)', async () => {
+  const db = installDb(fakeDb({}))
+  await unsub.suppressContact('a@example.com', 'email', {})
+  const order = db.calls.filter((c) => c.table === 'comm_contact_consents' || (c.table === 'dnc_entries' && c.method === 'update')).map((c) => c.table)
+  assert.deepEqual(order, ['comm_contact_consents', 'dnc_entries'])
+})
+await t('the public opt-out checks its evidence insert', () => {
+  assert.match(readFileSync('src/app/api/public/consent/route.ts', 'utf8'), /if \(evidenceError\) return dbErrorResponse/)
+})
 await t('the public and client-portal opt-outs use the shared writer — no raw DNC upsert left', () => {
   for (const f of ['src/app/api/public/consent/route.ts', 'src/app/api/client/consent/route.ts', 'src/lib/comms/unsubscribe.ts']) {
     const src = readFileSync(f, 'utf8')

@@ -40,7 +40,7 @@ await t('US states, DC and the territories are the US', () => {
   }
 })
 await t('Canada is not the US (every listed code, incl. the newest overlays and 600/622/633)', () => {
-  assert.equal(NON_US_NANP_NPAS.CA.length, 59, '56 geographic + 600/622/633')
+  assert.equal(NON_US_NANP_NPAS.CA.length, 63, '56 geographic + non-geographic 600/622/633/644/655/677/688')
   for (const npa of NON_US_NANP_NPAS.CA) {
     const r = recipientCountry(`+1${npa}5550147`)
     assert.equal(r.us, false, npa)
@@ -143,9 +143,13 @@ const OPERATOR_SITES = [
   'src/app/api/comms/test/recipients/route.ts',
   'src/app/api/comms/conversations/start/route.ts',
   'src/app/api/comms/conversations/[id]/route.ts',
-  'src/lib/forms.ts',
+  'src/app/api/forms/send/route.ts', // passes it to sendForm (src/lib/forms.ts forwards the caller's value)
 ]
 const walk = (d) => readdirSync(d).flatMap((f) => { const p = join(d, f); return statSync(p).isDirectory() ? walk(p) : [p] })
+await t('the public agency referral intake does not declare it (sendForm forwards the caller\'s value)', () => {
+  assert.doesNotMatch(readFileSync('src/app/api/agencies/referral/route.ts', 'utf8'), /operatorInitiated/)
+  assert.match(readFileSync('src/lib/forms.ts', 'utf8'), /operatorInitiated: input\.operatorInitiated === true/)
+})
 await t('only the operator surfaces set operatorInitiated: true', () => {
   const setters = walk('src').filter((f) => /\.tsx?$/.test(f) && /operatorInitiated:\s*true/.test(readFileSync(f, 'utf8')))
   assert.deepEqual(setters.sort(), [...OPERATOR_SITES].sort())

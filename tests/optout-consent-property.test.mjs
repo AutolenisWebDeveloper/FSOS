@@ -326,6 +326,24 @@ for (const [ch, typed] of [['email', 'Pat@Example.COM'], ['sms', '(214) 555-0147
   console.log(`  ✓ ${ch}: "${typed}" blocks the send`)
 }
 
+// A lost evidence row must fail the web opt-out (review P1): that row is what keeps a later START
+// from lifting the STOP-labelled DNC row the opt-out re-armed.
+console.log('\nWeb opt-out evidence write failure')
+{
+  const cfg = { ch: 'sms', member: false, consent: true }
+  const failEvidence = { on: false }
+  const db = memDb({ now: iso, failOn: (st) => failEvidence.on && st.table === 'comm_contact_consents' && st.method === 'insert' })
+  installDb(db)
+  seedConfig(db, cfg)
+  clock.t += 60_000; await apply('STOP', 'sms', cfg, 900001)
+  failEvidence.on = true
+  clock.t += 60_000
+  const res = await publicConsent.POST(makeReq('/api/public/consent', { body: { contact: PHONE, channel: 'sms', action: 'opt_out' }, headers: { 'x-forwarded-for': '10.250.0.2' } }))
+  failEvidence.on = false
+  assert.equal(res.status, 500, 'a web opt-out whose evidence was lost must not report success')
+  console.log('  ✓ the request fails (500) so the person can retry, instead of a silent 200')
+}
+
 if (failures.size) {
   console.error(`\n✗ ${failures.size} distinct invariant violation(s):`)
   for (const f of [...failures.values()].sort((a, b) => a.msg.localeCompare(b.msg))) console.error(`   ${f.msg}  ×${f.n}\n      e.g. ${f.ex}`)

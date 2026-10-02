@@ -22,6 +22,7 @@ export type EligibilityReason =
   | 'cooldown'
   | 'duplicate_active'
   | 'no_verified_deadline'
+  | 'appointment_booked'
 
 export interface EligibilityInput {
   /** Securities firewall flag from the DB policy row (§4.1) — never a caller literal downstream. */
@@ -40,6 +41,13 @@ export interface EligibilityInput {
   now: string
   /** The policy's verified conversion deadline (ISO) from v_conversions_due, or null. */
   conversionDeadline: string | null
+  /**
+   * The household has an upcoming scheduled appointment (native booking OR an FSA-scheduled
+   * review). A booked client has engaged; the advisor owns the relationship and the cadence must
+   * stop (audit D-02 / I-02). Optional: absent = no appointment known; null = the lookup failed
+   * (the tick defers that touch rather than exiting on a transient read error).
+   */
+  upcomingAppointment?: boolean | null
 }
 
 export interface EligibilityResult {
@@ -86,6 +94,7 @@ export function evaluateEligibility(input: EligibilityInput): EligibilityResult 
   }
 
   if (input.priorEnrollmentActive) reasons.push('duplicate_active')
+  if (input.upcomingAppointment === true) reasons.push('appointment_booked')
 
   // Never manufacture urgency: no verified deadline → out (§4.3/§12).
   if (!input.conversionDeadline) reasons.push('no_verified_deadline')

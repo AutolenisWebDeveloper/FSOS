@@ -108,7 +108,12 @@ export async function loadEligibilityInput(
     optedOut = hh?.do_not_contact === true
   }
 
+  const { upcomingAppointmentState } = await import('@/lib/booking/appointment-booked')
+  const apptState = snap?.household_id ? await upcomingAppointmentState(snap.household_id, nowISO) : 'no'
+  const upcomingAppointment = apptState === 'unknown' ? null : apptState === 'yes'
+
   return {
+    upcomingAppointment,
     isSecurity: snap ? snap.is_security === true : true, // firewall-closed if no row
     openOpportunities,
     priorEnrollmentActive: !!prior,

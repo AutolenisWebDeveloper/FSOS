@@ -234,19 +234,8 @@ export async function bookAppointment(input: BookInput, now: string): Promise<Bo
   // Best-effort; a failure here never fails the booking (the appointment already exists).
   try {
     const { data: c } = await db.from('contacts').select('household_id').eq('id', contactId).maybeSingle()
-    if (c?.household_id) {
-      const householdId = c.household_id as string
-      const [xsell, life, winback] = await Promise.all([
-        import('@/lib/cross-sell-life/inbound'),
-        import('@/lib/life-campaign/inbound'),
-        import('@/lib/pipeline-winback/inbound'),
-      ])
-      await Promise.allSettled([
-        xsell.exitOnAppointment({ householdId, actor: 'booking' }),
-        life.exitOnAppointment({ householdId, actor: 'booking' }),
-        winback.exitOnAppointment({ householdId, actor: 'booking' }),
-      ])
-    }
+    const { onAppointmentBooked } = await import('./appointment-booked')
+    await onAppointmentBooked({ householdId: (c?.household_id as string | null) ?? null, actor: 'booking' })
   } catch {
     /* best-effort — the appointment already exists */
   }

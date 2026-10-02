@@ -48,11 +48,17 @@ export async function POST(req: NextRequest) {
         status: 'received',
         received_at: now.toISOString(),
         sla_due_at: slaDue.toISOString(),
-        owner_scope: actor,
+        // owner_scope is a uuid (the owning staff scope). A public submission has no owner yet;
+        // writing the actor string 'public' failed every insert (audit H-03, live type confirmed).
+        owner_scope: null,
       })
       .select('id')
       .single()
-    if (error || !referral) return NextResponse.json({ error: error?.message ?? 'Insert failed' }, { status: 500 })
+    if (error || !referral) {
+      // Logged server-side; an anonymous caller never sees database error text.
+      console.error('[public:refer] insert failed', { code: error?.code ?? null, message: error?.message ?? 'no row' })
+      return NextResponse.json({ error: 'Failed to submit referral' }, { status: 500 })
+    }
 
     // Consent intent captured at intake (materialized as consents rows on convert,
     // once a member exists). Logged now for the compliance trail.

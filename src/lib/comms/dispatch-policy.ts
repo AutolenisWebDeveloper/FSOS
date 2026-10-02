@@ -146,9 +146,10 @@ export interface DispatchPolicyDecision {
     localHour: number | null
     localDay: number | null
     /**
-     * The ZIP's zone when the NPA and ZIP resolved to DIFFERENT zones — the quiet-hours
-     * decision then had to hold in this zone too (the narrower, both-zones verdict).
-     * Null on agreement, single-input resolution, caller resolution, and the legacy path.
+     * The area code's zone when the address (primary) and the area code resolved to DIFFERENT
+     * zones — the quiet-hours decision then had to hold in this zone too (the narrower,
+     * both-zones verdict; review finding 3a). Null on agreement, single-input resolution,
+     * caller resolution, and the legacy path.
      */
     secondaryZone: string | null
     /** True when the legacy fixed-zone path produced this (flag OFF). */
@@ -457,13 +458,18 @@ export function resolveDispatchTimeZone(
   if (!resolution.resolved) {
     return { resolution, zone: null, localHour: null, localDay: null, secondaryZone: null, legacy: false }
   }
+  // Review finding 3a (owner, 2026-10-02): when the address and the area code BOTH resolve and name
+  // different zones, the send must be inside the floor in both. The phone's zone rides along as the
+  // secondary zone and resolveDispatchPolicy evaluates the floor at that instant too.
+  const phoneZone = byPhone?.resolved ? byPhone.timeZone : null
+  const secondaryZone = byAddress?.resolved && phoneZone && phoneZone !== resolution.timeZone ? phoneZone : null
   const { hour, day } = localPartsInZone(resolution.timeZone, at)
   return {
     resolution,
     zone: resolution.timeZone,
     localHour: hour,
     localDay: day,
-    secondaryZone: null,
+    secondaryZone,
     legacy: false,
   }
 }
@@ -624,7 +630,11 @@ export async function resolveDispatchPolicy(
     : continentalFallback
       ? CONTINENTAL_US_ZONES.map((z) => localPartsInZone(z, now))
       : timezone.localHour != null && timezone.localDay != null
-        ? [{ hour: timezone.localHour, day: timezone.localDay }]
+        ? [
+            { hour: timezone.localHour, day: timezone.localDay },
+            // Finding 3a: a disagreeing phone zone must also be inside the floor.
+            ...(timezone.secondaryZone ? [localPartsInZone(timezone.secondaryZone, now)] : []),
+          ]
         : []
   for (const [i, at] of instants.entries()) {
     const decision = evaluateQuietHours({

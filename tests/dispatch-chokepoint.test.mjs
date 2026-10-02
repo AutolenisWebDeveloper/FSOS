@@ -208,13 +208,47 @@ await t('phone and ZIP AGREE: the address zone is used (method zip)', async () =
   assert.equal(r.timezone.secondaryZone ?? null, null)
 })
 
-await t('phone and ZIP DISAGREE: the ADDRESS zone governs (Dallas 20:30 → held, though LA is 18:30)', async () => {
+await t('phone and ZIP DISAGREE: the ADDRESS zone is primary (Dallas 20:30 → held, though LA is 18:30)', async () => {
   const { r, calls } = await smsTo('+13105550147', { recipientLocation: { phone: '+13105550147', zip: '75201' } }, {}, LA_EVE)
   assert.equal(r.ok, false)
   assert.equal(r.blockedStep, 'quiet_hours')
   assert.equal(calls.sms.length, 0)
   assert.equal(r.timezone.zone, 'America/Chicago', 'the address zone, not the area code')
   assert.equal(r.timezone.resolution.method, 'zip')
+})
+
+console.log('\nPhone and address zones disagree: inside the floor in BOTH (review finding 3a)')
+
+await t('Dallas address 09:00, Los Angeles phone 07:00 → held (the address zone alone would send)', async () => {
+  const { r, calls } = await smsTo('+13105550147', { recipientLocation: { phone: '+13105550147', zip: '75201' } }, {}, EARLY_PT)
+  assert.equal(r.ok, false)
+  assert.equal(r.blockedStep, 'quiet_hours')
+  assert.equal(calls.sms.length, 0, 'provider never reached')
+  assert.equal(r.timezone.zone, 'America/Chicago', 'the address zone stays primary')
+  assert.equal(r.timezone.secondaryZone, 'America/Los_Angeles', 'the area-code zone is evaluated too')
+})
+
+await t('Los Angeles address 18:30, Dallas phone 20:30 → held', async () => {
+  const { r, calls } = await smsTo('+12145550147', { recipientLocation: { phone: '+12145550147', zip: '90012' } }, {}, LA_EVE)
+  assert.equal(r.ok, false)
+  assert.equal(r.blockedStep, 'quiet_hours')
+  assert.equal(calls.sms.length, 0)
+  assert.equal(r.timezone.zone, 'America/Los_Angeles')
+  assert.equal(r.timezone.secondaryZone, 'America/Chicago')
+})
+
+await t('inside the floor in both zones → sent, and both zones are recorded', async () => {
+  const { r, calls } = await smsTo('+13105550147', { recipientLocation: { phone: '+13105550147', zip: '75201' } }, {}, NOON)
+  assert.equal(r.ok, true, '12:00 Chicago and 10:00 Los Angeles')
+  assert.equal(calls.sms.length, 1)
+  assert.equal(r.timezone.zone, 'America/Chicago')
+  assert.equal(r.timezone.secondaryZone, 'America/Los_Angeles')
+})
+
+await t('an unresolvable area code next to a resolved address does not add a zone', async () => {
+  const { r } = await smsTo('+18005550147', { recipientLocation: { phone: '+18005550147', zip: '75201' } }, {}, NOON)
+  assert.equal(r.timezone.zone, 'America/Chicago')
+  assert.equal(r.timezone.secondaryZone, null)
 })
 
 await t('no ZIP on file: the AREA CODE zone is used (method npa)', async () => {

@@ -34,6 +34,19 @@ check('every JOBS key is scheduled or a declared alias of a scheduled job', () =
     assert.ok(crons.includes(k), `JOBS['${k}'] is never scheduled (orphan job)`)
   }
 })
+const schedOf = Object.fromEntries(JSON.parse(readFileSync('vercel.json', 'utf8')).crons.map((c) => [c.path.replace(/^\/api\/cron\//, ''), c.schedule]))
+const cadenceOf = (sched) => {
+  const [min, hour] = sched.split(' ')
+  if (min.includes('*') || min.includes('/')) return 'sub_hourly'
+  return hour === '*' ? 'hourly' : 'daily'
+}
+check('every scheduled registry entry declares the cadence vercel.json actually runs it at', () => {
+  for (const a of AUTOMATIONS) {
+    const k = a.trigger.job ?? a.trigger.route
+    if (!k || !schedOf[k]) continue
+    assert.equal(a.cadence ?? 'daily', cadenceOf(schedOf[k]), `${a.key}: registry cadence disagrees with "${schedOf[k]}"`)
+  }
+})
 check('every vercel.json cron has a registry entry', () => {
   const keys = new Set(AUTOMATIONS.filter((a) => a.trigger.kind === 'cron' || a.trigger.kind === 'cron_route').map((a) => a.trigger.job ?? a.trigger.route))
   for (const c of crons) assert.ok(keys.has(c), `cron ${c} is missing from the automation registry`)

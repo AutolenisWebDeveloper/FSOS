@@ -17,13 +17,13 @@ export default async function ConversionMonitoringPage() {
   return (
     <ListShell
       title="Conversion Monitoring"
-      description="Educational outreach activity across eligible policies."
+      description="Conversion detection signals and logged team actions across eligible policies. These are records, not messages sent."
       breadcrumb={[{ label: 'FSA', href: '/app' }, { label: 'Term Conversion', href: '/app/conversions' }, { label: 'Monitoring' }]}
     >
       {!activities.ok ? (
         <ErrorState description={activities.kind === 'not_configured' ? 'Database not configured.' : activities.message} />
       ) : activities.data.length === 0 ? (
-        <EmptyState title="No outreach yet" description="Green-zone conversion outreach appears here once logged." />
+        <EmptyState title="No signals or actions yet" description="Detection signals and logged conversion actions appear here." />
       ) : (
         <div className="rounded-lg border">
           <Table>

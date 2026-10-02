@@ -10,6 +10,7 @@ import { loadCampaignDetail } from '@/lib/pipeline-winback/detail'
 import { PLAYBOOKS, ADVISOR_SCRIPTS, EVENT_DRIVEN_SMS } from '@/lib/pipeline-winback/playbooks'
 import { WINBACK_CANDIDATE_STAGES } from '@/lib/pipeline-winback/eligibility'
 import { CampaignControls } from '@/components/app/CampaignEngineControls'
+import { REFERENCE_COPY_LABEL } from '@/lib/ops/automation-registry'
 import { CampaignHealthPanel } from '@/components/app/CampaignHealthPanel'
 import { CAMPAIGN_ENGINES, CAMPAIGN_ENGINE_LIST, campaignBreadcrumb, winbackCategory } from '@/lib/comms/campaign-presentation'
 import { CampaignStatusBadge, CampaignCrossLinks } from '@/components/comms/campaign/CampaignKit'
@@ -186,11 +187,19 @@ export default async function PipelineWinbackDetailPage(props: { params: Promise
         {/* 7 — Workflows & rules */}
         <Section
           title="Workflows & rules"
-          description="The AI conversation playbooks, advisor scripts, and event-driven triggers behind the timeline."
+          description="Advisor scripts and reference copy for this campaign. Only the timeline touches above are sent automatically."
         >
           <div className="space-y-4">
             <Card className="p-5">
-              <h3 className="mb-3 text-sm font-semibold">AI conversation playbooks ({PLAYBOOKS.length})</h3>
+              {/* No runtime code reads PLAYBOOKS (audit E-05): the timeline sends approved templates. */}
+              <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold">AI conversation playbooks ({PLAYBOOKS.length})</h3>
+                <Badge variant="draft">{REFERENCE_COPY_LABEL}</Badge>
+              </div>
+              <p className="mb-3 text-xs text-muted-foreground">
+                Scripts for the advisor. The timeline touches send the approved templates in the assets above; nothing here is
+                sent, and no follow-up, handoff or closing message fires on its own.
+              </p>
               <div className="space-y-3">
                 {PLAYBOOKS.map((p) => (
                   <div key={p.key} className="rounded-md border p-3">
@@ -247,10 +256,17 @@ export default async function PipelineWinbackDetailPage(props: { params: Promise
             </Card>
 
             <Card className="p-5">
-              <h3 className="mb-3 text-sm font-semibold">Event-driven triggers ({EVENT_DRIVEN_SMS.length})</h3>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold">Event-driven messages ({EVENT_DRIVEN_SMS.length})</h3>
+                <Badge variant="draft">{REFERENCE_COPY_LABEL}</Badge>
+              </div>
               <p className="mb-3 text-xs text-muted-foreground">
-                These fire on events — an appointment, a reply, a follow-up — not on the day schedule, so they do not count toward
-                the {ENGINE.touches} proactive touches.
+                Suggested wording for event moments. Win-Back does not send these and they are not among the {ENGINE.touches}{' '}
+                timeline touches. Appointment confirmations and reminders go out from{' '}
+                <Link href="/app/booking" className="font-medium text-foreground underline underline-offset-2">
+                  Booking notifications
+                </Link>
+                .
               </p>
               <div className="space-y-2">
                 {EVENT_DRIVEN_SMS.map((e) => (

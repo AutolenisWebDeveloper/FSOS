@@ -38,15 +38,18 @@ export interface AutomationEntry {
   reference?: { uiFile: string }
   /** An off/canary/on switch gating a consumer this audit connected (src/lib/ops/automation-switch.ts). */
   switch?: AutomationSwitchKey
+  /** Run cadence of a scheduled entry; held against vercel.json by the wiring guard. Default daily. */
+  cadence?: 'daily' | 'hourly' | 'sub_hourly'
 }
 
 const H = 'src/jobs/handlers.ts'
-const cron = (key: string, label: string, ui: string, exp: string): AutomationEntry => ({
+const cron = (key: string, label: string, ui: string, exp: string, cadence: AutomationEntry['cadence'] = 'daily'): AutomationEntry => ({
   key,
   label,
   ui,
   trigger: { kind: 'cron', job: key },
   consumer: { file: H, export: exp },
+  cadence,
 })
 
 export const AUTOMATIONS: readonly AutomationEntry[] = [
@@ -54,7 +57,7 @@ export const AUTOMATIONS: readonly AutomationEntry[] = [
   cron('renewal-watch', 'Renewal review tasks', '/app/tasks', 'renewalWatch'),
   cron('conversion-watch', 'Conversion detection signals', '/app/conversions/monitoring', 'conversionWatch'),
   cron('xdate-watch', 'X-date outreach tasks', '/app/tasks', 'xdateWatch'),
-  cron('referral-sla', 'Referral SLA watch', '/app/referrals', 'referralSla'),
+  cron('referral-sla', 'Referral SLA watch', '/app/referrals', 'referralSla', 'hourly'),
   cron('agency-dormancy', 'Agency dormancy watch', '/app/agencies', 'agencyDormancy'),
   cron('cross-sell-scan', 'Cross-sell detection', '/app/cross-sell', 'crossSellScan'),
   cron('commission-reconcile', 'Commission reconciliation', '/app/commissions', 'commissionReconcile'),
@@ -63,14 +66,14 @@ export const AUTOMATIONS: readonly AutomationEntry[] = [
   cron('workforce-orchestrator', 'AI workforce', '/app/ai', 'workforceOrchestrator'),
   cron('data-quality', 'Data quality reconcile', '/super/jobs', 'dataQuality'),
   cron('life-conversion-tick', 'Life Conversion campaign', '/app/comms/life-conversion', 'lifeConversionTick'),
-  { ...cron('life-conversion-retry', 'Life Conversion retry sweep', '/app/comms/life-conversion', 'lifeConversionRetry'), switch: 'engine_retry_redispatch' },
+  { ...cron('life-conversion-retry', 'Life Conversion retry sweep', '/app/comms/life-conversion', 'lifeConversionRetry', 'hourly'), switch: 'engine_retry_redispatch' },
   cron('pipeline-winback-tick', 'Pipeline Win-Back campaign', '/app/comms/pipeline-winback', 'pipelineWinbackTick'),
-  { ...cron('pipeline-winback-retry', 'Pipeline Win-Back retry sweep', '/app/comms/pipeline-winback', 'pipelineWinbackRetry'), switch: 'engine_retry_redispatch' },
+  { ...cron('pipeline-winback-retry', 'Pipeline Win-Back retry sweep', '/app/comms/pipeline-winback', 'pipelineWinbackRetry', 'hourly'), switch: 'engine_retry_redispatch' },
   cron('cross-sell-life-enroll', 'Cross-Sell Life enrollment', '/app/comms/cross-sell-life', 'crossSellLifeEnroll'),
   cron('cross-sell-life-tick', 'Cross-Sell Life campaign', '/app/comms/cross-sell-life', 'crossSellLifeTick'),
-  { ...cron('cross-sell-life-retry', 'Cross-Sell Life retry sweep', '/app/comms/cross-sell-life', 'crossSellLifeRetry'), switch: 'engine_retry_redispatch' },
+  { ...cron('cross-sell-life-retry', 'Cross-Sell Life retry sweep', '/app/comms/cross-sell-life', 'crossSellLifeRetry', 'hourly'), switch: 'engine_retry_redispatch' },
   cron('district-nurture-tick', 'District nurture', '/app/comms/district-nurture', 'districtNurtureTick'),
-  { ...cron('district-nurture-retry', 'District nurture retry sweep', '/app/comms/district-nurture', 'districtNurtureRetry'), switch: 'engine_retry_redispatch' },
+  { ...cron('district-nurture-retry', 'District nurture retry sweep', '/app/comms/district-nurture', 'districtNurtureRetry', 'hourly'), switch: 'engine_retry_redispatch' },
   cron('backup-verify', 'Backup verification', '/super/backups', 'backupVerify'),
 
   // ── Scheduled jobs with their own route ──
@@ -79,6 +82,7 @@ export const AUTOMATIONS: readonly AutomationEntry[] = [
     label: 'Appointment reminders + notice retry',
     ui: '/app/booking',
     trigger: { kind: 'cron_route', route: 'booking-reminders' },
+    cadence: 'sub_hourly',
     consumer: { file: 'src/lib/booking/notify.ts', export: 'runBookingReminderPass' },
   },
   {
@@ -86,6 +90,7 @@ export const AUTOMATIONS: readonly AutomationEntry[] = [
     label: 'Social publishing',
     ui: '/app/social',
     trigger: { kind: 'cron_route', route: 'social-publish' },
+    cadence: 'sub_hourly',
     consumer: { file: 'src/lib/social/publisher.ts', export: 'publishDueEntries' },
   },
   {
@@ -93,6 +98,7 @@ export const AUTOMATIONS: readonly AutomationEntry[] = [
     label: 'Workshop reminders, change notices, nurture',
     ui: '/app/workshops',
     trigger: { kind: 'cron_route', route: 'workshop-reminders' },
+    cadence: 'sub_hourly',
     consumer: { file: 'src/lib/workshops/comms-engine.ts', export: 'runReminderPass' },
   },
 
@@ -129,6 +135,20 @@ export const AUTOMATIONS: readonly AutomationEntry[] = [
     consumer: null,
     reference: { uiFile: 'src/app/(fsa)/app/comms/pipeline-winback/[id]/page.tsx' },
   },
+  ...(
+    [
+      ['pipeline-winback', 'Win-Back'],
+      ['cross-sell-life', 'Cross-Sell Life'],
+      ['life-conversion', 'Life Conversion'],
+    ] as const
+  ).map(([slug, name]): AutomationEntry => ({
+    key: `${slug}-playbooks`,
+    label: `${name} AI conversation playbooks (follow-up, handoff, closing)`,
+    ui: `/app/comms/${slug}/[id]`,
+    trigger: { kind: 'none' },
+    consumer: null,
+    reference: { uiFile: `src/app/(fsa)/app/comms/${slug}/[id]/page.tsx` },
+  })),
   {
     key: 'workflow-builder',
     label: 'Automation workflows builder',

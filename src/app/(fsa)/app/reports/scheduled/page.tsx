@@ -37,14 +37,14 @@ export default async function ScheduledReportsPage() {
   return (
     <ListShell
       title="Scheduled reports"
-      description="Automated deliveries. Each schedule runs via Vercel Cron and emails the exported file to its recipients."
+      description="Saved delivery schedules. Not sent yet — no job runs these schedules or emails the file, so export a report from its page when you need it."
       breadcrumb={BREADCRUMB}
     >
       <div className="space-y-6">
       {!res.ok ? (
         <ErrorState description={res.kind === 'not_configured' ? 'Database not configured.' : res.message} />
       ) : res.data.length === 0 ? (
-        <EmptyState title="No scheduled reports" description="Create a schedule below to deliver a report automatically." />
+        <EmptyState title="No scheduled reports" description="Save a schedule below. Schedules are recorded but not delivered yet." />
       ) : (
         <div className="rounded-lg border">
           <Table>

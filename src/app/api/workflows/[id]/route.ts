@@ -49,7 +49,16 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     const db = getDb()
     const actor = actorOf(auth.session)
     const update: Record<string, unknown> = { updated_by: actor, updated_at: new Date().toISOString() }
-    if (typeof v.data.enabled === 'boolean') update.enabled = v.data.enabled
+    // No executor runs automation_workflows (audit I-04 / J-04): enabling one would claim an
+    // automation that never fires. Disabling (and archiving) stays allowed so existing rows can be
+    // turned off; enabling is refused until an engine exists.
+    if (v.data.enabled === true) {
+      return NextResponse.json(
+        { error: 'Workflows are not executed yet — there is no automation engine behind them, so they cannot be enabled.' },
+        { status: 409 },
+      )
+    }
+    if (v.data.enabled === false) update.enabled = false
     if (v.data.archived === true) update.archived_at = new Date().toISOString()
     if (v.data.archived === false) update.archived_at = null
 

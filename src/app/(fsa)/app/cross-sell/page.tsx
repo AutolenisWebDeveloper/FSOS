@@ -94,8 +94,8 @@ export default async function CrossSellPage() {
   // Funnel — an identify → invite → review pipeline built from the activity log.
   const funnel = [
     { label: 'Gaps identified', value: kpis.totalGaps, href: '/app/cross-sell/household-gaps', tone: 'brand' as const },
-    { label: 'Households contacted', value: kpis.contacted, tone: 'brand' as const },
-    { label: 'Invited / educated', value: kpis.invited, tone: 'positive' as const },
+    { label: 'Households with logged activity', value: kpis.contacted, tone: 'brand' as const },
+    { label: 'Invitation / education logged', value: kpis.invited, tone: 'positive' as const },
     { label: 'Reviews scheduled', value: kpis.reviewsScheduled, href: '/app/reviews', tone: 'positive' as const },
   ]
 
@@ -164,7 +164,7 @@ export default async function CrossSellPage() {
       <div className="grid gap-4 lg:grid-cols-12">
         <Panel
           title="Cross-sell funnel"
-          description="Identify → contact → invite → review. Invitation only."
+          description="Identify → log activity → log invitation → review. Counts logged actions, not messages sent."
           icon={Layers}
           className="lg:col-span-7"
           action={<PanelLink href="/app/cross-sell/analytics">Analytics</PanelLink>}
@@ -228,10 +228,10 @@ export default async function CrossSellPage() {
           <Panel title="Follow-up queue" description="Priority invites (no life)" icon={CalendarCheck} tone="attention">
             <QueueList items={queue} emptyLabel="No priority follow-ups." />
           </Panel>
-          <Panel title="AI outreach" description="Green-zone activity, all gated" icon={Sparkles}>
+          <Panel title="Logged outreach" description="Actions recorded on households — not sends" icon={Sparkles}>
             <div className="grid grid-cols-3 gap-3">
-              <MiniStat label="Contacted" value={kpis.contacted.toLocaleString()} tone="brand" />
-              <MiniStat label="Invited" value={kpis.invited.toLocaleString()} tone="positive" />
+              <MiniStat label="With activity" value={kpis.contacted.toLocaleString()} tone="brand" />
+              <MiniStat label="Invite logged" value={kpis.invited.toLocaleString()} tone="positive" />
               <MiniStat label="Reviews" value={kpis.reviewsScheduled.toLocaleString()} tone="positive" />
             </div>
             <p className="mt-3 text-xs text-muted-foreground">

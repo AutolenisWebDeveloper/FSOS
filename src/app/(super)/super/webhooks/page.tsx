@@ -50,7 +50,7 @@ export default async function SuperWebhooksPage() {
   return (
     <ListShell
       title="Webhooks"
-      description="Outbound webhooks POST signed event payloads to your endpoint. Signing secrets are write-only and never displayed after creation."
+      description="Registered webhook endpoints. Not delivered yet — no event emitter sends to them. Signing secrets are write-only and never displayed after creation."
       breadcrumb={[{ label: 'Super', href: '/super' }, { label: 'Webhooks' }]}
     >
       <div className="space-y-6">
@@ -101,7 +101,7 @@ export default async function SuperWebhooksPage() {
           {!deliveries.ok ? (
             <ErrorState description={deliveries.kind === 'not_configured' ? 'Database not configured.' : deliveries.message} />
           ) : deliveries.data.length === 0 ? (
-            <EmptyState title="No deliveries yet" description="Delivery attempts appear here once events fire." />
+            <EmptyState title="No deliveries" description="No event emitter is connected yet, so no delivery attempt will appear here." />
           ) : (
             <div className="rounded-lg border">
               <Table>

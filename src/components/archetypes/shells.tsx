@@ -447,13 +447,26 @@ export function ReportShell({
 
 // ─── A12 Integration / Connection ─────────────────────────────────────────────
 
-type IntegrationStatus = 'connected' | 'disconnected' | 'error' | 'degraded'
+// `connected` claims a live check succeeded. A credential that is merely PRESENT is `configured`
+// (audit I-24: env-var presence was rendered as "connected" with nothing ever probed).
+type IntegrationStatus = 'connected' | 'configured' | 'not_configured' | 'disconnected' | 'error' | 'degraded'
 
 const INTEGRATION_STATUS_STYLE: Record<IntegrationStatus, string> = {
   connected: 'text-status-won',
+  configured: 'text-status-active',
+  not_configured: 'text-muted-foreground',
   disconnected: 'text-muted-foreground',
   error: 'text-status-blocked',
   degraded: 'text-status-pending',
+}
+
+const INTEGRATION_STATUS_LABEL: Record<IntegrationStatus, string> = {
+  connected: 'connected',
+  configured: 'configured (not tested)',
+  not_configured: 'not configured',
+  disconnected: 'disconnected',
+  error: 'error',
+  degraded: 'degraded',
 }
 
 export function IntegrationShell({
@@ -477,7 +490,7 @@ export function IntegrationShell({
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="text-base">{name}</CardTitle>
-          <span className={cn('text-xs font-medium capitalize', INTEGRATION_STATUS_STYLE[status])}>{status}</span>
+          <span className={cn('text-xs font-medium first-letter:uppercase', INTEGRATION_STATUS_STYLE[status])}>{INTEGRATION_STATUS_LABEL[status]}</span>
         </div>
         {lastSync ? <p className="text-xs text-muted-foreground">Last sync: {lastSync}</p> : null}
       </CardHeader>

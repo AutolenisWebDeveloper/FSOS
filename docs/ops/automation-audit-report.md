@@ -226,6 +226,8 @@ project), set `COMMS_CAPTURE_TRANSPORT` and no provider keys on Preview, and use
   changes: `comms-inbound-e2e` (150/150), `automation-migrations-rollback` (138–141 forward → rollback → re-apply),
   `booking-reminder-idempotency`, `booking-delivery-ledger`, `district-nurture-rls`, the workshop guarantee files.
 - `npm run build`: see §9.
+- **GitHub Actions `verify`** (CI: type-check → lint → test → build → `test:rls`) passed on `b161511`. The first attempt
+  failed inside `next/font` while fetching Google Fonts; nothing in this PR touches fonts. One re-run passed.
 - Fail-before / pass-after: for most Phase C–E repairs, the new test was also run against the pre-change source and
   failed there. Not every Phase A/B test was re-checked that way.
 
@@ -238,7 +240,6 @@ project), set `COMMS_CAPTURE_TRANSPORT` and no provider keys on Preview, and use
   ran, so the UI changes are source-verified only.
 - **Live provider behaviour** (canary checks C1–C10, inventory §9). The canary contacts were blank placeholders.
 - **Production env values** (`SMS_A2P_APPROVED`, `CRON_SECRET`, Preview env). The Vercel connector has no access.
-- **CI.** No GitHub Actions run was attached to the PR head at the last check; only the Vercel/Supabase checks reported.
 
 ## 8. Canary checks to run after deploy
 

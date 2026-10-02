@@ -16,6 +16,7 @@ import {
   getOrCreateConversation,
   touchConversation,
   normalizeContact,
+  resolveAllMemberIds,
   type Channel,
   type Conversation,
 } from './conversations'
@@ -91,6 +92,17 @@ async function applyOptOut(conv: Conversation, contact: string): Promise<void> {
     memberId: conv.member_id,
     householdId: conv.household_id,
   })
+}
+
+/**
+ * The members whose automation a reply/stop from this address governs: the thread's own member
+ * plus every other household member sharing the address (audit B-04). Thread member first.
+ */
+async function membersAtAddress(conv: Conversation, contact: string): Promise<string[]> {
+  const ids = new Set<string>()
+  if (conv.member_id) ids.add(conv.member_id)
+  for (const id of await resolveAllMemberIds(conv.channel as Channel, contact)) ids.add(id)
+  return [...ids]
 }
 
 /**
@@ -208,17 +220,21 @@ async function terminateActiveEnrollments(memberId: string, reason: string, exit
  * failure is logged (never a silent catch); the enrollment termination + FSA escalation still
  * stand. Returns whether the suppression was applied.
  */
-async function applyClientSuppression(conv: Conversation, contact: string, reason: string): Promise<boolean> {
+async function applyClientSuppression(conv: Conversation, contact: string, reason: string, memberIds: string[] = []): Promise<boolean> {
   try {
     const db = getDb()
     // comm_client_suppressions is keyed on contacts.id — resolve it the same way the send-time
-    // reader does (member → source_contact_id, else tolerant address match).
-    let contactId: string | null = null
-    if (conv.member_id) {
-      const { data } = await db.from('household_members').select('source_contact_id').eq('id', conv.member_id).maybeSingle()
-      contactId = (data?.source_contact_id as string | null) ?? null
+    // reader does (member → source_contact_id, else tolerant address match). EVERY member sharing
+    // the address is covered (B-04), not only the thread's own member.
+    const contactIds = new Set<string>()
+    const members = memberIds.length > 0 ? memberIds : conv.member_id ? [conv.member_id] : []
+    for (const memberId of members) {
+      const { data } = await db.from('household_members').select('source_contact_id').eq('id', memberId).maybeSingle()
+      const id = (data?.source_contact_id as string | null) ?? null
+      if (id) contactIds.add(id)
     }
-    if (!contactId) {
+    let contactId: string | null = null
+    if (contactIds.size === 0) {
       if (conv.channel === 'sms') {
         const tail = contact.replace(/[^\d]/g, '').slice(-10)
         if (tail.length >= 10) {
@@ -230,13 +246,14 @@ async function applyClientSuppression(conv: Conversation, contact: string, reaso
         contactId = Array.isArray(data) && data.length > 0 ? (data[0].id as string) : null
       }
     }
-    if (!contactId) {
+    if (contactId) contactIds.add(contactId)
+    if (contactIds.size === 0) {
       // No Contact Center identity to key the individual suppression on. The enrollment
       // termination above still stands; surface the gap rather than swallow it.
       console.warn('[inbound] reply-stop: no contact id resolved — business suppression skipped', { conversation: conv.id })
       return false
     }
-    const res = await applySuppression({ scope: 'client', status: 'blocked', actor: 'system', reason, contactIds: [contactId] })
+    const res = await applySuppression({ scope: 'client', status: 'blocked', actor: 'system', reason, contactIds: [...contactIds] })
     if (!res.ok) {
       console.error('[inbound] reply-stop: business suppression failed', { conversation: conv.id, error: res.error })
       return false
@@ -419,14 +436,15 @@ export async function processInbound(input: InboundInput): Promise<InboundResult
     // DNC already block every send at the gate, but leaving the rows live meant the drip
     // runner kept selecting them and each attempt escalated — an opt-out generating ongoing
     // work. Terminal, never paused: a paused row would be resumed by the quiet-window job.
-    if (conv.member_id) {
-      const closed = await terminateActiveEnrollments(conv.member_id, `inbound STOP (conversation ${conv.id})`, 'opted_out')
+    const stopMembers = await membersAtAddress(conv, contact)
+    for (const memberId of stopMembers) {
+      const closed = await terminateActiveEnrollments(memberId, `inbound STOP (conversation ${conv.id})`, 'opted_out')
       if (closed > 0) {
         await writeAudit({
           actor: 'system',
           action: 'entity.updated',
           entity: 'comm_campaign_enrollment',
-          entityId: conv.member_id,
+          entityId: memberId,
           diff: { opted_out: closed, conversation: conv.id, reason: 'inbound STOP' },
         })
       }
@@ -482,10 +500,11 @@ export async function processInbound(input: InboundInput): Promise<InboundResult
   const stopReq = detectStopAutomation(input.body)
   if (stopReq.matched) {
     let terminated = 0
-    if (conv.member_id) {
-      terminated = await terminateActiveEnrollments(conv.member_id, `reply ${stopReq.kind} (conversation ${conv.id})`, 'reply_stop_request')
+    const stopMembers = await membersAtAddress(conv, contact)
+    for (const memberId of stopMembers) {
+      terminated += await terminateActiveEnrollments(memberId, `reply ${stopReq.kind} (conversation ${conv.id})`, 'reply_stop_request')
     }
-    const suppressed = await applyClientSuppression(conv, contact, `reply ${stopReq.kind}: ${stopReq.phrase ?? ''}`.trim())
+    const suppressed = await applyClientSuppression(conv, contact, `reply ${stopReq.kind}: ${stopReq.phrase ?? ''}`.trim(), stopMembers)
     result.campaignTerminated = true
     await writeAudit({
       actor: 'system',
@@ -506,16 +525,18 @@ export async function processInbound(input: InboundInput): Promise<InboundResult
   // §10 — a genuine reply (anything past the STOP/START keywords, excluding a bare HELP)
   // pauses the member's active promotional automation so no scheduled "haven't heard
   // back" message follows the customer's reply. Resumed later per the conversation policy.
-  if (shouldPauseOnReply(result.intent === 'help') && conv.member_id) {
-    const paused = await pauseActiveEnrollments(conv.member_id, `inbound ${input.channel} reply`)
-    if (paused > 0) {
-      await writeAudit({
-        actor: 'system',
-        action: 'entity.updated',
-        entity: 'comm_campaign_enrollment',
-        entityId: conv.member_id,
-        diff: { paused_for_conversation: paused, conversation: conv.id, reason: 'inbound reply' },
-      })
+  if (shouldPauseOnReply(result.intent === 'help')) {
+    for (const memberId of await membersAtAddress(conv, contact)) {
+      const paused = await pauseActiveEnrollments(memberId, `inbound ${input.channel} reply`)
+      if (paused > 0) {
+        await writeAudit({
+          actor: 'system',
+          action: 'entity.updated',
+          entity: 'comm_campaign_enrollment',
+          entityId: memberId,
+          diff: { paused_for_conversation: paused, conversation: conv.id, reason: 'inbound reply' },
+        })
+      }
     }
   }
 

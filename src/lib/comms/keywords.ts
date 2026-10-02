@@ -1,7 +1,7 @@
 // src/lib/comms/keywords.ts
 // Pure inbound-keyword classification (opt-out / opt-in / help). Kept dependency-free
 // so the compliance-critical STOP/START handling is unit-testable offline. Carrier-
-// standard keywords (case-insensitive). STOP/HELP match the first word; START only a bare keyword.
+// standard keywords (case-insensitive). STOP matches the first word; START and HELP only a bare keyword.
 
 export type Intent = 'stop' | 'start' | 'help' | 'message'
 
@@ -17,6 +17,8 @@ export function classifyKeyword(body: string): Intent {
   // An opt-IN counts only as a BARE keyword ("START", "Yes!"). "Yes, Tuesday works" is a reply
   // to a person, not a request to be re-subscribed (owner decision 4, audit B-02).
   if (words.length === 1 && (START_WORDS as readonly string[]).includes(first)) return 'start'
-  if ((HELP_WORDS as readonly string[]).includes(first)) return 'help'
+  // HELP likewise only as a bare keyword: "Help me understand my renewal" is a reply that must
+  // pause automation and reach the FSA, not a carrier HELP request (audit B-03).
+  if (words.length === 1 && (HELP_WORDS as readonly string[]).includes(first)) return 'help'
   return 'message'
 }

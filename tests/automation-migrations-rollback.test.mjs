@@ -1,4 +1,4 @@
-// ROLLBACK PROOF for the automation-audit migrations (138, 139, 140).
+// ROLLBACK PROOF for the automation-audit migrations (138, 139, 140, 141).
 // The brief requires every schema change to ship "with a tested rollback". Each of these files
 // documents its rollback as a `-- ROLLBACK:` comment block; this proof applies the whole chain to
 // an ephemeral Postgres, EXECUTES each block, asserts the schema/data are back to the prior shape,
@@ -110,6 +110,16 @@ try {
   runFile(`${L}/setup.sql`)
   sh(`node scripts/migrate.mjs`, { env: { ...process.env, DATABASE_URL: URL }, maxBuffer: 64 * 1024 * 1024 })
 
+  // ── 141 engine_retry_redispatch switch seed (rolled back BEFORE 140, which drops the table) ──
+  check('141 forward: engine_retry_redispatch seeded OFF; rollback removes only that row; re-apply restores it', () => {
+    assert.equal(q(`select mode from automation_switches where key='engine_retry_redispatch'`), 'off')
+    runRollback('141_engine_retry_redispatch_switch.sql')
+    assert.equal(q(`select count(*) from automation_switches where key='engine_retry_redispatch'`), '0')
+    assert.equal(q(`select mode from automation_switches where key='callback_engine_state'`), 'off', 'the rollback touched another switch')
+    reapply('141_engine_retry_redispatch_switch.sql')
+    assert.equal(q(`select mode from automation_switches where key='engine_retry_redispatch'`), 'off')
+  })
+
   // ── 140 automation_switches ──
   check('140 forward: table exists, RLS on, callback_engine_state seeded OFF', () => {
     assert.equal(table('automation_switches'), '1')
@@ -160,4 +170,4 @@ try {
   try { sh(`runuser -u postgres -- ${PGBIN}/pg_ctl -D ${D} stop > /dev/null 2>&1`) } catch { /* ignore */ }
 }
 if (failures) { console.error(`\n✗ ${failures} rollback assertion(s) FAILED.`); process.exit(1) }
-console.log('\nAutomation-audit migration rollbacks proven (138, 139, 140).')
+console.log('\nAutomation-audit migration rollbacks proven (138, 139, 140, 141).')

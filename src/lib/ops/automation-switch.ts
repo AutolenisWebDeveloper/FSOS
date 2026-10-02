@@ -19,6 +19,8 @@ export type SwitchMode = 'off' | 'canary' | 'on'
 export const AUTOMATION_SWITCHES = {
   /** A carrier opt-out (Twilio 21610) also closes the member's live campaign cadences (B-10/D-12). */
   callback_engine_state: 'callback_engine_state',
+  /** A campaign retry sweep releases a never-dispatched orphaned claim for the tick to re-send (J-06). */
+  engine_retry_redispatch: 'engine_retry_redispatch',
 } as const
 export type AutomationSwitchKey = keyof typeof AUTOMATION_SWITCHES
 

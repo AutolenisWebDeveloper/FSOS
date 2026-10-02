@@ -44,7 +44,7 @@ const RLS = new Set([
   // Applies the WHOLE migration chain to an empty database via the real migrate.mjs.
   // Needs root Postgres (initdb) and write access to the extension dir for its pg_cron stub.
   'migration-chain.test.mjs',
-  // Automation-audit migrations 138–140: forward → documented ROLLBACK → re-apply, on real Postgres.
+  // Automation-audit migrations 138–141: forward → documented ROLLBACK → re-apply, on real Postgres.
   'automation-migrations-rollback.test.mjs',
   // Batch 0 GUARANTEE tests — full engine + gate against ephemeral Postgres. Pinned RED
   // in tests/expected-failures.json until the batch named there lands.

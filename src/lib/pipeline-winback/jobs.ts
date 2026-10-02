@@ -11,6 +11,7 @@
 // FAIL SOFT (no-op with a note) rather than crash the cron, so code and migration can deploy in
 // either order (§16 graceful degradation).
 import { getDb } from '@/lib/supabase/client'
+import { resolveOrphanExecution, type OrphanRow } from '@/lib/ops/orphan-executions'
 import { retryDecision } from '@/lib/life-campaign/retry'
 
 export interface RetrySweepResult {
@@ -28,7 +29,7 @@ export async function runRetrySweep(maxAttempts = 5): Promise<RetrySweepResult> 
   try {
     const { data: stuck, error } = await db
       .from('pipeline_winback_executions')
-      .select('id, attempts')
+      .select('id, attempts, enrollment_id, touch_no, kind')
       .eq('status', 'scheduled')
       .not('idempotency_key', 'is', null)
       .lte('next_retry_at', nowISO)
@@ -40,7 +41,14 @@ export async function runRetrySweep(maxAttempts = 5): Promise<RetrySweepResult> 
 
     let retried = 0
     let deadLettered = 0
+    let reconciled = 0
+    let released = 0
     for (const x of stuck ?? []) {
+      // Orphaned claim: the message of record decides — reconcile a send that went out, or (switch
+      // ON) release a never-dispatched claim for the tick to re-attempt. Else the backoff below.
+      const orphan = await resolveOrphanExecution(db, 'pipeline_winback_executions', 'pipeline_winback_enrollment', x as unknown as OrphanRow)
+      if (orphan === 'reconciled_sent') { reconciled++; continue }
+      if (orphan === 'released') { released++; continue }
       const decision = retryDecision((x.attempts as number) ?? 0, maxAttempts)
       if (decision.action === 'dead_letter') {
         await db
@@ -56,7 +64,7 @@ export async function runRetrySweep(maxAttempts = 5): Promise<RetrySweepResult> 
         retried++
       }
     }
-    return { ok: true, retried, deadLettered, note: `pipeline-winback-retry: ${retried} re-queued, ${deadLettered} dead-lettered` }
+    return { ok: true, retried, deadLettered, note: `pipeline-winback-retry: ${retried} re-queued, ${deadLettered} dead-lettered, ${reconciled} reconciled as sent, ${released} released for re-dispatch` }
   } catch (e) {
     return { ok: true, retried: 0, deadLettered: 0, note: `pipeline-winback-retry: skipped (${e instanceof Error ? e.message : 'error'})` }
   }

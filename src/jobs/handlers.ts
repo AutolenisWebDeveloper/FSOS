@@ -9,7 +9,7 @@ import { dispatchCampaign, refreshCampaignMetrics, campaignDispatchContext, type
 import { buildDataConfidence } from '@/lib/comms/claims'
 import { resolveClaimFields } from '@/lib/comms/claim-resolver'
 import { sendMessage, isTemplateApproved } from '@/lib/comms/send'
-import { isDeferralGateStep, quietHoursHold } from '@/lib/comms/gate'
+import { isDeferralGateStep, oneTouchPerDay, quietHoursHold } from '@/lib/comms/gate'
 import { evaluateResume } from '@/lib/comms/conversation-mode'
 import { smsA2pApproved } from '@/lib/comms/a2p'
 import type { JobResult } from './index'
@@ -268,7 +268,8 @@ export async function dripAdvance(): Promise<JobResult> {
       await db.from('comm_campaign_enrollments').update({ status: 'completed', current_step: nextStep, last_sent_at: nowISO }).eq('id', e.id)
     } else {
       const delayDays = Number(steps[nextStep]?.delay_days ?? 0)
-      const next = new Date(Date.now() + delayDays * 86400000).toISOString()
+      // Finding 5: hourly runs, at most one step per enrollment per day (each drip is single-channel).
+      const next = oneTouchPerDay(new Date(Date.now() + delayDays * 86400000).toISOString(), nowISO)
       await db.from('comm_campaign_enrollments').update({ current_step: nextStep, next_send_at: next, last_sent_at: nowISO }).eq('id', e.id)
     }
   }

@@ -38,8 +38,11 @@ export interface AutomationEntry {
   reference?: { uiFile: string }
   /** An off/canary/on switch gating a consumer this audit connected (src/lib/ops/automation-switch.ts). */
   switch?: AutomationSwitchKey
-  /** Run cadence of a scheduled entry; held against vercel.json by the wiring guard. Default daily. */
-  cadence?: 'daily' | 'hourly' | 'sub_hourly'
+  /**
+   * Run cadence of a scheduled entry; held against vercel.json by the wiring guard. Default daily.
+   * 'hourly_window' = every hour inside a range of hours (e.g. `0 17-23 * * *`, finding 5).
+   */
+  cadence?: 'daily' | 'hourly' | 'hourly_window' | 'sub_hourly'
 }
 
 const H = 'src/jobs/handlers.ts'
@@ -61,18 +64,18 @@ export const AUTOMATIONS: readonly AutomationEntry[] = [
   cron('agency-dormancy', 'Agency dormancy watch', '/app/agencies', 'agencyDormancy'),
   cron('cross-sell-scan', 'Cross-sell detection', '/app/cross-sell', 'crossSellScan'),
   cron('commission-reconcile', 'Commission reconciliation', '/app/commissions', 'commissionReconcile'),
-  cron('campaign-dispatch', 'Broadcast campaigns + drips', '/app/comms/campaigns', 'campaignDispatch'),
+  cron('campaign-dispatch', 'Broadcast campaigns + drips', '/app/comms/campaigns', 'campaignDispatch', 'hourly_window'),
   cron('resume-paused', 'Resume paused enrollments', '/app/comms/campaigns', 'resumePausedEnrollments'),
   cron('workforce-orchestrator', 'AI workforce', '/app/ai', 'workforceOrchestrator'),
   cron('data-quality', 'Data quality reconcile', '/super/jobs', 'dataQuality'),
-  cron('life-conversion-tick', 'Life Conversion campaign', '/app/comms/life-conversion', 'lifeConversionTick'),
+  cron('life-conversion-tick', 'Life Conversion campaign', '/app/comms/life-conversion', 'lifeConversionTick', 'hourly_window'),
   { ...cron('life-conversion-retry', 'Life Conversion retry sweep', '/app/comms/life-conversion', 'lifeConversionRetry', 'hourly'), switch: 'engine_retry_redispatch' },
-  cron('pipeline-winback-tick', 'Pipeline Win-Back campaign', '/app/comms/pipeline-winback', 'pipelineWinbackTick'),
+  cron('pipeline-winback-tick', 'Pipeline Win-Back campaign', '/app/comms/pipeline-winback', 'pipelineWinbackTick', 'hourly_window'),
   { ...cron('pipeline-winback-retry', 'Pipeline Win-Back retry sweep', '/app/comms/pipeline-winback', 'pipelineWinbackRetry', 'hourly'), switch: 'engine_retry_redispatch' },
   cron('cross-sell-life-enroll', 'Cross-Sell Life enrollment', '/app/comms/cross-sell-life', 'crossSellLifeEnroll'),
-  cron('cross-sell-life-tick', 'Cross-Sell Life campaign', '/app/comms/cross-sell-life', 'crossSellLifeTick'),
+  cron('cross-sell-life-tick', 'Cross-Sell Life campaign', '/app/comms/cross-sell-life', 'crossSellLifeTick', 'hourly_window'),
   { ...cron('cross-sell-life-retry', 'Cross-Sell Life retry sweep', '/app/comms/cross-sell-life', 'crossSellLifeRetry', 'hourly'), switch: 'engine_retry_redispatch' },
-  cron('district-nurture-tick', 'District nurture', '/app/comms/district-nurture', 'districtNurtureTick'),
+  cron('district-nurture-tick', 'District nurture', '/app/comms/district-nurture', 'districtNurtureTick', 'hourly_window'),
   { ...cron('district-nurture-retry', 'District nurture retry sweep', '/app/comms/district-nurture', 'districtNurtureRetry', 'hourly'), switch: 'engine_retry_redispatch' },
   cron('backup-verify', 'Backup verification', '/super/backups', 'backupVerify'),
 

@@ -1,12 +1,19 @@
-// Daily crons that put client messages on the wire must FIRE inside the 09:00–20:00 floor in
-// every continental US zone, in both standard and daylight time — otherwise the gate holds or
-// burns the whole day's batch. Owner decision 8 (docs/ops/automation-inventory.md §10) moved
-// campaign-dispatch (was 12:00 UTC = 06:00–08:00 local) and district-nurture-tick (was 14:00 UTC
-// = 06:00–09:00 Pacific) to 17:00 UTC. The other daily senders are listed as REPORTED: their
-// windows are an open owner decision, pinned here so a change to them is deliberate.
+// Crons that put client messages on the wire must FIRE inside the 09:00–20:00 floor in every
+// continental US zone, in both standard and daylight time — otherwise the gate holds the batch and
+// every hold escalates.
+//   • Owner decision 8 moved campaign-dispatch and district-nurture-tick off 12:00/14:00 UTC.
+//   • Finding 5 (owner, 2026-10-04): the FIVE dispatch crons run HOURLY from 17:00 to 23:00 UTC,
+//     with at most one touch per enrollment per day (gate.ts oneTouchPerDay, applied at every
+//     cursor advance), so hourly runs cannot compress a cadence.
+// workforce-orchestrator is not a dispatch cron in that decision; it stays pinned so a change is
+// deliberate.
 // Run: node tests/cron-send-window.test.mjs
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, mkdtempSync, rmSync } from 'node:fs'
+import { execSync } from 'node:child_process'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { createRequire } from 'node:module'
 
 const crons = JSON.parse(readFileSync('vercel.json', 'utf8')).crons
 const sched = (job) => crons.find((c) => c.path === `/api/cron/${job}`)?.schedule
@@ -16,19 +23,56 @@ const insideEverywhere = (utcHour) => OFFSETS.every((o) => { const h = (utcHour 
 
 let passed = 0
 const t = (name, fn) => { fn(); passed++; console.log('  ✓', name) }
-console.log('Client-sending daily crons fire inside the floor everywhere (decision 8)')
-for (const job of ['campaign-dispatch', 'district-nurture-tick']) {
-  t(`${job} runs daily at 17:00 UTC`, () => assert.equal(sched(job), '0 17 * * *'))
-  t(`${job}: 17:00 UTC is 09:00–13:00 local in every continental zone`, () => assert.ok(insideEverywhere(17)))
+
+const DISPATCH = ['campaign-dispatch', 'district-nurture-tick', 'life-conversion-tick', 'pipeline-winback-tick', 'cross-sell-life-tick']
+console.log('The five dispatch crons run hourly inside the all-zone floor (finding 5)')
+for (const job of DISPATCH) {
+  t(`${job} runs at 0 17-23 * * *`, () => assert.equal(sched(job), '0 17-23 * * *'))
 }
-console.log('\nReported, not changed (owner decision pending) — pinned so a change is deliberate')
-for (const [job, s] of [
-  ['life-conversion-tick', '0 15 * * *'], ['pipeline-winback-tick', '0 15 * * *'],
-  ['workforce-orchestrator', '0 15 * * *'], ['cross-sell-life-tick', '0 16 * * *'],
-]) {
-  t(`${job} stays ${s} (outside the floor in Pacific standard time)`, () => {
-    assert.equal(sched(job), s)
-    assert.equal(insideEverywhere(Number(s.split(' ')[1])), false)
-  })
-}
+t('every hour 17:00–23:00 UTC is inside 09:00–20:00 in every continental zone, standard and daylight', () => {
+  for (let h = 17; h <= 23; h++) assert.ok(insideEverywhere(h), `${h}:00 UTC`)
+  assert.equal(insideEverywhere(16), false, '16:00 UTC is 08:00 Pacific standard — why the window starts at 17')
+  assert.equal(insideEverywhere(0), false, '00:00 UTC is 20:00 Eastern daylight — why it ends at 23')
+})
+
+console.log('\nReported, not changed — pinned so a change is deliberate')
+t('workforce-orchestrator stays 0 15 * * * (outside the floor in Pacific standard time)', () => {
+  assert.equal(sched('workforce-orchestrator'), '0 15 * * *')
+  assert.equal(insideEverywhere(15), false)
+})
+
+console.log('\nAt most one touch per enrollment per day (oneTouchPerDay)')
+const out = mkdtempSync(join(tmpdir(), 'fsos-cron-window-'))
+process.on('exit', () => { try { rmSync(out, { recursive: true, force: true }) } catch { /* best-effort */ } })
+execSync(`npx tsc src/lib/comms/gate.ts --outDir ${out} --module commonjs --target es2020 --moduleResolution node --skipLibCheck --esModuleInterop`, { stdio: 'inherit' })
+const { oneTouchPerDay } = createRequire(import.meta.url)(join(out, 'comms/gate.js'))
+const NOW = '2026-10-05T18:00:00.000Z'
+t('an overdue next touch is pushed to the start of the next UTC day, never fired an hour later', () => {
+  assert.equal(oneTouchPerDay('2026-10-01T13:00:00.000Z', NOW), '2026-10-06T00:00:00.000Z')
+  assert.equal(oneTouchPerDay('2026-10-05T13:00:00.000Z', NOW), '2026-10-06T00:00:00.000Z')
+  assert.equal(oneTouchPerDay('2026-10-05T22:00:00.000Z', NOW), '2026-10-06T00:00:00.000Z', 'later the same day is still the same day')
+})
+t('a next touch due tomorrow or later keeps its scheduled time', () => {
+  assert.equal(oneTouchPerDay('2026-10-06T13:00:00.000Z', NOW), '2026-10-06T13:00:00.000Z')
+  assert.equal(oneTouchPerDay('2026-10-20T13:00:00.000Z', NOW), '2026-10-20T13:00:00.000Z')
+})
+t('an unreadable due time is pushed to tomorrow, never sooner', () => {
+  assert.equal(oneTouchPerDay('not a date', NOW), '2026-10-06T00:00:00.000Z')
+})
+t('every engine cursor advance and the drip advance go through it', () => {
+  for (const f of ['src/lib/life-campaign/tick.ts', 'src/lib/pipeline-winback/tick.ts', 'src/lib/cross-sell-life/tick.ts', 'src/lib/district-nurture/tick.ts']) {
+    const src = readFileSync(f, 'utf8')
+    assert.match(src, /next_touch_at: oneTouchPerDay\(/, f)
+    assert.doesNotMatch(src, /next_touch_at: `\$\{(next\.dueDate|dueDay)\}T13:00:00\.000Z`/, `${f}: an unguarded cursor advance remains`)
+  }
+  assert.match(readFileSync('src/jobs/handlers.ts', 'utf8'), /const next = oneTouchPerDay\(/)
+})
+t('no engine schedules two touches on one day by design (so per-enrollment = per-channel)', () => {
+  for (const f of ['life-campaign', 'pipeline-winback', 'cross-sell-life', 'district-nurture']) {
+    const s = readFileSync(`src/lib/${f}/schedule.ts`, 'utf8')
+    const days = [...s.matchAll(/touch_no:\s*\d+[^}]*?day_offset:\s*(\d+)/g)].map((m) => m[1])
+    assert.ok(days.length >= 20, `${f}: parsed ${days.length} touches`)
+    assert.equal(new Set(days).size, days.length, `${f}: two touches share a day`)
+  }
+})
 console.log(`\nAll ${passed} assertions passed.`)

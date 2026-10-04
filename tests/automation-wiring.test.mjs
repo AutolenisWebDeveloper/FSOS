@@ -38,7 +38,7 @@ const schedOf = Object.fromEntries(JSON.parse(readFileSync('vercel.json', 'utf8'
 const cadenceOf = (sched) => {
   const [min, hour] = sched.split(' ')
   if (min.includes('*') || min.includes('/')) return 'sub_hourly'
-  return hour === '*' ? 'hourly' : 'daily'
+  return hour === '*' ? 'hourly' : hour.includes('-') ? 'hourly_window' : 'daily'
 }
 check('every scheduled registry entry declares the cadence vercel.json actually runs it at', () => {
   for (const a of AUTOMATIONS) {

@@ -10,7 +10,7 @@
 import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
 import { sendMessage, isTemplateApproved } from '@/lib/comms/send'
-import { isDeferralGateStep, quietHoursHold } from '@/lib/comms/gate'
+import { isDeferralGateStep, oneTouchPerDay, quietHoursHold } from '@/lib/comms/gate'
 import { campaignDispatchContext, campaignIdentityContext } from '@/lib/comms/campaign'
 import { smsA2pApproved } from '@/lib/comms/a2p'
 import { getOrCreateConversation } from '@/lib/comms/conversations'
@@ -367,9 +367,10 @@ async function advanceCursor(db: ReturnType<typeof getDb>, cfg: CampaignConfig, 
     sendOnHolidays: cfg.send_on_holidays,
     holidays: cfg.holiday_calendar,
   })
+  // Finding 5: hourly ticks, at most one touch per enrollment per day (gate.ts oneTouchPerDay).
   await db
     .from('xsell_life_campaign_enrollments')
-    .update({ current_touch_no: touchNo, next_touch_at: `${dueDay}T13:00:00.000Z`, updated_at: nowISO })
+    .update({ current_touch_no: touchNo, next_touch_at: oneTouchPerDay(`${dueDay}T13:00:00.000Z`, nowISO), updated_at: nowISO })
     .eq('id', e.id)
 }
 

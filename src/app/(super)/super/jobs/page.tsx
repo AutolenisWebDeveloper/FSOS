@@ -18,8 +18,9 @@ const STATE_VARIANT: Record<RunState, 'won' | 'lost' | 'pending' | 'outline'> = 
   stale: 'pending',
   none: 'outline',
 }
-const STALE_AFTER = { daily: DAILY_STALE_MS, hourly: 2 * 3600 * 1000, sub_hourly: 0 } as const
-const CADENCE_LABEL = { daily: 'Daily', hourly: 'Hourly', sub_hourly: 'Every 5–15 min' } as const
+// An hourly-window job (17:00–23:00 UTC) is idle 18 hours overnight; a day without a run is stale.
+const STALE_AFTER = { daily: DAILY_STALE_MS, hourly: 2 * 3600 * 1000, hourly_window: DAILY_STALE_MS, sub_hourly: 0 } as const
+const CADENCE_LABEL = { daily: 'Daily', hourly: 'Hourly', hourly_window: 'Hourly, 17:00–23:00 UTC', sub_hourly: 'Every 5–15 min' } as const
 
 export default async function SuperJobsPage() {
   const rows = await load<{ id: string; job: string; status: string; dedupe_key: string; error: string | null; started_at: string; finished_at: string | null }[]>(

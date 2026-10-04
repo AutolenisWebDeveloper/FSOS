@@ -421,3 +421,22 @@ export function quietHoursHold(
   if (!Number.isFinite(due)) return 'expired'
   return Date.parse(nowISO) - due <= MARKETING_HOLD_MAX_MS ? 'hold' : 'expired'
 }
+
+/**
+ * PURE. Finding 5 (owner, 2026-10-04): the dispatch crons run HOURLY from 17:00 to 23:00 UTC, with at
+ * most ONE touch per enrollment per day. A schedule owner advancing its cursor passes the next touch's
+ * due time through this: it is never earlier than the start of the next UTC day, so a touch released
+ * from a hold — or a backlog of overdue touches — cannot fire again an hour later. Before the change,
+ * the once-a-day cron enforced this implicitly. No engine schedules two touches on one day by design
+ * (checked across the four engine schedules) and each drip is single-channel, so per-enrollment is
+ * also per-channel. An unreadable due time is pushed to the next day as well (never sooner).
+ */
+export function oneTouchPerDay(nextDueISO: string, nowISO: string): string {
+  const now = Date.parse(nowISO)
+  const tomorrow = Number.isFinite(now)
+    ? new Date(Date.UTC(new Date(now).getUTCFullYear(), new Date(now).getUTCMonth(), new Date(now).getUTCDate() + 1)).toISOString()
+    : nowISO
+  const due = Date.parse(nextDueISO)
+  if (!Number.isFinite(due)) return tomorrow
+  return due >= Date.parse(tomorrow) ? nextDueISO : tomorrow
+}

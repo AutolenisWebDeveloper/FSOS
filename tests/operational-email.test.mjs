@@ -21,6 +21,7 @@ import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
+import { memDb } from './helpers/memdb.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const out = mkdtempSync(join(tmpdir(), 'fsos-opemail-'))
@@ -49,35 +50,19 @@ writeFileSync(
    export default { Resend }`,
 )
 
-// A fake Supabase chain sufficient for lib/forms.ts's email path. Every builder method
-// returns the chain; terminals resolve deterministically. Crucially it exposes NO
-// `consents` behaviour — the test asserts sendForm never queries consent for a
-// transactional send. Records the tables touched so the test can prove that.
+// An in-memory Supabase (tests/helpers/memdb.mjs) — the form-link email now writes a comm_messages
+// message-of-record (owner, round 3), so the database must hold what is written. It records the
+// tables touched so the test can still prove sendForm never queries consent for a transactional send.
 globalThis.__dbTables = []
+globalThis.__opDb = memDb()
 const dbStub = join(out, 'db-stub.mjs')
 writeFileSync(
   dbStub,
   `export class ConfigError extends Error {}
    export function getBrowserDb() { return getDb() }
    export function getDb() {
-     const make = (table) => {
-       globalThis.__dbTables.push(table)
-       let insertMode = false
-       const chain = {
-         select: () => chain, eq: () => chain, in: () => chain, order: () => chain,
-         limit: () => chain, neq: () => chain, is: () => chain, not: () => chain,
-         gte: () => chain, lte: () => chain,
-         insert: () => { insertMode = true; return chain },
-         update: () => { insertMode = true; return chain },
-         maybeSingle: async () => ({ data: null, error: null }),
-         single: async () => insertMode
-           ? ({ data: { submission_id: 'sub-1' }, error: null })
-           : ({ data: null, error: null }),
-         then: (resolve) => resolve({ data: null, error: null }),
-       }
-       return chain
-     }
-     return { from: (table) => make(table) }
+     const db = globalThis.__opDb
+     return { from: (table) => { globalThis.__dbTables.push(table); return db.from(table) } }
    }`,
 )
 
@@ -215,6 +200,9 @@ await at("emails the secure form link on the 'email' channel trigger", async () 
   assert.equal(globalThis.__resendCalls.length, 1, 'exactly one email sent on trigger')
   assert.equal(globalThis.__resendCalls[0].to, 'client@example.com')
   assert.match(globalThis.__resendCalls[0].subject, /Action Required/)
+  const rec = globalThis.__opDb.rows('comm_messages').filter((m) => m.entity_type === 'form_submission')
+  assert.equal(rec.length, 1, 'a comm_messages message-of-record is written for the form link (owner, round 3)')
+  assert.equal(rec[0].delivery_status, 'sent')
 })
 
 await at('transactional send is NOT gated by marketing consent (no consents lookup)', async () => {
@@ -246,17 +234,20 @@ console.log('\nRoute wiring — transactional sends route through the shared sen
 
 const read = (rel) => readFileSync(join(root, rel), 'utf8')
 
-t('forms.ts routes email through lib/messaging sendEmail (no direct new Resend)', () => {
+t('forms.ts routes email through the recorded send path (sendRecorded → sendMessage), no direct Resend', () => {
   const src = read('src/lib/forms.ts')
   // §11a repair: the import-line regex was satisfiable with the call deleted; the
   // executable call-site anchor is the guarantee.
-  assert.ok(/await sendEmail\(/.test(src), 'the executable sendEmail call is present')
+  assert.ok(/await sendRecorded\(/.test(src), 'the executable sendRecorded call is present')
+  assert.ok(!/sendEmail\(/.test(src), 'no direct sendEmail (no message-of-record) remains')
   assert.ok(!/new Resend\(/.test(src), 'no direct Resend instantiation remains')
+  assert.ok(/await sendMessage\(\{/.test(read('src/lib/notifications/transactional.ts')), 'sendRecorded goes through sendMessage')
 })
 
-t('briefing/send routes through lib/messaging sendEmail (no direct new Resend)', () => {
+t('briefing/send routes through the recorded send path (no direct sendEmail, no direct Resend)', () => {
   const src = read('src/app/api/briefing/send/route.ts')
-  assert.ok(/await sendEmail\(/.test(src), 'the executable sendEmail call is present')
+  assert.ok(/await sendRecorded\(/.test(src), 'the executable sendRecorded call is present')
+  assert.ok(!/sendEmail\(/.test(src), 'no direct sendEmail (no message-of-record) remains')
   assert.ok(!/new Resend\(/.test(src), 'no direct Resend instantiation remains')
   // Still fails fast on misconfiguration before the (paid) AI call.
   assert.ok(/RESEND_API_KEY is not set|RESEND_FROM_EMAIL is not a verified/.test(src), 'config guard kept')

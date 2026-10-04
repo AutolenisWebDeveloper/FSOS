@@ -25,7 +25,7 @@ const DEFAULT_TS = {
   comm_messages: ['created_at'],
   comm_conversations: ['created_at', 'last_message_at'],
 }
-const ID_COL = { customers: 'customer_id', agency_referrals: 'referral_id', workshop_registrations: 'reg_id' }
+const ID_COL = { customers: 'customer_id', agency_referrals: 'referral_id', workshop_registrations: 'reg_id', form_submissions: 'submission_id' }
 
 const likeToRe = (pat) =>
   new RegExp('^' + String(pat).split('%').map((s) => s.replace(/[.*+?^${}()|[\]\\_]/g, '\\$&')).join('.*') + '$', 'i')

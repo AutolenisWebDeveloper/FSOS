@@ -110,9 +110,10 @@ const EMAIL_PATHS = [
   // Nothing was loosened; one row was dropped because its file is gone.
   // NOT aiGenerated: §11 governs client-facing AI; this digest goes to the operator's own
   // inbox. The recommendation red line still screens the AI body (proven separately below).
-  ['4 AI morning briefing (briefing/send)', 'src/app/api/briefing/send/route.ts', 'system_transactional',
+  // Recorded through sendRecorded (transactional.ts maps it to system_transactional) since round 3.
+  ['4 AI morning briefing (briefing/send)', 'src/app/api/briefing/send/route.ts', "actor: 'system:briefing',\n    consentWaived: true,",
     { actor: 'system:briefing', purpose: 'TRANSACTIONAL', templateKind: 'system_transactional', suppressible: false, consentWaived: true }],
-  ['5 form-link email leg', 'src/lib/forms.ts', "templateKind: 'human'",
+  ['5 form-link email leg', 'src/lib/forms.ts', "actor: 'system:forms',\n      humanAuthored: true,",
     { actor: 'system:forms', purpose: 'TRANSACTIONAL', templateKind: 'human', suppressible: false }],
   ['6 password-setup email', 'src/lib/notifications/account.ts', 'system_transactional',
     { actor: 'system:provisioning', purpose: 'TRANSACTIONAL', templateKind: 'system_transactional', suppressible: false, consentWaived: true }],

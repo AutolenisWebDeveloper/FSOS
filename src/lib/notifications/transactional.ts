@@ -7,10 +7,12 @@
 //
 // Both are TRANSACTIONAL (a direct response to a user-initiated action).
 //
-// THESE ARE NOW GATED. They were the largest of the nine paths Phase A found sending with
-// no consent read, no DNC check, no suppression and no audit. They still call
-// lib/messaging.sendEmail — but that function IS the dispatch chokepoint now, so every one
-// of those checks runs. What each call declares below is the basis on which it is entitled
+// THESE ARE NOW GATED AND RECORDED. They were the largest of the nine paths Phase A found sending
+// with no consent read, no DNC check, no suppression and no audit. They go through sendMessage
+// (comms/send.ts) — the same preparation layer every other send uses — so the chokepoint runs every
+// check AND a comm_messages message-of-record is written (owner, round 3: these sends previously
+// reached Resend with no FSOS record). They are recorded against their entity WITHOUT a
+// conversation thread and WITHOUT open/click tracking, so the delivered email is unchanged. What each call declares below is the basis on which it is entitled
 // to send, not an exemption from being checked:
 //
 //   templateKind: 'system_transactional' — a fixed, code-resident, review-controlled
@@ -31,8 +33,8 @@
 // All recipient-controlled values are HTML-escaped (name, email, message, free text) —
 // stored/reflected-XSS defense (§13.8).
 
-import { sendEmail, emailConfigured, type SendResult, type SendPolicyOptions } from '@/lib/messaging'
-import { resolveSender } from '@/lib/comms/senders'
+import { emailConfigured, type SendResult } from '@/lib/messaging'
+import { sendMessage } from '@/lib/comms/send'
 import { BUSINESS, CONTACT } from '@/lib/site'
 import { renderEmailShell, paragraphHtml, detailTableHtml, fineHtml } from './email-shell'
 
@@ -103,6 +105,59 @@ export function renderText(content: EmailContent): string {
     .trim()
 }
 
+/**
+ * One transactional email through the shared preparation layer (sendMessage → chokepoint), recorded
+ * as a comm_messages row against `entity`. Same declarations as before: a code-resident template
+ * (gate step 4), TRANSACTIONAL purpose, not business-suppressible, the transactional sending stream.
+ * Never throws; the result keeps the SendResult shape existing callers read (`id` is now the
+ * FSOS message-of-record id).
+ */
+export async function sendRecorded(opts: {
+  to: string
+  subject: string
+  /** The rendered email: a full HTML document (passed through the shell untouched) + its text part. */
+  html: string
+  text?: string
+  replyTo?: string
+  entity?: { type: string; id: string }
+  consentWaived?: boolean
+  durableConsentGranted?: boolean
+  actor?: string
+  /**
+   * A licensed operator triggered this exact send (POST /api/forms/send): the content approval is
+   * the operator (templateKind 'human'), not a code-resident template. Default: system template.
+   */
+  humanAuthored?: boolean
+}): Promise<SendResult> {
+  try {
+    const o = await sendMessage({
+      channel: 'email',
+      to: opts.to,
+      subject: opts.subject,
+      body: opts.html,
+      bodyText: opts.text,
+      actor: opts.actor ?? 'system:notify',
+      entity: opts.entity,
+      purpose: 'TRANSACTIONAL',
+      ...(opts.humanAuthored ? { humanAuthored: true } : { systemTransactional: true }),
+      suppressible: false,
+      consentWaived: opts.consentWaived,
+      durableConsentGranted: opts.durableConsentGranted,
+      emailStream: 'transactional',
+      replyTo: opts.replyTo,
+      track: false,
+      thread: false,
+    })
+    return o.sent
+      ? { ok: true, id: o.messageId }
+      : o.gate.allowed
+        ? { ok: false, id: o.messageId, error: o.reason ?? 'provider_failed' }
+        : { ok: false, id: o.messageId, error: o.reason ?? 'blocked', blocked: true, blockedStep: o.gate.blockedStep, reason: o.reason }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
 /** Log a non-fatal notification outcome uniformly (never throws). */
 function logOutcome(kind: string, to: string, result: SendResult): SendResult {
   if (!result.ok) {
@@ -137,18 +192,14 @@ export async function notifyFsa(opts: {
   // The recipient is the PRACTICE'S OWN operations inbox, not a client. There is no consent
   // relationship with yourself, so the waiver applies — and it stays opt-out-safe: an
   // explicit revoke on that address still blocks (contactConsentRevoked at the chokepoint).
-  const policy: SendPolicyOptions = {
-    actor: 'system:notify',
-    purpose: 'TRANSACTIONAL',
-    templateKind: 'system_transactional',
-    suppressible: false,
-    consentWaived: true,
-    entity: opts.entity,
-  }
-  const result = await sendEmail(to, opts.subject, renderHtml(content), renderText(content), {
-    from: resolveSender('transactional').from || undefined,
+  const result = await sendRecorded({
+    to,
+    subject: opts.subject,
+    html: renderHtml(content),
+    text: renderText(content),
     replyTo: opts.replyTo || undefined,
-    policy,
+    entity: opts.entity,
+    consentWaived: true,
   })
   return logOutcome(`fsa-alert (${opts.subject})`, to, result)
 }
@@ -183,20 +234,16 @@ export async function sendVisitorAck(opts: {
     return { ok: false, error: 'email_not_configured', skipped: true }
   }
   const content: EmailContent = { heading: opts.heading, lede: opts.lede, rows: opts.rows, note: opts.note }
-  const policy: SendPolicyOptions = {
-    actor: 'system:notify',
-    purpose: 'TRANSACTIONAL',
-    templateKind: 'system_transactional',
-    suppressible: false,
+  const result = await sendRecorded({
+    to: opts.to,
+    subject: opts.subject,
+    html: renderHtml(content),
+    text: renderText(content),
+    replyTo: opts.replyTo || fsaNotificationInbox(),
+    entity: opts.entity,
     // The basis is the action the visitor just took, asserted by the call site. DNC/STOP,
     // the securities firewall and the red line are enforced independently of it.
     durableConsentGranted: opts.transactionalBasis === true,
-    entity: opts.entity,
-  }
-  const result = await sendEmail(opts.to, opts.subject, renderHtml(content), renderText(content), {
-    from: resolveSender('transactional').from || undefined,
-    replyTo: opts.replyTo || fsaNotificationInbox(),
-    policy,
   })
   return logOutcome(`visitor-ack (${opts.subject})`, opts.to, result)
 }

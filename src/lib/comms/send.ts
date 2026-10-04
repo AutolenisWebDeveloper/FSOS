@@ -269,6 +269,23 @@ export interface SendContext {
    */
   emailStream?: EmailStream
   /**
+   * Email only: the Reply-To for this send (e.g. an FSA alert replies straight to the lead). Absent →
+   * the stream's own reply-to, exactly as before.
+   */
+  replyTo?: string
+  /**
+   * Email only: false skips open/click tracking instrumentation. Transactional receipts and internal
+   * ops alerts never carried tracking; routing them through this path must not add it.
+   */
+  track?: boolean
+  /**
+   * false → record the message against its `entity` without threading it into a conversation.
+   * Internal ops alerts (to the practice's own inbox) and transactional receipts are not
+   * conversations; threading them would open threads that the collision and reply rules read
+   * as live dialogue. Absent → threaded, exactly as before.
+   */
+  thread?: boolean
+  /**
    * Declares a fixed, CODE-RESIDENT transactional notice (a booking confirmation, a visitor
    * acknowledgement, a password-setup mail). These have no `comm_templates` row because they
    * are not operator-authored, but they are real reviewed templates that change only through
@@ -339,7 +356,7 @@ export async function sendMessage(ctx: SendContext): Promise<SendOutcome> {
   // route, which accepts a client-supplied is_security). Defense in depth: the firewall
   // only ever gets MORE restrictive here, never less.
   let convIsSecurity = false
-  if (!conversationId) {
+  if (!conversationId && ctx.thread !== false) {
     const conv = await getOrCreateConversation(ctx.channel, to)
     if (conv) {
       conversationId = conv.id
@@ -727,7 +744,7 @@ export async function sendMessage(ctx: SendContext): Promise<SendOutcome> {
   // the wrap so the tracking pixel lands inside <body> and the branded CTA links are
   // click-tracked. The body already includes any auto-prepended identity disclosure.
   const sendBody =
-    ctx.channel === 'email' && messageId ? instrumentEmailHtml(emailReady, messageId) : emailReady
+    ctx.channel === 'email' && messageId && ctx.track !== false ? instrumentEmailHtml(emailReady, messageId) : emailReady
 
   const req: DispatchRequest = {
     channel: ctx.channel,
@@ -739,6 +756,7 @@ export async function sendMessage(ctx: SendContext): Promise<SendOutcome> {
     attachments: ctx.channel === 'email' ? ctx.attachments : undefined,
     // Caller-pinned stream wins over the purpose-derived one (see SendContext.emailStream).
     messageClass: ctx.emailStream ?? streamForPurpose(ctx.purpose),
+    replyTo: ctx.channel === 'email' ? ctx.replyTo : undefined,
     actor: ctx.actor,
     entity: ctx.entity ?? (conversationId ? { type: 'conversation', id: conversationId } : undefined),
     templateKind,
@@ -957,6 +975,8 @@ export async function sendMessage(ctx: SendContext): Promise<SendOutcome> {
     gate: result.gate,
     messageId,
     conversationId: conversationId ?? undefined,
-    reason: result.gate.reason,
+    // A policy block carries the gate's reason; a send the gate cleared that the provider refused
+    // carries the provider's error, so the caller can surface the real cause.
+    reason: result.gate.reason ?? (result.sent ? undefined : result.error),
   }
 }

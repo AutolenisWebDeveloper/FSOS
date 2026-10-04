@@ -50,6 +50,8 @@ export interface DispatchRequest {
   entity?: { type: string; id: string }
   escalationNote?: string
   messageClass?: EmailStream
+  /** email only — a caller-chosen Reply-To (else the stream's). */
+  replyTo?: string
   /** Retained for callers that still name a suppression subject; the chokepoint re-resolves. */
   suppressionSubject?: SuppressionSubject
   correlationId?: string
@@ -168,7 +170,7 @@ async function resolveEmailEnvelope(req: DispatchRequest): Promise<{
     const sender = resolveSender(req.messageClass ?? 'marketing')
     return {
       from: sender.from || undefined,
-      replyTo: sender.replyTo || replyToAddress(),
+      replyTo: req.replyTo || sender.replyTo || replyToAddress(),
       headers: {
         ...emailListUnsubscribeHeaders(req.to),
         ...(req.correlationId ? { 'X-FSOS-Message-Id': req.correlationId } : {}),

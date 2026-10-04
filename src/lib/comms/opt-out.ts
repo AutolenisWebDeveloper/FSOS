@@ -83,7 +83,8 @@ export async function armDncEntry(e: DncEntry): Promise<{ ok: boolean; error?: s
     if (ins?.error) return { ok: false, error: ins.error.message }
     // Evidence BEFORE the re-arm: a START reading between the two must already see this opt-out's
     // evidence (it refuses to lift on any non-keyword evidence), never a re-armed row without it.
-    if (e.evidence !== false && (e.channel === 'sms' || e.channel === 'email')) {
+    const withEvidence = e.evidence !== false && (e.channel === 'sms' || e.channel === 'email')
+    if (withEvidence) {
       const ev = await db.from('comm_contact_consents').insert({
         contact: e.contact,
         channel: e.channel,
@@ -94,8 +95,50 @@ export async function armDncEntry(e: DncEntry): Promise<{ ok: boolean; error?: s
       })
       if (ev?.error) return { ok: false, error: ev.error.message }
     }
-    const arm = await db.from('dnc_entries').update({ created_at: now }).eq('contact', e.contact).eq('channel', e.channel)
+    // Fresh timestamp for the re-arm, taken AFTER the evidence: a START that lifted the row in the
+    // meantime stamped an earlier lifted_at, so this re-arm lands after it.
+    const armedAt = new Date().toISOString()
+    const arm = await db.from('dnc_entries').update({ created_at: armedAt }).eq('contact', e.contact).eq('channel', e.channel)
     if (arm?.error) return { ok: false, error: arm.error.message }
+    // CONCURRENCY (no transaction spans these statements; each is its own PostgREST call). Two
+    // post-checks close the windows a concurrent START or re-consent could open:
+    //   1. the row must read ACTIVE now — if a lift landed at or after the re-arm (clock skew between
+    //      instances), push created_at past lifted_at;
+    //   2. if a documented grant was captured at or after this opt-out's evidence (a re-consent racing
+    //      this opt-out), append fresh evidence so a later START's window still sees this opt-out.
+    const { data: rows, error: readErr } = await db.from('dnc_entries').select('*').eq('contact', e.contact).eq('channel', e.channel).limit(1)
+    if (readErr) return { ok: false, error: readErr.message }
+    const row = (Array.isArray(rows) ? rows[0] : null) as { created_at?: string | null; lifted_at?: string | null } | null
+    if (row?.lifted_at && row.created_at && Date.parse(row.lifted_at) >= Date.parse(row.created_at)) {
+      const again = await db
+        .from('dnc_entries')
+        .update({ created_at: new Date(Date.parse(row.lifted_at) + 1).toISOString() })
+        .eq('contact', e.contact)
+        .eq('channel', e.channel)
+      if (again?.error) return { ok: false, error: again.error.message }
+    }
+    if (withEvidence) {
+      const { data: grants, error: gErr } = await db
+        .from('comm_contact_consents')
+        .select('captured_at, consent_version')
+        .eq('contact', e.contact)
+        .eq('channel', e.channel)
+        .eq('action', 'granted')
+        .gte('captured_at', now)
+        .limit(5)
+      if (gErr) return { ok: false, error: gErr.message }
+      if (Array.isArray(grants) && grants.some((g) => (g as { consent_version?: string }).consent_version !== 'opt-in')) {
+        const ev2 = await db.from('comm_contact_consents').insert({
+          contact: e.contact,
+          channel: e.channel,
+          action: 'revoked',
+          consent_text: e.reason,
+          consent_version: 'opt-out',
+          captured_at: new Date().toISOString(),
+        })
+        if (ev2?.error) return { ok: false, error: ev2.error.message }
+      }
+    }
     return { ok: true }
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) }

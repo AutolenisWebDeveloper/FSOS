@@ -60,8 +60,33 @@ await t('unsubscribe / deliverability (suppressContact) go through the shared wr
 await t('evidence is written BEFORE the re-arm (no window where START sees a re-armed row without it)', async () => {
   const db = installDb(fakeDb({}))
   await unsub.suppressContact('a@example.com', 'email', {})
-  const order = db.calls.filter((c) => c.table === 'comm_contact_consents' || (c.table === 'dnc_entries' && c.method === 'update')).map((c) => c.table)
-  assert.deepEqual(order, ['comm_contact_consents', 'dnc_entries'])
+  const order = db.calls
+    .filter((c) => (c.table === 'comm_contact_consents' && c.method === 'insert') || (c.table === 'dnc_entries' && c.method === 'update'))
+    .map((c) => c.table)
+  assert.deepEqual(order.slice(0, 2), ['comm_contact_consents', 'dnc_entries'])
+})
+await t('race: a START that lifted the row during the write leaves it ACTIVE (created_at pushed past lifted_at)', async () => {
+  // The post-check re-read returns a row lifted at/after this re-arm (a concurrent START, or clock
+  // skew between instances) — the writer must re-arm past it.
+  const db = installDb(fakeDb({ dnc_entries: [null, null, [{ created_at: '2026-10-04T12:00:00.000Z', lifted_at: '2026-10-04T12:00:00.500Z' }], null] }))
+  const r = await optOut.armDncEntry({ contact: 'a@example.com', channel: 'email', reason: 'unsubscribe', evidence: false })
+  assert.equal(r.ok, true)
+  const ups = dncUpdates(db)
+  assert.equal(ups.length, 2, 're-armed, then pushed past the concurrent lift')
+  assert.equal(ups[1].payload.created_at, '2026-10-04T12:00:00.501Z')
+  assert.equal(consent.isDncLifted({ created_at: ups[1].payload.created_at, lifted_at: '2026-10-04T12:00:00.500Z' }), false)
+})
+await t('race: a documented grant captured during the write → fresh evidence after it', async () => {
+  const db = installDb(fakeDb({ comm_contact_consents: [null, [{ captured_at: '2099-01-01T00:00:00.000Z', consent_version: 'reconsent' }], null] }))
+  await optOut.armDncEntry({ contact: 'a@example.com', channel: 'email', reason: 'unsubscribe' })
+  const evid = db.calls.filter((c) => c.table === 'comm_contact_consents' && c.method === 'insert')
+  assert.equal(evid.length, 2, 'the opt-out is re-recorded after the racing grant')
+})
+await t('every lift is compare-and-set on created_at (START, re-consent) and the member restore on its revoke', () => {
+  const inb = readFileSync('src/lib/comms/inbound.ts', 'utf8')
+  assert.match(inb, /liftQ = row\.created_at \? liftQ\.eq\('created_at', row\.created_at\)/)
+  assert.match(inb, /\.eq\('status', 'revoked'\)\s*\.eq\('source', memberSource\)/)
+  assert.match(readFileSync('src/lib/comms/opt-out.ts', 'utf8'), /q = row\.created_at \? q\.eq\('created_at', row\.created_at\)/)
 })
 await t('the public opt-out checks its evidence insert', () => {
   assert.match(readFileSync('src/app/api/public/consent/route.ts', 'utf8'), /if \(evidenceError\) return dbErrorResponse/)

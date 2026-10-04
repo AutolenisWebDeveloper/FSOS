@@ -300,19 +300,24 @@ async function applyOptIn(conv: Conversation, contact: string): Promise<boolean>
     // latest state. A later operator or portal revoke overwrote it with another source, and START
     // must not undo that (proven by tests/optout-consent-property.test.mjs).
     let memberRestorable = false
+    let memberSource: string | null = null
     if (conv.member_id) {
       const { data: mc, error: mcErr } = await db.from('consents').select('status, source').eq('member_id', conv.member_id).eq('channel', conv.channel).maybeSingle()
       const cur = mc as { status?: string; source?: string | null } | null
       memberRestorable = !mcErr && cur?.status === 'revoked' && KEYWORD_OPT_OUT_SOURCES.includes(cur.source ?? '')
+      memberSource = cur?.source ?? null
       if (!mcErr && cur?.status === 'revoked' && !memberRestorable) return true // lifted; the later revoke stands
     }
-    if (conv.member_id && memberRestorable) {
+    if (conv.member_id && memberRestorable && memberSource) {
+      // Compare-and-set: restore only while the STOP's own revoke is still the row's state, so an
+      // operator or portal revoke that lands between the read above and this write stands.
       await db
         .from('consents')
-        .upsert(
-          { member_id: conv.member_id, household_id: conv.household_id, channel: conv.channel, status: 'granted', source: 'inbound_start', updated_at: now },
-          { onConflict: 'member_id,channel' },
-        )
+        .update({ status: 'granted', source: 'inbound_start', updated_at: now })
+        .eq('member_id', conv.member_id)
+        .eq('channel', conv.channel)
+        .eq('status', 'revoked')
+        .eq('source', memberSource)
     }
     // comm_contact_consents is append-only and latest-wins: the restore is a NEW granted event.
     await db.from('comm_contact_consents').insert({

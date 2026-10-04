@@ -32,6 +32,17 @@ placeholders are recorded as **UNANSWERED**; nothing is inferred for them.
 | `CRON_SECRET` (Vercel Production) | **UNANSWERED** — the reply kept the template text `[set \| not set yet; I'll set it before merging]`. Merge stays blocked on it. |
 | `SMS_A2P_APPROVED` (Vercel Production) | **UNANSWERED** — `[value]` placeholder. |
 
+### Round 3 (owner, 2026-10-04)
+
+| # | Decision |
+|---|---|
+| Finding 5 | **Explicitly approved cron change.** Run the five dispatch crons (`campaign-dispatch`, `district-nurture-tick`, `life-conversion-tick`, `pipeline-winback-tick`, `cross-sell-life-tick`) **hourly from 17:00 to 23:00 UTC**, with the guard of **at most one touch per enrollment per day**. If a sequence sends SMS and email on the same day by design, apply the guard **per channel**. If the `vercel.json` edit is still refused, put the exact diff in the PR description for the owner to apply. |
+| START after re-consent | **Yes.** A documented re-consent on a channel, from a source that counts as consent today, clears the earlier opt-outs on that channel; from then on START works normally for any later STOP. START on its own still never lifts a non-STOP opt-out. **Hard bounces are not consent:** they clear only when the address is verified again. Add these cases to the property test. |
+| AI opener to non-US numbers | **Block it** unless the FSA sees the exact message and presses send. AI text that goes out without that review is automated. Confirm AI-drafted openers pass the no-recommendation check before the FSA sees them. |
+| Before merge | (1) `docs/ops/migration-runbook.md` (no PII) for the owner to run. (2) A deploy-impact list: everything that will send in the first 24 h after deploy (CRON_SECRET set, production as now), with counts and triggers, plus what sends today and will stop or change. (3) Booking notices and briefings with no FSOS message record must go through the gated send path and write one. (4) 3b counts for every store an automated text can resolve a recipient from, per store. (5) Whether the opt-out writers serialize concurrent events for one address, or the race window. |
+| Canary | The owner verified their phone and email in `/app/comms`. **The verified `comms_test_recipients` entries are the canary set**; their values are never copied anywhere. |
+| Owner-run | The owner runs the browser checks locally and sets `CRON_SECRET` and `SMS_A2P_APPROVED` themselves. When CI is green on the final head, mark the PR ready for review. **Do not merge.** |
+
 ## 1b. Round 2 — what was implemented, and the answers
 
 | Item | Status | Commit |

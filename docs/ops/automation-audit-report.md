@@ -43,6 +43,189 @@ placeholders are recorded as **UNANSWERED**; nothing is inferred for them.
 | Canary | The owner verified their phone and email in `/app/comms`. **The verified `comms_test_recipients` entries are the canary set**; their values are never copied anywhere. |
 | Owner-run | The owner runs the browser checks locally and sets `CRON_SECRET` and `SMS_A2P_APPROVED` themselves. When CI is green on the final head, mark the PR ready for review. **Do not merge.** |
 
+## 1c. Round 3 — what was implemented, and the answers (2026-10-04)
+
+| Item | Status | Commit |
+|---|---|---|
+| Finding 5 — cron move | **Done.** `vercel.json`: the five dispatch crons run at `0 17-23 * * *`. Every hour in that range is inside 09:00–20:00 in every continental zone, standard and daylight. `gate.ts oneTouchPerDay` holds each enrollment to one touch per UTC day. No engine schedules two touches on one day, and each drip is single-channel, so the guard is also per channel. Regression: `cron-send-window`, `automation-wiring`. | `e052837` |
+| AI opener to non-US | **Done.** Only an opener the FSA **typed** is operator-initiated. A seeded campaign asset is rendered server-side and may never have been previewed, so it is automated (US only). The AI replies that follow are automated. | `ebdd2a0` |
+| Single send path | **Done.** The booking fallback notices, FSA alerts, visitor acks, the morning briefing and the form-link email now go through `sendMessage` and write a message record (see below). | `3d22208` |
+| START after re-consent | **Done.** A documented re-consent clears earlier opt-outs on the channel, except a hard bounce; START then works normally. Property test I5. | `59e3f37` |
+| Concurrency | **Closed with compare-and-set writes; the remaining window is documented below.** | `6043925` |
+| Migration runbook | [`migration-runbook.md`](migration-runbook.md) | docs commit |
+
+### No model drafts an AI opener, and every AI draft passes the red line before the FSA sees it
+
+- The console's conversation opener is FSA-typed text or an approved campaign asset. No model
+  writes it (`console-workbench.tsx` → `/api/comms/conversations/start`).
+- Model-written text reaches the FSA only as a **held draft**: an inbound auto-reply that the gate
+  withheld at `ai_authority` (`send.ts`). Two checks run first:
+  - the responder screens the model output with `containsRecommendationLanguage` and replaces a
+    flagged draft with a hand-off (`ai/responder.ts`);
+  - the gate's recommendation step (step 5) runs before `ai_authority` (step 6c), so a draft with
+    recommendation language is blocked there and never recorded as an FSA draft.
+- **So every AI draft the FSA sees has passed the no-recommendation check twice.**
+
+### Single send path: what had no FSOS message record, and what changed
+
+- **Production evidence:**
+  - no outbound `comm_messages` row has been written since 2026-08-26;
+  - booking notices kept going out in September (`system:notify`, entity `appointment`);
+  - of the 118 unmatched Resend sends, 12 matched FSOS audit rows: 11 booking notices and 1
+    briefing.
+- **Cause:**
+  - The booking **fallback** used while appointment email templates are unapproved, the FSA alerts
+    and the visitor acks (`notifications/transactional.ts`), the briefing route and the form-link
+    email called `messaging.sendEmail` directly. That path is gated at the chokepoint, but it
+    writes no record.
+  - There is no `sendThroughGate` any more. Its successor is `sendMessage` (`comms/send.ts`),
+    which writes the record and then calls the chokepoint.
+- **Change:** all of them now go through `sendMessage` via `sendRecorded`.
+  - The record is written against the entity: appointment, briefing date or form submission.
+  - Three narrow options keep each delivered email unchanged: `replyTo` is kept, `track:false`
+    adds no open/click pixel, and `thread:false` opens no conversation, so the collision and reply
+    rules never see it.
+  - One header difference: these emails now carry the same List-Unsubscribe and
+    `X-FSOS-Message-Id` headers every other FSOS email carries.
+- **Not moved: the password-setup email.** Its body is a one-time credential link, which must not
+  be stored in a message record. It stays on the gated direct path.
+- `jobs/agent-runner.ts` has a direct `dispatch` hook with no record, but **no caller uses it**
+  (the workforce sends through `sendMessage`). Recorded here, not changed.
+
+### Re-consent (owner decision, round 3)
+
+- **What clears.** A documented re-consent on a channel clears the earlier opt-outs on that
+  channel. It comes from a source the gate already reads as channel consent:
+  - the client-portal grant;
+  - the public contact-form SMS opt-in;
+  - the booking SMS opt-in.
+
+  DNC rows are **lifted** (`lifted_at`), never deleted or relabelled. A row carrying a **hard
+  bounce** stays active; no code path re-verifies an address today, so a bounce clears only by an
+  operator action outside FSOS.
+- **Channel-wide web opt-outs.** A web opt-out recorded for **all channels** is split on an SMS
+  re-consent: the email side gets its own row with the same reason, then the all-channel row is
+  lifted.
+- **START after re-consent.** START judges only the opt-outs after the latest documented grant,
+  plus any hard bounce ever. START alone still never lifts a non-STOP opt-out.
+- **Not a clearing source:**
+  - **Workshop-registration consent** is scoped to that workshop's reminders
+    (`workshop_consent_events`), not channel consent at the gate.
+  - A bare **email** contact has no documented-consent source in FSOS, so nothing clears an email
+    opt-out for a non-member.
+  - For an existing **member**, a booking SMS opt-in clears the DNC rows but not the member's own
+    channel revoke. Only the member's portal grant restores that.
+
+### Concurrency: do the opt-out writers serialize?
+
+**No.** Each writer is several PostgREST statements with no transaction or row lock. Postgres
+serializes each single-row update and the `unique (contact, channel)` insert, and nothing more.
+What closes the windows (`6043925`):
+
+| Race | Before | Now |
+|---|---|---|
+| START lifts while an opt-out re-arms the same row | The lift could land after the re-arm and undo the opt-out. | The START lift is **compare-and-set on `created_at`**. A re-arm after START's read makes the lift a no-op. |
+| START lifts between an opt-out's evidence write and its re-arm, or the clocks of two serverless instances disagree | The opt-out's re-arm could carry an older timestamp than the lift. | The re-arm takes a fresh timestamp after the evidence, then **re-reads the row**. If it is still lifted, `created_at` is pushed past `lifted_at`. |
+| A re-consent races an opt-out | The opt-out's evidence could predate the grant, so a later START ignored it. | The re-consent lift is compare-and-set on `created_at`. After its re-arm, the opt-out checks for a grant captured since its evidence and appends **fresh evidence** if there is one. |
+| START restores member consent while an operator or portal revoke lands | The upsert overwrote the later revoke. | The restore is **compare-and-set** on the STOP's own revoke (`status='revoked'` and the STOP's `source`). |
+
+**Remaining window.** Between an opt-out's post-check read and the end of its function, a START
+could read the row, see only keyword evidence and lift it. This requires an opt-out and a START
+from the same person within milliseconds. The opt-out's evidence is already written, so any later
+START or re-consent decision sees it. The STOP/START window closes fully only with a single
+database function holding a row lock; that is a new migration and was not added. Each webhook
+retries on 5xx, and every write is idempotent.
+
+### The 3b counts per store (every store an automated text can resolve a recipient from)
+
+Production, read-only, 2026-10-04. Phones were classified with the code's own lists.
+
+| Store | Rows | With a phone | US, zone from area code | US, zone unknown | Non-US | Country not establishable |
+|---|---|---|---|---|---|---|
+| `household_members.phone` (campaigns, drips, workforce) | 4 | 4 | 4 | 0 | 0 | 0 |
+| `contacts.phone` (booking, Win-Back contacts) | 4 | 4 | 4 | 0 | 0 | 0 |
+| `comm_conversations.contact` — SMS threads (AI replies; **the 143 Win-Back threads are 109 SMS + 34 email**) | 109 | 109 | 109 | 0 | 0 | 0 |
+| `comm_messages.recipient` — outbound SMS history | 84 | 83 | 83 | 0 | 0 | 0 |
+| `comm_contact_consents` — SMS | 8 | 8 | 8 | 0 | 0 | 0 |
+| `referrals.referred_phone` (workforce referral follow-up) | 8 | 6 | 5 | 0 | 0 | 1: `26f8f8de` |
+| `agency_referrals.client_phone` | 1 | 1 | 1 | 0 | 0 | 0 |
+| `workshop_registrations.phone` (workshop engine) | 4 | 4 | 2 | 0 | 0 | 2: `047a18f9`, `53585032` |
+| `customers.phone` / `cell_phone` (legacy campaign run) | 1 / 1 | 1 / 0 | 1 / 0 | 0 | 0 | 0 |
+| `district_nurture_enrollments`, `agency_owners` (district nurture) | 0 | 0 | — | — | — | — |
+| Imported books: `ghl_upload_rows`, `conv_stage`, `form_responses` | 0 | 0 | — | — | — | — |
+| Not recipient sources, counted for completeness: `agencies.phone` (4 US); `ffs_contacts` (FFS staff directory: 4 US, 1 not establishable) | | | | | | |
+
+Win-Back and cross-sell imports land in `contacts` / `household_members` (`import_records` holds
+no phone), which are counted above. **Unknown zone: 0. Non-US: 0 in every store.**
+
+### Workshop reminders "never ran" — the real cause
+
+`CRON_SECRET` being set is not the cause. What production shows:
+
+- **Crons are being invoked.** Every `/api/cron/[job]` cron has `job_runs` rows up to today, on
+  schedule.
+- **The workshop route keeps no run log.** It does not use `job_runs`, and a run with nothing to
+  do writes nothing. A pass that runs and finds nothing is therefore invisible. The Vercel runtime
+  logs that would show the invocations are not readable from this session (403).
+- **Its only trace is one run on 2026-08-30 14:01 UTC.** All three passes failed in 0.4 s on
+  `column workshop_sessions.cadence_generation does not exist`. Migration 130's column was not yet
+  in production; it is there now.
+- **There has been nothing to send since the cron was added (2026-08-25).**
+  - Both production workshop sessions started on 2026-07-28 and 2026-08-14.
+  - The reminder pass looks 8 days ahead and has had no upcoming session since.
+  - The nurture pass looks 14 days back, so after 2026-08-28 no session qualified.
+  - No session has been rescheduled or cancelled, so the change pass has had nothing either.
+  - `workshop_message_log` has 0 rows.
+
+**Does this branch change it?** The route's auth is the same Bearer check, now shared
+(`cronAuthorized`). The engine now fails closed on an unreadable config. **After deploy it still
+sends nothing** until a workshop session is scheduled with registrations. The registration
+acknowledgement is also blocked until its template (`eeee0000…ac01`, status `submitted`) is
+approved.
+
+**One thing to note.** The two registrations whose phones cannot be shown to be US (`047a18f9`,
+`53585032`) would now get no workshop SMS (3b).
+
+### Deploy impact — the first 24 hours after deploy
+
+Production as of 2026-10-04: `CRON_SECRET` set, `SMS_A2P_APPROVED = true`, and `marketing_automation`
+enabled.
+
+| What | Trigger | Expected in 24 h |
+|---|---|---|
+| Booking reminders (SMS + email) | `booking-reminders`, every 15 min | **0**: no future appointments. Email needs booking-email consent. SMS needs an SMS opt-in, a US number, the floor and an approved template (12 booking SMS templates are approved). Only the 24 h offset runs until 137 is applied. |
+| Booking confirmation / reschedule / cancel | a booking event | About 1 booking a month. The SMS goes if the booker ticked the SMS box and the number is US. The email goes through the transactional **fallback** (email templates unapproved), **now recorded**. Plus 1 FSA alert. |
+| Contact-form acknowledgement + FSA alert (email) | a form submission | About 1 a month, now recorded. |
+| Inbound replies: HELP (TwiML), STOP/START, AI auto-reply | an inbound text | 0 inbound in the last 30 days. 3 AI-armed threads (2 SMS) would auto-reply through the gate if the person writes. |
+| Workforce `referral_followup` | `workforce-orchestrator`, 15:00 UTC | **0**: no referral under 14 days. The other three agents stand down. |
+| Life Conversion, Win-Back, Cross-Sell, District nurture | ticks, hourly 17–23 UTC | **0**: paused or draft. |
+| Broadcasts and drips | `campaign-dispatch`, hourly 17–23 UTC | **0**: no active campaigns, sequences or enrollments. |
+| Workshop reminders, changes, nurture | `workshop-reminders`, every 15 min | **0**: no sessions in the reminder or nurture windows. |
+| Retry sweeps | hourly at :30 | **0 sends**: reconcile only; re-dispatch switch off. |
+| Social publishing | every 5 min | **0**: no entries. |
+| Operator sends (console, conversation reply/start, test sends, form links, briefing) | a person | As used. Briefing has no cron. |
+| Password-setup email | user provisioning | As used. |
+| The 80 unattributed Resend sends | not FSOS (§1b) | Continue regardless of this deploy (71 in the last 30 days, including FSOS's). |
+
+**Today vs after deploy — what stops or changes:**
+
+| Today (`main`) | After deploy |
+|---|---|
+| Workforce `term_conversion` / `cross_sell` / `life_winback` would send if their audiences had consent | Stand down; the campaign engines own those audiences. |
+| Booking fallback, FSA alerts, visitor acks, briefing, form-link emails send with no FSOS record | Same emails, now recorded (no thread, no tracking). |
+| Automated SMS to a non-US or non-establishable number (none exist) | Hard-blocked. |
+| A typed opt-out on the web page stored as typed (mixed case / punctuation never matched) | Normalized; it blocks. |
+| A later opt-out relabelled an earlier one; START could undo an operator opt-out | Never relabelled; START respects every non-STOP opt-out. |
+| Re-consent never cleared a STOP/unsubscribe | Documented re-consent clears (not hard bounces). |
+| Reminder SMS could land in quiet hours | Moved inside the floor, or skipped. |
+| Dispatch ticks at 12:00–16:00 UTC | Hourly 17:00–23:00 UTC, one touch per enrollment per day. |
+| `x-vercel-cron` header alone authorized `/api/cron/[job]` | Bearer `CRON_SECRET` only (set). |
+
+**Canary set: empty in production.** `comms_test_recipients` has **0 rows** (read 2026-10-04,
+counts only). The phone and email you verified in `/app/comms` are not in this database; they may
+be on a preview or local database. Canary mode for both switches therefore matches nobody until
+they are verified on production. Their values were not read or copied.
+
 ## 1b. Round 2 — what was implemented, and the answers
 
 | Item | Status | Commit |

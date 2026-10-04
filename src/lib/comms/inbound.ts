@@ -29,7 +29,7 @@ import { classifyReply } from './reply-classification'
 import { checkTurnLimit, type TurnLimitDecision } from './turn-limit'
 import { shouldPauseOnReply } from './conversation-mode'
 import { recordConsentChange } from './consent-events'
-import { recordChannelOptOut } from './opt-out'
+import { recordChannelOptOut, RECONSENT_LIFT_MARK } from './opt-out'
 import { terminateActiveEnrollments } from './stop-fanout'
 import { isDncLifted, isKeywordOptOutReason, isKeywordRevokeEvidence, KEYWORD_OPT_OUT_SOURCES, PRIOR_MEMBER_GRANT_MARKER } from './contact-consent'
 import { BUSINESS, CONTACT } from '@/lib/site'
@@ -217,6 +217,9 @@ async function applyClientSuppression(conv: Conversation, contact: string, reaso
   }
 }
 
+/** consent_version of the grant a START appends when it restores — not a documented re-consent. */
+const START_RESTORE_VERSION = 'opt-in'
+
 /** True when a DNC row was written by a STOP keyword (inbound, or reported by the carrier as 21610). */
 function isKeywordOptOut(row: { reason?: string | null }): boolean {
   return isKeywordOptOutReason(row.reason)
@@ -243,25 +246,40 @@ async function applyOptIn(conv: Conversation, contact: string): Promise<boolean>
       .eq('channel', conv.channel)
       .limit(1)
     if (error) return false
-    const row = (rows ?? [])[0] as { id: string; reason?: string | null; created_at?: string | null; lifted_at?: string | null } | undefined
-    if (!row || !isKeywordOptOut(row) || isDncLifted(row)) return false
-    // The DNC row keeps its FIRST reason (it is never relabelled), so a STOP-labelled row may also
-    // carry a later unsubscribe / web / portal / bounce / complaint / DNC add. Each of those leaves
-    // contact-level revoke evidence; any non-keyword evidence for this address means START may not
-    // lift it. Unreadable history → no lift (fail closed).
+    const row = (rows ?? [])[0] as { id: string; reason?: string | null; created_at?: string | null; lifted_at?: string | null; lifted_reason?: string | null } | undefined
+    if (!row || isDncLifted(row)) return false
+    // The row's first reason must be a STOP keyword — or the row was CLEARED by a documented
+    // re-consent (owner, round 3), after which START works normally for a later STOP. Every later
+    // opt-out is then judged from the evidence below, not from the row's (never relabelled) reason.
+    const clearedByReconsent = (row.lifted_reason ?? '').includes(RECONSENT_LIFT_MARK)
+    if (!isKeywordOptOut(row) && !clearedByReconsent) return false
+    // Evidence: every opt-out writer leaves contact-level revoke evidence. Only evidence AFTER the
+    // latest documented grant is current — a documented re-consent clears what came before it — except
+    // a hard bounce, which no consent clears. Any current non-keyword evidence → no lift. Unreadable
+    // history → no lift (fail closed). A START's own restore grant ('opt-in') is not a documented grant.
     const tail = conv.channel === 'sms' ? contact.replace(/[^\d]/g, '').slice(-10) : ''
-    const revokesQ = db.from('comm_contact_consents').select('consent_text, consent_version').eq('channel', conv.channel).eq('action', 'revoked')
-    const { data: revokes, error: revokesErr } = await (conv.channel === 'sms' && tail.length === 10
-      ? revokesQ.ilike('contact', `%${tail}`)
-      : revokesQ.eq('contact', contact)
-    ).limit(500)
-    if (revokesErr || !Array.isArray(revokes)) return false
-    if (revokes.some((r) => !isKeywordRevokeEvidence(r as { consent_text?: string | null; consent_version?: string | null }))) return false
+    const historyQ = db.from('comm_contact_consents').select('action, consent_text, consent_version, captured_at').eq('channel', conv.channel)
+    const { data: history, error: historyErr } = await (conv.channel === 'sms' && tail.length === 10
+      ? historyQ.ilike('contact', `%${tail}`)
+      : historyQ.eq('contact', contact)
+    ).limit(1000)
+    if (historyErr || !Array.isArray(history)) return false
+    type Ev = { action?: string; consent_text?: string | null; consent_version?: string | null; captured_at?: string | null }
+    const evs = history as Ev[]
+    const lastGrantMs = Math.max(-Infinity, ...evs.filter((e) => e.action === 'granted' && e.consent_version !== START_RESTORE_VERSION).map((e) => Date.parse(e.captured_at ?? '') || -Infinity))
+    const current = evs.filter((e) => e.action === 'revoked' && ((Date.parse(e.captured_at ?? '') || Infinity) > lastGrantMs || e.consent_text === 'hard_bounce'))
+    if (current.some((e) => !isKeywordRevokeEvidence(e))) return false
+    if (!isKeywordOptOut(row) && current.length === 0) return false // nothing a STOP did since the re-consent
     const now = new Date().toISOString()
-    const { error: liftError } = await db
+    // Compare-and-set on created_at: an opt-out that re-armed the row since it was read wins, and
+    // this START lifts nothing (the person can send START again).
+    let liftQ = db
       .from('dnc_entries')
-      .update({ lifted_at: now, lifted_reason: `inbound START (conversation ${conv.id})` })
+      .update({ lifted_at: now, lifted_reason: `${clearedByReconsent ? `${RECONSENT_LIFT_MARK} earlier; ` : ''}inbound START (conversation ${conv.id})` })
       .eq('id', row.id)
+    liftQ = row.created_at ? liftQ.eq('created_at', row.created_at) : liftQ.is('created_at', null)
+    const { data: liftedRows, error: liftError } = await liftQ.select('id')
+    if (!liftError && Array.isArray(liftedRows) && liftedRows.length === 0) return false
     if (liftError) return false
     // RESTORE, never create (owner decision 4): consent comes back only from documented evidence
     // that it existed before this opt-out — a contact-level grant captured before the opt-out was
@@ -302,7 +320,7 @@ async function applyOptIn(conv: Conversation, contact: string): Promise<boolean>
       channel: conv.channel,
       action: 'granted',
       consent_text: 'Inbound START keyword (keyword opt-out restored)',
-      consent_version: 'opt-in',
+      consent_version: START_RESTORE_VERSION,
     })
     // Consent RESTORED via START: records the grant to audit_log + the CRM timeline. This does
     // NOT auto-resume any paused promotional enrollment — that stays an explicit admin action.

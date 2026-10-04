@@ -232,3 +232,76 @@ export async function recordCarrierOptOut(toRaw: string, errorCode: string): Pro
     return { ok: false } // never throw into a webhook or the send path
   }
 }
+
+/** lifted_reason prefix a documented re-consent stamps on the DNC rows it clears. */
+export const RECONSENT_LIFT_MARK = 'documented re-consent'
+/** consent_version on the contact-level GRANT evidence a re-consent records when its source wrote none. */
+export const RECONSENT_VERSION = 'reconsent'
+/** DNC reasons a re-consent never clears — the address itself failed (owner, round 3). */
+const NEVER_CLEARED_BY_CONSENT = ['hard_bounce']
+
+/**
+ * Owner decision (round 3): a DOCUMENTED re-consent on a channel — from a source that counts as
+ * channel consent today (client portal grant, the public contact-form SMS opt-in, the booking SMS
+ * opt-in) — clears the earlier opt-outs on that channel, after which START works normally for a
+ * later STOP. Rows are LIFTED (`lifted_at`), never deleted or relabelled. Hard bounces are not
+ * consent: a row that carries one stays active until the address is verified again.
+ *
+ *   • Reads the address's DNC rows on this channel (SMS: last-10 suffix, like the gate) and on 'all'.
+ *   • A row with a hard-bounce reason, or any hard-bounce revoke evidence for the address, is kept.
+ *   • An 'all' row covers the other channel too: the other channel is first armed with the same
+ *     reason (a new row; its opt-out stands), then the 'all' row is lifted.
+ *   • Lifts are compare-and-set on created_at, so an opt-out re-arming the row concurrently wins.
+ *   • `recordGrant` appends contact-level GRANT evidence (for a source that wrote none, e.g. the
+ *     portal) so a later START's evidence window starts here.
+ * Fails closed: any read error clears nothing. Never throws.
+ */
+export async function applyDocumentedReconsent(r: {
+  contact: string
+  channel: 'sms' | 'email'
+  source: string
+  recordGrant?: boolean
+}): Promise<{ ok: boolean; cleared: number }> {
+  const db = getDb()
+  const now = new Date().toISOString()
+  try {
+    const tail = r.channel === 'sms' ? r.contact.replace(/[^\d]/g, '').slice(-10) : ''
+    const suffix = r.channel === 'sms' && tail.length === 10
+    if (r.recordGrant) {
+      const g = await db.from('comm_contact_consents').insert({
+        contact: r.contact,
+        channel: r.channel,
+        action: 'granted',
+        consent_text: `Documented re-consent (${r.source})`,
+        consent_version: RECONSENT_VERSION,
+        captured_at: now,
+      })
+      if (g?.error) return { ok: false, cleared: 0 }
+    }
+    const bq = db.from('comm_contact_consents').select('consent_text').eq('channel', r.channel).eq('action', 'revoked')
+    const { data: bounces, error: bErr } = await (suffix ? bq.ilike('contact', `%${tail}`) : bq.eq('contact', r.contact)).limit(500)
+    if (bErr || !Array.isArray(bounces)) return { ok: false, cleared: 0 }
+    const bounced = bounces.some((b) => NEVER_CLEARED_BY_CONSENT.includes(String((b as { consent_text?: string }).consent_text ?? '')))
+    const dq = db.from('dnc_entries').select('*').in('channel', [r.channel, 'all'])
+    const { data: rows, error } = await (suffix ? dq.ilike('contact', `%${tail}`) : dq.eq('contact', r.contact)).limit(20)
+    if (error || !Array.isArray(rows)) return { ok: false, cleared: 0 }
+    let cleared = 0
+    for (const row of rows as { id: string; contact: string; channel: string; reason?: string | null; created_at?: string | null; lifted_at?: string | null }[]) {
+      const lifted = !!row.lifted_at && !!row.created_at && Date.parse(row.lifted_at) > Date.parse(row.created_at)
+      if (lifted) continue
+      if (bounced || NEVER_CLEARED_BY_CONSENT.includes(row.reason ?? '')) continue
+      if (row.channel === 'all') {
+        const other = r.channel === 'sms' ? 'email' : 'sms'
+        const keep = await armDncEntry({ contact: row.contact, channel: other, reason: row.reason ?? 'opt-out', evidence: false })
+        if (!keep.ok) continue // never lift an 'all' row whose other-channel opt-out could not be kept
+      }
+      let q = db.from('dnc_entries').update({ lifted_at: now, lifted_reason: `${RECONSENT_LIFT_MARK} (${r.source})` }).eq('id', row.id)
+      q = row.created_at ? q.eq('created_at', row.created_at) : q.is('created_at', null)
+      const { error: uErr } = await q
+      if (!uErr) cleared++
+    }
+    return { ok: true, cleared }
+  } catch {
+    return { ok: false, cleared: 0 }
+  }
+}

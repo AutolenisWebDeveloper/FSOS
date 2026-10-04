@@ -5,7 +5,7 @@ import { requireApiRole, actorOf } from '@/lib/auth/api'
 import { z } from 'zod'
 import { recordConsentChange } from '@/lib/comms/consent-events'
 import { householdIdFor } from '@/lib/portal/scope'
-import { armDncEntry } from '@/lib/comms/opt-out'
+import { armDncEntry, applyDocumentedReconsent } from '@/lib/comms/opt-out'
 import { consentContactKey } from '@/lib/comms/contact-consent'
 
 export const dynamic = 'force-dynamic'
@@ -56,6 +56,15 @@ export async function POST(req: NextRequest) {
           const key = ch === 'call' ? contact : consentContactKey(ch, contact)
           const dnc = await armDncEntry({ contact: key, channel: ch, reason: 'client opt-out' })
           if (!dnc.ok) dncFailed = true
+        }
+      }
+      // A documented re-consent by the client clears the earlier opt-outs on this channel (owner,
+      // round 3) — except a hard bounce, which only re-verifying the address clears.
+      if (v.data.status === 'granted' && v.data.channel !== 'call') {
+        const contact = v.data.channel === 'email' ? m.email : m.phone
+        if (contact) {
+          const rc = await applyDocumentedReconsent({ contact: consentContactKey(v.data.channel, contact), channel: v.data.channel, source: 'client_portal', recordGrant: true })
+          if (!rc.ok) dncFailed = true
         }
       }
       // ONE consent-logging path → audit_log AND the CRM timeline (§C).

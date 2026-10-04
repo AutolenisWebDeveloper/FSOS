@@ -8,9 +8,13 @@
 //       record before START — granted before that STOP, or documented by a re-consent after it.
 //       START itself never creates consent;
 //   I3  START never lifts a DNC add, bounce, complaint, unsubscribe, web/portal or operator opt-out
-//       (one not later superseded by a documented re-consent), and never touches a non-keyword DNC row;
+//       still in effect, and never lifts a non-keyword DNC row a re-consent has not cleared;
 //   I4  no event deletes or relabels an earlier opt-out record: every DNC row keeps its id and its
-//       reason, and every contact-level revoke row stays exactly as written.
+//       reason, and every contact-level revoke row stays exactly as written;
+//   I5  (owner, round 3) a documented re-consent on the channel clears the earlier opt-outs on it —
+//       the send is allowed again — EXCEPT a hard bounce, which only re-verifying the address
+//       clears; from then on START works normally for a later STOP (I2/I3 judge only the opt-outs
+//       after the latest re-consent, and a hard bounce at any time).
 //
 // Why exhaustive and not examples: all three defects the final review found were event-ORDER bugs
 // (a later opt-out not re-arming a START-lifted row; START creating consent; a STOP relabelling an
@@ -31,7 +35,8 @@
 //   bounce, complaint    → applyDeliverabilitySuppression (src/lib/comms/deliverability.ts)
 //   DNC add              → armDncEntry (src/lib/comms/opt-out.ts), the shared DNC writer
 //   re-consent           → POST /api/client/consent granted (member) | captureBookingSmsConsent (SMS
-//                          contact) | a documented comm_contact_consents grant (email contact)
+//                          contact). A bare EMAIL contact has no documented-consent source in FSOS
+//                          today, so there re-consent is not applicable (like operator for contacts)
 //   "send allowed"       → resolveDispatchPolicy with the production consent / DNC / revoke readers
 //                          (defaultPolicyDeps); every unrelated reader is pinned permissive.
 // The database is tests/helpers/memdb.mjs (stateful, in memory) — code behavior, not Postgres.
@@ -123,6 +128,8 @@ const EMAIL_ONLY = new Set(['ONE_CLICK', 'BOUNCE', 'COMPLAINT'])
 const eventChannel = (e, ch) => (EMAIL_ONLY.has(e) ? 'email' : ch)
 /** Whether event e is an effective opt-out ON the channel under test, for this recipient. */
 const appliesHere = (e, ch, cfg) => OPT_OUTS.has(e) && eventChannel(e, ch) === ch && !(e === 'OPERATOR' && !cfg.member)
+/** Whether a documented re-consent source exists for this recipient on the channel under test. */
+const reconsentApplies = (cfg) => cfg.member || cfg.ch === 'sms'
 
 let ipSeq = 0
 async function apply(e, ch, cfg, n) {
@@ -183,9 +190,8 @@ async function apply(e, ch, cfg, n) {
       } else if (evCh === 'sms') {
         const r = await booking.captureBookingSmsConsent({ contactId: 'c1', appointmentId: `a-${n}`, phone: PHONE, capturedAt: iso() })
         ok(r.recorded === true, 'recorded')
-      } else {
-        globalThis.__wsDb.seed('comm_contact_consents', [{ contact: EMAIL, channel: 'email', action: 'granted', consent_text: 'Email updates checkbox on the contact form', consent_version: 'email-v1', captured_at: iso() }])
       }
+      // A bare email contact: no FSOS source records documented email consent — nothing to do.
       return
     }
   }
@@ -195,7 +201,7 @@ async function apply(e, ch, cfg, n) {
 // ── Opt-out records, for I4 ───────────────────────────────────────────────────────────────────────
 function optOutRecords(db) {
   return {
-    dnc: db.rows('dnc_entries').map((r) => ({ id: r.id, contact: r.contact, channel: r.channel, reason: r.reason, lifted_at: r.lifted_at ?? null })),
+    dnc: db.rows('dnc_entries').map((r) => ({ id: r.id, contact: r.contact, channel: r.channel, reason: r.reason, lifted_at: r.lifted_at ?? null, lifted_reason: r.lifted_reason ?? null })),
     revokes: db.rows('comm_contact_consents').filter((r) => r.action === 'revoked').map((r) => JSON.stringify(r)),
   }
 }
@@ -207,6 +213,8 @@ for (const ch of ['sms', 'email']) for (const member of [true, false]) for (cons
 let nodes = 0
 let checks = 0
 let restoredByStart = 0
+let clearedByReconsent = 0
+let startAfterReconsent = 0
 // One shortest example per distinct violation class, plus a count — readable even when a defect
 // shows up in thousands of sequences.
 const failures = new Map()
@@ -233,12 +241,13 @@ function seedConfig(db, cfg) {
 function facts(seq, cfg) {
   let latestBlocking = null
   let latestBlockingIdx = -1
-  // An operator opt-out is a member-store revoke; a later documented re-consent re-grants that store,
-  // so it no longer blocks. Every other opt-out is a DNC row, which re-consent does not lift.
-  const superseded = (i) => seq[i] === 'OPERATOR' && seq.slice(i + 1).includes('RECONSENT')
-  for (let i = 0; i < seq.length; i++) if (appliesHere(seq[i], cfg.ch, cfg) && !superseded(i)) { latestBlocking = seq[i]; latestBlockingIdx = i }
-  const grantBefore = (idx) => cfg.consent || seq.slice(0, idx).includes('RECONSENT')
-  return { latestBlocking, latestBlockingIdx, grantBefore }
+  // A documented re-consent clears every earlier opt-out on the channel (owner, round 3) — except a
+  // hard bounce, which stays in effect whenever it happened.
+  const lastRc = reconsentApplies(cfg) ? seq.lastIndexOf('RECONSENT') : -1
+  const inEffect = (i) => i > lastRc || seq[i] === 'BOUNCE'
+  for (let i = 0; i < seq.length; i++) if (appliesHere(seq[i], cfg.ch, cfg) && inEffect(i)) { latestBlocking = seq[i]; latestBlockingIdx = i }
+  const grantBefore = (idx) => cfg.consent || (reconsentApplies(cfg) && seq.slice(0, idx).includes('RECONSENT'))
+  return { latestBlocking, latestBlockingIdx, grantBefore, inEffect }
 }
 
 async function walk(db, cfg, seq, parentAllowed, parentRecords) {
@@ -263,21 +272,37 @@ async function walk(db, cfg, seq, parentAllowed, parentRecords) {
       checks++
       if (now && !parentAllowed) {
         restoredByStart++
+        // START working normally after a re-consent that cleared an earlier non-STOP opt-out.
+        const rc = seq.lastIndexOf('RECONSENT')
+        if (rc > 0 && seq.slice(0, rc).some((x) => x !== 'STOP' && appliesHere(x, cfg.ch, cfg))) startAfterReconsent++
         const f = facts(seq, cfg)
-        const consentOnRecord = f.latestBlocking === 'STOP' && (f.grantBefore(f.latestBlockingIdx) || seq.slice(f.latestBlockingIdx + 1).includes('RECONSENT'))
+        const consentOnRecord = f.latestBlocking === 'STOP' && f.grantBefore(f.latestBlockingIdx)
         if (f.latestBlocking !== 'STOP') fail(cfg, next, `I2: START allowed a send whose latest blocking event is ${f.latestBlocking}`)
         else if (!consentOnRecord) fail(cfg, next, 'I2: START allowed a send with no consent on record (START created consent)')
         for (let i = 0; i < seq.length; i++) {
           const x = seq[i]
           if (x === 'STOP' || !appliesHere(x, cfg.ch, cfg)) continue
-          if (!seq.slice(i + 1).includes('RECONSENT')) fail(cfg, next, `I3: START lifted ${x}`)
+          if (f.inEffect(i)) fail(cfg, next, `I3: START lifted ${x}`)
         }
       }
       for (const r of records.dnc) {
         const before = parentRecords.dnc.find((p) => p.id === r.id)
-        if (before && before.lifted_at !== r.lifted_at && !/^(inbound STOP|Twilio ErrorCode 21610)/.test(r.reason ?? '')) {
-          fail(cfg, next, `I3: START lifted a non-keyword DNC row (${r.reason})`)
+        const clearedEarlier = (before?.lifted_reason ?? '').includes('documented re-consent')
+        if (before && before.lifted_at !== r.lifted_at && !clearedEarlier && !/^(inbound STOP|Twilio ErrorCode 21610)/.test(r.reason ?? '')) {
+          fail(cfg, next, `I3: START lifted a non-keyword DNC row a re-consent had not cleared (${r.reason})`)
         }
+      }
+    }
+    // I5 — a documented re-consent clears the earlier opt-outs on the channel, except a hard bounce.
+    if (e === 'RECONSENT' && reconsentApplies(cfg)) {
+      checks++
+      const bounced = cfg.ch === 'email' && seq.includes('BOUNCE')
+      if (now && !parentAllowed) clearedByReconsent++
+      if (bounced && now) fail(cfg, next, 'I5: a re-consent cleared a hard bounce')
+      if (!bounced && !now) fail(cfg, next, 'I5: a documented re-consent did not clear the earlier opt-outs')
+      for (const r of records.dnc) {
+        const before = parentRecords.dnc.find((p) => p.id === r.id)
+        if (before && r.reason === 'hard_bounce' && before.lifted_at !== r.lifted_at) fail(cfg, next, 'I5: a re-consent lifted a hard-bounce row')
       }
     }
     // I4 — no event deletes or relabels an earlier opt-out record.
@@ -304,12 +329,20 @@ for (const cfg of CONFIGS) {
   seedConfig(db, cfg)
   const before = nodes
   const restoredBefore = restoredByStart
+  const clearedBefore = clearedByReconsent
+  const startRcBefore = startAfterReconsent
   const a0 = await allowed(cfg.ch)
   assert.equal(a0, cfg.consent, `harness: initial state ${cfg.consent ? 'should' : 'should not'} allow a send`)
   await walk(db, cfg, [], a0, optOutRecords(db))
   // Not vacuous: with consent on record, STOP → START must really restore sending somewhere.
   if (cfg.consent) assert.ok(restoredByStart > restoredBefore, `harness: START never restored a send for ${cfg.ch} ${cfg.member ? 'member' : 'contact'}`)
-  console.log(`  ✓ ${cfg.ch.padEnd(5)} ${cfg.member ? 'member ' : 'contact'} ${cfg.consent ? 'consent   ' : 'no consent'} — ${nodes - before} sequences, ${restoredByStart - restoredBefore} restored by START`)
+  // Not vacuous: where a re-consent source exists, it must really clear opt-outs, and START must
+  // really work again after it (owner, round 3).
+  if (reconsentApplies(cfg)) {
+    assert.ok(clearedByReconsent > clearedBefore, `harness: re-consent never cleared an opt-out (${cfg.ch} ${cfg.member ? 'member' : 'contact'})`)
+    assert.ok(startAfterReconsent > startRcBefore, `harness: START never worked after a re-consent (${cfg.ch} ${cfg.member ? 'member' : 'contact'})`)
+  }
+  console.log(`  ✓ ${cfg.ch.padEnd(5)} ${cfg.member ? 'member ' : 'contact'} ${cfg.consent ? 'consent   ' : 'no consent'} — ${nodes - before} sequences, ${restoredByStart - restoredBefore} restored by START, ${clearedByReconsent - clearedBefore} cleared by re-consent, ${startAfterReconsent - startRcBefore} START-after-re-consent`)
 }
 
 // The web opt-out key is normalized as the gate reads it (it was stored raw: a mixed-case email or a
@@ -324,6 +357,27 @@ for (const [ch, typed] of [['email', 'Pat@Example.COM'], ['sms', '(214) 555-0147
   assert.equal(res.status, 200)
   assert.equal(await allowed(ch), false, `a web opt-out typed as "${typed}" must block ${ch}`)
   console.log(`  ✓ ${ch}: "${typed}" blocks the send`)
+}
+
+// An 'all'-channel web opt-out covers both channels; an SMS re-consent clears SMS only — the email
+// opt-out stays in force (a new email row carries the same reason; the 'all' row is lifted, not deleted).
+console.log('\nRe-consent on one channel against an all-channel opt-out')
+{
+  const cfg = { ch: 'sms', member: false, consent: true }
+  const db = memDb({ now: iso })
+  installDb(db)
+  seedConfig(db, cfg)
+  clock.t += 60_000
+  const res = await publicConsent.POST(makeReq('/api/public/consent', { body: { contact: PHONE, channel: 'all', action: 'opt_out' }, headers: { 'x-forwarded-for': '10.250.0.3' } }))
+  assert.equal(res.status, 200)
+  assert.equal(await allowed('sms'), false)
+  clock.t += 60_000
+  await apply('RECONSENT', 'sms', cfg, 900002)
+  assert.equal(await allowed('sms'), true, 'SMS re-consent clears the SMS side')
+  const rows = db.rows('dnc_entries')
+  assert.ok(rows.some((r) => r.channel === 'all' && r.lifted_at), "the 'all' row is lifted, not deleted")
+  assert.ok(rows.some((r) => r.channel === 'email' && r.reason === 'public opt-out' && !r.lifted_at), 'the email opt-out stays in force with its reason')
+  console.log('  ✓ SMS cleared; the email opt-out stays (same reason, new row); nothing deleted')
 }
 
 // A lost evidence row must fail the web opt-out (review P1): that row is what keeps a later START

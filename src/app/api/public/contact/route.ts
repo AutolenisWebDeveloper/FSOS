@@ -9,6 +9,7 @@ import { SMS_CONSENT, BUSINESS } from '@/lib/site'
 import { smsConsentVersion } from '@/lib/comms/consent-version'
 import { consentContactKey } from '@/lib/comms/contact-consent'
 import { notifyFsa, sendVisitorAck } from '@/lib/notifications/transactional'
+import { applyDocumentedReconsent } from '@/lib/comms/opt-out'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -158,6 +159,8 @@ export async function POST(req: NextRequest) {
         referral_id: referral.id,
         captured_at: now.toISOString(),
       })
+      // A documented SMS opt-in clears the earlier SMS opt-outs on this number (owner, round 3).
+      await applyDocumentedReconsent({ contact: consentContactKey('sms', phone), channel: 'sms', source: 'contact_form_sms_optin' })
       // Timeline breadcrumb. The enforceable grant lives in comm_contact_consents above;
       // it materializes into a member-keyed `consents` row when the lead converts (WF-1).
       await db.from('activities').insert({

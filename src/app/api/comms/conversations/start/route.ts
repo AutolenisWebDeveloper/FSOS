@@ -121,8 +121,11 @@ export async function POST(req: NextRequest) {
         // Opt-out-safe (an explicit revoke still blocks) and the opener still clears the AI-
         // authority matrix + DNC/quiet-hours/securities/recommendation gate steps.
         consentWaived: true,
-        // A person started this conversation with this one contact (review finding 3b).
-        operatorInitiated: true,
+        // Owner decision (round 3): AI-path text reaches a non-US number only when the FSA saw the
+        // exact message and pressed send. An opener the FSA TYPED (opening_body) is exactly that; a
+        // seeded campaign asset is rendered server-side and may never have been previewed, so it is
+        // automated (US numbers only). The AI replies that follow are automated either way.
+        operatorInitiated: seededFrom === 'blank',
         purpose: d.purpose as MessagePurpose,
         sourceKind: 'agent_seed',
         sourceCampaignKey,

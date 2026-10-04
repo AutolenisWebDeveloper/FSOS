@@ -141,7 +141,6 @@ const OPERATOR_SITES = [
   'src/app/api/comms/send/route.ts',
   'src/app/api/comms/test/route.ts',
   'src/app/api/comms/test/recipients/route.ts',
-  'src/app/api/comms/conversations/start/route.ts',
   'src/app/api/comms/conversations/[id]/route.ts',
   'src/app/api/forms/send/route.ts', // passes it to sendForm (src/lib/forms.ts forwards the caller's value)
 ]
@@ -149,6 +148,11 @@ const walk = (d) => readdirSync(d).flatMap((f) => { const p = join(d, f); return
 await t('the public agency referral intake does not declare it (sendForm forwards the caller\'s value)', () => {
   assert.doesNotMatch(readFileSync('src/app/api/agencies/referral/route.ts', 'utf8'), /operatorInitiated/)
   assert.match(readFileSync('src/lib/forms.ts', 'utf8'), /operatorInitiated: input\.operatorInitiated === true/)
+})
+await t('conversation start: only an FSA-typed opener is operator-initiated, never a seeded asset', () => {
+  const src = readFileSync('src/app/api/comms/conversations/start/route.ts', 'utf8')
+  assert.match(src, /operatorInitiated: seededFrom === 'blank',/)
+  assert.match(src, /seededFrom = 'approved_template'/)
 })
 await t('only the operator surfaces set operatorInitiated: true', () => {
   const setters = walk('src').filter((f) => /\.tsx?$/.test(f) && /operatorInitiated:\s*true/.test(readFileSync(f, 'utf8')))

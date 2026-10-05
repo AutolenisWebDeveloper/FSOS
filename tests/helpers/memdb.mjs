@@ -113,7 +113,16 @@ export function memDb({ now = () => new Date().toISOString(), failOn = null, uui
         let affected = []
         if (st.method === 'select') {
           affected = rows(table).filter(match).filter(innerOk)
-          for (const [col, asc] of [...st.order].reverse()) affected = [...affected].sort((a, b) => (asc ? 1 : -1) * cmp(a[col], b[col]))
+          // Postgres ordering: NULLs sort as the largest value (NULLS LAST ascending, NULLS FIRST
+          // descending) unless the caller passes nullsFirst.
+          for (const [col, asc, nullsFirst] of [...st.order].reverse()) {
+            const nf = nullsFirst ?? !asc
+            affected = [...affected].sort((a, b) => {
+              const x = a[col], y = b[col]
+              if (x == null || y == null) return x == null && y == null ? 0 : (x == null) === nf ? -1 : 1
+              return (asc ? 1 : -1) * cmp(x, y)
+            })
+          }
           if (st.limit != null) affected = affected.slice(0, st.limit)
           if (st.head) return { data: null, error: null, count: affected.length }
           return { data: affected.map(project), error: null, count: st.count ? affected.length : null }
@@ -180,7 +189,7 @@ export function memDb({ now = () => new Date().toISOString(), failOn = null, uui
           return chain
         },
         or(expr) { st.ors.push(parseOr(expr)); return chain },
-        order(c, o) { st.order.push([c, o?.ascending !== false]); return chain },
+        order(c, o) { st.order.push([c, o?.ascending !== false, o?.nullsFirst]); return chain },
         limit(n) { st.limit = n; return chain },
         range(a, b) { st.limit = b - a + 1; return chain },
         maybeSingle: async () => {

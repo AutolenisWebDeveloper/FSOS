@@ -323,7 +323,9 @@ export async function resumePausedEnrollments(): Promise<JobResult> {
     const cached = decisionCache.get(memberId)
     if (cached) return cached
     const [{ data: conv }, { data: lastInbound }] = await Promise.all([
-      db.from('comm_conversations').select('status, last_message_at').eq('member_id', memberId).order('last_message_at', { ascending: false }).limit(1).maybeSingle(),
+      // Follow-up R12h: the latest thread that has a message. A descending order puts NULLs first in
+      // Postgres, so an empty thread used to decide the mode for a member with a real one.
+      db.from('comm_conversations').select('status, last_message_at').eq('member_id', memberId).not('last_message_at', 'is', null).order('last_message_at', { ascending: false, nullsFirst: false }).limit(1).maybeSingle(),
       db.from('comm_messages').select('created_at').eq('member_id', memberId).eq('direction', 'inbound').order('created_at', { ascending: false }).limit(1).maybeSingle(),
     ])
     const minutesSinceLastInbound = lastInbound?.created_at

@@ -128,6 +128,13 @@ export async function sendRecorded(opts: {
    * the operator (templateKind 'human'), not a code-resident template. Default: system template.
    */
   humanAuthored?: boolean
+  /**
+   * Follow-up R10: a receipt or alert that must not wait for the operator's hours of operation
+   * (the statutory floor does not apply to email; consent, DNC and the red line still run).
+   */
+  businessHoursExempt?: boolean
+  /** Follow-up R10: an internal FSA ops alert to the practice's own inbox (see notifyFsa). */
+  internalFsaAlert?: boolean
 }): Promise<SendResult> {
   try {
     const o = await sendMessage({
@@ -152,6 +159,8 @@ export async function sendRecorded(opts: {
       track: false,
       thread: false,
       listUnsubscribe: false,
+      businessHoursExempt: opts.businessHoursExempt === true,
+      internalFsaRecipient: opts.internalFsaAlert === true,
     })
     return o.sent
       ? { ok: true, id: o.messageId }
@@ -216,6 +225,10 @@ export async function notifyFsa(opts: {
     replyTo: opts.replyTo || undefined,
     entity: opts.entity,
     consentWaived: true,
+    // Follow-up R10: an alert to the licensed FSA is not held by business hours (a Sunday lead
+    // would otherwise sit unseen) and a lead's quoted question is not a recommendation to a client.
+    businessHoursExempt: true,
+    internalFsaAlert: true,
   })
   return logOutcome(`fsa-alert (${opts.subject})`, to, result)
 }
@@ -260,6 +273,8 @@ export async function sendVisitorAck(opts: {
     // The basis is the action the visitor just took, asserted by the call site. DNC/STOP,
     // the securities firewall and the red line are enforced independently of it.
     durableConsentGranted: opts.transactionalBasis === true,
+    // Follow-up R10: a receipt of what the visitor just did is not held by business hours.
+    businessHoursExempt: true,
   })
   return logOutcome(`visitor-ack (${opts.subject})`, opts.to, result)
 }

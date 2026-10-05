@@ -179,6 +179,13 @@ export interface GateInput {
    */
   approvedHumanTemplate?: boolean
   /**
+   * 5 — follow-up R10: the destination is the practice's OWN operations inbox (an internal FSA alert,
+   * verified at the chokepoint). The licensed FSA reading a lead's quoted question is not a client
+   * receiving a recommendation, so the recommendation wording check does not apply. Relaxes ONLY
+   * step 5 — the securities firewall, consent, DNC and every other step run exactly as before.
+   */
+  internalFsaRecipient?: boolean
+  /**
    * 4b — every BLOCKING-tier merge token the body references resolved (advisor/agency identity,
    * the unsubscribe/scheduling links, and booking specifics). Defaults to TRUE so existing
    * callers are unaffected. A false is a HARD block that ESCALATES: a message missing required
@@ -340,7 +347,7 @@ export function evaluateGate(input: GateInput): GateResult {
   // approved, human-authored template (B3-1): the human author + approval workflow is the accountable
   // control there, so ordinary suggestive marketing copy is allowed. AI-generated and un-templated
   // sends still get the full red-line. The securities firewall below is unaffected.
-  if (!input.approvedHumanTemplate && containsRecommendationLanguage(input.draft)) return blocked('recommendation')
+  if (!input.approvedHumanTemplate && !input.internalFsaRecipient && containsRecommendationLanguage(input.draft)) return blocked('recommendation')
   if (input.isSecurity) return blocked('is_security')
   // 6b — a specific claim on unverified/conflicting data (§13). Escalates: exclude the
   // contact + raise a verification task; never send on a guess.

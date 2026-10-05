@@ -264,6 +264,8 @@ export interface SendContext {
    * (dispatch-policy.ts). Never set by a broadcast, sequence, drip, engine or retry pass.
    */
   recipientTriggeredNotice?: boolean
+  /** Follow-up R10: an internal FSA ops alert (honoured at the chokepoint only for the practice's own inbox). */
+  internalFsaRecipient?: boolean
   /**
    * Pin the EMAIL reputation stream instead of deriving it from `purpose` (senders.ts
    * streamForPurpose). Absent → derived, exactly as before.
@@ -793,6 +795,7 @@ export async function sendMessage(ctx: SendContext): Promise<SendOutcome> {
       suppressible: ctx.suppressible,
       businessHoursExempt: ctx.businessHoursExempt,
       recipientTriggeredNotice: ctx.recipientTriggeredNotice,
+      internalFsaRecipient: ctx.internalFsaRecipient,
       isTest: ctx.isTest,
       operatorInitiated: ctx.operatorInitiated === true,
       isConversationReply: ctx.isConversationReply,

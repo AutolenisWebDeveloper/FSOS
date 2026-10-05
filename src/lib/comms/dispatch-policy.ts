@@ -37,6 +37,17 @@ import { evaluateQuietHours, combineQuietHoursDecisions, type HoursWindow, type 
 import { resolveRecipientTimeZone, recipientCountry, CONTINENTAL_US_ZONES, localPartsInZone, type TimezoneResolution } from './recipient-timezone'
 import { DEFAULT_TIMEZONE } from './local-time'
 import { isBusinessSuppressible } from './suppression'
+import { CONTACT } from '../site'
+
+/**
+ * The practice's own operations inboxes — the only destinations an internal FSA alert may claim
+ * (follow-up R10). Mirrors notifications/transactional.ts fsaNotificationInbox's sources.
+ */
+export function internalFsaInboxes(): string[] {
+  return [process.env.FSOS_NOTIFY_EMAIL, process.env.RESEND_REPLY_TO, CONTACT.email]
+    .filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+    .map((v) => v.trim().toLowerCase())
+}
 
 export type Channel = 'sms' | 'email'
 
@@ -117,6 +128,12 @@ export interface DispatchPolicyContext {
    * send then records a redaction marker in the escalation queue, never the body itself.
    */
   containsCredential?: boolean
+  /**
+   * Follow-up R10: the caller declares an internal FSA ops alert. Honoured only when `to` is one of
+   * the practice's own inboxes (internalFsaInboxes) — then the recommendation wording check (gate
+   * step 5) does not apply. Nothing else is relaxed.
+   */
+  internalFsaRecipient?: boolean
   isTest?: boolean
   /**
    * A person started this send from an operator surface (console 1:1 send, conversation reply,
@@ -785,6 +802,7 @@ export async function resolveDispatchPolicy(
     suppressionReason,
     usesApprovedTemplateOrPolicy: approved,
     approvedHumanTemplate: approved === true && !!ctx.templateId && ctx.templateKind !== 'ai_policy',
+    internalFsaRecipient: ctx.internalFsaRecipient === true && ctx.channel === 'email' && internalFsaInboxes().includes(ctx.to.trim().toLowerCase()),
     personalizationResolved: ctx.personalizationResolved,
     personalizationReason: ctx.personalizationReason,
     // Firewall: the caller's flag OR the server-resolved conversation/household flag. It

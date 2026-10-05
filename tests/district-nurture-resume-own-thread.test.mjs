@@ -13,7 +13,7 @@ const tick = await bundle('src/lib/district-nurture/tick.ts')
 const AGENT_EMAIL = 'owner@agency.example'
 const AGENT_PHONE = '(214) 555-0101'
 
-function setup({ threads = [], failConversations = false } = {}) {
+function setup({ threads = [], failConversations = false, current = { email: AGENT_EMAIL, phone: AGENT_PHONE } } = {}) {
   const db = memDb({
     failOn: (st) =>
       (st.table === 'district_nurture_touches' && st.method === 'select') ||
@@ -26,6 +26,8 @@ function setup({ threads = [], failConversations = false } = {}) {
     contact_id: 'c1', email: AGENT_EMAIL, phone: AGENT_PHONE, baseline_date: '2026-09-01', current_touch_no: 1,
   }])
   db.seed('comm_conversations', threads)
+  // The agent's CURRENT contact details (the view the pause reads).
+  if (current) db.seed('v_district_nurture_candidates', [{ agency_owner_id: 'ao1', agency_id: 'ag1', contact_id: 'c1', email: current.email, phone: current.phone, reachable: true, agency_status: 'active' }])
   return db
 }
 const statusOf = (db) => db.rows('district_nurture_enrollments').find((r) => r.id === 'enr-1').status
@@ -55,6 +57,20 @@ await t('an unrelated client thread under the agency does not keep the agent pau
 })
 await t('a conversation read error → stays paused (fail closed)', async () => {
   const db = setup({ failConversations: true })
+  await tick.districtNurtureTick()
+  assert.equal(statusOf(db), 'paused_for_conversation')
+})
+
+await t('an open thread at the agent\'s CURRENT address keeps them paused (CodeRabbit review of R12g)', async () => {
+  const db = setup({
+    current: { email: 'new@agency.example', phone: AGENT_PHONE },
+    threads: [{ id: 't1', channel: 'email', contact: 'new@agency.example', status: 'open', last_direction: 'inbound' }],
+  })
+  await tick.districtNurtureTick()
+  assert.equal(statusOf(db), 'paused_for_conversation')
+})
+await t('an agent the candidate view no longer returns stays paused (cannot check their thread)', async () => {
+  const db = setup({ current: null })
   await tick.districtNurtureTick()
   assert.equal(statusOf(db), 'paused_for_conversation')
 })

@@ -20,7 +20,7 @@ import { parseSubjectFromBody } from '@/lib/comms/template-subject'
 import { canDispatch } from './engine'
 import { evaluateNurtureEligibility, classifyRecheckOutcome } from './eligibility'
 import { computeTouchPlan, TOUCH_SCHEDULE, type TouchKind } from './schedule'
-import { hasOpenConversation, loadCampaign, loadNurtureEligibilityInput, type NurtureCampaignConfig } from './data'
+import { hasOpenConversation, loadCampaign, loadNurtureEligibilityInput, loadNurtureSnapshot, type NurtureCampaignConfig } from './data'
 import { enrollAgent } from './enroll'
 import { resumeAfterWorkflow } from './inbound'
 
@@ -191,7 +191,8 @@ export async function districtNurtureTick(): Promise<NurtureTickResult> {
  * Follow-up R12g: keyed on the same thread the pause is — the agent's own address
  * (hasOpenConversation) — not "the agency has no open thread". An unrelated client thread under the
  * agency no longer holds the agent, their own open reply thread no longer resumes them, and a read
- * error holds (hasOpenConversation fails closed).
+ * error holds (hasOpenConversation fails closed). Both the enrollment's address and the agent's
+ * current one (loadNurtureSnapshot, what the pause reads) must be free of an open thread.
  */
 async function resumeSweep(db: ReturnType<typeof getDb>, campaignId: string): Promise<number> {
   const { data: paused } = await db
@@ -206,6 +207,11 @@ async function resumeSweep(db: ReturnType<typeof getDb>, campaignId: string): Pr
     const row = e as { agency_owner_id: string | null; email: string | null; phone: string | null }
     if (!row.agency_owner_id) continue
     if (await hasOpenConversation(row.email, row.phone)) continue // their thread is still open — stay paused
+    // The pause reads the agent's CURRENT details (loadNurtureSnapshot); check those too. No snapshot
+    // (not a current candidate, or unreadable) → their thread cannot be checked → stay paused.
+    const current = await loadNurtureSnapshot(row.agency_owner_id)
+    if (!current) continue
+    if (await hasOpenConversation(current.email ?? null, current.phone ?? null)) continue
     const r = await resumeAfterWorkflow({ campaignId, agencyOwnerId: row.agency_owner_id, actor: SYSTEM })
     resumed += r.resumed
   }

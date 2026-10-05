@@ -550,18 +550,33 @@ export async function runOutreachAgent(agentKey: OutreachAgentKey): Promise<{ se
         }
 
         // Draft a green-zone message via the gateway (Claude-first, fallbacks).
-        const knowledge = renderKnowledgeContext(
-          await searchKnowledge(item.reason ?? item.source, { limit: 3, clientSafeOnly: true }),
-        )
-        const userContent = buildDraftUserContent(
-          { source: item.source as OutreachCandidate['source'], channel: item.channel, reason: item.reason ?? item.source, recipientName: rec.name },
-          knowledge,
-        )
-        const res = await ctx.gateway({
-          system: OUTREACH_PROMPTS[agentKey],
-          maxTokens: 400,
-          messages: [{ role: 'user', content: userContent }],
-        })
+        // Review of R12c: a 'drafted' row counts as touched (it may have been sent). A failure here
+        // is BEFORE any send, so release the row as held instead of stranding it 'drafted' forever:
+        // the hold expires (expireStaleHolds) and the next build re-queues the referral. The error
+        // is rethrown so the agent run is still recorded errored (R17b).
+        let res: { text: string }
+        try {
+          const knowledge = renderKnowledgeContext(
+            await searchKnowledge(item.reason ?? item.source, { limit: 3, clientSafeOnly: true }),
+          )
+          const userContent = buildDraftUserContent(
+            { source: item.source as OutreachCandidate['source'], channel: item.channel, reason: item.reason ?? item.source, recipientName: rec.name },
+            knowledge,
+          )
+          res = await ctx.gateway({
+            system: OUTREACH_PROMPTS[agentKey],
+            maxTokens: 400,
+            messages: [{ role: 'user', content: userContent }],
+          })
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          await db
+            .from('outreach_queue')
+            .update({ status: 'held', block_reason: `draft_failed: ${msg}`.slice(0, 200), updated_at: new Date().toISOString() })
+            .eq('id', item.id)
+            .eq('status', 'drafted')
+          throw err
+        }
         let draft = res.text.trim()
 
         // Belt-and-suspenders: reject recommendation language BEFORE the send (the

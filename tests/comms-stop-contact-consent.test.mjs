@@ -60,6 +60,8 @@ function makeState() {
     members: [],
     contacts: [],
     upcoming: [],
+    // dnc_entries rows as the real table would hold them (upsert keyed on contact+channel).
+    dnc: [],
   }
 }
 let state = makeState()
@@ -77,7 +79,12 @@ function makeDb() {
       },
       in: () => b,
       gt: () => b,
-      ilike: () => b,
+      lt: () => b,
+      gte: () => b,
+      ilike: (col, val) => {
+        filters[`${col}~`] = val
+        return b
+      },
       is: () => b,
       order: () => b,
       limit: () => b,
@@ -102,6 +109,11 @@ function makeDb() {
         op = 'upsert'
         payload = row
         state.writes.push({ table, op: 'upsert', row })
+        if (table === 'dnc_entries') {
+          const i = state.dnc.findIndex((r) => r.contact === row.contact && r.channel === row.channel)
+          if (i >= 0) state.dnc[i] = { ...state.dnc[i], ...row }
+          else state.dnc.push({ id: `dnc-${state.dnc.length + 1}`, created_at: new Date().toISOString(), ...row })
+        }
         return b
       },
       delete: () => {
@@ -123,6 +135,31 @@ function makeDb() {
         return { data: null, error: null }
       },
       then: (resolve) => {
+        if (table === 'dnc_entries' && op === 'update') {
+          for (const r of state.dnc) if (!filters.id || r.id === filters.id) Object.assign(r, payload)
+          return resolve({ data: null, error: null })
+        }
+        if (table === 'dnc_entries' && op === 'select') {
+          return resolve({
+            data: state.dnc.filter((r) => (!filters.contact || r.contact === filters.contact) && (!filters.channel || r.channel === filters.channel)),
+            error: null,
+          })
+        }
+        // The append-only consent history a START consults: was there a documented grant before
+        // the opt-out? (owner decision 4 — restore, never create)
+        // A START also reads the REVOKE evidence for the address (a non-keyword opt-out blocks the lift):
+        // those are the revoke rows actually written so far.
+        if (table === 'comm_contact_consents' && op === 'select' && filters.action === 'revoked') {
+          const marker = (filters['consent_text~'] ?? '').replace(/%/g, '')
+          return resolve({
+            data: state.writes
+              .filter((w) => w.table === 'comm_contact_consents' && w.op === 'insert' && w.row.action === 'revoked')
+              .map((w) => w.row)
+              .filter((r) => !marker || (r.consent_text ?? '').includes(marker)),
+            error: null,
+          })
+        }
+        if (table === 'comm_contact_consents' && op === 'select') return resolve({ data: state.priorGrants ?? [], error: null })
         if (table === 'household_members') return resolve({ data: state.members, error: null })
         if (table === 'contacts') return resolve({ data: state.contacts, error: null })
         if (table === 'appointments') return resolve({ data: state.upcoming, error: null })
@@ -217,11 +254,13 @@ await t('it is keyed the way the capture side and the gate both key it', async (
 await t('the revoke carries evidence text and a version, as the column requires', async () => {
   const row = consentWrites()[0].row
   assert.ok(row.consent_text && row.consent_text.length > 0)
-  assert.equal(row.consent_version, 'opt-out')
+  // The keyword stamp is what a later bare START recognises as liftable evidence.
+  assert.equal(row.consent_version, 'opt-out-keyword')
 })
 
-console.log('\nSTART / UNSTOP')
+console.log('\nSTART / UNSTOP — a documented grant (e.g. the booking-form SMS opt-in) predates the STOP')
 state = makeState()
+state.priorGrants = [{ id: 'grant-before-stop' }]
 await processInbound({ channel: 'sms', from: PHONE, body: 'STOP' })
 const beforeStart = consentWrites().length
 const startResult = await processInbound({ channel: 'sms', from: PHONE, body: 'START' })
@@ -230,8 +269,13 @@ await t('the inbound START is classified and applied', async () => {
   assert.equal(startResult.intent, 'start')
   assert.equal(startResult.optedIn, true)
 })
-await t('the DNC row is cleared', async () => {
-  assert.equal(dncWrites('delete').length, 1)
+await t('the keyword DNC row is LIFTED, never deleted (owner decision 4)', async () => {
+  assert.equal(dncWrites('delete').length, 0, 'no DNC row is ever deleted')
+  // The STOP's own update only re-arms created_at; the START's update is the one that lifts.
+  const lifts = dncWrites('update').filter((w) => w.row.lifted_at)
+  assert.equal(lifts.length, 1)
+  assert.ok(lifts[0].row.lifted_at, 'lifted_at is stamped')
+  assert.match(lifts[0].row.lifted_reason, /inbound START/)
 })
 await t('a contact-level GRANTED row is appended — without it a non-member stays blocked', async () => {
   const rows = consentWrites()
@@ -246,6 +290,56 @@ await t('the two writes are ordered revoked → granted, so latest-wins restores
     consentWrites().map((w) => w.row.action),
     ['revoked', 'granted'],
   )
+})
+
+console.log('\nSTART with NO documented prior grant lifts the opt-out but creates no consent (owner decision 4)')
+state = makeState()
+await processInbound({ channel: 'sms', from: PHONE, body: 'STOP' })
+const revokesOnly = consentWrites().length
+const startNoPrior = await processInbound({ channel: 'sms', from: PHONE, body: 'START' })
+await t('the keyword opt-out is lifted…', async () => {
+  assert.equal(startNoPrior.optedIn, true)
+  assert.equal(dncWrites('update').filter((w) => w.row.lifted_at).length, 1)
+})
+await t('…but no granted row and no member consent are written', async () => {
+  assert.equal(consentWrites().length, revokesOnly, 'START created consent where none was documented')
+  assert.equal(state.writes.filter((w) => w.table === 'consents' && w.row?.status === 'granted').length, 0)
+})
+
+console.log('\nSTART never creates consent (owner decision 4)')
+state = makeState()
+const bareStart = await processInbound({ channel: 'sms', from: PHONE, body: 'START' })
+await t('a START with no keyword opt-out on file restores nothing', async () => {
+  assert.equal(bareStart.intent, 'start')
+  assert.equal(bareStart.optedIn, false)
+  assert.equal(consentWrites().length, 0, 'no consent row is created')
+  assert.equal(state.writes.filter((w) => w.table === 'consents').length, 0)
+  assert.equal(dncWrites('update').length + dncWrites('delete').length, 0)
+})
+state = makeState()
+state.dnc.push({ id: 'dnc-op', contact: PHONE, channel: 'sms', scope: 'internal', reason: 'operator suppression', created_at: '2026-01-01T00:00:00.000Z' })
+const startOverOperator = await processInbound({ channel: 'sms', from: PHONE, body: 'START' })
+await t('a START never lifts a non-keyword suppression (operator / bounce / unsubscribe)', async () => {
+  assert.equal(startOverOperator.optedIn, false)
+  assert.equal(state.dnc[0].lifted_at, undefined)
+  assert.equal(consentWrites().length, 0)
+})
+state = makeState()
+const yesReply = await processInbound({ channel: 'sms', from: PHONE, body: 'Yes, Tuesday works' })
+await t('"Yes, Tuesday works" is a reply, not an opt-in', async () => {
+  assert.equal(yesReply.intent, 'message')
+  assert.equal(yesReply.optedIn, false)
+  assert.equal(consentWrites().length, 0)
+})
+state = makeState()
+await processInbound({ channel: 'sms', from: PHONE, body: 'STOP' })
+await processInbound({ channel: 'sms', from: PHONE, body: 'START' })
+await processInbound({ channel: 'sms', from: PHONE, body: 'STOP' })
+await t('a STOP after a START re-arms the same row (created_at refreshed past lifted_at)', async () => {
+  assert.equal(dncWrites('delete').length, 0)
+  const row = state.dnc[0]
+  assert.ok(row.lifted_at)
+  assert.ok(Date.parse(row.created_at) >= Date.parse(row.lifted_at), 'the re-STOP re-arms the opt-out')
 })
 
 console.log('\nCarrier-reported opt-out (Twilio ErrorCode 21610)')

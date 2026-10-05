@@ -75,20 +75,30 @@ export async function runIdempotent<T>(
     .from('job_runs')
     .insert({ dedupe_key: dedupeKey, job, status: 'running' })
 
-  // Unique-violation → a row already exists. Distinguish a dead (expired-lease)
-  // `running` claim we can take over from a live concurrent run / completed row.
+  // Unique-violation → a row already exists. Take it over when it is an ERRORED run (a failure
+  // is retryable, never a false idempotent skip) or a dead (expired-lease) `running` claim;
+  // skip a live concurrent run or a completed row.
   if (claimError) {
-    const staleBefore = new Date(Date.now() - (opts.leaseMs ?? JOB_LEASE_MS)).toISOString()
-    const { data: reclaimed } = await db
+    const restart = { status: 'running', started_at: new Date().toISOString(), error: null, finished_at: null }
+    const { data: retried } = await db
       .from('job_runs')
-      .update({ status: 'running', started_at: new Date().toISOString(), error: null, finished_at: null })
+      .update(restart)
       .eq('dedupe_key', dedupeKey)
-      .eq('status', 'running')
-      .lt('started_at', staleBefore)
+      .eq('status', 'errored')
       .select('id')
-    // Nothing reclaimed → the row is completed, or a fresh (live) running claim → skip.
-    if (!reclaimed || reclaimed.length === 0) return { skipped: true }
-    // else: we took over an expired lease → fall through and actually run the work.
+    if (!retried || retried.length === 0) {
+      const staleBefore = new Date(Date.now() - (opts.leaseMs ?? JOB_LEASE_MS)).toISOString()
+      const { data: reclaimed } = await db
+        .from('job_runs')
+        .update(restart)
+        .eq('dedupe_key', dedupeKey)
+        .eq('status', 'running')
+        .lt('started_at', staleBefore)
+        .select('id')
+      // Nothing reclaimed → the row is completed, or a fresh (live) running claim → skip.
+      if (!reclaimed || reclaimed.length === 0) return { skipped: true }
+    }
+    // else: we took over an errored run or an expired lease → fall through and run the work.
   }
 
   try {
@@ -99,10 +109,17 @@ export async function runIdempotent<T>(
       .eq('dedupe_key', dedupeKey)
     return { skipped: false, result }
   } catch (err) {
-    // Release the claim so a retry can re-run — never leave an errored row that would
-    // make the next attempt a false idempotent skip. The error is rethrown for the
-    // caller to log/handle (job_runs is a dedupe ledger, not the primary error audit).
-    await db.from('job_runs').delete().eq('dedupe_key', dedupeKey).eq('status', 'running')
+    // RECORD the failure (audit J-07 / H-15): the row used to be deleted, so a failed run left no
+    // trace and the health panels and /super/jobs could only ever show successes. It is marked
+    // 'errored' with the message instead; the next attempt for the same key takes the errored row
+    // over (above), so a failure is still retried and never becomes a false idempotent skip.
+    // The error is rethrown for the caller to log/handle.
+    const message = err instanceof Error ? err.message : String(err)
+    await db
+      .from('job_runs')
+      .update({ status: 'errored', error: message.slice(0, 500), finished_at: new Date().toISOString() })
+      .eq('dedupe_key', dedupeKey)
+      .eq('status', 'running')
     throw err
   }
 }

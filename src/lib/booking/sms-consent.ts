@@ -153,6 +153,9 @@ export async function captureBookingSmsConsent(
     ;({ error: grantError } = await db.from('comm_contact_consents').insert(evidence))
   }
   result.recorded = !grantError
+  // Deliberately does NOT clear an earlier STOP on this number: the public scheduler does not tie the
+  // booker to the handset, and this disclosure covers customer-care messages only (review F1/F6).
+  // The person re-opens SMS by texting START, as before.
   if (grantError) {
     // Nothing above throws, so without this the only trace of a lost consent record would be the
     // absent SMS. The audit row below records granted:false for the same reason.

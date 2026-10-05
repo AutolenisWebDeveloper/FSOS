@@ -76,6 +76,8 @@ export async function POST(req: NextRequest) {
 
   try {
     const r = await processInbound({ channel: 'email', from, body, subject, provider: 'resend', providerId })
+    // A STOP that could not be written is never acknowledged — 5xx so Resend redelivers (B-13/B-14).
+    if (r.optOutFailed) return NextResponse.json({ error: 'opt-out write failed' }, { status: 503 })
     return NextResponse.json({ received: true, conversation_id: r.conversationId })
   } catch (err) {
     console.error('[email:inbound] handler error:', err)

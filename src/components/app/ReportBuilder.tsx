@@ -146,7 +146,7 @@ export function ScheduledReportForm() {
           </Select>
         </Field>
       </div>
-      <Field id="recipients" label="Recipients" hint="Comma-separated email addresses. They receive the exported file each run." error={errors.recipients}>
+      <Field id="recipients" label="Recipients" hint="Comma-separated email addresses, saved with the schedule. Automatic delivery is not running yet." error={errors.recipients}>
         <Input name="recipients" placeholder="you@example.com, ops@example.com" />
       </Field>
       <div className="flex justify-end">

@@ -106,6 +106,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
         // A licensed operator personally typed this 1:1 reply (satisfies gate step 4;
         // recommendation/securities/consent/quiet-hours/DNC still enforced).
         humanAuthored: !v.data.template_id,
+        // A person sent this reply (review finding 3b: may reach a non-US number).
+        operatorInitiated: true,
       }),
     )
     if (outcome.skipped) return NextResponse.json({ ok: true, idempotent: true })

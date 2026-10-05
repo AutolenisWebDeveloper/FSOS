@@ -16,6 +16,8 @@ import {
   getOrCreateConversation,
   touchConversation,
   normalizeContact,
+  resolveContact,
+  resolveAllMemberIds,
   type Channel,
   type Conversation,
 } from './conversations'
@@ -27,7 +29,9 @@ import { classifyReply } from './reply-classification'
 import { checkTurnLimit, type TurnLimitDecision } from './turn-limit'
 import { shouldPauseOnReply } from './conversation-mode'
 import { recordConsentChange } from './consent-events'
-import { recordChannelOptOut } from './opt-out'
+import { recordChannelOptOut, RECONSENT_LIFT_MARK, RECONSENT_VERSION } from './opt-out'
+import { terminateActiveEnrollments } from './stop-fanout'
+import { isDncLifted, isKeywordOptOutReason, isKeywordRevokeEvidence, KEYWORD_OPT_OUT_SOURCES, PRIOR_MEMBER_GRANT_MARKER } from './contact-consent'
 import { BUSINESS, CONTACT } from '@/lib/site'
 
 /** The HELP keyword auto-response (WS-033): identity, contact, opt-out — nothing else. */
@@ -69,6 +73,12 @@ export interface InboundResult {
    *  inbound message — delivered regardless of opt-out state, and not an outbound API
    *  send). Recorded in the conversation history here. */
   helpResponse?: string
+  /**
+   * A STOP whose enforced opt-out write FAILED (audit B-13/B-14). The webhook answers 5xx so the
+   * delivery is retried; the opt-out runs before the idempotency short-circuit, so a retry
+   * re-applies it rather than being skipped as a duplicate.
+   */
+  optOutFailed?: boolean
 }
 
 /**
@@ -80,16 +90,31 @@ export interface InboundResult {
  * only consent record lives in comm_contact_consents, which this keeps in step with the DNC row
  * — previously the enforced suppression was written and the evidence store still read `granted`.
  */
-async function applyOptOut(conv: Conversation, contact: string): Promise<void> {
-  await recordChannelOptOut({
+async function applyOptOut(channel: Channel, contact: string, providerId: string | null | undefined): Promise<boolean> {
+  // Keyed on the sender ADDRESS alone (no conversation needed), so it runs before threading.
+  // The 'inbound STOP' reason prefix is what lets a later bare START lift it (owner decision 4).
+  const link = await resolveContact(channel, contact)
+  const { ok } = await recordChannelOptOut({
     contact,
-    channel: conv.channel,
+    channel,
     source: 'inbound_stop',
-    reason: `inbound STOP (conversation ${conv.id})`,
+    reason: `inbound STOP (${providerId ? `message ${providerId}` : 'no provider id'})`,
     consentText: 'Inbound STOP keyword',
-    memberId: conv.member_id,
-    householdId: conv.household_id,
+    memberId: link.memberId,
+    householdId: link.householdId,
   })
+  return ok
+}
+
+/**
+ * The members whose automation a reply/stop from this address governs: the thread's own member
+ * plus every other household member sharing the address (audit B-04). Thread member first.
+ */
+async function membersAtAddress(conv: Conversation, contact: string): Promise<string[]> {
+  const ids = new Set<string>()
+  if (conv.member_id) ids.add(conv.member_id)
+  for (const id of await resolveAllMemberIds(conv.channel as Channel, contact)) ids.add(id)
+  return [...ids]
 }
 
 /**
@@ -135,66 +160,6 @@ async function pauseActiveEnrollments(memberId: string, reason: string): Promise
   return paused
 }
 
-/**
- * TERMINATE the member's live enrollments across every campaign table — an ABSORBING state, not
- * a pause. Used by BOTH the carrier STOP path (§12, TCPA) and the natural-language stop-automation
- * path (FSOS-020).
- *
- * Pausing would be wrong in a way that matters: `resumePausedEnrollments` returns a
- * `paused_for_conversation` row to `enrolled`/live once the customer has been quiet for
- * `resume_quiet_days`, so a stop would silently re-enter the sending population. The terminal
- * states here (`opted_out` for the native drips; `exited`/`suppressed` for the three campaign
- * timelines) are NEVER selected by the resume job (it only selects `paused_for_conversation`) nor
- * by the tick engines (they only select the live status), and the `unique (campaign_id, member_id)`
- * constraint blocks re-enrollment of the same pair — so no cron, tick, retry, or eligibility pass
- * can silently resurrect it.
- *
- * `exitReason` distinguishes the cause on the campaign-timeline rows (and the native-drip
- * `suppressed_reason` carries `reason`) so a global carrier opt-out is auditable distinctly from a
- * campaign-only reply-stop. Returns how many enrollments were closed.
- */
-async function terminateActiveEnrollments(memberId: string, reason: string, exitReason: string): Promise<number> {
-  const db = getDb()
-  const nowISO = new Date().toISOString()
-  let closed = 0
-  // Native drips: `opted_out` is terminal, and the resume job only ever selects
-  // `paused_for_conversation`, so this can never be reinstated by automation.
-  try {
-    const { data } = await db
-      .from('comm_campaign_enrollments')
-      .update({ status: 'opted_out', suppressed_reason: reason, updated_at: nowISO })
-      .in('status', ['enrolled', 'paused_for_conversation'])
-      .eq('member_id', memberId)
-      .select('id')
-    closed += Array.isArray(data) ? data.length : 0
-  } catch {
-    /* best-effort — consent + DNC already block the sends */
-  }
-  // Campaign timelines. Life Conversion and Pipeline Win-Back use `exited`; Cross-Sell Life's
-  // §15 machine has no `exited` state and uses `suppressed` for an excluded contact.
-  for (const [table, terminal, live] of [
-    ['life_campaign_enrollments', 'exited', ['active', 'paused_for_conversation', 'paused_by_admin']],
-    ['pipeline_winback_enrollments', 'exited', ['active', 'paused_for_conversation', 'paused_by_admin']],
-    [
-      'xsell_life_campaign_enrollments',
-      'suppressed',
-      ['queued', 'scheduled', 'enrolled', 'running', 'paused_for_conversation', 'paused_by_admin', 'conversation_active'],
-    ],
-  ] as const) {
-    try {
-      const { data } = await db
-        .from(table)
-        .update({ status: terminal, exit_reason: exitReason, completed_at: nowISO, updated_at: nowISO })
-        .in('status', live as unknown as string[])
-        .eq('member_id', memberId)
-        .select('id')
-      closed += Array.isArray(data) ? data.length : 0
-    } catch {
-      /* best-effort — table/column absent tolerated */
-    }
-  }
-  return closed
-}
 
 /**
  * CAMPAIGN-TERMINATION suppression (FSOS-020): block the contact from all automated
@@ -207,17 +172,21 @@ async function terminateActiveEnrollments(memberId: string, reason: string, exit
  * failure is logged (never a silent catch); the enrollment termination + FSA escalation still
  * stand. Returns whether the suppression was applied.
  */
-async function applyClientSuppression(conv: Conversation, contact: string, reason: string): Promise<boolean> {
+async function applyClientSuppression(conv: Conversation, contact: string, reason: string, memberIds: string[] = []): Promise<boolean> {
   try {
     const db = getDb()
     // comm_client_suppressions is keyed on contacts.id — resolve it the same way the send-time
-    // reader does (member → source_contact_id, else tolerant address match).
-    let contactId: string | null = null
-    if (conv.member_id) {
-      const { data } = await db.from('household_members').select('source_contact_id').eq('id', conv.member_id).maybeSingle()
-      contactId = (data?.source_contact_id as string | null) ?? null
+    // reader does (member → source_contact_id, else tolerant address match). EVERY member sharing
+    // the address is covered (B-04), not only the thread's own member.
+    const contactIds = new Set<string>()
+    const members = memberIds.length > 0 ? memberIds : conv.member_id ? [conv.member_id] : []
+    for (const memberId of members) {
+      const { data } = await db.from('household_members').select('source_contact_id').eq('id', memberId).maybeSingle()
+      const id = (data?.source_contact_id as string | null) ?? null
+      if (id) contactIds.add(id)
     }
-    if (!contactId) {
+    let contactId: string | null = null
+    if (contactIds.size === 0) {
       if (conv.channel === 'sms') {
         const tail = contact.replace(/[^\d]/g, '').slice(-10)
         if (tail.length >= 10) {
@@ -229,13 +198,14 @@ async function applyClientSuppression(conv: Conversation, contact: string, reaso
         contactId = Array.isArray(data) && data.length > 0 ? (data[0].id as string) : null
       }
     }
-    if (!contactId) {
+    if (contactId) contactIds.add(contactId)
+    if (contactIds.size === 0) {
       // No Contact Center identity to key the individual suppression on. The enrollment
       // termination above still stands; surface the gap rather than swallow it.
       console.warn('[inbound] reply-stop: no contact id resolved — business suppression skipped', { conversation: conv.id })
       return false
     }
-    const res = await applySuppression({ scope: 'client', status: 'blocked', actor: 'system', reason, contactIds: [contactId] })
+    const res = await applySuppression({ scope: 'client', status: 'blocked', actor: 'system', reason, contactIds: [...contactIds] })
     if (!res.ok) {
       console.error('[inbound] reply-stop: business suppression failed', { conversation: conv.id, error: res.error })
       return false
@@ -247,33 +217,120 @@ async function applyClientSuppression(conv: Conversation, contact: string, reaso
   }
 }
 
-/** Clear internal DNC + re-grant consent (START handling). */
-async function applyOptIn(conv: Conversation, contact: string): Promise<void> {
+/** consent_version of the grant a START appends when it restores — not a documented re-consent. */
+const START_RESTORE_VERSION = 'opt-in'
+
+/** True when a DNC row was written by a STOP keyword (inbound, or reported by the carrier as 21610). */
+function isKeywordOptOut(row: { reason?: string | null }): boolean {
+  return isKeywordOptOutReason(row.reason)
+}
+
+/**
+ * START handling (owner decision 4). A bare opt-in keyword RESTORES a keyword opt-out and does
+ * nothing else:
+ *   • it never CREATES consent — consent is restored only when a documented grant for this address
+ *     PREDATES the opt-out (the append-only comm_contact_consents history); otherwise the DNC row is
+ *     lifted and nothing is granted, so a message still needs a consent captured some other way;
+ *   • it never lifts a bounce / complaint / unsubscribe / operator suppression;
+ *   • it never DELETES a DNC or consent row — the DNC row is marked lifted (`lifted_at`) and the
+ *     re-opt-in is appended as a new event. A later STOP re-arms the same row (opt-out.ts).
+ * Returns true only when an opt-out was actually restored.
+ */
+async function applyOptIn(conv: Conversation, contact: string): Promise<boolean> {
   const db = getDb()
   try {
-    await db.from('dnc_entries').delete().eq('contact', contact).eq('channel', conv.channel).eq('scope', 'internal')
+    const { data: rows, error } = await db
+      .from('dnc_entries')
+      .select('*')
+      .eq('contact', contact)
+      .eq('channel', conv.channel)
+      .limit(1)
+    if (error) return false
+    const row = (rows ?? [])[0] as { id: string; reason?: string | null; created_at?: string | null; lifted_at?: string | null; lifted_reason?: string | null } | undefined
+    if (!row || isDncLifted(row)) return false
+    // The row's first reason must be a STOP keyword — or the row was CLEARED by a documented
+    // re-consent (owner, round 3), after which START works normally for a later STOP. Every later
+    // opt-out is then judged from the evidence below, not from the row's (never relabelled) reason.
+    const clearedByReconsent = (row.lifted_reason ?? '').includes(RECONSENT_LIFT_MARK)
+    if (!isKeywordOptOut(row) && !clearedByReconsent) return false
+    // Evidence: every opt-out writer leaves contact-level revoke evidence. Only evidence AFTER the
+    // latest documented RE-CONSENT is current — that grant (consent_version RECONSENT_VERSION, written
+    // only by applyDocumentedReconsent, i.e. the signed-in client's own portal grant) cleared what came
+    // before it — except a hard bounce, which no consent clears. A public form or booking opt-in, or a
+    // START's own restore grant, clears nothing and does not move the window (review F1). Any current
+    // non-keyword evidence → no lift. Unreadable history → no lift (fail closed).
+    const tail = conv.channel === 'sms' ? contact.replace(/[^\d]/g, '').slice(-10) : ''
+    const historyQ = db.from('comm_contact_consents').select('action, consent_text, consent_version, captured_at').eq('channel', conv.channel)
+    const { data: history, error: historyErr } = await (conv.channel === 'sms' && tail.length === 10
+      ? historyQ.ilike('contact', `%${tail}`)
+      : historyQ.eq('contact', contact)
+    ).limit(1000)
+    if (historyErr || !Array.isArray(history)) return false
+    type Ev = { action?: string; consent_text?: string | null; consent_version?: string | null; captured_at?: string | null }
+    const evs = history as Ev[]
+    const lastGrantMs = Math.max(-Infinity, ...evs.filter((e) => e.action === 'granted' && e.consent_version === RECONSENT_VERSION).map((e) => Date.parse(e.captured_at ?? '') || -Infinity))
+    const current = evs.filter((e) => e.action === 'revoked' && ((Date.parse(e.captured_at ?? '') || Infinity) > lastGrantMs || e.consent_text === 'hard_bounce'))
+    if (current.some((e) => !isKeywordRevokeEvidence(e))) return false
+    if (!isKeywordOptOut(row) && current.length === 0) return false // nothing a STOP did since the re-consent
+    const now = new Date().toISOString()
+    // Compare-and-set on created_at: an opt-out that re-armed the row since it was read wins, and
+    // this START lifts nothing (the person can send START again).
+    let liftQ = db
+      .from('dnc_entries')
+      .update({ lifted_at: now, lifted_reason: `${clearedByReconsent ? `${RECONSENT_LIFT_MARK} earlier; ` : ''}inbound START (conversation ${conv.id})` })
+      .eq('id', row.id)
+    liftQ = row.created_at ? liftQ.eq('created_at', row.created_at) : liftQ.is('created_at', null)
+    const { data: liftedRows, error: liftError } = await liftQ.select('id')
+    if (!liftError && Array.isArray(liftedRows) && liftedRows.length === 0) return false
+    if (liftError) return false
+    // RESTORE, never create (owner decision 4): consent comes back only from documented evidence
+    // that it existed before this opt-out — a contact-level grant captured before the opt-out was
+    // armed, or the member grant the opt-out writer recorded on its revoke row (opt-out.ts). An
+    // unreadable history restores nothing (fail closed).
+    const armedAt = row.created_at ?? now
+    const [{ data: priorGrants, error: priorErr }, { data: priorMember, error: memberErr }] = await Promise.all([
+      db.from('comm_contact_consents').select('id').eq('contact', contact).eq('channel', conv.channel)
+        .eq('action', 'granted').lt('captured_at', armedAt).limit(1),
+      db.from('comm_contact_consents').select('id').eq('contact', contact).eq('channel', conv.channel)
+        .eq('action', 'revoked').gte('captured_at', armedAt).ilike('consent_text', `%${PRIOR_MEMBER_GRANT_MARKER}%`).limit(1),
+    ])
+    const hadPriorGrant =
+      (!priorErr && Array.isArray(priorGrants) && priorGrants.length > 0) ||
+      (!memberErr && Array.isArray(priorMember) && priorMember.length > 0)
+    if (!hadPriorGrant) return true // opt-out lifted; no consent created
+    // The member store keeps no history: restore it only while the STOP's own revoke is still its
+    // latest state. A later operator or portal revoke overwrote it with another source, and START
+    // must not undo that (proven by tests/optout-consent-property.test.mjs).
+    let memberRestorable = false
+    let memberSource: string | null = null
     if (conv.member_id) {
+      const { data: mc, error: mcErr } = await db.from('consents').select('status, source').eq('member_id', conv.member_id).eq('channel', conv.channel).maybeSingle()
+      const cur = mc as { status?: string; source?: string | null } | null
+      memberRestorable = !mcErr && cur?.status === 'revoked' && KEYWORD_OPT_OUT_SOURCES.includes(cur.source ?? '')
+      memberSource = cur?.source ?? null
+      if (!mcErr && cur?.status === 'revoked' && !memberRestorable) return true // lifted; the later revoke stands
+    }
+    if (conv.member_id && memberRestorable && memberSource) {
+      // Compare-and-set: restore only while the STOP's own revoke is still the row's state, so an
+      // operator or portal revoke that lands between the read above and this write stands.
       await db
         .from('consents')
-        .upsert(
-          { member_id: conv.member_id, household_id: conv.household_id, channel: conv.channel, status: 'granted', source: 'inbound_start', updated_at: new Date().toISOString() },
-          { onConflict: 'member_id,channel' },
-        )
+        .update({ status: 'granted', source: 'inbound_start', updated_at: now })
+        .eq('member_id', conv.member_id)
+        .eq('channel', conv.channel)
+        .eq('status', 'revoked')
+        .eq('source', memberSource)
     }
-    // The mirror of the STOP write, and REQUIRED for correctness now that STOP appends a
-    // contact-level revoke: comm_contact_consents is latest-wins, so without this a non-member
-    // who texted STOP and then START would stay blocked at the consent step forever even though
-    // the DNC row was cleared and they explicitly asked to be messaged again.
+    // comm_contact_consents is append-only and latest-wins: the restore is a NEW granted event.
     await db.from('comm_contact_consents').insert({
       contact,
       channel: conv.channel,
       action: 'granted',
-      consent_text: 'Inbound START keyword (opt-in restored)',
-      consent_version: 'opt-in',
+      consent_text: 'Inbound START keyword (keyword opt-out restored)',
+      consent_version: START_RESTORE_VERSION,
     })
-    // Consent RESTORED via START: records the grant to audit_log + the CRM timeline. This
-    // clears the opt-out for future manual/1:1 sends but does NOT auto-resume any paused
-    // promotional enrollment — re-enrollment stays an explicit, authorized admin action.
+    // Consent RESTORED via START: records the grant to audit_log + the CRM timeline. This does
+    // NOT auto-resume any paused promotional enrollment — that stays an explicit admin action.
     await recordConsentChange({
       actor: 'system',
       channel: conv.channel,
@@ -284,8 +341,9 @@ async function applyOptIn(conv: Conversation, contact: string): Promise<void> {
       memberId: conv.member_id,
       householdId: conv.household_id,
     })
+    return true
   } catch {
-    /* best-effort */
+    return false
   }
 }
 
@@ -305,6 +363,16 @@ export async function processInbound(input: InboundInput): Promise<InboundResult
     campaignTerminated: false,
     autoReplied: false,
     escalated: false,
+  }
+
+  // STOP FIRST — keyed on the sender address, before the idempotency short-circuit and before
+  // threading. Previously it ran after both, so a threading failure lost it, and a provider retry
+  // of a message whose first pass died part-way was short-circuited as a duplicate with the
+  // opt-out never written (audit B-13). Every write here is idempotent (upsert / append-only).
+  if (result.intent === 'stop') {
+    const ok = await applyOptOut(input.channel as Channel, contact, input.providerId)
+    result.optedOut = ok
+    if (!ok) result.optOutFailed = true
   }
 
   // Idempotency: providers (Twilio, Resend) retry a webhook on any non-2xx/timeout, so
@@ -370,8 +438,7 @@ export async function processInbound(input: InboundInput): Promise<InboundResult
 
   // Keyword handling (SMS-style, also honored on email replies).
   if (result.intent === 'stop') {
-    await applyOptOut(conv, contact)
-    result.optedOut = true
+    // The opt-out itself was applied at the top of this function (before threading).
     // CANCEL / END / QUIT are carrier STOP keywords, and an appointment text that says
     // "Reschedule or cancel: <link>" invites exactly that reply. The opt-out above stands
     // unconditionally; this only tells a HUMAN that the client may have meant their
@@ -393,14 +460,15 @@ export async function processInbound(input: InboundInput): Promise<InboundResult
     // DNC already block every send at the gate, but leaving the rows live meant the drip
     // runner kept selecting them and each attempt escalated — an opt-out generating ongoing
     // work. Terminal, never paused: a paused row would be resumed by the quiet-window job.
-    if (conv.member_id) {
-      const closed = await terminateActiveEnrollments(conv.member_id, `inbound STOP (conversation ${conv.id})`, 'opted_out')
+    const stopMembers = await membersAtAddress(conv, contact)
+    for (const memberId of stopMembers) {
+      const closed = await terminateActiveEnrollments(memberId, `inbound STOP (conversation ${conv.id})`, 'opted_out')
       if (closed > 0) {
         await writeAudit({
           actor: 'system',
           action: 'entity.updated',
           entity: 'comm_campaign_enrollment',
-          entityId: conv.member_id,
+          entityId: memberId,
           diff: { opted_out: closed, conversation: conv.id, reason: 'inbound STOP' },
         })
       }
@@ -409,8 +477,7 @@ export async function processInbound(input: InboundInput): Promise<InboundResult
     return result
   }
   if (result.intent === 'start') {
-    await applyOptIn(conv, contact)
-    result.optedIn = true
+    result.optedIn = await applyOptIn(conv, contact)
     return result
   }
   if (result.intent === 'help' && input.channel === 'sms') {
@@ -457,10 +524,11 @@ export async function processInbound(input: InboundInput): Promise<InboundResult
   const stopReq = detectStopAutomation(input.body)
   if (stopReq.matched) {
     let terminated = 0
-    if (conv.member_id) {
-      terminated = await terminateActiveEnrollments(conv.member_id, `reply ${stopReq.kind} (conversation ${conv.id})`, 'reply_stop_request')
+    const stopMembers = await membersAtAddress(conv, contact)
+    for (const memberId of stopMembers) {
+      terminated += await terminateActiveEnrollments(memberId, `reply ${stopReq.kind} (conversation ${conv.id})`, 'reply_stop_request')
     }
-    const suppressed = await applyClientSuppression(conv, contact, `reply ${stopReq.kind}: ${stopReq.phrase ?? ''}`.trim())
+    const suppressed = await applyClientSuppression(conv, contact, `reply ${stopReq.kind}: ${stopReq.phrase ?? ''}`.trim(), stopMembers)
     result.campaignTerminated = true
     await writeAudit({
       actor: 'system',
@@ -481,16 +549,18 @@ export async function processInbound(input: InboundInput): Promise<InboundResult
   // §10 — a genuine reply (anything past the STOP/START keywords, excluding a bare HELP)
   // pauses the member's active promotional automation so no scheduled "haven't heard
   // back" message follows the customer's reply. Resumed later per the conversation policy.
-  if (shouldPauseOnReply(result.intent === 'help') && conv.member_id) {
-    const paused = await pauseActiveEnrollments(conv.member_id, `inbound ${input.channel} reply`)
-    if (paused > 0) {
-      await writeAudit({
-        actor: 'system',
-        action: 'entity.updated',
-        entity: 'comm_campaign_enrollment',
-        entityId: conv.member_id,
-        diff: { paused_for_conversation: paused, conversation: conv.id, reason: 'inbound reply' },
-      })
+  if (shouldPauseOnReply(result.intent === 'help')) {
+    for (const memberId of await membersAtAddress(conv, contact)) {
+      const paused = await pauseActiveEnrollments(memberId, `inbound ${input.channel} reply`)
+      if (paused > 0) {
+        await writeAudit({
+          actor: 'system',
+          action: 'entity.updated',
+          entity: 'comm_campaign_enrollment',
+          entityId: memberId,
+          diff: { paused_for_conversation: paused, conversation: conv.id, reason: 'inbound reply' },
+        })
+      }
     }
   }
 

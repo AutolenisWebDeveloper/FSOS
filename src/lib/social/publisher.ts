@@ -96,7 +96,7 @@ async function publishClaimed(
   // has_credential is a REAL generated column (mig 067) — a bare column, never a SQL
   // expression in the select string (PostgREST rejects expressions). secret_enc is
   // still never selected; the secret is read only via the pgcrypto RPC below.
-  const { data: channelData } = await db
+  const { data: channelData, error: channelError } = await db
     .from('social_channels')
     .select(SCHEDULE_CHANNEL_SELECT)
     .eq('id', entry.channel_id)
@@ -109,6 +109,24 @@ async function publishClaimed(
     token_expires_at: string | null
     has_credential: boolean | null
   } | null
+
+  // Never publish to a channel the operator disconnected (audit H-10): disconnect sets
+  // status='revoked', and the publisher used to post through it anyway with whatever credential
+  // remained. A revoked or missing channel CANCELS the entry (recorded, no platform call). An
+  // unreadable channel releases the claim back to pending for the next run — never a guess.
+  if (channelError) {
+    await db.from('social_schedule_entries').update({ status: 'pending', updated_by: 'system:social-publish' }).eq('id', entry.id)
+    result.skipped++
+    return
+  }
+  if (!channel || channel.status === 'revoked') {
+    await db
+      .from('social_schedule_entries')
+      .update({ status: 'cancelled', last_error: 'channel_revoked', updated_by: 'system:social-publish' })
+      .eq('id', entry.id)
+    result.skipped++
+    return
+  }
 
   const platform = channel?.platform as ChannelContext['platform']
   let accessToken: string | undefined

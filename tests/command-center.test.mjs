@@ -37,7 +37,8 @@ const t = (name, fn) => {
 // A working workforce row factory (override per test).
 function wf(over = {}) {
   return {
-    agent_key: 'cross_sell',
+    // referral_followup: the one outreach agent the workforce still runs (owner decision 7).
+    agent_key: 'referral_followup',
     agent_enabled: true,
     daily_target: 10,
     channel: 'sms',
@@ -79,9 +80,9 @@ console.log('Executive status (executiveStatus)')
 
 t('counts active / paused / off workers by the two kill switches', () => {
   const s = executiveStatus([
-    wf({ agent_key: 'cross_sell', agent_enabled: true, target_enabled: true }),
-    wf({ agent_key: 'term_conversion', agent_enabled: true, target_enabled: false }),
-    wf({ agent_key: 'referral_followup', agent_enabled: false, target_enabled: true }),
+    wf({ agent_key: 'referral_followup', agent_enabled: true, target_enabled: true }),
+    wf({ agent_key: 'agent_b', agent_enabled: true, target_enabled: false }),
+    wf({ agent_key: 'agent_c', agent_enabled: false, target_enabled: true }),
   ])
   assert.equal(s.activeWorkers, 1)
   assert.equal(s.pausedWorkers, 1)
@@ -97,12 +98,26 @@ t('ignores idle roster keys with no quota and no queued work', () => {
 t('rolls up in-progress, completed and failed counts', () => {
   const s = executiveStatus([
     wf({ sent: 4, pending: 3, drafted: 1, blocked: 2, escalated: 1 }),
-    wf({ agent_key: 'term_conversion', sent: 5, pending: 0, drafted: 0, blocked: 0, escalated: 0 }),
+    wf({ agent_key: 'agent_b', sent: 5, pending: 0, drafted: 0, blocked: 0, escalated: 0 }),
   ])
   assert.equal(s.completedToday, 9)
   assert.equal(s.inProgress, 4)
   assert.equal(s.failedToday, 2)
   assert.equal(s.escalations, 1)
+})
+
+t('"working" needs evidence: an enabled agent with nothing queued or handled today is idle, not active', () => {
+  const s = executiveStatus([wf({ queued_total: 0, sent: 0, blocked: 0, escalated: 0, skipped: 0, pending: 0, drafted: 0, daily_target: 10 })])
+  assert.equal(s.activeWorkers, 0)
+  assert.equal(rosterHealth([wf({ queued_total: 0, sent: 0, blocked: 0, escalated: 0, skipped: 0 })])[0].status, 'idle')
+})
+
+t('campaign-engine-owned agents stand down and never count as active (owner decision 7)', () => {
+  for (const key of ['cross_sell', 'term_conversion', 'life_winback']) {
+    const s = executiveStatus([wf({ agent_key: key })])
+    assert.equal(s.activeWorkers, 0, key)
+    assert.equal(rosterHealth([wf({ agent_key: key })])[0].status, 'stands_down', key)
+  }
 })
 
 console.log('Results roll-up (resultsToday)')

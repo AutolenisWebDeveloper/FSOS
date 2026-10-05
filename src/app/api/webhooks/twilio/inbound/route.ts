@@ -36,6 +36,8 @@ export async function POST(req: NextRequest) {
   let helpResponse: string | undefined
   try {
     const result = await processInbound({ channel: 'sms', from, body, provider: 'twilio', providerId })
+    // A STOP that could not be written is never acknowledged as handled (audit B-13/B-14).
+    if (result.optOutFailed) return NextResponse.json({ error: 'opt-out write failed' }, { status: 503 })
     helpResponse = result.helpResponse
   } catch (err) {
     console.error('[twilio:inbound] handler error:', err)

@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { DetailShell, Section, EmptyState } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
+import { REFERENCE_COPY_LABEL } from '@/lib/ops/automation-registry'
 import { Card } from '@/components/ui/card'
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
@@ -151,7 +152,8 @@ export default async function CrossSellLifeDetailPage(props: { params: Promise<{
         {/* 7 — Workflows & rules */}
         <Section
           title={`AI conversation playbooks (${detail.playbooks.length})`}
-          description="Internal scripts the AI conversation engine grounds on. The AI must identify as automated and may never recommend a product, coverage amount, carrier, premium, or replacement (§4.2). Substantive requests escalate to the advisor."
+          description="Scripts for the advisor. The timeline touches send their approved template above; nothing here is sent, and no follow-up, handoff or closing fires on its own. The AI must identify as automated and may never recommend a product, coverage amount, carrier, premium, or replacement (§4.2)."
+          action={<Badge variant="draft">{REFERENCE_COPY_LABEL}</Badge>}
         >
           <div className="space-y-2">
             {detail.playbooks.map((p) => (

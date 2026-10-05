@@ -124,6 +124,8 @@ export async function POST(req: NextRequest) {
         templateId,
         isSecurity: d.is_security === true,
         humanAuthored,
+        // A person sent this 1:1 from the console (review finding 3b: may reach a non-US number).
+        operatorInitiated: true,
         // Individual 1:1 operator send — consent-on-file is waived (ADR-033). Opt-out-safe:
         // an explicit revoke still blocks, and DNC/quiet-hours/securities/recommendation all
         // still apply. WS-036: the waiver is for 1:1 SERVICING — it never stacks with a

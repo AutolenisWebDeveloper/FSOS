@@ -9,7 +9,7 @@ import { dispatchCampaign, refreshCampaignMetrics, campaignDispatchContext, type
 import { buildDataConfidence } from '@/lib/comms/claims'
 import { resolveClaimFields } from '@/lib/comms/claim-resolver'
 import { sendMessage, isTemplateApproved } from '@/lib/comms/send'
-import { isDeferralGateStep } from '@/lib/comms/gate'
+import { isDeferralGateStep, oneTouchPerDay, quietHoursHold } from '@/lib/comms/gate'
 import { evaluateResume } from '@/lib/comms/conversation-mode'
 import { smsA2pApproved } from '@/lib/comms/a2p'
 import type { JobResult } from './index'
@@ -135,6 +135,16 @@ export async function commissionReconcile(): Promise<JobResult> {
 // then advance any due drip-sequence enrollments (also gated). Metrics are refreshed
 // so the campaign cards show live delivery/open/click counts.
 export async function campaignDispatch(): Promise<JobResult> {
+  // The marketing_automation agent switch on /app/ai and the global AI gateway switch had no
+  // runtime reader here: turning them off halted nothing (audit C-05 / F-13). Honour both, fail
+  // closed (an unreadable switch is off) — the same check every gateway-driven agent uses.
+  try {
+    const { assertKillSwitch } = await import('@/lib/ai/gateway')
+    await assertKillSwitch('marketing_automation')
+  } catch (err) {
+    const which = err instanceof Error ? err.message : 'kill switch'
+    return { ok: true, handled: 0, note: `campaign-dispatch: halted — ${which} (broadcasts and drips not run)` }
+  }
   const db = getDb()
   const nowISO = new Date().toISOString()
   const { data } = await db.from('comm_campaigns').select('id, schedule_at').eq('status', 'active').is('archived_at', null).limit(100)
@@ -159,7 +169,7 @@ export async function dripAdvance(): Promise<JobResult> {
   // Due enrollments across all active drip campaigns.
   const { data: enrollments } = await db
     .from('comm_campaign_enrollments')
-    .select('id, campaign_id, member_id, household_id, agency_id, current_step, comm_campaigns!inner(id, type, channel, sequence_id, status, archived_at, purpose, represented_agency_owner_id, delegation_id, claim_fields)')
+    .select('id, campaign_id, member_id, household_id, agency_id, current_step, next_send_at, comm_campaigns!inner(id, type, channel, sequence_id, status, archived_at, purpose, represented_agency_owner_id, delegation_id, claim_fields)')
     .eq('status', 'enrolled')
     .lte('next_send_at', nowISO)
     .limit(1000)
@@ -169,7 +179,7 @@ export async function dripAdvance(): Promise<JobResult> {
   const ctxCache = new Map<string, CampaignDispatchContext>()
 
   let handled = 0
-  for (const e of (enrollments ?? []) as unknown as Array<{ id: string; campaign_id: string; member_id: string; household_id: string; agency_id: string | null; current_step: number; comm_campaigns: { id: string; type: string; channel: string; sequence_id: string | null; status: string; archived_at: string | null; purpose: string | null; represented_agency_owner_id: string | null; delegation_id: string | null; claim_fields: string[] | null } }>) {
+  for (const e of (enrollments ?? []) as unknown as Array<{ id: string; campaign_id: string; member_id: string; household_id: string; agency_id: string | null; current_step: number; next_send_at: string | null; comm_campaigns: { id: string; type: string; channel: string; sequence_id: string | null; status: string; archived_at: string | null; purpose: string | null; represented_agency_owner_id: string | null; delegation_id: string | null; claim_fields: string[] | null } }>) {
     const camp = e.comm_campaigns
     if (!camp || camp.type !== 'drip' || camp.status !== 'active' || camp.archived_at || !camp.sequence_id) continue
 
@@ -182,7 +192,12 @@ export async function dripAdvance(): Promise<JobResult> {
 
     const { data: seq } = await db.from('comm_sequences').select('steps, status, purpose').eq('id', camp.sequence_id).maybeSingle()
     const steps = (seq?.steps ?? []) as Array<{ delay_days: number; template_id?: string; subject?: string }>
-    if (!seq || seq.status !== 'active' || e.current_step >= steps.length) {
+    // A sequence that is not active (draft, paused) or could not be read HOLDS its enrollments at
+    // their current step. It used to mark them 'completed' — every enrollment of a not-yet-active
+    // sequence silently finished without a single send (audit C-01). Only a genuinely finished
+    // sequence completes.
+    if (!seq || seq.status !== 'active') continue
+    if (e.current_step >= steps.length) {
       await db.from('comm_campaign_enrollments').update({ status: 'completed' }).eq('id', e.id)
       continue
     }
@@ -241,6 +256,9 @@ export async function dripAdvance(): Promise<JobResult> {
       // it — the exact failure the exempt-purpose defer rule exists to prevent. Terminal
       // blocks (consent, DNC, template, …) still advance past the step exactly as before.
       if (!outcome.sent && isDeferralGateStep(outcome.gate.blockedStep)) continue
+      // Owner decision 3: a quiet-hours withhold holds the step for the next window (cursor kept)
+      // up to 72h past its due time; after that the step is passed over like any terminal block.
+      if (!outcome.sent && quietHoursHold(outcome.gate.blockedStep, e.next_send_at, nowISO) === 'hold') continue
       handled++
     }
 
@@ -250,7 +268,8 @@ export async function dripAdvance(): Promise<JobResult> {
       await db.from('comm_campaign_enrollments').update({ status: 'completed', current_step: nextStep, last_sent_at: nowISO }).eq('id', e.id)
     } else {
       const delayDays = Number(steps[nextStep]?.delay_days ?? 0)
-      const next = new Date(Date.now() + delayDays * 86400000).toISOString()
+      // Finding 5: hourly runs, at most one step per enrollment per day (each drip is single-channel).
+      const next = oneTouchPerDay(new Date(Date.now() + delayDays * 86400000).toISOString(), nowISO)
       await db.from('comm_campaign_enrollments').update({ current_step: nextStep, next_send_at: next, last_sent_at: nowISO }).eq('id', e.id)
     }
   }

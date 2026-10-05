@@ -1,4 +1,6 @@
-// Quiet-hours scope (owner-directed, 2026-08-07) — proves the PURE cores offline,
+// Quiet-hours scope (owner-directed 2026-08-07; WIDENED by owner decision 2, 2026-10-02 — the
+// floor now covers ALL automated campaign SMS incl. POLICY_DEADLINE and SERVICING) — proves the
+// PURE cores offline,
 // mirroring tests/guardrail.test.mjs / tests/comms-policy.test.mjs:
 //
 //   1. The 9:00–20:00 recipient-local floor applies to SMS MARKETING/CAMPAIGN sends
@@ -60,10 +62,14 @@ t('SMS marketing-class purposes ARE gated: MARKETING, WORKSHOP, BIRTHDAY, RELATI
   for (const p of QUIET_HOURS_GATED_PURPOSES) assert.equal(quietHoursApply('sms', p), true, `sms/${p}`)
 })
 
-t('SMS transactional/servicing-class purposes are NOT gated', () => {
-  for (const p of ['TRANSACTIONAL', 'APPOINTMENT', 'SERVICING', 'APPLICATION_STATUS', 'DOCUMENT_REQUEST', 'POLICY_DEADLINE']) {
+t('SMS immediate-notice purposes are NOT gated (transactional, appointment notice, status, document)', () => {
+  for (const p of ['TRANSACTIONAL', 'APPOINTMENT', 'APPLICATION_STATUS', 'DOCUMENT_REQUEST']) {
     assert.equal(quietHoursApply('sms', p), false, `sms/${p}`)
   }
+})
+
+t('owner decision 2: campaign SMS of ANY purpose keeps the floor — POLICY_DEADLINE and SERVICING are gated', () => {
+  for (const p of ['POLICY_DEADLINE', 'SERVICING']) assert.equal(quietHoursApply('sms', p), true, `sms/${p}`)
 })
 
 t('SMS with NO purpose (unclassified campaign path) stays gated', () => {

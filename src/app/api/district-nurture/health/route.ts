@@ -63,7 +63,7 @@ export async function GET(_req: NextRequest) {
         scheduled_stuck_executions: stuck,
         active_enrollments: active,
       },
-      cron: lastRun,
+      cron: jobRows.error ? {} : lastRun, // an unreadable job_runs is not "no run recorded yet"
       checked_at: nowISO,
     })
   } catch (e) {

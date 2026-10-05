@@ -122,12 +122,12 @@ const touch = { touch_no: 1, kind: 'email', template_id: 'tpl1', playbook_key: n
 const dispatchCtx = { purpose: 'MARKETING', delegation: undefined, ownership: undefined }
 const NOW = '2026-08-29T16:00:00.000Z'
 
-async function fire(engineKey, outcome, { channel = 'email', a2p = true } = {}) {
+async function fire(engineKey, outcome, { channel = 'email', a2p = true, e = {} } = {}) {
   sendState.next = outcome
   sendState.calls = 0
   a2pState.approved = a2p
   const { db, captured } = makeDb(channel)
-  const ret = await impls[engineKey](db, cfg, { ...baseE }, 1, { ...touch }, dispatchCtx, NOW)
+  const ret = await impls[engineKey](db, cfg, { ...baseE, ...e }, 1, { ...touch }, dispatchCtx, NOW)
   return { ret, captured, calls: sendState.calls }
 }
 
@@ -143,6 +143,12 @@ const DEFER = {
 const HARD = {
   sent: false, blocked: true, messageId: null, reason: 'No SMS consent on record for this purpose.',
   gate: { allowed: false, escalate: true, blockedStep: 'consent' },
+}
+// Owner decision 3: quiet hours (the floor or the Sunday marketing hold) HOLDS a scheduled marketing
+// touch for the next window, bounded at 72h past due. The gate verdict itself is unchanged.
+const QUIET = {
+  sent: false, blocked: true, messageId: null, reason: 'Marketing SMS is held until 12:00 recipient-local on Sundays.',
+  gate: { allowed: false, escalate: true, blockedStep: 'quiet_hours' },
 }
 const SENT = { sent: true, blocked: false, messageId: 'msg1', reason: undefined, gate: { allowed: true, escalate: false, blockedStep: null } }
 
@@ -168,6 +174,14 @@ await record('deferral set is exactly {sms_live, business_hours, frequency, coll
   }
 })
 
+await record('quietHoursHold: quiet_hours holds within 72h of due, expires after, and touches nothing else', async () => {
+  assert.equal(realGate.quietHoursHold('quiet_hours', '2026-08-29T13:00:00.000Z', NOW), 'hold')
+  assert.equal(realGate.quietHoursHold('quiet_hours', '2026-08-26T16:00:00.000Z', NOW), 'hold', 'exactly 72h is still held')
+  assert.equal(realGate.quietHoursHold('quiet_hours', '2026-08-26T15:59:00.000Z', NOW), 'expired')
+  assert.equal(realGate.quietHoursHold('quiet_hours', null, NOW), 'expired', 'an unbounded hold is never allowed')
+  for (const s of ['consent', 'dnc', 'configured_window', null]) assert.equal(realGate.quietHoursHold(s, '2026-08-29T13:00:00.000Z', NOW), null)
+})
+
 // ── Every engine honors the tri-state ────────────────────────────────────────
 for (const eng of engines) {
   console.log(`\n${eng.key} — deferrals release the claim; hard blocks stay terminal`)
@@ -190,6 +204,22 @@ for (const eng of engines) {
     assert.equal(s[s.length - 1].obj.status, 'suppressed')
   })
 
+  await record(`${eng.key}: quiet_hours within 72h of due → HELD ('deferred', claim released, nothing recorded)`, async () => {
+    const r = await fire(eng.key, QUIET, { channel: 'sms', e: { next_touch_at: '2026-08-28T13:00:00.000Z' } })
+    assert.equal(r.ret, 'deferred')
+    assert.equal(deletesOn(r.captured, eng.table).length, 1)
+    assert.equal(statusWrites(r.captured).length, 0)
+  })
+
+  await record(`${eng.key}: quiet_hours more than 72h past due → EXPIRED with the reason recorded`, async () => {
+    const r = await fire(eng.key, QUIET, { channel: 'sms', e: { next_touch_at: '2026-08-25T13:00:00.000Z' } })
+    assert.equal(r.ret, 'blocked')
+    assert.equal(deletesOn(r.captured, eng.table).length, 0)
+    const s = statusWrites(r.captured)
+    assert.equal(s[s.length - 1].obj.status, 'suppressed')
+    assert.match(JSON.stringify(s[s.length - 1].obj), /quiet_hours_hold_expired/)
+  })
+
   await record(`${eng.key}: delivered → 'sent' with a terminal sent execution`, async () => {
     const r = await fire(eng.key, SENT)
     assert.equal(r.ret, 'sent')
@@ -210,6 +240,14 @@ for (const eng of engines) {
 }
 
 Module._load = origLoad
+
+// The other three marketing senders key the same hold off the same pure helper (decision 3).
+const { readFileSync } = await import('node:fs')
+await record('drip, broadcast and workforce hold a quiet-hours withhold via quietHoursHold', async () => {
+  assert.match(readFileSync('src/jobs/handlers.ts', 'utf8'), /quietHoursHold\(outcome\.gate\.blockedStep, e\.next_send_at, nowISO\) === 'hold'\) continue/)
+  assert.match(readFileSync('src/lib/comms/campaign.ts', 'utf8'), /isDeferralGateStep\(outcome\.gate\.blockedStep\) \|\|[\s\S]{0,400}quietHoursHold\(/)
+  assert.match(readFileSync('src/lib/ai/workforce.ts', 'utf8'), /isDeferralGateStep\(outcome\.gate\.blockedStep\) \|\|[\s\S]{0,400}quietHoursHold\(/)
+})
 
 const failed = results.filter((r) => !r.pass)
 console.log('\n' + '─'.repeat(80))

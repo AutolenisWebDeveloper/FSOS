@@ -90,6 +90,7 @@ const BLOCKS = [
   'message_content',
   'ownership',
   'consent',
+  'non_us_recipient',
   'timezone_unresolved',
   // A configured-window stack that can NEVER open (empty intersection) has no self-clearing
   // condition, so it escalates as a distinct configuration error — never an unbounded defer.
@@ -280,6 +281,37 @@ t('an unknown/absent current status does not block a legitimate write', () => {
 })
 t('an empty patch resolves to no write at all', () => {
   assert.equal(reconcileLifecycle('sent', 'queued', {}), null)
+})
+
+console.log('\nreconcileLifecycle — status is monotonic (audit A-11 / B-07 / B-08)')
+t('a stale delivered never overwrites failed / bounced / complained', () => {
+  for (const cur of ['failed', 'bounced', 'complained']) {
+    assert.equal(reconcileLifecycle(cur, 'delivered', { delivery_status: 'delivered', delivered_at: 'T' }), null, cur)
+  }
+})
+t('a stale failed never overwrites complained', () => {
+  assert.equal(reconcileLifecycle('complained', 'failed', { delivery_status: 'failed', failed_at: 'T' }), null)
+})
+t('a redelivered duplicate is a no-op (first timestamps win)', () => {
+  for (const s of ['sent', 'delivered', 'failed', 'bounced', 'complained']) {
+    assert.equal(reconcileLifecycle(s, s, { delivery_status: s, x_at: 'T2' }), null, s)
+  }
+})
+t('a same-rank sibling (bounced after failed) does not flip the outcome', () => {
+  assert.equal(reconcileLifecycle('failed', 'bounced', { delivery_status: 'bounced', failed_at: 'T' }), null)
+})
+t('forward progressions still apply: queued→delivered, delivered→failed, failed→complained', () => {
+  assert.equal(reconcileLifecycle('queued', 'delivered', { delivery_status: 'delivered' })?.delivery_status, 'delivered')
+  assert.equal(reconcileLifecycle('delivered', 'failed', { delivery_status: 'failed' })?.delivery_status, 'failed')
+  assert.equal(reconcileLifecycle('failed', 'complained', { delivery_status: 'complained' })?.delivery_status, 'complained')
+})
+t('send.ts writes its post-dispatch status only over the pre-inserted queued row', () => {
+  const src = readFileSync('src/lib/comms/send.ts', 'utf8')
+  const i = src.indexOf('const { data: claimed, error: claimErr }')
+  assert.ok(i > 0, 'guarded post-dispatch status write is missing')
+  assert.match(src.slice(i, i + 400), /\.eq\('delivery_status', 'queued'\)/)
+  assert.match(src, /await db\.from\('comm_messages'\)\.update\(outcome\)\.eq\('id', messageId\)/,
+    'a lost race must still record provider_id/sent_at without the status')
 })
 t('a blocked row renders as a failure chip — the vocabulary agrees with the preserved data', () => {
   assert.equal(SEVERITY[deliveryStatus('blocked').variant], 'bad')

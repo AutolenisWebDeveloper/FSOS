@@ -10,7 +10,7 @@
 import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
 import { sendMessage, isTemplateApproved } from '@/lib/comms/send'
-import { isDeferralGateStep } from '@/lib/comms/gate'
+import { isDeferralGateStep, oneTouchPerDay, quietHoursHold } from '@/lib/comms/gate'
 import { campaignDispatchContext, campaignIdentityContext } from '@/lib/comms/campaign'
 import { smsA2pApproved } from '@/lib/comms/a2p'
 import { getOrCreateConversation } from '@/lib/comms/conversations'
@@ -42,6 +42,8 @@ interface EnrollmentRow {
   agency_id: string | null
   baseline_date: string
   current_touch_no: number
+  /** When the current touch fell due — bounds a quiet-hours hold (owner decision 3). */
+  next_touch_at?: string | null
 }
 
 export interface TickResult {
@@ -74,7 +76,7 @@ export async function crossSellLifeTick(): Promise<TickResult> {
 
     const { data: due } = await db
       .from('xsell_life_campaign_enrollments')
-      .select('id, campaign_id, campaign_version, member_id, household_id, agency_id, baseline_date, current_touch_no')
+      .select('id, campaign_id, campaign_version, member_id, household_id, agency_id, baseline_date, current_touch_no, next_touch_at')
       .eq('campaign_id', c.id)
       .eq('status', 'running')
       .lte('next_touch_at', nowISO)
@@ -83,7 +85,11 @@ export async function crossSellLifeTick(): Promise<TickResult> {
     const dispatchCtx = await campaignDispatchContext({
       id: cfg.id,
       type: 'drip',
-      purpose: cfg.purpose,
+      // Owner decision 6 (docs/ops/automation-inventory.md §10): Cross-Sell Life is MARKETING for
+      // consent, business suppression and quiet hours — enforced here so a stale or edited
+      // campaign row (seeded POLICY_DEADLINE) cannot take it out of
+      // marketing treatment. Migration 139 aligns the stored rows.
+      purpose: 'MARKETING',
       delegation_id: cfg.delegation_id,
       represented_agency_owner_id: cfg.represented_agency_owner_id,
       sequencePurpose: null,
@@ -114,6 +120,24 @@ export async function crossSellLifeTick(): Promise<TickResult> {
       if (touch.kind !== 'advisor_outreach' && touch.template_id && !smsA2pApproved()) {
         const { data: tpl } = await db.from('comm_templates').select('channel').eq('id', touch.template_id).maybeSingle()
         if ((tpl?.channel === 'email' ? 'email' : 'sms') === 'sms') continue
+      }
+
+      // Finding 5 at SEND time: the hourly ticks fire at most one message touch per enrollment per UTC
+      // day, whichever path set the cursor (advance, admin resume/replay, restart from day 1). A touch
+      // already sent today pushes this one to tomorrow; a read error holds it (fail closed).
+      if (touch.kind !== 'advisor_outreach') {
+        const { data: sentToday, error: sentTodayErr } = await db
+          .from('xsell_life_campaign_executions')
+          .select('id')
+          .eq('enrollment_id', e.id)
+          .eq('status', 'sent')
+          .gte('executed_at', `${nowISO.slice(0, 10)}T00:00:00.000Z`)
+          .limit(1)
+        if (sentTodayErr) continue
+        if ((sentToday ?? []).length > 0) {
+          await db.from('xsell_life_campaign_enrollments').update({ next_touch_at: oneTouchPerDay(nowISO, nowISO), updated_at: nowISO }).eq('id', e.id)
+          continue
+        }
       }
 
       // Idempotency: claim this touch's execution row with a deterministic key. If it already
@@ -173,7 +197,7 @@ export async function fireMessageTouch(
   touchNo: number,
   touch: TouchRow,
   dispatchCtx: Awaited<ReturnType<typeof campaignDispatchContext>>,
-  _nowISO: string,
+  nowISO: string,
 ): Promise<'sent' | 'blocked' | 'deferred'> {
   // Unapproved/empty template → skip the send but keep the timeline moving (never stall, §6).
   if (!touch.template_id || !(await isTemplateApproved(touch.template_id))) {
@@ -277,11 +301,19 @@ export async function fireMessageTouch(
     await db.from('xsell_life_campaign_executions').delete().eq('enrollment_id', e.id).eq('touch_no', touchNo)
     return 'deferred'
   }
+  // Owner decision 3: a quiet-hours withhold (floor or Sunday hold) is HELD for the next window,
+  // not burned — up to 72h past due, then recorded as expired. Released by the next tick, which
+  // re-runs the stop conditions and the gate. (gate.ts quietHoursHold)
+  const qh = outcome.sent ? null : quietHoursHold(outcome.gate.blockedStep, e.next_touch_at, nowISO)
+  if (qh === 'hold') {
+    await db.from('xsell_life_campaign_executions').delete().eq('enrollment_id', e.id).eq('touch_no', touchNo)
+    return 'deferred'
+  }
   await markExecution(db, e.id, touchNo, outcome.sent ? 'sent' : 'suppressed', {
     channel,
     kind: touch.kind,
     playbook_key: touch.playbook_key,
-    reason: outcome.reason,
+    reason: qh === 'expired' ? 'quiet_hours_hold_expired' : outcome.reason,
     messageId: outcome.messageId,
     template_version: (tpl as { version?: number } | null)?.version ?? null,
     ...(isAi ? { ai_armed: aiArmed } : {}),
@@ -353,9 +385,10 @@ async function advanceCursor(db: ReturnType<typeof getDb>, cfg: CampaignConfig, 
     sendOnHolidays: cfg.send_on_holidays,
     holidays: cfg.holiday_calendar,
   })
+  // Finding 5: hourly ticks, at most one touch per enrollment per day (gate.ts oneTouchPerDay).
   await db
     .from('xsell_life_campaign_enrollments')
-    .update({ current_touch_no: touchNo, next_touch_at: `${dueDay}T13:00:00.000Z`, updated_at: nowISO })
+    .update({ current_touch_no: touchNo, next_touch_at: oneTouchPerDay(`${dueDay}T13:00:00.000Z`, nowISO), updated_at: nowISO })
     .eq('id', e.id)
 }
 

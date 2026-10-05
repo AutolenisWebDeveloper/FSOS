@@ -6,9 +6,8 @@
 import { getDb } from '@/lib/supabase/client'
 import { generateFormToken } from '@/lib/tokens'
 import { escapeHtml } from '@/lib/http'
-import { sendEmail } from '@/lib/messaging'
+import { sendRecorded } from '@/lib/notifications/transactional'
 import { sendMessage } from '@/lib/comms/send'
-import { resolveSender } from '@/lib/comms/senders'
 import { renderEmailShell, paragraphHtml, buttonHtml, fineHtml } from '@/lib/notifications/email-shell'
 
 export const FORM_TITLES: Record<string, string> = {
@@ -31,6 +30,11 @@ export interface SendFormInput {
   client_name?: string | null
   customer_id?: string | null
   agency_id?: string | null
+  /**
+   * A staff member sent this from POST /api/forms/send (review finding 3b: may text a non-US number).
+   * Public callers (agency referral intake) leave it unset → treated as automated.
+   */
+  operatorInitiated?: boolean
 }
 
 export type SendFormResult =
@@ -137,27 +141,18 @@ export async function sendForm(input: SendFormInput): Promise<SendFormResult> {
     // GATED. This leg previously sent with no consent, DNC or suppression check while the
     // SMS leg forty lines below ran the full gate — one function, one recipient, two
     // policies. Both now route through the same chokepoint with the same declaration.
-    const result = await sendEmail(
-      email,
-      `Action Required — ${FORM_TITLES[form_id]}`,
-      buildEmailHTML(client_name || 'Client', FORM_TITLES[form_id], link, form_id),
-      undefined,
-      {
-        // Transactional stream (notify.) for reputation isolation; falls back to
-        // RESEND_FROM_EMAIL until the subdomain is configured.
-        from: resolveSender('transactional').from || undefined,
-        policy: {
-          actor: 'system:forms',
-          purpose: 'TRANSACTIONAL',
-          // Operator-initiated 1:1 servicing message with no comm_templates row — the
-          // licensed operator who triggered POST /api/forms/send is the content approval,
-          // exactly as the SMS leg already declares.
-          templateKind: 'human',
-          suppressible: false,
-          entity: { type: 'form_submission', id: submission.submission_id },
-        },
-      },
-    )
+    // Recorded (owner, round 3): through sendMessage like the SMS leg, so a comm_messages row is
+    // written — transactional stream, no thread, no tracking, so the delivered email is unchanged.
+    // Operator-initiated 1:1 servicing message with no comm_templates row — the licensed operator
+    // who triggered POST /api/forms/send is the content approval (templateKind 'human').
+    const result = await sendRecorded({
+      to: email,
+      subject: `Action Required — ${FORM_TITLES[form_id]}`,
+      html: buildEmailHTML(client_name || 'Client', FORM_TITLES[form_id], link, form_id),
+      actor: 'system:forms',
+      humanAuthored: true,
+      entity: { type: 'form_submission', id: submission.submission_id },
+    })
     if (result.ok) {
       email_sent = true
       await db.from('form_sends').insert({
@@ -167,7 +162,7 @@ export async function sendForm(input: SendFormInput): Promise<SendFormResult> {
         channel: 'email',
         destination: email,
       })
-      if (result.id) console.log('[forms] Resend accepted email id', result.id)
+      if (result.id) console.log('[forms] email sent; FSOS message id', result.id)
     } else {
       email_error = result.error || 'Email delivery failed'
       console.error('[forms] email send failed:', email_error)
@@ -197,6 +192,9 @@ export async function sendForm(input: SendFormInput): Promise<SendFormResult> {
         actor: 'system:forms',
         purpose: 'TRANSACTIONAL',
         humanAuthored: true,
+        // Only a staff send (POST /api/forms/send) is operator-initiated (finding 3b); the public agency
+        // referral intake is not.
+        operatorInitiated: input.operatorInitiated === true,
         isSecurity: false,
         entity: { type: 'form_submission', id: submission.submission_id },
         recipientContext: { full_name: client_name || null },

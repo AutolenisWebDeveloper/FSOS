@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { Plus, Workflow } from 'lucide-react'
 import { ListShell, ErrorState, EmptyState, StatusBadge } from '@/components/archetypes'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { REFERENCE_COPY_LABEL } from '@/lib/ops/automation-registry'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { load } from '@/lib/data/query'
 import { Numeric } from '@/components/ui/typography'
@@ -32,7 +34,9 @@ export default async function WorkflowsPage() {
 
   const note = (
     <p className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
-      Workflows automate internal tasks and green-zone outreach. Any step that sends client communications routes through the comms dispatcher gate and never bypasses consent, quiet-hours, DNC, or securities checks.
+      <span className="mr-2 align-middle"><Badge variant="draft">{REFERENCE_COPY_LABEL}</Badge></span>
+      Workflows are saved designs only. No engine executes them yet, so nothing here runs, creates tasks or contacts
+      anyone, and they cannot be enabled.
     </p>
   )
 
@@ -46,7 +50,7 @@ export default async function WorkflowsPage() {
       <EmptyState
         icon={Workflow}
         title="No workflows yet"
-        description="Build a workflow to automate internal tasks and green-zone follow-ups."
+        description="Sketch a workflow design. Designs are saved for reference; nothing executes them yet."
         action={<Button asChild><Link href="/app/workflows/builder"><Plus className="h-4 w-4" /> New workflow</Link></Button>}
       />
     )
@@ -71,7 +75,7 @@ export default async function WorkflowsPage() {
               <TableCell className="text-muted-foreground">{w.trigger_type.replace(/_/g, ' ')}</TableCell>
               <TableCell>{Array.isArray(w.steps) ? w.steps.length : 0}</TableCell>
               <TableCell>
-                {w.enabled ? <StatusBadge status="won" label="enabled" /> : <StatusBadge status="draft" label="inactive" />}
+                {w.enabled ? <StatusBadge status="pending" label="enabled · not executed" /> : <StatusBadge status="draft" label="design" />}
               </TableCell>
               <TableCell className="text-muted-foreground"><Numeric>{new Date(w.created_at).toLocaleDateString('en-US')}</Numeric></TableCell>
             </TableRow>
@@ -84,7 +88,7 @@ export default async function WorkflowsPage() {
   return (
     <ListShell
       title="Workflows"
-      description="Event-driven automation for internal tasks and green-zone outreach."
+      description="Saved workflow designs. Not executed — there is no workflow engine yet."
       breadcrumb={[{ label: 'FSA', href: '/app' }, { label: 'Workflows' }]}
       actions={actions}
       toolbar={note}

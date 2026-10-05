@@ -25,7 +25,7 @@ export default async function DeliveryPage() {
   return (
     <ListShell
       title="Delivery"
-      description="Failed and held messages. Failed sends retry idempotently; a held send is never silently dropped."
+      description="Failed and held messages. A held campaign send is re-attempted by its campaign once the hold clears; a failed send is not retried automatically."
       breadcrumb={[{ label: 'FSA', href: '/app' }, { label: 'Comms', href: '/app/comms' }, { label: 'Delivery' }]}
     >
       <div className="space-y-section">

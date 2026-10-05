@@ -95,6 +95,7 @@ function makeDb(tplData, memberData = null) {
         error: null,
       }),
       update: (obj) => { captured.push({ table, op: 'update', obj }); return b },
+      delete: () => { captured.push({ table, op: 'delete' }); return b },
       insert: (obj) => { captured.push({ table, op: 'insert', obj }); return b },
     }
     return b
@@ -181,6 +182,32 @@ for (const eng of engines) {
     assert.notEqual(r.status && r.status.detail && r.status.detail.reason, 'template_channel_invalid')
   })
 }
+
+// Life Conversion: an UNAPPROVED template HOLDS the touch (claim released, cursor kept) for up to
+// 72h past due, then skips it with the reason recorded (audit D-06; owner decision 3's expiry).
+console.log('\nlife — unapproved template holds, then expires')
+async function fireUnapproved(nextTouchAt) {
+  sendState.calls = 0
+  sendState.approved = false
+  const { db, captured } = makeDb({ channel: 'email', body: 'Subject: Hi\n\nHello', introduces_sender: false }, REACHABLE_MEMBER)
+  const ret = await impls.life(db, cfg, { ...baseE, next_touch_at: nextTouchAt }, 1, { ...touch }, dispatchCtx, NOW)
+  sendState.approved = true
+  return { ret, calls: sendState.calls, captured, status: recordedStatus(captured) }
+}
+await record('life: unapproved template 1h past due → DEFERRED (claim released, not burned), NO dispatch', async () => {
+  const r = await fireUnapproved('2026-08-10T15:00:00.000Z')
+  assert.equal(r.ret, 'deferred')
+  assert.equal(r.calls, 0)
+  assert.ok(r.captured.some((c) => c.table === 'life_campaign_executions' && c.op === 'delete'), 'the claim is released')
+  assert.equal(r.status, null, 'no terminal execution status recorded')
+})
+await record('life: unapproved template >72h past due → skipped(template_not_approved_hold_expired)', async () => {
+  const r = await fireUnapproved('2026-08-07T15:00:00.000Z')
+  assert.equal(r.ret, 'blocked')
+  assert.equal(r.calls, 0)
+  assert.equal(r.status.status, 'skipped')
+  assert.equal(r.status.detail.reason, 'template_not_approved_hold_expired')
+})
 
 Module._load = origLoad
 

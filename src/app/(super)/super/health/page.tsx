@@ -28,8 +28,10 @@ async function probeSupabase(): Promise<Probe> {
   }
 }
 
-function statusOf(connected: boolean): 'connected' | 'disconnected' {
-  return connected ? 'connected' : 'disconnected'
+// Credentials present ≠ a live connection: nothing here probes Resend, Twilio or the model
+// provider, so they read "configured (not tested)" (audit I-24). Supabase alone is probed above.
+function statusOf(configured: boolean): 'configured' | 'not_configured' {
+  return configured ? 'configured' : 'not_configured'
 }
 
 export default async function SuperHealthPage() {
@@ -47,7 +49,7 @@ export default async function SuperHealthPage() {
       : 'degraded'
 
   return (
-    <SettingsShell title="System Health" description="Live status of FSOS services and integrations. Secrets are never displayed.">
+    <SettingsShell title="System Health" description="Supabase is probed live; the other services show whether their credentials are configured. Secrets are never displayed.">
       <SettingsSection title="Data & auth">
         <IntegrationShell name="Supabase (Postgres / Auth / RLS)" status={supaStatus}>
           {supa.reachable
@@ -69,7 +71,7 @@ export default async function SuperHealthPage() {
 
       <SettingsSection title="AI & external">
         <IntegrationShell name="AI gateway (Claude-first)" status={statusOf(ai)}>
-          {ai ? 'Configured. All AI routes through the model-agnostic gateway.' : 'ANTHROPIC_API_KEY unset — FNA and the assistant are unavailable.'}
+          {ai ? 'Key present (not tested). All AI routes through the model-agnostic gateway.' : 'ANTHROPIC_API_KEY unset — FNA and the assistant are unavailable.'}
         </IntegrationShell>
         <IntegrationShell
           name="Farmers / FFS payout API"

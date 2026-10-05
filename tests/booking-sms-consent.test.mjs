@@ -252,7 +252,11 @@ const CAP_HOOKS = {
   '@/lib/audit/log': { __esModule: true, writeAudit: async (e) => { audits.push(e); return { ok: true } } },
   '@/lib/comms/conversations': { __esModule: true, resolveContact: async () => memberLink },
   '@/lib/comms/consent-events': { __esModule: true, recordConsentChange: async () => ({ audited: true }) },
+  // Documented re-consent clears earlier SMS opt-outs (owner, round 3) — proven in
+  // tests/optout-consent-property.test.mjs; recorded here so this file asserts WHEN it is invoked.
+  '@/lib/comms/opt-out': { __esModule: true, applyDocumentedReconsent: async (r) => { reconsents.push(r); return { ok: true, cleared: 0 } } },
 }
+const reconsents = []
 const origLoad = Module._load
 Module._load = function (request, ...rest) {
   if (CAP_HOOKS[request]) return CAP_HOOKS[request]
@@ -276,6 +280,7 @@ const CAPTURE_INPUT = {
 const rowsFor = (table) => writes.filter((w) => w.table === table)
 
 async function capture(opts = {}) {
+  reconsents.length = 0
   writes.length = 0
   audits.length = 0
   memberLink = opts.memberLink ?? { memberId: null, householdId: null, agencyId: null }
@@ -285,6 +290,9 @@ async function capture(opts = {}) {
 }
 
 const capResult = await capture()
+t('a public booking opt-in never clears an earlier STOP on the number (anyone can type a number — review F1)', () => {
+  assert.equal(reconsents.length, 0)
+})
 t('the grant row carries the booking reference, the exact wording, and the capture context', () => {
   const row = rowsFor('comm_contact_consents')[0]?.row
   assert.ok(row, 'a contact-level grant must be written')
@@ -363,6 +371,7 @@ t('an UNRELATED insert failure is not retried, and is reported as no consent rec
   assert.equal(rowsFor('comm_contact_consents').length, 1, 'no degraded retry on an unrelated error')
   const a = audits.find((x) => x.action === 'consent.captured')
   assert.equal(a.diff.granted, false, 'the audit must not claim a grant that was never stored')
+  assert.equal(reconsents.length, 0, 'no stored grant → no re-consent: the opt-outs stay in force')
 })
 
 t('the pure rule behind that decision', () => {

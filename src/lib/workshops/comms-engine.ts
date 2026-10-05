@@ -103,7 +103,12 @@ const CONFIG_DEFAULTS: EngineConfig = {
 /** Load the singleton config row, falling back to code defaults if unset. */
 async function loadConfig(db: Db): Promise<EngineConfig> {
   try {
-    const { data } = await db.from('workshop_comms_config').select('*').eq('id', 'global').maybeSingle()
+    const { data, error } = await db.from('workshop_comms_config').select('*').eq('id', 'global').maybeSingle()
+    // supabase-js RESOLVES { data: null, error } rather than throwing, so the catch below never saw
+    // a read error and the null data fell through to CONFIG_DEFAULTS (enabled: true) — a thrown
+    // kill switch re-enabled itself on any read failure (audit G-07). A returned error disables,
+    // exactly like a thrown one; only a genuinely absent row takes the code defaults.
+    if (error) return { ...CONFIG_DEFAULTS, enabled: false }
     if (!data) return CONFIG_DEFAULTS
     return {
       enabled: data.enabled !== false,

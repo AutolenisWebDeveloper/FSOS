@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { DetailShell, Section } from '@/components/archetypes'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { REFERENCE_COPY_LABEL } from '@/lib/ops/automation-registry'
 import { load } from '@/lib/data/query'
 import { loadCampaignDetail } from '@/lib/life-campaign/detail'
 import { campaignAnalytics } from '@/lib/life-campaign/analytics'
@@ -134,7 +135,8 @@ export default async function LifeConversionDetailPage(props: { params: Promise<
         {/* 6b — AI conversation playbooks + advisor scripts */}
         <Section
           title={`AI conversation playbooks (${detail.playbooks.length})`}
-          description="What the AI may say on an ai_conversation touch, and where it must stop. Every opener identifies itself as an automated assistant; the SMS path also appends the STOP opt-out footer."
+          description="Scripts for the advisor: what may be said and where it must stop. The ai_conversation touches send their approved template above; nothing here is sent, and no follow-up, handoff or closing fires on its own."
+          action={<Badge variant="draft">{REFERENCE_COPY_LABEL}</Badge>}
         >
           <Card className="p-5">
             <div className="space-y-3">

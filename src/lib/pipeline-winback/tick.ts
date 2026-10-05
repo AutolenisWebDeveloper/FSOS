@@ -13,7 +13,7 @@
 import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
 import { sendMessage, isTemplateApproved } from '@/lib/comms/send'
-import { isDeferralGateStep } from '@/lib/comms/gate'
+import { isDeferralGateStep, oneTouchPerDay, quietHoursHold } from '@/lib/comms/gate'
 import { campaignDispatchContext, campaignIdentityContext } from '@/lib/comms/campaign'
 import { smsA2pApproved } from '@/lib/comms/a2p'
 import { getOrCreateConversation } from '@/lib/comms/conversations'
@@ -46,6 +46,8 @@ interface EnrollmentRow {
   agency_id: string | null
   baseline_date: string
   current_touch_no: number
+  /** When the current touch fell due — bounds a quiet-hours hold (owner decision 3). */
+  next_touch_at?: string | null
 }
 
 export interface WinbackTickResult {
@@ -81,7 +83,7 @@ export async function pipelineWinbackTick(): Promise<WinbackTickResult> {
 
     const { data: due } = await db
       .from('pipeline_winback_enrollments')
-      .select('id, campaign_id, opportunity_id, member_id, contact_id, household_id, agency_id, baseline_date, current_touch_no')
+      .select('id, campaign_id, opportunity_id, member_id, contact_id, household_id, agency_id, baseline_date, current_touch_no, next_touch_at')
       .eq('campaign_id', c.id)
       .eq('status', 'active')
       .lte('next_touch_at', nowISO)
@@ -128,6 +130,24 @@ export async function pipelineWinbackTick(): Promise<WinbackTickResult> {
       if (touch.kind !== 'advisor_outreach' && touch.template_id && !smsA2pApproved()) {
         const { data: tpl } = await db.from('comm_templates').select('channel').eq('id', touch.template_id).maybeSingle()
         if ((tpl?.channel === 'email' ? 'email' : 'sms') === 'sms') continue
+      }
+
+      // Finding 5 at SEND time: the hourly ticks fire at most one message touch per enrollment per UTC
+      // day, whichever path set the cursor (advance, admin resume/replay, restart from day 1). A touch
+      // already sent today pushes this one to tomorrow; a read error holds it (fail closed).
+      if (touch.kind !== 'advisor_outreach') {
+        const { data: sentToday, error: sentTodayErr } = await db
+          .from('pipeline_winback_executions')
+          .select('id')
+          .eq('enrollment_id', e.id)
+          .eq('status', 'sent')
+          .gte('executed_at', `${nowISO.slice(0, 10)}T00:00:00.000Z`)
+          .limit(1)
+        if (sentTodayErr) continue
+        if ((sentToday ?? []).length > 0) {
+          await db.from('pipeline_winback_enrollments').update({ next_touch_at: oneTouchPerDay(nowISO, nowISO), updated_at: nowISO }).eq('id', e.id)
+          continue
+        }
       }
 
       // Idempotency: claim this touch's execution row first. If it already exists, this touch
@@ -321,10 +341,18 @@ export async function fireMessageTouch(
     await db.from('pipeline_winback_executions').delete().eq('enrollment_id', e.id).eq('touch_no', touchNo)
     return 'deferred'
   }
+  // Owner decision 3: a quiet-hours withhold (floor or Sunday hold) is HELD for the next window,
+  // not burned — up to 72h past due, then recorded as expired. Released by the next tick, which
+  // re-runs the stop conditions and the gate. (gate.ts quietHoursHold)
+  const qh = outcome.sent ? null : quietHoursHold(outcome.gate.blockedStep, e.next_touch_at, nowISO)
+  if (qh === 'hold') {
+    await db.from('pipeline_winback_executions').delete().eq('enrollment_id', e.id).eq('touch_no', touchNo)
+    return 'deferred'
+  }
   await markExecution(db, e.id, touchNo, outcome.sent ? 'sent' : 'suppressed', {
     channel,
     kind: touch.kind,
-    reason: outcome.reason,
+    reason: qh === 'expired' ? 'quiet_hours_hold_expired' : outcome.reason,
     messageId: outcome.messageId,
     ...(isAi ? { ai_armed: aiArmed } : {}),
   })
@@ -397,9 +425,10 @@ async function advanceCursor(db: ReturnType<typeof getDb>, e: EnrollmentRow, tou
     await completeEnrollment(db, e.id, nowISO)
     return
   }
+  // Finding 5: hourly ticks, at most one touch per enrollment per day (gate.ts oneTouchPerDay).
   await db
     .from('pipeline_winback_enrollments')
-    .update({ current_touch_no: touchNo, next_touch_at: `${next.dueDate}T13:00:00.000Z`, updated_at: nowISO })
+    .update({ current_touch_no: touchNo, next_touch_at: oneTouchPerDay(`${next.dueDate}T13:00:00.000Z`, nowISO), updated_at: nowISO })
     .eq('id', e.id)
 }
 

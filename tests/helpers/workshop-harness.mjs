@@ -94,6 +94,9 @@ const stubPlugin = {
   setup(b) {
     b.onResolve({ filter: /^next\/server$/ }, () => ({ path: nextServerStub }))
     b.onResolve({ filter: /^@\/lib\/supabase\/client$/ }, () => ({ path: dbStub }))
+    // Modules that are also compiled standalone (the chokepoint graph) import the client
+    // RELATIVELY ('../supabase/client'); they must get the same stub, never the real client.
+    b.onResolve({ filter: /^\.{1,2}\/(.*\/)?supabase\/client$/ }, () => ({ path: dbStub }))
     b.onResolve({ filter: /^@\/lib\/audit\/log$/ }, () => ({ path: auditStub }))
     b.onResolve({ filter: /^@\// }, (args) => {
       const rel = args.path.slice(2)

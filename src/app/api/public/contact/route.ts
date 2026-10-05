@@ -158,6 +158,8 @@ export async function POST(req: NextRequest) {
         referral_id: referral.id,
         captured_at: now.toISOString(),
       })
+      // Deliberately does NOT clear an earlier STOP on this number: anyone can type anyone's number
+      // here (review F1). The person re-opens SMS by texting START from the handset.
       // Timeline breadcrumb. The enforceable grant lives in comm_contact_consents above;
       // it materializes into a member-keyed `consents` row when the lead converts (WF-1).
       await db.from('activities').insert({

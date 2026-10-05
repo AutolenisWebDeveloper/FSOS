@@ -24,25 +24,33 @@ function check(name, fn) {
 const winback = readFileSync('src/lib/pipeline-winback/inbound.ts', 'utf8')
 const life = readFileSync('src/lib/life-campaign/inbound.ts', 'utf8')
 const book = readFileSync('src/lib/booking/book.ts', 'utf8')
+// The fan-out moved to ONE shared module (src/lib/booking/appointment-booked.ts) that EVERY
+// appointment-creating path calls — the public scheduler AND FSA review scheduling (audit D-02).
+const fanout = readFileSync('src/lib/booking/appointment-booked.ts', 'utf8')
 
 console.log('Pipeline Win-Back — booking exit parity + wiring')
 
 // ── The wiring: the defect was an absent call site, so that is what must be pinned ──
-check('book.ts imports all three campaign inbound modules', () => {
+check('book.ts delegates to the shared appointment-booked fan-out', () => {
+  assert.ok(/onAppointmentBooked\(\{ householdId:/.test(book), 'book.ts does not call onAppointmentBooked')
+})
+check('the fan-out imports all three campaign inbound modules', () => {
   for (const m of ['cross-sell-life/inbound', 'life-campaign/inbound', 'pipeline-winback/inbound']) {
-    assert.ok(book.includes(m), `book.ts does not import ${m}`)
+    assert.ok(fanout.includes(m), `appointment-booked.ts does not import ${m}`)
   }
 })
-check('book.ts calls exitOnAppointment on all three', () => {
-  const calls = book.match(/\w+\.exitOnAppointment\(/g) ?? []
-  assert.equal(calls.length, 3, `expected 3 exitOnAppointment calls in book.ts, found ${calls.length}`)
+check('the fan-out calls exitOnAppointment on all three', () => {
+  assert.ok(/life\.exitOnAppointment\(/.test(fanout), 'life exit missing')
+  assert.ok(/winback\.exitOnAppointment\(/.test(fanout), 'win-back exit missing')
+  assert.ok(/exitAllCrossSell\(xsell\.exitOnAppointment/.test(fanout), 'cross-sell exit missing')
 })
 check('the three exits are settled together, so one failure cannot skip the others', () => {
-  assert.ok(/Promise\.allSettled\(\[[\s\S]*?winback\.exitOnAppointment/.test(book),
+  assert.ok(/Promise\.allSettled\(\[[\s\S]*?winback\.exitOnAppointment/.test(fanout),
     'the win-back exit is not inside the same allSettled as the other two')
 })
 check('the booking is never failed by a campaign exit (best-effort, appointment already exists)', () => {
   assert.ok(/best-effort — the appointment already exists/.test(book))
+  assert.ok(/never throws/.test(fanout))
 })
 
 // ── Parity with the module it mirrors ──

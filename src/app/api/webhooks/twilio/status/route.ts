@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyTwilioSignature, requestUrl } from '@/lib/comms/twilio'
 import { findMessageById, findMessageByProviderId, recordMessageEvent, normalizeProviderEvent } from '@/lib/comms/events'
-import { isCarrierOptOutCode, recordChannelOptOut } from '@/lib/comms/opt-out'
-import { normalizeContact, resolveContact } from '@/lib/comms/conversations'
+import { isCarrierOptOutCode, recordCarrierOptOut } from '@/lib/comms/opt-out'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -66,21 +65,10 @@ export async function POST(req: NextRequest) {
   // unambiguous 21610 (see isCarrierOptOutCode); filtering and unreachable-handset codes are
   // delivery problems, and treating them as opt-outs would unsubscribe people silently.
   if (isCarrierOptOutCode(params.ErrorCode) && params.To) {
-    try {
-      const contact = normalizeContact('sms', params.To)
-      const link = await resolveContact('sms', contact)
-      await recordChannelOptOut({
-        contact,
-        channel: 'sms',
-        source: 'carrier_opt_out',
-        reason: `Twilio ErrorCode ${params.ErrorCode} — recipient unsubscribed at the carrier`,
-        consentText: 'Carrier-reported opt-out (Twilio 21610)',
-        memberId: link.memberId,
-        householdId: link.householdId,
-      })
-    } catch (err) {
-      console.error('[twilio:status] carrier opt-out handling failed:', err)
-    }
+    const optOut = await recordCarrierOptOut(params.To, String(params.ErrorCode))
+    // A lost opt-out must not be acknowledged: 5xx so the callback is retried (audit B-14). The
+    // ledger upsert above is idempotent, so a redelivery cannot double-record the event.
+    if (!optOut.ok) return NextResponse.json({ error: 'opt-out write failed' }, { status: 503 })
   }
 
   return NextResponse.json({ received: true })

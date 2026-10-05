@@ -113,7 +113,7 @@ export function WorkflowBuilder() {
       toast.error(fe.message)
       return
     }
-    toast.success('Workflow created as draft (disabled). Enable it when ready.')
+    toast.success('Workflow design saved. Workflows are not executed yet.')
     router.push(`/app/workflows/${res.data.workflow.id}`)
   }
 
@@ -148,7 +148,7 @@ export function WorkflowBuilder() {
         </div>
         {errors.conditions ? <p className="text-xs text-destructive">{errors.conditions}</p> : null}
         {conditions.length === 0 ? (
-          <p className="text-xs text-muted-foreground">No conditions — the workflow runs for every matching trigger.</p>
+          <p className="text-xs text-muted-foreground">No conditions — the design applies to every matching trigger.</p>
         ) : (
           <div className="space-y-2">
             {conditions.map(({ key, row }) => (
@@ -231,12 +231,14 @@ export function WorkflowControls({ id, enabled }: { id: string; enabled: boolean
   const router = useRouter()
   const [busy, setBusy] = React.useState(false)
 
-  async function toggle() {
+  // Enabling is not offered: no engine executes workflows (audit I-04). A row enabled before this
+  // change can still be disabled.
+  async function disable() {
     setBusy(true)
-    const res = await patchJson(`/api/workflows/${id}`, { enabled: !enabled })
+    const res = await patchJson(`/api/workflows/${id}`, { enabled: false })
     setBusy(false)
     if (!res.ok) { toast.error(firstFieldError(res.error).message); return }
-    toast.success(!enabled ? 'Workflow enabled.' : 'Workflow disabled.')
+    toast.success('Workflow disabled.')
     router.refresh()
   }
 
@@ -251,9 +253,11 @@ export function WorkflowControls({ id, enabled }: { id: string; enabled: boolean
 
   return (
     <div className="flex flex-wrap gap-2">
-      <Button size="sm" onClick={toggle} disabled={busy} variant={enabled ? 'outline' : 'default'}>
-        {enabled ? 'Disable' : 'Enable'}
-      </Button>
+      {enabled && (
+        <Button size="sm" variant="outline" onClick={disable} disabled={busy}>
+          Disable
+        </Button>
+      )}
       <Button size="sm" variant="outline" onClick={archive} disabled={busy}>Archive</Button>
     </div>
   )

@@ -149,6 +149,20 @@ export function requireInternalAuth(req: NextRequest): NextResponse | null {
   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 }
 
+/**
+ * Cron authorization — the ONE check every /api/cron/* route uses (owner decision 9, audit
+ * A-01 / C-07 / J-01). Bearer CRON_SECRET only: the `x-vercel-cron` header is client-supplied,
+ * so trusting it let anyone trigger the live send engines. Vercel sends
+ * `Authorization: Bearer <CRON_SECRET>` on cron invocations when the env var is set. No secret
+ * configured → every request is refused (fail closed); provisioning CRON_SECRET is a deploy
+ * prerequisite, without it every cron answers 401.
+ */
+export function cronAuthorized(req: NextRequest): boolean {
+  const secret = process.env.CRON_SECRET
+  if (!secret) return false
+  return (req.headers.get('authorization') || '') === `Bearer ${secret}`
+}
+
 /** Best-effort identity of the operator behind an internal request, for audit fields. */
 export function callerLabel(req: NextRequest): string {
   const header = req.headers.get('authorization') || ''

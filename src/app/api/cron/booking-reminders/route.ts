@@ -14,8 +14,9 @@
 //
 // Every send goes through the existing comms gate (consent, quiet-hours, DNC, approved
 // template, recommendation, securities); nothing sends while the reminder template is an
-// unapproved draft. Auth mirrors /api/cron/[job]: Vercel Cron header OR a Bearer CRON_SECRET.
+// unapproved draft. Auth: Bearer CRON_SECRET only (cronAuthorized, src/lib/http.ts).
 import { NextRequest, NextResponse } from 'next/server'
+import { cronAuthorized } from '@/lib/http'
 import { runBookingReminderPass, runBookingNoticeRetryPass } from '@/lib/booking/notify'
 import { configErrorResponse } from '@/lib/http'
 
@@ -26,15 +27,9 @@ export const runtime = 'nodejs'
 // (released on a later tick by the ledger reaper, but better not to strand it at all).
 export const maxDuration = 60
 
-function authorized(req: NextRequest): boolean {
-  if (req.headers.get('x-vercel-cron')) return true
-  const secret = process.env.CRON_SECRET
-  if (!secret) return false
-  return (req.headers.get('authorization') || '') === `Bearer ${secret}`
-}
 
 export async function GET(req: NextRequest) {
-  if (!authorized(req)) {
+  if (!cronAuthorized(req)) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
   try {

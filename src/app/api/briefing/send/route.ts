@@ -3,7 +3,7 @@ import { getDb } from '@/lib/supabase/client'
 import { requireInternalAuth, readJson, escapeHtml } from '@/lib/http'
 import { FNA_MODEL } from '@/lib/anthropic'
 import { runGateway } from '@/lib/ai/gateway'
-import { sendEmail } from '@/lib/messaging'
+import { sendRecorded } from '@/lib/notifications/transactional'
 import { renderEmailShell } from '@/lib/notifications/email-shell'
 
 export const dynamic = 'force-dynamic'
@@ -124,20 +124,21 @@ export async function POST(req: NextRequest) {
   // caller-supplied via the request body, so an internally-authenticated caller can direct
   // this digest at an arbitrary address. Consolidation gates the SEND; validating the
   // recipient input is a separate defect and is reported, not repaired, in this change.
-  const result = await sendEmail(to, `FSOS Morning Briefing — ${today}`, html, body, {
-    policy: {
-      actor: 'system:briefing',
-      purpose: 'TRANSACTIONAL',
-      templateKind: 'system_transactional',
-      suppressible: false,
-      consentWaived: true,
-      // Deliberately NOT flagged aiGenerated: the §11/§12 authority matrix governs
-      // CLIENT-FACING autonomous AI, and its fail-safe holds an unclassified draft "for the
-      // licensed FSA" — which is circular for a digest ADDRESSED to that FSA's own inbox
-      // (it would hold every briefing forever). The control that matters for raw gateway
-      // output still runs: with no approved human template, the recommendation red line
-      // (gate step 5) screens this body at the chokepoint like any other unapproved copy.
-    },
+  // Recorded (owner, round 3): through sendMessage like every other send, so a comm_messages row is
+  // written — no thread, no tracking. Deliberately NOT flagged aiGenerated: the §11/§12 authority
+  // matrix governs CLIENT-FACING autonomous AI, and its fail-safe holds an unclassified draft "for
+  // the licensed FSA" — circular for a digest ADDRESSED to that FSA's own inbox. The control that
+  // matters for raw gateway output still runs: with no approved human template, the recommendation
+  // red line (gate step 5) screens this body at the chokepoint like any other unapproved copy.
+  const result = await sendRecorded({
+    to,
+    subject: `FSOS Morning Briefing — ${today}`,
+    html,
+    text: body,
+    actor: 'system:briefing',
+    consentWaived: true,
+    // No entity: comm_messages.entity_id is a uuid and a briefing has no row of its own (the date
+    // is not an id). The record stands alone, labelled 'message'.
   })
   if (!result.ok) {
     console.error('[briefing] send failed:', result.error)

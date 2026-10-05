@@ -7,22 +7,17 @@
 // publishing) inside publishDueEntries, so overlapping ticks publish each queued
 // item at most once.
 //
-// Auth mirrors /api/cron/[job]: Vercel Cron header OR a Bearer CRON_SECRET.
+// Auth: Bearer CRON_SECRET only (cronAuthorized, src/lib/http.ts).
 import { NextRequest, NextResponse } from 'next/server'
+import { cronAuthorized } from '@/lib/http'
 import { publishDueEntries } from '@/lib/social/publisher'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-function authorized(req: NextRequest): boolean {
-  if (req.headers.get('x-vercel-cron')) return true
-  const secret = process.env.CRON_SECRET
-  if (!secret) return false
-  return (req.headers.get('authorization') || '') === `Bearer ${secret}`
-}
 
 export async function GET(req: NextRequest) {
-  if (!authorized(req)) {
+  if (!cronAuthorized(req)) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
   try {

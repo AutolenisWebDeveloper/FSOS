@@ -10,7 +10,7 @@
 import { getDb } from '@/lib/supabase/client'
 import { writeAudit } from '@/lib/audit/log'
 import { sendMessage, isTemplateApproved } from '@/lib/comms/send'
-import { isDeferralGateStep } from '@/lib/comms/gate'
+import { isDeferralGateStep, oneTouchPerDay, quietHoursHold } from '@/lib/comms/gate'
 import { campaignDispatchContext, campaignIdentityContext } from '@/lib/comms/campaign'
 import { smsA2pApproved } from '@/lib/comms/a2p'
 import { getOrCreateConversation } from '@/lib/comms/conversations'
@@ -42,7 +42,12 @@ interface EnrollmentRow {
   agency_id: string | null
   baseline_date: string
   current_touch_no: number
+  /** When the touch now being attempted fell due (drives the template-hold expiry). */
+  next_touch_at?: string | null
 }
+
+/** A touch held for an unapproved template is skipped once it is this far past due (owner decision 3). */
+export const TEMPLATE_HOLD_MAX_MS = 72 * 3600 * 1000
 
 export interface TickResult {
   ok: boolean
@@ -81,7 +86,7 @@ export async function lifeCampaignTick(): Promise<TickResult> {
 
     const { data: due } = await db
       .from('life_campaign_enrollments')
-      .select('id, campaign_id, member_id, household_id, policy_id, agency_id, baseline_date, current_touch_no')
+      .select('id, campaign_id, member_id, household_id, policy_id, agency_id, baseline_date, current_touch_no, next_touch_at')
       .eq('campaign_id', c.id)
       .eq('status', 'active')
       .lte('next_touch_at', nowISO)
@@ -91,7 +96,11 @@ export async function lifeCampaignTick(): Promise<TickResult> {
     const dispatchCtx = await campaignDispatchContext({
       id: cfg.id,
       type: 'drip',
-      purpose: cfg.purpose,
+      // Owner decision 6 (docs/ops/automation-inventory.md §10): Life Conversion is MARKETING for
+      // consent, business suppression and quiet hours — enforced here so a stale or edited
+      // campaign row (seeded POLICY_DEADLINE) cannot take it out of
+      // marketing treatment. Migration 139 aligns the stored rows.
+      purpose: 'MARKETING',
       delegation_id: cfg.delegation_id,
       represented_agency_owner_id: cfg.represented_agency_owner_id,
       sequencePurpose: null,
@@ -108,7 +117,11 @@ export async function lifeCampaignTick(): Promise<TickResult> {
       }
 
       // Re-check eligibility BEFORE the touch (ownership recheck).
-      const elig = evaluateEligibility(await loadEligibilityInput(cfg, e.policy_id, e.member_id, nowISO, e.id))
+      const eligInput = await loadEligibilityInput(cfg, e.policy_id, e.member_id, nowISO, e.id)
+      // The appointment or policy-status lookup failed: hold this touch for the next run rather than exiting the
+      // enrollment (terminal) on a transient read error — and never send while it is unknown.
+      if (eligInput.upcomingAppointment === null || eligInput.policyInForce === null) continue
+      const elig = evaluateEligibility(eligInput)
       if (!elig.eligible) {
         await handleIneligible(db, e.id, elig.reasons, nowISO)
         exited++
@@ -122,6 +135,24 @@ export async function lifeCampaignTick(): Promise<TickResult> {
       if (touch.kind !== 'advisor_outreach' && touch.template_id && !smsA2pApproved()) {
         const { data: tpl } = await db.from('comm_templates').select('channel').eq('id', touch.template_id).maybeSingle()
         if ((tpl?.channel === 'email' ? 'email' : 'sms') === 'sms') continue
+      }
+
+      // Finding 5 at SEND time: the hourly ticks fire at most one message touch per enrollment per UTC
+      // day, whichever path set the cursor (advance, admin resume/replay, restart from day 1). A touch
+      // already sent today pushes this one to tomorrow; a read error holds it (fail closed).
+      if (touch.kind !== 'advisor_outreach') {
+        const { data: sentToday, error: sentTodayErr } = await db
+          .from('life_campaign_executions')
+          .select('id')
+          .eq('enrollment_id', e.id)
+          .eq('status', 'sent')
+          .gte('executed_at', `${nowISO.slice(0, 10)}T00:00:00.000Z`)
+          .limit(1)
+        if (sentTodayErr) continue
+        if ((sentToday ?? []).length > 0) {
+          await db.from('life_campaign_enrollments').update({ next_touch_at: oneTouchPerDay(nowISO, nowISO), updated_at: nowISO }).eq('id', e.id)
+          continue
+        }
       }
 
       // Idempotency: claim this touch's execution row first. If it already exists, this
@@ -183,17 +214,29 @@ async function enrollSweep(db: ReturnType<typeof getDb>, cfg: CampaignConfig, no
   // starve the batch. Most-urgent first (soonest verified deadline). Exclude firewall rows up
   // front (enrollContact fails them closed too). Never manufacture urgency — the view only
   // surfaces policies that carry a real conversion_deadline.
+  // Only policies whose full 180-day cadence still FITS before the deadline (schedule.ts
+  // earlyEnrollmentFits: 179 days + buffer). Asking for the soonest deadlines first used to fill
+  // the whole over-fetch with policies that could never fit, so nothing enrolled and each one
+  // raised a fresh advisor task every day (audit D-04).
+  const minDays = 179 + Number(cfg.early_enrollment_buffer_days ?? 0)
   const { data: candidates } = await db
     .from('v_conversions_due')
     .select('policy_id, household_id, days_remaining, is_security')
     .eq('is_security', false)
+    .gte('days_remaining', minDays)
     .order('days_remaining', { ascending: true })
     .limit(remaining * 4)
+
+  // Policies already enrolled in this campaign in ANY state (incl. completed/exited) are never
+  // re-swept — the unique (campaign, member) constraint would refuse them anyway.
+  const { data: existing } = await db.from('life_campaign_enrollments').select('policy_id').eq('campaign_id', cfg.id).limit(5000)
+  const alreadyEnrolled = new Set((existing ?? []).map((r: { policy_id: string | null }) => r.policy_id).filter(Boolean))
 
   let enrolled = 0
   for (const cand of candidates ?? []) {
     if (enrolled >= remaining) break
     if (!cand.policy_id || !cand.household_id) continue
+    if (alreadyEnrolled.has(cand.policy_id as string)) continue
     // Resolve the household's primary (first-created) member as the enrollment subject; the send
     // gate still enforces per-recipient consent/quiet-hours/DNC before anything is delivered.
     const { data: member } = await db
@@ -212,7 +255,37 @@ async function enrollSweep(db: ReturnType<typeof getDb>, cfg: CampaignConfig, no
     })
     if (r.enrolled) enrolled++
   }
+
+  // Policies too close to their deadline for the full cadence: ONE advisor-review task each,
+  // idempotent across days (the previous path inserted a new one every day).
+  const { data: tooClose } = await db
+    .from('v_conversions_due')
+    .select('policy_id')
+    .eq('is_security', false)
+    .gte('days_remaining', 0)
+    .lt('days_remaining', minDays)
+    .order('days_remaining', { ascending: true })
+    .limit(50)
+  for (const p of tooClose ?? []) {
+    if (p.policy_id) await ensureInsufficientTimeTask(db, p.policy_id as string)
+  }
   return enrolled
+}
+
+const INSUFFICIENT_TIME_TASK = 'Life Conversion — deadline too close for full campaign; advisor review'
+
+/** One advisor-review task per policy, ever — select-before-insert (renewal-watch pattern). */
+export async function ensureInsufficientTimeTask(db: ReturnType<typeof getDb>, policyId: string): Promise<void> {
+  const { data: exists, error } = await db
+    .from('work_tasks')
+    .select('id')
+    .eq('entity_type', 'policy')
+    .eq('entity_id', policyId)
+    .eq('title', INSUFFICIENT_TIME_TASK)
+    .limit(1)
+    .maybeSingle()
+  if (error || exists) return
+  await db.from('work_tasks').insert({ title: INSUFFICIENT_TIME_TASK, entity_type: 'policy', entity_id: policyId, source: 'workflow' })
 }
 
 // Exported for the fail-closed regression proof (tests/campaign-template-failclosed.test.mjs),
@@ -227,9 +300,18 @@ export async function fireMessageTouch(
   dispatchCtx: Awaited<ReturnType<typeof campaignDispatchContext>>,
   nowISO: string,
 ): Promise<'sent' | 'blocked' | 'deferred'> {
-  // Unapproved/empty template → skip the send but keep the timeline moving (never stall).
+  // Unapproved template → HOLD the touch (release the claim, keep the cursor) so it sends once the
+  // template is approved, instead of burning it (audit D-06). The hold is bounded: once the touch
+  // is more than 72h past due it is skipped with the reason recorded (owner decision 3's expiry),
+  // so an abandoned template can never stall the cadence forever. No template at all is skipped.
   if (!touch.template_id || !(await isTemplateApproved(touch.template_id))) {
-    await markExecution(db, e.id, touchNo, 'skipped', { reason: 'template_not_approved' })
+    const dueAt = e.next_touch_at ? Date.parse(e.next_touch_at) : NaN
+    const withinHold = !!touch.template_id && Number.isFinite(dueAt) && Date.parse(nowISO) - dueAt <= TEMPLATE_HOLD_MAX_MS
+    if (withinHold) {
+      await db.from('life_campaign_executions').delete().eq('enrollment_id', e.id).eq('touch_no', touchNo)
+      return 'deferred'
+    }
+    await markExecution(db, e.id, touchNo, 'skipped', { reason: touch.template_id ? 'template_not_approved_hold_expired' : 'template_not_approved' })
     return 'blocked'
   }
   // comm_templates has no `subject` column — the subject rides on the body's leading
@@ -332,10 +414,18 @@ export async function fireMessageTouch(
     await db.from('life_campaign_executions').delete().eq('enrollment_id', e.id).eq('touch_no', touchNo)
     return 'deferred'
   }
+  // Owner decision 3: a quiet-hours withhold (floor or Sunday hold) is HELD for the next window,
+  // not burned — up to 72h past due, then recorded as expired. Released by the next tick, which
+  // re-runs the stop conditions and the gate. (gate.ts quietHoursHold)
+  const qh = outcome.sent ? null : quietHoursHold(outcome.gate.blockedStep, e.next_touch_at, nowISO)
+  if (qh === 'hold') {
+    await db.from('life_campaign_executions').delete().eq('enrollment_id', e.id).eq('touch_no', touchNo)
+    return 'deferred'
+  }
   await markExecution(db, e.id, touchNo, outcome.sent ? 'sent' : 'suppressed', {
     channel,
     kind: touch.kind,
-    reason: outcome.reason,
+    reason: qh === 'expired' ? 'quiet_hours_hold_expired' : outcome.reason,
     messageId: outcome.messageId,
     ...(isAi ? { ai_armed: aiArmed } : {}),
   })
@@ -393,9 +483,10 @@ async function advanceCursor(db: ReturnType<typeof getDb>, e: EnrollmentRow, tou
     await completeEnrollment(db, e.id, nowISO)
     return
   }
+  // Finding 5: hourly ticks, at most one touch per enrollment per day (gate.ts oneTouchPerDay).
   await db
     .from('life_campaign_enrollments')
-    .update({ current_touch_no: touchNo, next_touch_at: `${next.dueDate}T13:00:00.000Z`, updated_at: nowISO })
+    .update({ current_touch_no: touchNo, next_touch_at: oneTouchPerDay(`${next.dueDate}T13:00:00.000Z`, nowISO), updated_at: nowISO })
     .eq('id', e.id)
 }
 

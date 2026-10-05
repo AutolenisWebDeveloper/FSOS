@@ -509,3 +509,105 @@ export function resolveRecipientTimeZone(input: TimezoneResolutionInput): Timezo
   const reason: TimezoneUnresolvedReason = npaReason ?? zipReason ?? 'no_input'
   return { resolved: false, reason, attempted }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Recipient country (review finding 3b)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * +1 area codes that are NOT the United States: Canada (incl. its non-geographic 600/622/633 and
+ * the reserved 644/655/677/688)
+ * and the NANP member countries of the Caribbean and Bermuda. US territories (PR 787/939,
+ * USVI 340, Guam 671, CNMI 670, American Samoa 684) are the United States and are NOT here.
+ * Source: libphonenumber-js 1.13.14 metadata (country leading digits for calling code 1;
+ * Canada's area codes from its number patterns), extracted 2026-10-02. A new Canadian or
+ * Caribbean code must be added here: until it is, it reads as a US code with no mapped zone
+ * (decision 1's continental fallback) — the one way this list can fail open, so refresh it from
+ * the NANPA assignments when one is announced.
+ */
+export const NON_US_NANP_NPAS: Readonly<Record<string, readonly string[]>> = {
+  CA: [
+    '204', '226', '236', '249', '250', '257', '263', '273', '289', '306', '343', '354', '365',
+    '367', '368', '382', '403', '416', '418', '428', '431', '437', '438', '450', '468', '474',
+    '506', '514', '519', '548', '579', '581', '584', '587', '600', '604', '613', '622', '633',
+    '639', '647', '672', '683', '705', '709', '742', '753', '778', '780', '782', '807', '819',
+    '825', '867', '873', '879', '902', '905', '942',
+    // Canadian non-geographic codes reserved beyond 600/622/633 (not in the metadata yet). Listing a
+    // reserved code costs nothing; missing one would read it as US (review P3).
+    '644', '655', '677', '688',
+  ],
+  AG: ['268'], AI: ['264'], BB: ['246'], BM: ['441'], BS: ['242'], DM: ['767'],
+  DO: ['809', '829', '849'], GD: ['473'], JM: ['658', '876'], KN: ['869'], KY: ['345'],
+  LC: ['758'], MS: ['664'], SX: ['721'], TC: ['649'], TT: ['868'], VC: ['784'], VG: ['284'],
+}
+
+const NON_US_COUNTRY_BY_NPA: ReadonlyMap<string, string> = (() => {
+  const m = new Map<string, string>()
+  for (const [country, npas] of Object.entries(NON_US_NANP_NPAS)) for (const npa of npas) m.set(npa, country)
+  return m
+})()
+
+export type RecipientCountry =
+  /** A NANP number on a US area code (states, DC and the territories), mapped zone or not. */
+  | { us: true; npa: string }
+  | {
+      us: false
+      /** non_us: a known non-US country. unverifiable: nothing shows the number is in the US. */
+      kind: 'non_us' | 'unverifiable'
+      /** ISO country for a known non-US +1 code; 'intl' for a non-+1 number; null otherwise. */
+      country: string | null
+      reason: string
+    }
+
+/**
+ * Is this phone a US number? PURE. Review finding 3b (owner, 2026-10-02): automated SMS goes
+ * only to US numbers. Fails closed — a number that cannot be shown to be in the US (a non-+1
+ * international number, a Canadian or Caribbean +1 code, a non-geographic code such as toll-free
+ * that has no country, or an unparseable value) is not US. A US area code with no mapped zone
+ * IS US; its zone is then unresolved and decision 1's continental fallback applies.
+ */
+export function recipientCountry(phone: string | null | undefined): RecipientCountry {
+  const raw = phone == null ? '' : String(phone).trim()
+  const digits = raw.replace(/\D/g, '')
+  if (raw.startsWith('+') && !digits.startsWith('1')) {
+    return { us: false, kind: 'non_us', country: 'intl', reason: 'international number outside the +1 plan' }
+  }
+  if (!raw.startsWith('+') && digits.length > 11) {
+    return { us: false, kind: 'non_us', country: 'intl', reason: 'international number outside the +1 plan' }
+  }
+  const npa = npaOf(raw)
+  if (!npa) return { us: false, kind: 'unverifiable', country: null, reason: 'no valid +1 area code' }
+  const foreign = NON_US_COUNTRY_BY_NPA.get(npa)
+  if (foreign) return { us: false, kind: 'non_us', country: foreign, reason: `+1 area code ${npa} is ${foreign}, not the US` }
+  if (NON_GEOGRAPHIC_NPAS.has(npa)) {
+    return { us: false, kind: 'unverifiable', country: null, reason: `+1 area code ${npa} is non-geographic; the country cannot be established` }
+  }
+  return { us: true, npa }
+}
+
+/**
+ * Every continental US zone (owner decision 1). A recipient whose zone resolves from neither the
+ * address nor the area code may be messaged only at an instant inside the floor in ALL of these
+ * — never in their unknown local night. Phoenix is listed because it does not observe DST.
+ */
+export const CONTINENTAL_US_ZONES: readonly string[] = [
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Phoenix',
+  'America/Los_Angeles',
+]
+
+/** Local hour + day-of-week in an IANA zone. DST-correct via Intl. */
+export function localPartsInZone(timeZone: string, at: Date = new Date()): { hour: number; day: number } {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    hour: '2-digit',
+    weekday: 'short',
+  }).formatToParts(at)
+  const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '12')
+  const wd = parts.find((p) => p.type === 'weekday')?.value ?? 'Sun'
+  const days: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
+  return { hour: Number.isFinite(hour) ? hour : 12, day: days[wd] ?? 0 }
+}

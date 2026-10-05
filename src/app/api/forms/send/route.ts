@@ -67,6 +67,7 @@ export async function POST(req: NextRequest) {
     client_name: body.client_name,
     customer_id: body.customer_id,
     agency_id: body.agency_id,
+    operatorInitiated: true,
   })
 
   if (!result.ok) {

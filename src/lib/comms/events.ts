@@ -87,8 +87,25 @@ function lifecyclePatch(event: MessageEvent, at: string): Record<string, unknown
  */
 const PROTECTED_STATUSES = new Set(['blocked'])
 
-/** Terminal provider outcomes a late `sent` must never downgrade. */
-const TERMINAL_STATUSES = ['delivered', 'failed', 'bounced', 'complained']
+/**
+ * Delivery outcomes are MONOTONIC. Providers deliver callbacks at least once and out of order
+ * (a Twilio `delivered` routinely lands before the send path's own post-dispatch patch, and a
+ * redelivered `sent` can arrive after `failed`). A status may only move to a strictly higher
+ * rank; an equal-rank event is a duplicate (first timestamps win) and a lower-rank event is
+ * stale. Audit A-11 / B-07 / B-08 (docs/ops/automation-inventory.md).
+ */
+const STATUS_RANK: Record<string, number> = {
+  sent: 1,
+  delivered: 2,
+  failed: 3,
+  bounced: 3,
+  complained: 4,
+}
+
+/** Rank of a stored status; anything pre-provider (queued, null, unknown) is 0. */
+export function statusRank(status: string | null | undefined): number {
+  return (status && STATUS_RANK[status]) || 0
+}
 
 /**
  * PURE: reconcile the lifecycle patch with the row's CURRENT status.
@@ -97,15 +114,18 @@ const TERMINAL_STATUSES = ['delivered', 'failed', 'bounced', 'complained']
  */
 export function reconcileLifecycle(
   current: string | null | undefined,
-  event: MessageEvent,
+  _event: MessageEvent,
   patch: Record<string, unknown>,
 ): Record<string, unknown> | null {
-  // A late `sent` never downgrades a terminal provider outcome (pre-existing rule).
-  if (event === 'sent' && current && TERMINAL_STATUSES.includes(current)) return null
   // A gate/authority block is preserved: keep the timestamps, drop the status change.
   if (current && PROTECTED_STATUSES.has(current) && 'delivery_status' in patch) {
     const { delivery_status: _dropped, ...rest } = patch
     return Object.keys(rest).length ? rest : null
+  }
+  // Monotonic: a duplicate or stale status event never touches the row (this subsumes the
+  // pre-existing rule that a late `sent` never downgrades a terminal outcome).
+  if ('delivery_status' in patch && statusRank(patch.delivery_status as string) <= statusRank(current)) {
+    return null
   }
   return Object.keys(patch).length ? patch : null
 }
@@ -151,20 +171,43 @@ export async function recordMessageEvent(input: RecordEventInput): Promise<void>
 
   if (input.messageId) {
     const patch = lifecyclePatch(input.event, at)
-    // Read the current status whenever the event would CHANGE it, so both precedence rules
-    // (terminal-beats-late-sent, and blocked-survives) are applied against real state rather
-    // than assumed. Opens/clicks carry no status and skip the read entirely.
-    let current: string | null = null
-    if ('delivery_status' in patch) {
-      const { data } = await db.from('comm_messages').select('delivery_status').eq('id', input.messageId).maybeSingle()
-      current = (data?.delivery_status as string) ?? null
+    if (!('delivery_status' in patch)) {
+      // Opens/clicks carry no status: additive, no read needed.
+      if (Object.keys(patch).length) {
+        try {
+          await db
+            .from('comm_messages')
+            .update({ ...patch, provider_status: input.event, updated_at: at })
+            .eq('id', input.messageId)
+        } catch {
+          /* best-effort */
+        }
+      }
+      return
     }
-    const resolved = reconcileLifecycle(current, input.event, patch)
-    if (resolved) {
+    // Read, then CONDITIONALLY write: the update lands only if the status is still the one it
+    // was reconciled against, so two concurrent callbacks cannot interleave into a regression.
+    // On a lost race, re-read once and reconcile against the winner.
+    for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        await db.from('comm_messages').update({ ...resolved, provider_status: input.event, updated_at: at }).eq('id', input.messageId)
+        const { data, error } = await db
+          .from('comm_messages')
+          .select('delivery_status')
+          .eq('id', input.messageId)
+          .maybeSingle()
+        if (error || !data) return // unknown state: never guess a status over it
+        const current = (data.delivery_status as string | null) ?? null
+        const resolved = reconcileLifecycle(current, input.event, patch)
+        if (!resolved) return
+        const base = db
+          .from('comm_messages')
+          .update({ ...resolved, provider_status: input.event, updated_at: at })
+          .eq('id', input.messageId)
+        const guarded = current === null ? base.is('delivery_status', null) : base.eq('delivery_status', current)
+        const { data: won, error: upErr } = await guarded.select('id')
+        if (upErr || (won && won.length > 0)) return
       } catch {
-        /* best-effort */
+        return
       }
     }
   }

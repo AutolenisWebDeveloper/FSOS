@@ -78,6 +78,8 @@ export async function POST(req: NextRequest) {
   // the email orphan window is narrow, but the echoed key removes it entirely.
   const mid = correlationIdFrom(evt.data)
 
+  // Set when a warranted suppression failed to write: answer 5xx so Resend redelivers (B-14).
+  let suppressionFailed = false
   if (event) {
     try {
       const msg = (mid && (await findMessageById(mid))) || (providerId && (await findMessageByProviderId(providerId))) || null
@@ -100,16 +102,18 @@ export async function POST(req: NextRequest) {
       // recipient through the existing enforced path. Prefer the address we actually
       // sent to (comm_messages.recipient), falling back to the event payload.
       if (event === 'bounced' || event === 'complained') {
-        await applyDeliverabilitySuppression({
+        const sup = await applyDeliverabilitySuppression({
           event,
           bounce: evt.data?.bounce ?? null,
           email: msg?.recipient ?? payloadRecipient(evt.data),
         })
+        if (sup.failed) suppressionFailed = true
       }
     } catch (err) {
       console.error('[resend] handler error:', err)
     }
   }
 
+  if (suppressionFailed) return NextResponse.json({ error: 'suppression write failed' }, { status: 503 })
   return NextResponse.json({ received: true })
 }

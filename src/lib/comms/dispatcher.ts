@@ -50,6 +50,10 @@ export interface DispatchRequest {
   entity?: { type: string; id: string }
   escalationNote?: string
   messageClass?: EmailStream
+  /** email only — a caller-chosen Reply-To (else the stream's). */
+  replyTo?: string
+  /** email only — false omits the List-Unsubscribe headers (internal / transactional notices). */
+  listUnsubscribe?: boolean
   /** Retained for callers that still name a suppression subject; the chokepoint re-resolves. */
   suppressionSubject?: SuppressionSubject
   correlationId?: string
@@ -82,6 +86,9 @@ export interface DispatchResult {
   escalated: boolean
   providerId?: string
   error?: string
+  /** Provider's own rejection code, and whether it can never succeed on retry (messaging.ts). */
+  providerCode?: string
+  permanent?: boolean
   /** The EXACT body transmitted (SMS carries the appended opt-out footer). */
   sentBody?: string
   /** Timezone resolution used for the quiet-hours decision (persisted on the send record). */
@@ -129,6 +136,9 @@ export async function dispatch(req: DispatchRequest): Promise<DispatchResult> {
       : await sendEmail(req.to, req.subject ?? '', req.body, req.bodyText, {
           policy,
           ...(req.attachments?.length ? { attachments: req.attachments } : {}),
+          // One Resend Idempotency-Key per message of record (audit A-10). Twilio has no
+          // create-time idempotency; duplicate SMS stay prevented by the callers' claims.
+          ...(req.correlationId ? { idempotencyKey: `fsos-msg-${req.correlationId}` } : {}),
           ...(await resolveEmailEnvelope(req)),
         })
 
@@ -142,13 +152,15 @@ export async function dispatch(req: DispatchRequest): Promise<DispatchResult> {
     escalated: result.escalated === true,
     providerId: result.id,
     error: result.error,
+    ...(result.providerCode ? { providerCode: result.providerCode } : {}),
+    ...(result.permanent !== undefined ? { permanent: result.permanent } : {}),
     sentBody: result.sentBody,
     timezone: result.timezone,
     resolved: result.resolved,
   }
 }
 
-/** Envelope-From / reply-to / List-Unsubscribe headers for an outbound email. */
+/** Envelope-From / reply-to / List-Unsubscribe headers for an outbound email (List-Unsubscribe unless the caller opted out). */
 async function resolveEmailEnvelope(req: DispatchRequest): Promise<{
   from?: string
   replyTo?: string
@@ -160,9 +172,9 @@ async function resolveEmailEnvelope(req: DispatchRequest): Promise<{
     const sender = resolveSender(req.messageClass ?? 'marketing')
     return {
       from: sender.from || undefined,
-      replyTo: sender.replyTo || replyToAddress(),
+      replyTo: req.replyTo || sender.replyTo || replyToAddress(),
       headers: {
-        ...emailListUnsubscribeHeaders(req.to),
+        ...(req.listUnsubscribe === false ? {} : emailListUnsubscribeHeaders(req.to)),
         ...(req.correlationId ? { 'X-FSOS-Message-Id': req.correlationId } : {}),
       },
     }

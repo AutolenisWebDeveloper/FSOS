@@ -10,13 +10,20 @@ import { postJson, firstFieldError } from '@/lib/client/api'
 export function ClientConsentControls({ channels }: { channels: { channel: string; status: string }[] }) {
   const router = useRouter()
   const [busy, setBusy] = React.useState<string | null>(null)
+  // Set when texts were turned back on for a number whose last opt-out was a STOP: the carrier keeps
+  // blocking it until that phone texts START, whatever is recorded here (owner, round 4).
+  const [startNumber, setStartNumber] = React.useState<string | null>(null)
 
   async function set(channel: string, status: 'granted' | 'revoked') {
     setBusy(channel)
-    const res = await postJson('/api/client/consent', { channel, status })
+    const res = await postJson<{ ok: true; textStart?: { number: string } }>('/api/client/consent', { channel, status })
     setBusy(null)
     if (!res.ok) { toast.error(firstFieldError(res.error).message); return }
-    toast.success(status === 'revoked' ? 'Opted out — honored immediately across all channels.' : 'Consent granted.')
+    const needStart = channel === 'sms' && status === 'granted' ? res.data?.textStart?.number ?? null : null
+    setStartNumber(needStart)
+    if (status === 'revoked') toast.success('Opted out — honored immediately across all channels.')
+    else if (needStart) toast.success('Saved. One more step to finish turning texts back on — see below.')
+    else toast.success('Consent granted.')
     router.refresh()
   }
 
@@ -38,6 +45,15 @@ export function ClientConsentControls({ channels }: { channels: { channel: strin
           </div>
         )
       })}
+      {startNumber && (
+        <div role="status" className="rounded-md border border-status-pending/40 bg-status-pending/10 p-3 text-sm text-foreground">
+          <p className="font-medium">Text START to {startNumber} to finish.</p>
+          <p className="mt-1 text-muted-foreground">
+            You previously replied STOP, so your mobile carrier keeps our texts blocked until your phone sends START
+            to {startNumber}. Until then you won&apos;t receive texts from us, even though your preference is saved.
+          </p>
+        </div>
+      )}
     </div>
   )
 }

@@ -12,11 +12,11 @@ import type { GreenZoneVerb } from '@/lib/validation/schemas'
 // records are blocked server-side and reported here.
 const LABELS: Record<GreenZoneVerb, string> = {
   identify: 'Log identified',
-  educate: 'Send education',
-  invite: 'Invite to review',
+  educate: 'Log education sent',
+  invite: 'Log invitation',
   schedule: 'Schedule review',
-  remind: 'Remind',
-  follow_up: 'Follow up',
+  remind: 'Log reminder',
+  follow_up: 'Log follow-up',
   escalate: 'Escalate to FSA',
 }
 
@@ -44,7 +44,7 @@ export function OutreachActions({ endpoint, isSecurity }: { endpoint: string; is
       return
     }
     if (action === 'escalate') toast.success('Escalated to the FSA.')
-    else toast.success('Green-zone action logged. Any client send passes the 7-step gate.')
+    else toast.success('Logged. Nothing was sent — client messages go out through Comms, which runs the compliance gate.')
     router.refresh()
   }
 

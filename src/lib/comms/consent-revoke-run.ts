@@ -15,6 +15,7 @@ import { writeAudit, buildAuditRow } from '@/lib/audit/log'
 import type { MemberForPopulation, ExistingConsentRow, PopChannel } from './consent-population'
 import { planRevoke, emptyRevokeReport, type RevokeReport } from './consent-revoke'
 import { buildConsentAuditEntry, buildConsentActivityRow, type ConsentChange } from './consent-events'
+import { consentContactKey } from './contact-consent'
 
 export interface RevokeConsentForMembersOptions {
   memberIds: string[]
@@ -146,6 +147,36 @@ export async function revokeConsentForMembers(
     }
   }
 
+  // Contact-level revoke EVIDENCE for every requested member address, including members skipped as
+  // already revoked. Append-only (nothing is relabelled). Without it, an operator revoke of a member
+  // a STOP had already revoked was recorded nowhere a later bare START reads, and START restored the
+  // pre-STOP consent over it (tests/optout-consent-property.test.mjs). Non-keyword evidence keeps
+  // START from lifting or restoring anything for that address.
+  const evidence: Record<string, unknown>[] = []
+  for (const m of members) {
+    for (const ch of channels) {
+      const raw = ch === 'sms' ? m.phone : m.email
+      if (!raw) continue
+      evidence.push({
+        contact: consentContactKey(ch, raw),
+        channel: ch,
+        action: 'revoked',
+        consent_text: `Operator opt-out (${source}): ${disclosure}`,
+        consent_version: 'opt-out',
+        member_id: m.id,
+        captured_at: capturedAt,
+      })
+    }
+  }
+  let evidenceError: { message: string } | null = null
+  for (const echunk of chunk(evidence, WRITE_CHUNK)) {
+    const { error } = await db.from('comm_contact_consents').insert(echunk)
+    if (error) {
+      evidenceError = error
+      break
+    }
+  }
+
   // The bulk revoke is itself an audited event — one summary row with the report.
   await writeAudit({
     actor,
@@ -161,8 +192,11 @@ export async function revokeConsentForMembers(
       sms_revoked: written.smsRevoked,
       email_revoked: written.emailRevoked,
       skipped_already_revoked: written.skippedAlreadyRevoked,
+      ...(evidenceError ? { evidence_error: evidenceError.message } : {}),
     },
   })
+  // Audited first (above), then surfaced: the revokes landed but START could still undo them.
+  if (evidenceError) throw evidenceError
 
   return { ...written, source, channels, capturedAt }
 }

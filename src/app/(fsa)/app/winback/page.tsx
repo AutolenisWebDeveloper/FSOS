@@ -213,14 +213,15 @@ export default async function WinbackPage() {
           <Panel title="Outreach queue" description="Reachable, ready to invite" icon={PhoneCall} tone="positive">
             <QueueList items={queue} emptyLabel="No reachable contacts queued." />
           </Panel>
-          <Panel title="AI outreach" description="Green-zone, consent-gated" icon={Sparkles}>
+          <Panel title="Win-back audience" description="Counts — no automated outreach runs here" icon={Sparkles}>
             <div className="grid grid-cols-3 gap-3">
               <MiniStat label="Reachable" value={kpis.reachable.toLocaleString()} tone="positive" />
               <MiniStat label="Priority" value={kpis.priority.toLocaleString()} tone="brand" />
               <MiniStat label="New 30d" value={kpis.newLast30.toLocaleString()} tone="neutral" />
             </div>
             <p className="mt-3 text-xs text-muted-foreground">
-              Re-engagement invitations clear the 7-step compliance gate. Suppressed contacts are never contacted.
+              Nothing is sent from this page. Any invitation goes out through Comms and the compliance gate; suppressed
+              contacts are never contacted.
             </p>
             <Link href="/app/comms" className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
               Communications <ArrowRight className="h-3.5 w-3.5" aria-hidden />

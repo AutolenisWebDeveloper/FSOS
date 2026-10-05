@@ -145,6 +145,12 @@ export interface SendContext {
    */
   humanAuthored?: boolean
   /**
+   * A person started this send from an operator surface (1:1 console send, conversation reply or
+   * start, test send, staff form link). Only these may text a number outside the US (review
+   * finding 3b); absent → automated. Never set it for bulk/campaign/AI sends.
+   */
+  operatorInitiated?: boolean
+  /**
    * Delegated on-behalf-of context (Slice 1). Set ONLY when the FSA is communicating on
    * behalf of an agency owner. When present, send.ts resolves the ACTIVE, in-scope
    * delegation FRESH at send time (ownership.ts → delegation.ts) and passes the result
@@ -263,6 +269,29 @@ export interface SendContext {
    */
   emailStream?: EmailStream
   /**
+   * Email only: the Reply-To for this send (e.g. an FSA alert replies straight to the lead). Absent →
+   * the stream's own reply-to, exactly as before.
+   */
+  replyTo?: string
+  /**
+   * Email only: false skips open/click tracking instrumentation. Transactional receipts and internal
+   * ops alerts never carried tracking; routing them through this path must not add it.
+   */
+  track?: boolean
+  /**
+   * false → record the message against its `entity` without threading it into a conversation.
+   * Internal ops alerts (to the practice's own inbox) and transactional receipts are not
+   * conversations; threading them would open threads that the collision and reply rules read
+   * as live dialogue. Absent → threaded, exactly as before.
+   */
+  thread?: boolean
+  /**
+   * Email only: false omits the RFC 8058 List-Unsubscribe headers. For internal ops alerts and
+   * transactional notices that never carried them: a one-click "Unsubscribe" on an FSA alert would
+   * put the practice's own inbox on DNC and block every later alert. Absent → headers, as before.
+   */
+  listUnsubscribe?: boolean
+  /**
    * Declares a fixed, CODE-RESIDENT transactional notice (a booking confirmation, a visitor
    * acknowledgement, a password-setup mail). These have no `comm_templates` row because they
    * are not operator-authored, but they are real reviewed templates that change only through
@@ -333,7 +362,7 @@ export async function sendMessage(ctx: SendContext): Promise<SendOutcome> {
   // route, which accepts a client-supplied is_security). Defense in depth: the firewall
   // only ever gets MORE restrictive here, never less.
   let convIsSecurity = false
-  if (!conversationId) {
+  if (!conversationId && ctx.thread !== false) {
     const conv = await getOrCreateConversation(ctx.channel, to)
     if (conv) {
       conversationId = conv.id
@@ -593,7 +622,7 @@ export async function sendMessage(ctx: SendContext): Promise<SendOutcome> {
         household_id: convHouseholdId,
         agency_id: convAgencyId,
         policy_id: ctx.policyId ?? null,
-        entity_type: ctx.entity?.type ?? (convHouseholdId ? 'household' : 'conversation'),
+        entity_type: ctx.entity?.type ?? (convHouseholdId ? 'household' : conversationId ? 'conversation' : 'message'),
         entity_id: ctx.entity?.id ?? convHouseholdId ?? conversationId,
         // Patched post-dispatch from the chokepoint's resolution, so the record can never
         // claim a consent state the gate did not actually evaluate.
@@ -721,7 +750,7 @@ export async function sendMessage(ctx: SendContext): Promise<SendOutcome> {
   // the wrap so the tracking pixel lands inside <body> and the branded CTA links are
   // click-tracked. The body already includes any auto-prepended identity disclosure.
   const sendBody =
-    ctx.channel === 'email' && messageId ? instrumentEmailHtml(emailReady, messageId) : emailReady
+    ctx.channel === 'email' && messageId && ctx.track !== false ? instrumentEmailHtml(emailReady, messageId) : emailReady
 
   const req: DispatchRequest = {
     channel: ctx.channel,
@@ -733,6 +762,8 @@ export async function sendMessage(ctx: SendContext): Promise<SendOutcome> {
     attachments: ctx.channel === 'email' ? ctx.attachments : undefined,
     // Caller-pinned stream wins over the purpose-derived one (see SendContext.emailStream).
     messageClass: ctx.emailStream ?? streamForPurpose(ctx.purpose),
+    replyTo: ctx.channel === 'email' ? ctx.replyTo : undefined,
+    listUnsubscribe: ctx.channel === 'email' ? ctx.listUnsubscribe : undefined,
     actor: ctx.actor,
     entity: ctx.entity ?? (conversationId ? { type: 'conversation', id: conversationId } : undefined),
     templateKind,
@@ -756,6 +787,7 @@ export async function sendMessage(ctx: SendContext): Promise<SendOutcome> {
       suppressible: ctx.suppressible,
       businessHoursExempt: ctx.businessHoursExempt,
       isTest: ctx.isTest,
+      operatorInitiated: ctx.operatorInitiated === true,
       isConversationReply: ctx.isConversationReply,
       activeCampaignPurpose: ctx.activeCampaignPurpose ?? null,
       recipientZip: ctx.recipientZip ?? null,
@@ -793,46 +825,69 @@ export async function sendMessage(ctx: SendContext): Promise<SendOutcome> {
   const result = await dispatch(req)
 
   // Patch the pre-inserted row with the outcome + provider id.
+  // A provider status callback can land BEFORE this patch (Twilio `delivered` routinely does).
+  // The status is therefore written only while the row is still the pre-inserted 'queued'; if a
+  // callback already advanced it, the rest of the record is patched and its status kept, so
+  // this late 'sent' never regresses `delivered`/`failed` (audit A-11 / B-09).
   if (messageId) {
     try {
-      await db
+      // A policy withhold is 'blocked'; a send the gate CLEARED that the provider then refused is a
+      // delivery 'failed' — recording it as blocked misreported a carrier rejection as a
+      // compliance hold (audit A-07).
+      const providerRejected = !result.sent && result.gate.allowed
+      const status = result.sent ? 'sent' : providerRejected ? 'failed' : 'blocked'
+      const outcome = {
+        blocked_step: result.gate.blockedStep ?? null,
+        block_reason: result.gate.reason ?? null,
+        provider: result.sent ? (ctx.channel === 'sms' ? 'twilio' : 'resend') : null,
+        provider_id: result.providerId ?? null,
+        sent_at: result.sent ? new Date().toISOString() : null,
+        // Persist the EXACT transmitted body so the audit record includes the SMS
+        // opt-out footer the dispatcher appended at send (§13.9 audit fidelity).
+        ...(result.sent && result.sentBody ? { body: result.sentBody } : {}),
+        // The consent the chokepoint actually resolved, and the timezone the quiet-hours
+        // decision was made in — recorded so a send is reconstructible after the fact.
+        ...(result.resolved ? { consent_at_send: result.resolved.consent } : {}),
+        ...(result.timezone
+          ? {
+              // On an NPA/ZIP zone DISAGREEMENT both zones are recorded, joined as
+              // '<npaZone>+<zipZone>' — the decision had to hold in both (mig 124).
+              resolved_timezone: result.timezone.secondaryZone
+                ? `${result.timezone.zone}+${result.timezone.secondaryZone}`
+                : result.timezone.zone,
+              // Method/input are recorded ONLY for a map resolution (a real NPA or ZIP3).
+              // A caller-supplied zone and the legacy flag-off default record the zone
+              // with a null method — mig 123's contract for "not evidence-resolved".
+              ...(result.timezone.resolution.resolved &&
+              !['caller', 'caller_offset', 'legacy_default'].includes(result.timezone.resolution.input)
+                ? {
+                    tz_resolution_method: result.timezone.resolution.method,
+                    tz_resolution_input: result.timezone.resolution.input,
+                  }
+                : { tz_resolution_method: null, tz_resolution_input: null }),
+            }
+          : {}),
+        error: result.error ?? null,
+        ...(providerRejected ? { failed_at: new Date().toISOString(), provider_status: result.providerCode ?? 'rejected' } : {}),
+        updated_at: new Date().toISOString(),
+      }
+      const { data: claimed, error: claimErr } = await db
         .from('comm_messages')
-        .update({
-          delivery_status: result.sent ? 'sent' : 'blocked',
-          blocked_step: result.gate.blockedStep ?? null,
-          block_reason: result.gate.reason ?? null,
-          provider: result.sent ? (ctx.channel === 'sms' ? 'twilio' : 'resend') : null,
-          provider_id: result.providerId ?? null,
-          sent_at: result.sent ? new Date().toISOString() : null,
-          // Persist the EXACT transmitted body so the audit record includes the SMS
-          // opt-out footer the dispatcher appended at send (§13.9 audit fidelity).
-          ...(result.sent && result.sentBody ? { body: result.sentBody } : {}),
-          // The consent the chokepoint actually resolved, and the timezone the quiet-hours
-          // decision was made in — recorded so a send is reconstructible after the fact.
-          ...(result.resolved ? { consent_at_send: result.resolved.consent } : {}),
-          ...(result.timezone
-            ? {
-                // On an NPA/ZIP zone DISAGREEMENT both zones are recorded, joined as
-                // '<npaZone>+<zipZone>' — the decision had to hold in both (mig 124).
-                resolved_timezone: result.timezone.secondaryZone
-                  ? `${result.timezone.zone}+${result.timezone.secondaryZone}`
-                  : result.timezone.zone,
-                // Method/input are recorded ONLY for a map resolution (a real NPA or ZIP3).
-                // A caller-supplied zone and the legacy flag-off default record the zone
-                // with a null method — mig 123's contract for "not evidence-resolved".
-                ...(result.timezone.resolution.resolved &&
-                !['caller', 'caller_offset', 'legacy_default'].includes(result.timezone.resolution.input)
-                  ? {
-                      tz_resolution_method: result.timezone.resolution.method,
-                      tz_resolution_input: result.timezone.resolution.input,
-                    }
-                  : { tz_resolution_method: null, tz_resolution_input: null }),
-              }
-            : {}),
-          error: result.error ?? null,
-          updated_at: new Date().toISOString(),
-        })
+        .update({ ...outcome, delivery_status: status })
         .eq('id', messageId)
+        .eq('delivery_status', 'queued')
+        .select('id')
+      if (claimErr) {
+        // The guarded write itself failed: record the outcome unguarded so the message of
+        // record never sits at 'queued' after a real send.
+        await db
+          .from('comm_messages')
+          .update({ ...outcome, delivery_status: status })
+          .eq('id', messageId)
+      } else if (!claimed || claimed.length === 0) {
+        // A callback already advanced the status: record everything else, keep its status.
+        await db.from('comm_messages').update(outcome).eq('id', messageId)
+      }
     } catch {
       /* best-effort */
     }
@@ -927,6 +982,8 @@ export async function sendMessage(ctx: SendContext): Promise<SendOutcome> {
     gate: result.gate,
     messageId,
     conversationId: conversationId ?? undefined,
-    reason: result.gate.reason,
+    // A policy block carries the gate's reason; a send the gate cleared that the provider refused
+    // carries the provider's error, so the caller can surface the real cause.
+    reason: result.gate.reason ?? (result.sent ? undefined : result.error),
   }
 }

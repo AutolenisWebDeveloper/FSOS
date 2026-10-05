@@ -252,5 +252,13 @@ export async function disconnectChannel(id: string, actor: string): Promise<Stor
     .maybeSingle()
   if (error) return { ok: false, kind: 'error', message: error.message }
   if (!data) return { ok: false, kind: 'not_found', message: 'Channel not found' }
+  // A disconnected channel's queued posts are cancelled with it (audit H-10), so nothing waits to
+  // publish through it. In-flight ('publishing') entries are refused by the publisher itself.
+  const { error: cancelError } = await getDb()
+    .from('social_schedule_entries')
+    .update({ status: 'cancelled', last_error: 'channel_revoked', updated_by: actor })
+    .eq('channel_id', id)
+    .eq('status', 'pending')
+  if (cancelError) return { ok: false, kind: 'error', message: cancelError.message }
   return { ok: true, data: { id: (data as { id: string }).id } }
 }

@@ -17,7 +17,7 @@ execSync(
   { stdio: 'inherit' },
 )
 const require = createRequire(import.meta.url)
-const { AGENT_ROSTER, AGENT_SURFACE, agentSurface } = require(join(out, 'roster.js'))
+const { AGENT_ROSTER, AGENT_SURFACE, agentSurface, agentSurfaceLabel } = require(join(out, 'roster.js'))
 
 let passed = 0
 const t = (name, fn) => { fn(); passed++; console.log('  ✓', name) }
@@ -49,8 +49,9 @@ t('detection-job keys are labeled as jobs, not gateway agents', () => {
   assert.equal(agentSurface('commission_reconciliation'), 'detection_job')
 })
 
-t('life_winback is wired but disabled-by-default (kill switch)', () => {
-  assert.equal(agentSurface('life_winback'), 'disabled_by_default')
+t('the campaign-engine-owned agents stand down — never labelled active (owner decision 7)', () => {
+  for (const k of ['cross_sell', 'term_conversion', 'life_winback']) assert.equal(agentSurface(k), 'engine_owned', k)
+  assert.equal(agentSurfaceLabel('engine_owned'), 'Stands down — campaign owns audience')
 })
 
 t('an unknown key defaults to roadmap (never falsely "active")', () => {
@@ -62,7 +63,7 @@ t('fewer keys are "active" than the total roster (no over-statement)', () => {
   const total = Object.keys(AGENT_ROSTER).length
   const active = Object.values(AGENT_SURFACE).filter((s) => s === 'active').length
   assert.ok(active < total, 'active agents must be a strict subset of the roster')
-  assert.ok(active >= 8, `expected the known-live agents to be classified active, got ${active}`)
+  assert.ok(active >= 7, `expected the known-live agents to be classified active, got ${active}`)
 })
 
 console.log(`\nAll ${passed} assertions passed.`)

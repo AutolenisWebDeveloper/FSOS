@@ -196,6 +196,7 @@ export function fakeDb(script = {}) {
         or(expr) { call.filters.push(['or', expr]); return chain },
         order() { return chain },
         limit() { return chain },
+        range() { return chain },
         maybeSingle: async () => settle(),
         single: async () => settle(),
         then(resolve) { resolve(settle()) },

@@ -43,6 +43,8 @@ function db() {
         is: (...a) => { rec.ops.push(['is', ...a]); return b },
         or: (...a) => { rec.ops.push(['or', ...a]); return b },
         limit: (...a) => { rec.ops.push(['limit', ...a]); return b },
+        order: (...a) => { rec.ops.push(['order', ...a]); return b },
+        range: (...a) => { rec.ops.push(['range', ...a]); return b },
         update: (...a) => { rec.ops.push(['update', ...a]); return b },
         then: (res, rej) => Promise.resolve((answers[table] ?? []).shift() ?? { data: [], count: 0, error: null }).then(res, rej),
       }

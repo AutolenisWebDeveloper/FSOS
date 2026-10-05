@@ -35,16 +35,10 @@ export async function POST(req: NextRequest) {
     const db = getDb()
     const actor = 'public'
 
-    // The internal DNC list, through the shared writer: an existing row keeps its first reason (never
-    // relabelled) and is RE-ARMED if a bare START had lifted it. The key is normalized exactly as the
-    // gate reads it — a mixed-case email or a punctuated phone stored raw never matched the send.
-    // This route writes its own contact-level evidence rows below, so the writer adds none.
-    const dncKey = consentContactKey(v.data.contact.includes('@') ? 'email' : 'sms', v.data.contact)
-    const dnc = await armDncEntry({ contact: dncKey, channel: v.data.channel, reason: 'public opt-out', evidence: false })
-    if (!dnc.ok) return dbErrorResponse('public/consent', { message: dnc.error ?? 'DNC write failed' })
-
+    // Evidence FIRST, then the DNC re-arm — armDncEntry's own order (follow-up R5), so a START that
+    // runs between the two writes already sees this opt-out's evidence and cannot lift the row.
     // Keep the durable per-contact consent store consistent with the opt-out. The ENFORCED
-    // revocation is the dnc_entries write above (checked at gate step `dnc` for every send);
+    // revocation is the dnc_entries write below (checked at gate step `dnc` for every send);
     // this appends a matching `revoked` action so comm_contact_consents reflects the latest
     // decision too (latest-wins). SMS/email get a normalized-contact row; 'all' revokes both.
     const revokeChannels =
@@ -64,6 +58,14 @@ export async function POST(req: NextRequest) {
       )
       if (evidenceError) return dbErrorResponse('public/consent evidence', evidenceError)
     }
+
+    // The internal DNC list, through the shared writer: an existing row keeps its first reason (never
+    // relabelled) and is RE-ARMED if a bare START had lifted it. The key is normalized exactly as the
+    // gate reads it — a mixed-case email or a punctuated phone stored raw never matched the send.
+    // This route writes its own contact-level evidence rows below, so the writer adds none.
+    const dncKey = consentContactKey(v.data.contact.includes('@') ? 'email' : 'sms', v.data.contact)
+    const dnc = await armDncEntry({ contact: dncKey, channel: v.data.channel, reason: 'public opt-out', evidence: false })
+    if (!dnc.ok) return dbErrorResponse('public/consent', { message: dnc.error ?? 'DNC write failed' })
 
     await writeAudit({
       actor,

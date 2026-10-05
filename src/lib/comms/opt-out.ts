@@ -26,7 +26,7 @@
 // standalone-tsc chokepoint compile (tests/helpers/chokepoint.mjs), which has no path aliases.
 import { getDb } from '../supabase/client'
 import { recordConsentChange } from './consent-events'
-import { PRIOR_MEMBER_GRANT_MARKER, KEYWORD_OPT_OUT_VERSION } from './contact-consent'
+import { PRIOR_MEMBER_GRANT_MARKER, KEYWORD_OPT_OUT_VERSION, isKeywordOptOutReason, isKeywordRevokeEvidence } from './contact-consent'
 
 export type OptOutChannel = 'sms' | 'email'
 
@@ -370,5 +370,47 @@ export async function applyDocumentedReconsent(r: {
     return { ok: audited, cleared }
   } catch {
     return { ok: false, cleared: 0 }
+  }
+}
+
+/**
+ * Owner decision (round 4), COPY ONLY: Twilio keeps blocking a number that texted STOP (error 21610)
+ * until that handset texts START, whatever FSOS records. So when a client turns texts back on in the
+ * portal, the portal tells them to text START if their latest SMS opt-out on this number is a STOP
+ * (or a carrier-reported 21610) that no START has answered since. Read-only; changes no consent state.
+ *
+ * "Answered" = a later START: a DNC row lifted by an inbound START, or START's own restore grant.
+ * A read error answers true — the instruction is harmless where it was not needed, and its absence
+ * would leave a client believing texts are back on while the carrier still blocks them.
+ */
+export async function smsStopNeedsStart(phone: string): Promise<boolean> {
+  try {
+    const db = getDb()
+    const tail = phone.replace(/[^\d]/g, '').slice(-10)
+    if (tail.length !== 10) return false
+    const [dnc, ev] = await Promise.all([
+      db.from('dnc_entries').select('reason, created_at, lifted_at, lifted_reason').in('channel', ['sms', 'all']).ilike('contact', `%${tail}`).limit(20),
+      db.from('comm_contact_consents').select('action, consent_text, consent_version, captured_at').eq('channel', 'sms').ilike('contact', `%${tail}`).limit(1000),
+    ])
+    if (dnc.error || ev.error || !Array.isArray(dnc.data) || !Array.isArray(ev.data)) return true
+    const ms = (v?: string | null) => (v ? Date.parse(v) || -Infinity : -Infinity)
+    type Row = { reason?: string | null; created_at?: string | null; lifted_at?: string | null; lifted_reason?: string | null }
+    type Ev = { action?: string; consent_text?: string | null; consent_version?: string | null; captured_at?: string | null }
+    const rows = dnc.data as Row[]
+    const evs = ev.data as Ev[]
+    const lastStart = Math.max(
+      -Infinity,
+      ...rows.filter((r) => (r.lifted_reason ?? '').includes('inbound START')).map((r) => ms(r.lifted_at)),
+      ...evs.filter((e) => e.action === 'granted' && e.consent_version === 'opt-in').map((e) => ms(e.captured_at)),
+    )
+    const lastStop = Math.max(
+      -Infinity,
+      ...evs.filter((e) => e.action === 'revoked' && isKeywordRevokeEvidence(e)).map((e) => ms(e.captured_at)),
+      // A keyword row from before revoke evidence existed: its arming time is the STOP.
+      ...rows.filter((r) => isKeywordOptOutReason(r.reason)).map((r) => ms(r.created_at)),
+    )
+    return lastStop > lastStart
+  } catch {
+    return true
   }
 }

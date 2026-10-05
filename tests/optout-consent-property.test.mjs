@@ -437,6 +437,31 @@ console.log('\nA public booking opt-in after a STOP: nothing cleared; START rest
   console.log('  ✓ blocked after the booking tick; START restores')
 }
 
+// Owner decision (round 4), copy only: turning texts back on in the portal after a STOP tells the
+// client to text START (the carrier keeps blocking until START); after a START, or for a non-STOP
+// opt-out, it does not. The consent outcome is unchanged either way.
+console.log('\nPortal re-opt-in after a STOP asks the client to text START')
+{
+  const grant = async () => (await clientConsent.POST(makeReq('/api/client/consent', { body: { channel: 'sms', status: 'granted' } }))).json()
+  const cfg = { ch: 'sms', member: true, consent: true }
+  let db = memDb({ now: iso }); installDb(db); seedConfig(db, cfg)
+  clock.t += 60_000; await apply('STOP', 'sms', cfg, 930001)
+  clock.t += 60_000
+  const afterStop = await grant()
+  assert.equal(afterStop.ok, true)
+  assert.ok(afterStop.textStart?.number, 'a STOP on file → the response carries the practice texting number')
+  assert.equal(await allowed('sms'), true, 'the consent outcome is unchanged by the notice')
+  clock.t += 60_000; await apply('STOP', 'sms', cfg, 930002)
+  clock.t += 60_000; await apply('START', 'sms', cfg, 930003)
+  clock.t += 60_000
+  assert.equal((await grant()).textStart, undefined, 'a STOP answered by START → no notice')
+  db = memDb({ now: iso }); installDb(db); seedConfig(db, cfg)
+  clock.t += 60_000; await apply('WEB_PORTAL', 'sms', cfg, 930004)
+  clock.t += 60_000
+  assert.equal((await grant()).textStart, undefined, 'a non-STOP opt-out → no notice')
+  console.log('  ✓ STOP → notice; STOP → START → none; portal opt-out → none')
+}
+
 // A lost evidence row must fail the web opt-out (review P1): that row is what keeps a later START
 // from lifting the STOP-labelled DNC row the opt-out re-armed.
 console.log('\nWeb opt-out evidence write failure')

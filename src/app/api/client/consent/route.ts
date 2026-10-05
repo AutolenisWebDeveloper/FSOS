@@ -5,7 +5,8 @@ import { requireApiRole, actorOf } from '@/lib/auth/api'
 import { z } from 'zod'
 import { recordConsentChange } from '@/lib/comms/consent-events'
 import { householdIdFor } from '@/lib/portal/scope'
-import { armDncEntry, applyDocumentedReconsent } from '@/lib/comms/opt-out'
+import { armDncEntry, applyDocumentedReconsent, smsStopNeedsStart } from '@/lib/comms/opt-out'
+import { SMS_CONSENT } from '@/lib/site'
 import { consentContactKey } from '@/lib/comms/contact-consent'
 import { getCurrentUserEmail } from '@/lib/auth/session'
 
@@ -43,6 +44,7 @@ export async function POST(req: NextRequest) {
     // members: record every change, then fail the request so the client retries.
     let dncFailed = false
     let grantFailed = false
+    let textStart = false
     // A re-consent clears earlier opt-outs only for the signed-in client's OWN address (review F2):
     // a household member's STOP or unsubscribe is theirs, and a spouse's toggle must not lift it.
     // The member is the one whose email is the signed-in user's; no unique match → nothing is lifted.
@@ -71,6 +73,8 @@ export async function POST(req: NextRequest) {
       if (v.data.status === 'granted' && v.data.channel !== 'call' && m.id === selfMemberId) {
         const contact = v.data.channel === 'email' ? m.email : m.phone
         if (contact) {
+          // Owner decision (round 4), copy only: a STOP stays blocked at the carrier until START.
+          if (v.data.channel === 'sms' && (await smsStopNeedsStart(contact))) textStart = true
           const rc = await applyDocumentedReconsent({
             contact: consentContactKey(v.data.channel, contact),
             channel: v.data.channel,
@@ -97,7 +101,7 @@ export async function POST(req: NextRequest) {
     }
     if (dncFailed) return NextResponse.json({ error: 'Could not record the opt-out. Please try again.' }, { status: 500 })
     if (grantFailed) return NextResponse.json({ error: 'Could not record your preference. Please try again.' }, { status: 500 })
-    return NextResponse.json({ ok: true })
+    return NextResponse.json(textStart ? { ok: true, textStart: { number: SMS_CONSENT.from } } : { ok: true })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed' }, { status: 500 })
   }

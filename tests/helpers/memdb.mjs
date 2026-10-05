@@ -123,6 +123,7 @@ export function memDb({ now = () => new Date().toISOString(), failOn = null, uui
               return (asc ? 1 : -1) * cmp(x, y)
             })
           }
+          if (st.offset) affected = affected.slice(st.offset)
           if (st.limit != null) affected = affected.slice(0, st.limit)
           if (st.head) return { data: null, error: null, count: affected.length }
           return { data: affected.map(project), error: null, count: st.count ? affected.length : null }
@@ -191,7 +192,7 @@ export function memDb({ now = () => new Date().toISOString(), failOn = null, uui
         or(expr) { st.ors.push(parseOr(expr)); return chain },
         order(c, o) { st.order.push([c, o?.ascending !== false, o?.nullsFirst]); return chain },
         limit(n) { st.limit = n; return chain },
-        range(a, b) { st.limit = b - a + 1; return chain },
+        range(a, b) { st.offset = a; st.limit = b - a + 1; return chain },
         maybeSingle: async () => {
           const r = run()
           if (r.error) return r

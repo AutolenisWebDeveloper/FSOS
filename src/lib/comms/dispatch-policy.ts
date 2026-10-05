@@ -508,9 +508,16 @@ export function resolveDispatchTimeZone(
   // different zones, the send must be inside the floor in both. It is recorded in the documented
   // dual-zone form (migration 124: method 'both', '<npaZone>+<zipZone>', input '<npa>+<zip3>') and
   // resolveDispatchPolicy evaluates the floor at the second zone's instant too.
-  if (byAddress?.resolved && byPhone?.resolved && byPhone.timeZone !== byAddress.timeZone) {
+  // CodeRabbit review of R16: also when the primaries agree but either side is a split area code /
+  // ZIP range (its minority zone must hold too). Three or more zones → unplaced (every continental).
+  if (
+    byAddress?.resolved &&
+    byPhone?.resolved &&
+    (byPhone.timeZone !== byAddress.timeZone || !!byPhone.secondaryTimeZone || !!byAddress.secondaryTimeZone)
+  ) {
     const both = resolveRecipientTimeZone({ phone: location.phone, zip: location.zip })
-    if (both.resolved && both.secondaryTimeZone) {
+    if (!both.resolved) return { resolution: both, zone: null, localHour: null, localDay: null, secondaryZone: null, legacy: false }
+    if (both.secondaryTimeZone) {
       const p = localPartsInZone(both.timeZone, at)
       return { resolution: both, zone: both.timeZone, localHour: p.hour, localDay: p.day, secondaryZone: both.secondaryTimeZone, legacy: false }
     }

@@ -48,6 +48,32 @@ await t('a panhandle SMS at 19:30 Central (20:30 Eastern) is held — both zones
   assert.equal(d.gate.allowed, false)
   assert.equal(d.gate.blockedStep, 'quiet_hours')
 })
+await t('phone + ZIP agreeing on Central still keep 850\'s Eastern side (CodeRabbit review of R16)', () => {
+  const r = tz.resolveRecipientTimeZone({ phone: '+18505551234', zip: '32401' })
+  assert.equal(r.resolved, true)
+  assert.ok([r.timeZone, r.secondaryTimeZone].includes('America/New_York'), JSON.stringify(r))
+})
+await t('three distinct zones from phone + ZIP → unplaced (every continental zone), never a dropped zone', () => {
+  const r = tz.resolveRecipientTimeZone({ phone: '+18505551234', zip: '80202' })
+  assert.equal(r.resolved, false)
+  assert.equal(r.reason, 'conflicting_zones')
+})
+await t('a panhandle SMS with a Central ZIP at 19:30 Central (20:30 Eastern) is held', async () => {
+  const deps = {
+    ...policy.defaultPolicyDeps,
+    resolveContactLink: async () => ({ memberId: null, householdId: null, agencyId: null }),
+    memberConsent: async () => false, contactConsent: async () => true, consentRevoked: async () => false,
+    onDNC: async () => false, templateApproved: async () => true, aiPolicyApproved: async () => true,
+    suppression: async () => ({ suppressed: false, resolved: true }), withinBusinessHours: async () => true,
+    recipientLocation: async () => ({ phone: '+18505551234', zip: '32401' }), hoursWindow: async () => null,
+    sendPolicy: async () => ({ consentForPurpose: null, frequency: { allowed: true }, collision: { allowed: true } }),
+    smsLive: () => true, conversationIsSecurity: async () => false,
+  }
+  const at = new Date(Date.UTC(2026, 0, 15, 1, 30))
+  const d = await policy.resolveDispatchPolicy({ channel: 'sms', to: '+18505551234', body: 'x', actor: 't', templateKind: 'stored', templateId: 't1', purpose: 'MARKETING' }, deps, at)
+  assert.equal(d.gate.allowed, false)
+  assert.equal(d.gate.blockedStep, 'quiet_hours')
+})
 await t('workshop SMS does not pass a phone-only zone as the caller zone', () => {
   const src = readFileSync('src/lib/workshops/comms-engine.ts', 'utf8')
   assert.doesNotMatch(src, /timeZone: channel === 'sms' \? \(recipientZone/, 'the phone-only zone still overrides the chokepoint')

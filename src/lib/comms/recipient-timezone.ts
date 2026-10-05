@@ -61,6 +61,12 @@ export type TimezoneUnresolvedReason =
   | 'unparseable_zip'
   /** A well-formed ZIP this map does not place (military APO/FPO, unassigned). */
   | 'unknown_zip'
+  /**
+   * Phone and ZIP together place the recipient in three or more zones (a split area code or ZIP
+   * range plus a disagreeing input). One secondary zone cannot carry that, so the caller treats the
+   * recipient as unplaced: evaluated in every continental zone, which is stricter than any subset.
+   */
+  | 'conflicting_zones'
 
 export interface TimezoneResolved {
   resolved: true
@@ -74,7 +80,8 @@ export interface TimezoneResolved {
    */
   input: string
   /**
-   * Present ONLY when method is 'both' and the two inputs DISAGREE: the ZIP's zone, which
+   * Present when method is 'both' and the inputs DISAGREE, or when a split area code / ZIP range
+   * carries its minority side (follow-up R16): the other zone, which
    * the quiet-hours evaluation must satisfy IN ADDITION to `timeZone`. Two conflicting
    * pieces of evidence mean neither can be trusted alone — a phone kept from a previous
    * state, or a mailing address that is not where the person lives — so the send must be
@@ -518,10 +525,14 @@ export function resolveRecipientTimeZone(input: TimezoneResolutionInput): Timezo
     // recorded). Disagreement → the NPA zone stays primary and the ZIP zone rides along as
     // `secondaryTimeZone`; the caller must satisfy BOTH windows (quiet-hours-window.ts
     // combineQuietHoursDecisions), which can only be narrower than either alone.
+    // CodeRabbit review of R16: a split side (npaOther / zipOther) is kept even when the two
+    // primaries agree — 850 + a Central ZIP must still hold to the Eastern side.
+    const others = [...new Set([zipZone, npaOther, zipOther].filter((z): z is IanaZone => !!z && z !== npaZone))]
+    if (others.length > 1) return { resolved: false, reason: 'conflicting_zones', attempted }
     return {
       resolved: true,
       timeZone: npaZone,
-      ...(npaZone === zipZone ? {} : { secondaryTimeZone: zipZone }),
+      ...(others.length === 1 ? { secondaryTimeZone: others[0] } : {}),
       method: 'both',
       input: `${npaValue}+${zipValue}`,
       approximate: npaApprox || zipApprox,

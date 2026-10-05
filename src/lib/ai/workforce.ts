@@ -245,17 +245,19 @@ async function lifeWinbackCandidates(channel: 'sms' | 'email'): Promise<Outreach
 
 /**
  * The durable first-touch record for a referral (owner decision 7): any outreach_queue row for
- * this referral that reached the provider. Fails CLOSED — an unreadable history counts as touched,
- * so the referral is never re-contacted on a guess.
+ * this referral that reached the provider — or MAY have: a 'drafted' row was claimed for sending and
+ * its outcome never recorded (the run died after the claim), so it counts as touched too (follow-up
+ * R12c: at most once). Fails CLOSED — an unreadable history counts as touched, so the referral is
+ * never re-contacted on a guess.
  */
-async function referralAlreadyTouched(referralId: string): Promise<boolean> {
+export async function referralAlreadyTouched(referralId: string): Promise<boolean> {
   const { count, error } = await getDb()
     .from('outreach_queue')
     .select('id', { count: 'exact', head: true })
     .eq('agent_key', 'referral_followup')
     .eq('entity_type', 'referral')
     .eq('entity_id', referralId)
-    .eq('status', 'sent')
+    .in('status', ['sent', 'drafted'])
   if (error) return true
   return (count ?? 0) > 0
 }

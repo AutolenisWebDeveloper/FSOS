@@ -106,6 +106,12 @@ export interface DispatchPolicyContext {
    * red line and the securities firewall all still apply exactly as before.
    */
   businessHoursExempt?: boolean
+  /**
+   * Follow-up R3: this SMS is a single-recipient notice the person's own action triggered, sent as it
+   * happens (a booking confirmation / reschedule / cancellation). Only then may a notice purpose exempt
+   * it from the quiet-hours floor and the Sunday hold — and never when a campaign key is present.
+   */
+  recipientTriggeredNotice?: boolean
   isTest?: boolean
   /**
    * A person started this send from an operator surface (console 1:1 send, conversation reply,
@@ -608,7 +614,8 @@ export async function resolveDispatchPolicy(
     now,
   )
 
-  const floorApplies = quietHoursApply(ctx.channel, ctx.purpose)
+  const noticeScope = { recipientTriggeredNotice: ctx.recipientTriggeredNotice === true, campaignKey: ctx.campaignKey ?? null }
+  const floorApplies = quietHoursApply(ctx.channel, ctx.purpose, noticeScope)
 
   // Configured windows narrow the floor. Loaded only when a scope key names one, so an
   // unconfigured system does exactly one extra no-op lookup and behaves as before.
@@ -628,7 +635,7 @@ export async function resolveDispatchPolicy(
   // fallback can only hold sends a resolved zone would allow, never the reverse.
   const continentalFallback = timezoneNeeded && !timezone.resolution.resolved
   const timezoneResolved = !timezoneNeeded || timezone.resolution.resolved || continentalFallback
-  const sundayMarketingHold = sundayMarketingHoldApplies(ctx.channel, ctx.purpose)
+  const sundayMarketingHold = sundayMarketingHoldApplies(ctx.channel, ctx.purpose, noticeScope)
 
   let quietHours: QuietHoursDecision | undefined
   let configuredWindowOk: boolean | undefined

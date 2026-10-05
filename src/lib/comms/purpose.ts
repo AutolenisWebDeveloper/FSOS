@@ -88,25 +88,45 @@ export const QUIET_HOURS_EXEMPT_PURPOSES: MessagePurpose[] = [
  * covers ALL automated campaign SMS — Life Conversion and term conversion (POLICY_DEADLINE) and
  * SERVICING-tagged campaigns included.
  *   • email — never quiet-hours gated (any purpose);
- *   • SMS with an immediate-notice purpose (QUIET_HOURS_EXEMPT_PURPOSES) — not gated;
+ *   • SMS with an immediate-notice purpose (QUIET_HOURS_EXEMPT_PURPOSES) that the caller declares a
+ *     person-triggered single-recipient notice, with no campaign key — not gated (follow-up R3);
  *   • every other SMS purpose, and SMS with NO purpose — gated.
  * Consent, DNC/STOP, the recommendation red-line, and the securities firewall are enforced
  * independently of this scoping and are unaffected by it.
  */
-export function quietHoursApply(channel: Channel, purpose?: MessagePurpose | null): boolean {
+export function quietHoursApply(channel: Channel, purpose?: MessagePurpose | null, scope: NoticeScope = {}): boolean {
   if (channel === 'email') return false
-  if (!purpose) return true
-  return !QUIET_HOURS_EXEMPT_PURPOSES.includes(purpose)
+  const p = floorPurpose(purpose, scope)
+  if (!p) return true
+  return !QUIET_HOURS_EXEMPT_PURPOSES.includes(p)
+}
+
+/**
+ * Follow-up R3: who may use a notice purpose's exemption. Only a SINGLE-RECIPIENT notice the person's
+ * own action triggered (a booking confirmation, reschedule or cancellation sent as it happens) —
+ * declared by the caller — and never a send carrying a campaign key (broadcast, sequence, drip or
+ * engine). Anything else tagged with a notice purpose is judged as an UNCLASSIFIED SMS: under the
+ * floor and the Sunday hold. Absent declaration → gated (fail closed).
+ */
+export interface NoticeScope {
+  recipientTriggeredNotice?: boolean
+  campaignKey?: string | null
+}
+function floorPurpose(purpose: MessagePurpose | null | undefined, scope: NoticeScope): MessagePurpose | null {
+  if (!purpose) return null
+  if (!QUIET_HOURS_EXEMPT_PURPOSES.includes(purpose)) return purpose
+  return scope.recipientTriggeredNotice === true && !scope.campaignKey ? purpose : null
 }
 
 /**
  * Marketing SMS is also held until 12:00 recipient-local on SUNDAYS (owner decision 2 — Texas
  * solicitation hours; counsel to confirm). Marketing-class purposes and unclassified SMS.
  */
-export function sundayMarketingHoldApplies(channel: Channel, purpose?: MessagePurpose | null): boolean {
+export function sundayMarketingHoldApplies(channel: Channel, purpose?: MessagePurpose | null, scope: NoticeScope = {}): boolean {
   if (channel !== 'sms') return false
-  if (!purpose) return true
-  return QUIET_HOURS_GATED_PURPOSES.includes(purpose)
+  const p = floorPurpose(purpose, scope)
+  if (!p) return true
+  return QUIET_HOURS_GATED_PURPOSES.includes(p)
 }
 
 /**

@@ -117,7 +117,7 @@ export type NotifyOutcome = {
 /** Send one appointment message on a channel (email or SMS) through the gate. */
 async function sendAppointmentMessage(
   db: Db,
-  opts: { channel: 'email' | 'sms'; sourceKey: string; appt: ApptRow; actor: string; durableConsentGranted: boolean },
+  opts: { channel: 'email' | 'sms'; sourceKey: string; appt: ApptRow; actor: string; durableConsentGranted: boolean; recipientTriggered?: boolean },
 ): Promise<NotifyOutcome> {
   const contact = unwrapOne(opts.appt.contacts)
   const type = unwrapOne(opts.appt.appointment_types)
@@ -191,6 +191,10 @@ async function sendAppointmentMessage(
     // quiet-hours floor is a SEPARATE step and is untouched, as are consent, DNC, approval, the
     // recommendation red line and the securities firewall.
     businessHoursExempt: true,
+    // Follow-up R3: only the notice sent AS the person's own booking / reschedule / cancellation
+    // happens may use the APPOINTMENT purpose's quiet-hours exemption. Reminders and the retry
+    // pass are scheduled sends and stay under the floor.
+    recipientTriggeredNotice: opts.recipientTriggered === true,
     actor: opts.actor,
     entity: { type: 'appointment', id: opts.appt.id },
     // Merge context + signed reschedule/cancel manage links (unused tokens render empty).
@@ -395,7 +399,7 @@ async function sendBookingTransactionalFallback(
 async function deliverLeg(
   db: Db,
   appt: ApptRow,
-  args: { event: LifecycleEvent; offsetMinutes: number; channel: 'email' | 'sms'; actor: string; durableConsentGranted: boolean },
+  args: { event: LifecycleEvent; offsetMinutes: number; channel: 'email' | 'sms'; actor: string; durableConsentGranted: boolean; recipientTriggered?: boolean },
 ): Promise<NotifyOutcome> {
   // A2P 10DLC hold: never claim an SMS leg while SMS is not yet live — leave it unclaimed so a
   // later tick delivers it once A2P is approved (mirrors the campaign tick's sms_a2p_hold).
@@ -433,6 +437,7 @@ async function deliverLeg(
       appt,
       actor: args.actor,
       durableConsentGranted: args.durableConsentGranted,
+      recipientTriggered: args.recipientTriggered === true,
     })
   } catch (err) {
     await releaseDelivery(db, claim.id)
@@ -477,6 +482,8 @@ const IMMEDIATE = 0
 
 /** Gate purpose for appointment SMS — transactional appointment content (see sendAppointmentMessage). */
 const APPOINTMENT_PURPOSE: MessagePurpose = 'APPOINTMENT'
+/** Lifecycle events the attendee's own action triggers (follow-up R3); recap / no-show are the advisor's. */
+const PERSON_TRIGGERED_EVENTS: LifecycleEvent[] = ['confirmation', 'rescheduled', 'cancellation']
 
 /**
  * The single lifecycle-notice entry point (P5). Classifies the event to its approved stored
@@ -513,7 +520,15 @@ export async function sendAppointmentNotice(
   // fallback off it, and a reschedule/cancel/send caller only reads whether the notice went out).
   const config = await loadReminderConfig(db)
   if (config.smsEnabled) {
-    await deliverLeg(db, appt, { event, offsetMinutes: IMMEDIATE, channel: 'sms', actor, durableConsentGranted: false })
+    await deliverLeg(db, appt, {
+      event,
+      offsetMinutes: IMMEDIATE,
+      channel: 'sms',
+      actor,
+      durableConsentGranted: false,
+      // Follow-up R3: the person's own booking / reschedule / cancellation, sent as it happens.
+      recipientTriggered: PERSON_TRIGGERED_EVENTS.includes(event),
+    })
   }
   return emailOutcome
 }

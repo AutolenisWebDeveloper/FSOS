@@ -259,6 +259,12 @@ export interface SendContext {
    */
   businessHoursExempt?: boolean
   /**
+   * Follow-up R3: this SMS is a single-recipient notice the person's own action triggered, sent as it
+   * happens. Only then may a notice purpose exempt it from the quiet-hours floor and Sunday hold
+   * (dispatch-policy.ts). Never set by a broadcast, sequence, drip, engine or retry pass.
+   */
+  recipientTriggeredNotice?: boolean
+  /**
    * Pin the EMAIL reputation stream instead of deriving it from `purpose` (senders.ts
    * streamForPurpose). Absent → derived, exactly as before.
    *
@@ -786,6 +792,7 @@ export async function sendMessage(ctx: SendContext): Promise<SendOutcome> {
       consentWaived: ctx.consentWaived,
       suppressible: ctx.suppressible,
       businessHoursExempt: ctx.businessHoursExempt,
+      recipientTriggeredNotice: ctx.recipientTriggeredNotice,
       isTest: ctx.isTest,
       operatorInitiated: ctx.operatorInitiated === true,
       isConversationReply: ctx.isConversationReply,

@@ -221,6 +221,21 @@ function recipientContext(r: Recipient): RecipientContext {
 }
 
 /** Dispatch a broadcast campaign through the gate. Idempotent per (campaign, member). */
+/**
+ * Follow-up R12e: when a broadcast became DUE — the later of its activation (activated_at) and its
+ * schedule (schedule_at); the dispatch moment when neither is stamped yet (the first dispatch runs
+ * during activation, before activated_at is written). Never created_at: a campaign drafted weeks
+ * earlier would start already past the 72 h quiet-hours hold.
+ */
+export function broadcastHoldAnchor(
+  c: { activated_at?: string | null; schedule_at?: string | null; created_at?: string | null },
+  nowISO: string,
+): string {
+  const cands = [c.activated_at, c.schedule_at].filter((v): v is string => typeof v === 'string' && Number.isFinite(Date.parse(v)))
+  if (cands.length === 0) return nowISO
+  return cands.reduce((a, b) => (Date.parse(b) > Date.parse(a) ? b : a))
+}
+
 export async function dispatchCampaign(campaignId: string, actor: string): Promise<DispatchCounts | { error: string }> {
   const db = getDb()
   const { data: campaign } = await db.from('comm_campaigns').select('*').eq('id', campaignId).maybeSingle()
@@ -312,9 +327,10 @@ export async function dispatchCampaign(campaignId: string, actor: string): Promi
       isDeferralGateStep(outcome.gate.blockedStep) ||
       // Owner decision 3: quiet hours HOLDS marketing rather than suppressing the recipient: the
       // claim is released like a deferral and the next dispatch re-runs the gate. The hold is
-      // bounded from when the broadcast was due (its schedule_at, else when it was created): past
-      // 72 h the recipient falls through to the terminal branch below (suppressed, quiet_hours).
-      quietHoursHold(outcome.gate.blockedStep, (campaign.schedule_at as string | null) ?? (campaign.created_at as string | null), new Date().toISOString()) === 'hold'
+      // bounded from when the broadcast became due (follow-up R12e: the later of its activation and
+      // its schedule — never created_at): past 72 h the recipient falls through to the terminal
+      // branch below (suppressed, quiet_hours).
+      quietHoursHold(outcome.gate.blockedStep, broadcastHoldAnchor(campaign, new Date().toISOString()), new Date().toISOString()) === 'hold'
     ) {
       // DEFERRAL (configured window / business hours / frequency / collision / A2P hold):
       // a self-clearing hold, not a suppression. RELEASE the enrollment claim — a terminal

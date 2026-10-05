@@ -246,8 +246,8 @@ const { readFileSync } = await import('node:fs')
 await record('drip, broadcast and workforce hold a quiet-hours withhold via quietHoursHold', async () => {
   // Follow-up R12b: the hold also releases the step claim before continuing (drip-step-claim proves the behavior).
   assert.match(readFileSync('src/jobs/handlers.ts', 'utf8'), /quietHoursHold\(outcome\.gate\.blockedStep, e\.next_send_at, nowISO\) === 'hold'\) \{\s*await releaseClaim\(\)\s*continue/)
-  assert.match(readFileSync('src/lib/comms/campaign.ts', 'utf8'), /isDeferralGateStep\(outcome\.gate\.blockedStep\) \|\|[\s\S]{0,400}quietHoursHold\(/)
-  assert.match(readFileSync('src/lib/ai/workforce.ts', 'utf8'), /isDeferralGateStep\(outcome\.gate\.blockedStep\) \|\|[\s\S]{0,400}quietHoursHold\(/)
+  assert.match(readFileSync('src/lib/comms/campaign.ts', 'utf8'), /isDeferralGateStep\(outcome\.gate\.blockedStep\) \|\|[\s\S]{0,800}quietHoursHold\(/)
+  assert.match(readFileSync('src/lib/ai/workforce.ts', 'utf8'), /isDeferralGateStep\(outcome\.gate\.blockedStep\) \|\|[\s\S]{0,800}quietHoursHold\(/)
 })
 
 const failed = results.filter((r) => !r.pass)

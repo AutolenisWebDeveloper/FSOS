@@ -7,7 +7,7 @@ import { WorkshopRegisterSchema } from '@/lib/validation/schemas'
 import { writeAudit } from '@/lib/audit/log'
 import { provisionZoomForRegistration } from '@/lib/workshops/server'
 import { usableZone } from '@/lib/workshops/reminders'
-import { notifyFsa, renderHtml, renderText, type EmailContent } from '@/lib/notifications/transactional'
+import { notifyFsa, renderHtml, renderText, literalBraces, type EmailContent } from '@/lib/notifications/transactional'
 import { sendMessage } from '@/lib/comms/send'
 import { buildIcs } from '@/lib/booking/ics'
 import { BUSINESS } from '@/lib/site'
@@ -299,8 +299,9 @@ export async function POST(req: NextRequest) {
         channel: 'email',
         to: v.data.email,
         subject: `You're registered — ${w.title}`,
-        body: renderHtml(ackContent),
-        bodyText: renderText(ackContent),
+        // The registrant's typed name and the title are literal text, never merge tokens (follow-up R8).
+        body: literalBraces(renderHtml(ackContent), 'html'),
+        bodyText: literalBraces(renderText(ackContent), 'text'),
         actor: 'system:workshop-register',
         // Registration receipt: servicing-class, and registering IS its basis (D-3).
         purpose: 'TRANSACTIONAL',

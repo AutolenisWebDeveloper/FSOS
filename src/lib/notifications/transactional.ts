@@ -165,9 +165,13 @@ export async function sendRecorded(opts: {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-/** "{{" → a form personalize()'s token pattern cannot match; renders identically in HTML (&#123;). */
+/**
+ * Neutralize typed merge-token braces so personalize() can never read one: EVERY "{" that precedes
+ * another "{" is rewritten (follow-up R8 — replacing "{{" pairs left "{{{x}}}" readable as "{{x}}").
+ * HTML: "&#123;" renders as "{". Text: a zero-width space after the brace.
+ */
 export function literalBraces(s: string, kind: 'html' | 'text'): string {
-  return s.replace(/\{\{/g, kind === 'html' ? '{&#123;' : '{\u200B{')
+  return s.replace(/\{(?=\{)/g, kind === 'html' ? '&#123;' : '{\u200B')
 }
 
 /** Log a non-fatal notification outcome uniformly (never throws). */

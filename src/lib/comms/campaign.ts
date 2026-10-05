@@ -226,6 +226,10 @@ export async function dispatchCampaign(campaignId: string, actor: string): Promi
   const { data: campaign } = await db.from('comm_campaigns').select('*').eq('id', campaignId).maybeSingle()
   if (!campaign) return { error: 'Campaign not found' }
   if (campaign.type === 'drip') return dispatchDripEnroll(campaign, actor)
+  // Follow-up R12f: a broadcast is never sent before its schedule_at, whoever calls this.
+  if (campaign.schedule_at && Date.parse(campaign.schedule_at as string) > Date.now()) {
+    return { error: `Campaign is scheduled for ${campaign.schedule_at}; it is not due yet.` }
+  }
 
   // Build the variant set: A/B variants if enabled, else the single campaign template.
   const rawVariants = Array.isArray(campaign.variants) ? (campaign.variants as Variant[]) : []

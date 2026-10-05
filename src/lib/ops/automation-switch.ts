@@ -17,10 +17,19 @@ export type SwitchMode = 'off' | 'canary' | 'on'
 
 /** Every switch this codebase reads. Adding a consumer means adding its key here and a row (off). */
 export const AUTOMATION_SWITCHES = {
-  /** A carrier opt-out (Twilio 21610) also closes the member's live campaign cadences (B-10/D-12). */
+  /**
+   * Seeded by migration 140. Since follow-up R13 nothing reads it: a carrier opt-out (Twilio 21610)
+   * closes live cadences unconditionally, like an inbound STOP — it only ever stops sends.
+   */
   callback_engine_state: 'callback_engine_state',
   /** A campaign retry sweep releases a never-dispatched orphaned claim for the tick to re-send (J-06). */
   engine_retry_redispatch: 'engine_retry_redispatch',
+  /**
+   * Follow-up R19: the super-admin consent POPULATION execute path (it grants SMS and email consent to
+   * every member without an opt-out). Only 'on' runs it — 'canary' has no test-destination meaning
+   * here — and no row is seeded, so it reads 'off' until counsel signs off on the consent basis.
+   */
+  consent_population_execute: 'consent_population_execute',
 } as const
 export type AutomationSwitchKey = keyof typeof AUTOMATION_SWITCHES
 

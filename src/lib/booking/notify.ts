@@ -25,10 +25,10 @@ import { sendVisitorAck } from '@/lib/notifications/transactional'
 import { signManageToken, manageTokenKey, MANAGE_TOKEN_TTL_MS } from './manage-tokens'
 import { buildBookingContext, buildBookingFallbackContent } from './notify-core'
 import { loadReminderConfig, reminderLeadHours } from './notification-config'
-import { type LifecycleEvent, sourceKeyFor, dueReminderOffsets, reminderSmsTiming } from './notify-events'
+import { type LifecycleEvent, sourceKeyFor, dueReminderOffsets, planSmsReminders } from './notify-events'
 import { withinQuietHours } from '../compliance/guardrail'
 // Relative (not @/): pure helpers the standalone-tsc booking tests must emit alongside notify.ts.
-import { CONTINENTAL_US_ZONES, localPartsInZone } from '../comms/recipient-timezone'
+import { CONTINENTAL_US_ZONES, localPartsInZone, resolveRecipientTimeZone } from '../comms/recipient-timezone'
 import { smsA2pApproved } from '@/lib/comms/a2p'
 import { isDeferralGateStep } from '@/lib/comms/gate'
 import type { MessagePurpose } from '@/lib/comms/purpose'
@@ -684,18 +684,25 @@ export async function runBookingReminderPass(
 
 /**
  * True when `ms` is inside the 09:00–20:00 floor for this booker: in their booking-form zone when
- * it is a valid IANA zone, otherwise in EVERY continental zone (owner decision 1 — an unresolved
- * recipient is never messaged in their unknown local night).
+ * it is a valid IANA zone; otherwise (follow-up R6) in the zone(s) their phone's area code resolves
+ * to — both zones for a split code; and only when neither places them, in EVERY continental zone
+ * (owner decision 1 — an unresolved recipient is never messaged in their unknown local night).
  */
-function reminderAllowedAt(bookerTimezone: string | null): (ms: number) => boolean {
+function reminderAllowedAt(bookerTimezone: string | null, phone: string | null | undefined): (ms: number) => boolean {
   let zones: readonly string[] = CONTINENTAL_US_ZONES
+  let fromForm = false
   if (bookerTimezone) {
     try {
       new Intl.DateTimeFormat('en-US', { timeZone: bookerTimezone })
       zones = [bookerTimezone]
+      fromForm = true
     } catch {
-      /* not an IANA zone — fall back to every continental zone */
+      /* not an IANA zone — fall through to the phone, then every continental zone */
     }
+  }
+  if (!fromForm && phone) {
+    const r = resolveRecipientTimeZone({ phone, zip: null })
+    if (r.resolved) zones = r.secondaryTimeZone ? [r.timeZone, r.secondaryTimeZone] : [r.timeZone]
   }
   return (ms) => zones.every((z) => withinQuietHours(localPartsInZone(z, new Date(ms)).hour))
 }
@@ -710,23 +717,10 @@ function smsReminderOffsetsDue(
   const startMs = appt.starts_at ? Date.parse(appt.starts_at) : NaN
   if (appt.status !== 'scheduled' || !Number.isFinite(startMs)) return { due: [], skipped: 0 }
   const anchorMs = anchorIso ? Date.parse(anchorIso) : NaN
-  const allowedAt = reminderAllowedAt(appt.booker_timezone)
-  const out: number[] = []
-  let skipped = 0
-  for (const raw of new Set(offsets.map((o) => Math.trunc(o)))) {
-    if (!Number.isFinite(raw) || raw <= 0) continue
-    const windowOpenMs = startMs - raw * 60_000
-    // Same suppression as dueReminderOffsets: a booking made inside this offset's window was
-    // already covered by its confirmation.
-    if (Number.isFinite(anchorMs) && anchorMs >= windowOpenMs) continue
-    const verdict = reminderSmsTiming(
-      { windowOpenMs, startMs, anchorMs: Number.isFinite(anchorMs) ? anchorMs : null, nowMs: now.getTime() },
-      allowedAt,
-    )
-    if (verdict === 'due') out.push(raw)
-    else if (verdict === 'skip' && now.getTime() >= windowOpenMs) skipped++
-  }
-  return { due: out.sort((a, b) => a - b), skipped }
+  return planSmsReminders(
+    { offsetsMinutes: offsets, startMs, anchorMs: Number.isFinite(anchorMs) ? anchorMs : null, nowMs: now.getTime() },
+    reminderAllowedAt(appt.booker_timezone, unwrapOne(appt.contacts)?.phone),
+  )
 }
 
 /** How far back a missed lifecycle SMS is re-driven. Older than this ⇒ left alone. */

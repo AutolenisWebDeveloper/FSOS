@@ -573,6 +573,63 @@ await t('pure: no allowed instant before the appointment → skip; an earlier sh
   assert.equal(reminderSmsTiming({ windowOpenMs: D0 + 18 * H, startMs: D0 + 22 * H, anchorMs: null, nowMs: D0 + 21 * H }, dayOnly), 'skip')
 })
 
+console.log('\n3c. Reminder timing (follow-up R6)')
+// A 09:00 CDT appointment with migration 137's offsets: the 12h reminder (21:00) moves to 19:30 the
+// evening before; the 1h reminder (08:00) would move 12.5h earlier — more than half its offset — so
+// it is SKIPPED, never sent alongside the 12h one the evening before.
+await t('a 09:00 appointment never gets the 12h and 1h reminders together the evening before', async () => {
+  const state = setup()
+  state.config = { offsets_minutes: [720, 60], email_enabled: false, sms_enabled: true }
+  state.appointments[0].starts_at = NIGHT_APPT
+  state.appointments[0].booked_at = '2026-08-20T00:00:00.000Z'
+  for (let i = 0; i < 3; i++) await notify.runBookingReminderPass(new Date('2026-09-02T00:30:00.000Z')) // 19:30 CDT
+  assert.equal(smsCalls().length, 1, 'only the 12h reminder goes the evening before')
+  // 08:00 CDT the morning of: the 1h reminder's own time is outside the floor and it may not move.
+  await notify.runBookingReminderPass(new Date('2026-09-02T13:00:00.000Z'))
+  assert.equal(smsCalls().length, 1, 'the 1h reminder is skipped, not sent at night or early')
+})
+await t('two reminders for one appointment are never sent within 2 hours of each other', async () => {
+  // 10:30 CDT appointment, offsets 2h and 1h: the 2h one (08:30) would move to 09:00, 30 minutes
+  // before the 1h one (09:30). The one closer to the appointment is kept.
+  const state = setup()
+  state.config = { offsets_minutes: [120, 60], email_enabled: false, sms_enabled: true }
+  state.appointments[0].starts_at = '2026-09-02T15:30:00.000Z' // 10:30 CDT
+  state.appointments[0].booked_at = '2026-08-20T00:00:00.000Z'
+  for (const at of ['2026-09-02T14:00:00.000Z', '2026-09-02T14:15:00.000Z', '2026-09-02T14:30:00.000Z', '2026-09-02T14:45:00.000Z']) {
+    await notify.runBookingReminderPass(new Date(at)) // 09:00 → 09:45 CDT
+  }
+  assert.equal(smsCalls().length, 1, 'one reminder, not two within 30 minutes')
+})
+await t('a booking with no captured zone resolves it from the phone area code before the continental window', async () => {
+  // 212 = New York. 10:00 EDT is 07:00 Pacific — outside the all-continental window, inside Eastern.
+  const state = setup()
+  state.config = { offsets_minutes: [1440], email_enabled: false, sms_enabled: true }
+  state.appointments[0].booker_timezone = null
+  state.appointments[0].contacts = { ...state.appointments[0].contacts, phone: '+12125551234' }
+  state.appointments[0].starts_at = '2026-09-03T14:00:00.000Z' // 10:00 EDT
+  state.appointments[0].booked_at = '2026-08-20T00:00:00.000Z'
+  await notify.runBookingReminderPass(new Date('2026-09-02T14:00:00.000Z')) // 10:00 EDT, 07:00 PDT
+  assert.equal(smsCalls().length, 1, 'the Eastern number gets its reminder at 10:00 Eastern')
+})
+await t('the notice-retry pass is a scheduled send: it never claims the person-triggered floor exemption', async () => {
+  const state = setup()
+  sendSpy.script = (ctx) => (ctx.channel === 'sms' ? DEFERRED_FREQUENCY : SENT)
+  await notify.sendBookingConfirmation('appt-1')
+  const immediate = smsCalls().at(-1)
+  assert.equal(immediate.recipientTriggeredNotice, true, 'the confirmation sent as it happens is person-triggered')
+  sendSpy.script = () => SENT
+  await notify.runBookingNoticeRetryPass(NOW)
+  const retried = smsCalls().at(-1)
+  assert.notEqual(retried, immediate)
+  assert.equal(retried.recipientTriggeredNotice, false, 'the retry stays under the floor')
+  const rem = setup()
+  rem.config = { offsets_minutes: [1440], email_enabled: false, sms_enabled: true }
+  rem.appointments[0].booked_at = '2026-08-20T00:00:00.000Z'
+  rem.appointments[0].starts_at = new Date(NOW.getTime() + 60 * 60_000).toISOString()
+  await notify.runBookingReminderPass(NOW)
+  assert.equal(smsCalls().at(-1).recipientTriggeredNotice, false, 'reminders stay under the floor')
+})
+
 console.log('\n4. Rescheduled appointments')
 await t('a reschedule sends the RESCHEDULED template, never a fresh confirmation', async () => {
   setup()

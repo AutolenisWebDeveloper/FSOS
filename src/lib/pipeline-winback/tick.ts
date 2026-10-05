@@ -116,6 +116,9 @@ export async function pipelineWinbackTick(): Promise<WinbackTickResult> {
         exited++
         continue
       }
+      // The appointment read failed: hold this touch rather than exiting on a transient error, and
+      // never send while it is unknown (follow-up R2).
+      if (input.hasUpcomingAppointment === null) continue
       const elig = evaluateWinbackEligibility(input)
       if (!elig.eligible) {
         await handleIneligible(db, e.id, elig.reasons, nowISO)

@@ -59,8 +59,8 @@ export interface EligibilityInput {
   deceased: boolean
   /** A compliance or legal hold is in effect. */
   onComplianceHold: boolean
-  /** An existing life-insurance appointment is scheduled. */
-  hasLifeAppointment: boolean
+  /** An upcoming appointment is scheduled; null = unknown (a read failed) — never eligible. */
+  hasLifeAppointment: boolean | null
   /** An advisor currently owns an open life conversation with this client. */
   advisorConversationActive: boolean
   /** ISO date the most recent enrollment reached a terminal, non-converting state, or null. */
@@ -108,7 +108,7 @@ export function evaluateEligibility(input: EligibilityInput): EligibilityResult 
   if (input.inWinback) reasons.push('in_winback')
 
   // Engagement / restriction exclusions.
-  if (input.hasLifeAppointment) reasons.push('existing_life_appointment')
+  if (input.hasLifeAppointment !== false) reasons.push('existing_life_appointment')
   if (input.advisorConversationActive) reasons.push('active_advisor_conversation')
   if (input.deceased) reasons.push('deceased')
   if (input.onComplianceHold) reasons.push('compliance_hold')

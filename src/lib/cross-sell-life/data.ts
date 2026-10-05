@@ -217,14 +217,11 @@ export async function loadEligibilityInput(
   const { data: prior } = await priorQ.limit(1).maybeSingle()
 
   // Existing (future) appointment for the household — a scheduled review pauses cross-sell (§3/§6).
-  const { data: appt } = await db
-    .from('appointments')
-    .select('id')
-    .eq('household_id', householdId)
-    .eq('status', 'scheduled')
-    .gte('scheduled_at', nowISO)
-    .limit(1)
-    .maybeSingle()
+  // Follow-up R2: the shared read Life uses, so a native booking (linked only through contact_id, by a
+  // household contact or one matching a member) counts. 'unknown' (a read failed) → null: the tick
+  // holds the touch, and enrollment treats it as booked — never as "no appointment".
+  const { upcomingAppointmentState } = await import('@/lib/booking/appointment-booked')
+  const apptState = await upcomingAppointmentState(householdId, nowISO)
 
   // Cooldown anchor: the most recent terminal, non-converting enrollment for this member.
   const { data: lastTerminal } = await db
@@ -260,7 +257,7 @@ export async function loadEligibilityInput(
     // against columns this schema does not define — defaulting safe here, never fabricated.
     deceased: false,
     onComplianceHold: false,
-    hasLifeAppointment: !!appt,
+    hasLifeAppointment: apptState === 'unknown' ? null : apptState === 'yes',
     advisorConversationActive: false, // set by the conversation-mode recheck in the tick
     lastTerminalAt: (lastTerminal?.completed_at as string | null) ?? null,
     cooldownDays: campaign.reenroll_cooldown_days,

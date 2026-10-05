@@ -64,7 +64,8 @@ async function exitAllCrossSell(
 
 /**
  * Whether the household has an upcoming SCHEDULED appointment, counting native bookings linked
- * only through contact_id and review appointments that carry only scheduled_at. Fails CLOSED
+ * only through contact_id — by a contact on the household, or one matching a member's email or phone
+ * (follow-up R2) — and review appointments that carry only scheduled_at. Fails CLOSED
  * (true) on a read error: the caller stops the touch rather than sending to a possibly-booked
  * client.
  */
@@ -89,12 +90,26 @@ export async function upcomingAppointmentState(householdId: string, nowISO: stri
   if ((direct.count ?? 0) > 0) return 'yes'
   const contacts = await db.from('contacts').select('id').eq('household_id', householdId).is('deleted_at', null).limit(50)
   if (contacts.error) return 'unknown'
-  const ids = (contacts.data ?? []).map((c: { id: string }) => c.id)
-  if (ids.length === 0) return 'no'
+  const ids = new Set((contacts.data ?? []).map((c: { id: string }) => c.id))
+  // Follow-up R2: a public booking's contact is often not linked to the household — it matches a
+  // MEMBER by email or phone. Count those contacts too, so a booking by any member stops prospecting.
+  const members = await db.from('household_members').select('email, phone').eq('household_id', householdId).limit(50)
+  if (members.error) return 'unknown'
+  const emails = [...new Set((members.data ?? []).map((m: { email?: string | null }) => (m.email ?? '').trim().toLowerCase()).filter(Boolean))]
+  // phone_digits is digits-only as entered (normalize.ts), so match the 10-digit form and its +1 form.
+  const tails = [...new Set((members.data ?? []).map((m: { phone?: string | null }) => (m.phone ?? '').replace(/\D/g, '').slice(-10)).filter((d) => d.length === 10))]
+  const digits = tails.flatMap((d) => [d, `1${d}`])
+  for (const [col, vals] of [['email_lc', emails], ['phone_digits', digits]] as const) {
+    if (vals.length === 0) continue
+    const byAddr = await db.from('contacts').select('id').in(col, vals).is('deleted_at', null).limit(50)
+    if (byAddr.error) return 'unknown'
+    for (const c of (byAddr.data ?? []) as { id: string }[]) ids.add(c.id)
+  }
+  if (ids.size === 0) return 'no'
   const viaContact = await db
     .from('appointments')
     .select('id', { count: 'exact', head: true })
-    .in('contact_id', ids)
+    .in('contact_id', [...ids])
     .eq('status', 'scheduled')
     .or(upcoming)
   if (viaContact.error) return 'unknown'

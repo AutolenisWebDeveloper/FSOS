@@ -106,7 +106,11 @@ export async function crossSellLifeTick(): Promise<TickResult> {
       }
 
       // Re-check eligibility BEFORE the touch (§3 — ownership/consent/appointment recheck).
-      const elig = evaluateEligibility(await loadEligibilityInput(cfg, e.household_id, e.member_id, nowISO, e.id))
+      const eligInput = await loadEligibilityInput(cfg, e.household_id, e.member_id, nowISO, e.id)
+      // The appointment read failed: hold this touch for the next run rather than exiting the
+      // enrollment on a transient error — and never send while it is unknown (follow-up R2).
+      if (eligInput.hasLifeAppointment === null) continue
+      const elig = evaluateEligibility(eligInput)
       if (!elig.eligible) {
         await handleIneligible(db, e.id, elig.reasons, nowISO)
         exited++

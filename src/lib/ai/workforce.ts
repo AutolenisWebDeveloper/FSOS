@@ -260,19 +260,15 @@ async function referralAlreadyTouched(referralId: string): Promise<boolean> {
   return (count ?? 0) > 0
 }
 
-/** An upcoming scheduled appointment for the household. Fails CLOSED (treated as booked). */
+/**
+ * An upcoming scheduled appointment for the household — the shared read Life uses (follow-up R2), so a
+ * native booking linked only through contact_id (a household contact, or one matching a member)
+ * counts. Fails CLOSED: an unreadable state is treated as booked.
+ */
 async function householdHasUpcomingAppointment(householdId: string | null): Promise<boolean> {
   if (!householdId) return false
-  const nowISO = new Date().toISOString()
-  const { count, error } = await getDb()
-    .from('appointments')
-    .select('id', { count: 'exact', head: true })
-    .eq('household_id', householdId)
-    .eq('status', 'scheduled')
-    // Native bookings carry starts_at; FSA review-created appointments carry only scheduled_at.
-    .or(`starts_at.gt.${nowISO},scheduled_at.gt.${nowISO}`)
-  if (error) return true
-  return (count ?? 0) > 0
+  const { upcomingAppointmentState } = await import('@/lib/booking/appointment-booked')
+  return (await upcomingAppointmentState(householdId)) !== 'no'
 }
 
 /** The member messaged us within the conversation quiet window. Fails CLOSED (treated as replied). */

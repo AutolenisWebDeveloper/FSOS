@@ -128,3 +128,47 @@ export async function runIdempotent<T>(
     throw err
   }
 }
+
+/**
+ * Record the latest run of a STATIC cron route (follow-up R17c). booking-reminders, social-publish
+ * and workshop-reminders run sub-hourly on their own routes, outside runIdempotent's job:hour lock
+ * (their idempotency is per item), so they recorded no job_runs row and the Jobs page could not
+ * show them. One row per route (`<job>:latest`) is refreshed on every tick — never appended — so a
+ * 5-minute cron cannot crowd the run log. A throw is recorded errored and rethrown; `settle` maps a
+ * returned result that reports a failure. Bookkeeping only: a failed write never blocks the work.
+ */
+export async function recordRouteRun<T>(
+  job: string,
+  fn: () => Promise<T>,
+  settle?: (result: T) => { status: 'completed' | 'errored'; error: string | null },
+): Promise<T> {
+  const db = getDb()
+  const dedupeKey = `${job}:latest`
+  const mark = async (patch: Record<string, unknown>) => {
+    try {
+      await db.from('job_runs').update(patch).eq('dedupe_key', dedupeKey)
+    } catch {
+      /* bookkeeping only */
+    }
+  }
+  try {
+    await db
+      .from('job_runs')
+      .upsert(
+        { dedupe_key: dedupeKey, job, status: 'running', started_at: new Date().toISOString(), finished_at: null, error: null },
+        { onConflict: 'dedupe_key' },
+      )
+  } catch {
+    /* bookkeeping only */
+  }
+  try {
+    const result = await fn()
+    const s = settle ? settle(result) : { status: 'completed' as const, error: null }
+    await mark({ status: s.status, error: s.error ? s.error.slice(0, 500) : null, finished_at: new Date().toISOString() })
+    return result
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    await mark({ status: 'errored', error: message.slice(0, 500), finished_at: new Date().toISOString() })
+    throw err
+  }
+}

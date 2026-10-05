@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { cronAuthorized } from '@/lib/http'
 import { publishDueEntries } from '@/lib/social/publisher'
+import { recordRouteRun } from '@/lib/jobs/runtime'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -21,7 +22,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
   try {
-    const result = await publishDueEntries()
+    const result = await recordRouteRun('social-publish', () => publishDueEntries())
     return NextResponse.json({ job: 'social-publish', ...result })
   } catch (err) {
     return NextResponse.json(

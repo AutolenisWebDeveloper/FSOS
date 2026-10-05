@@ -7,6 +7,35 @@ production by Claude except the read-only checks whose results are quoted (2026-
 Connect with a role that can write DDL. Use `psql "$DATABASE_URL"`, and never paste the URL into a
 shared place.
 
+**How each file is applied (owner, round 4).** A file and its ledger record go in **one
+transaction**:
+
+```sh
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f <file> -c "insert into schema_migrations (filename) values ('<file>');"
+```
+
+- `-1` wraps the `-f` file and the `-c` insert in a single `BEGIN … COMMIT`; `ON_ERROR_STOP` makes
+  any error roll back both. A file is never applied without being recorded, or recorded without
+  being applied.
+- The insert has **no `on conflict do nothing`**: a file that is already recorded fails loudly,
+  and its statements roll back with it.
+- None of 137–141 contains its own `BEGIN`/`COMMIT`, which would break the single transaction.
+- Proven on a throwaway local Postgres with psql 16 (2026-10-05): a good file + record commits
+  both; an already-recorded file exits 1 and leaves its table uncreated; a failing file leaves
+  neither its objects nor a record. Use psql 15 or later (**ASSUMPTION**: older clients may not
+  wrap a mixed `-f`/`-c` run in one transaction; only 16 was tested).
+
+## Step 0 — Confirm you can restore (do this first)
+
+In the Supabase dashboard → **Database → Backups**, confirm before any write below:
+
+- the most recent daily backup completed within the last 24 hours, **or**
+- Point-in-Time Recovery is enabled and its window covers now.
+
+Note the backup time (or the PITR window) in your run log. If neither holds, stop and take a
+backup first. Every step below has a SQL rollback, but a restore is the backstop if a rollback
+itself goes wrong.
+
 ## 0. What is going on with migrations in production
 
 **What applies migrations to production?** Nothing in the repo does it automatically.
@@ -134,9 +163,11 @@ delete from schema_migrations where filename in ('128_workshop_registration_inte
 future appointments, so no reminder is due either way.
 
 ```sh
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction -f supabase/migrations/137_booking_reminder_cadence.sql
-psql "$DATABASE_URL" -c "insert into schema_migrations (filename) values ('137_booking_reminder_cadence.sql') on conflict do nothing;"
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f supabase/migrations/137_booking_reminder_cadence.sql \
+  -c "insert into schema_migrations (filename) values ('137_booking_reminder_cadence.sql');"
 ```
+
+A non-zero exit means nothing was applied or recorded. Stop and read the error.
 
 **Verify:**
 
@@ -156,12 +187,21 @@ delete from schema_migrations where filename = '137_booking_reminder_cadence.sql
 
 ## 4. Apply 138, 140, 141 (safe before the deploy; the running code ignores them)
 
+The loop **stops at the first failure**, so a failed 138 is never followed by 140 and 141. Each
+file and its record are one transaction, so the failed file leaves nothing behind.
+
 ```sh
 for f in 138_dnc_lift_marker 140_automation_switches 141_engine_retry_redispatch_switch; do
-  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction -f "supabase/migrations/$f.sql" &&
-  psql "$DATABASE_URL" -c "insert into schema_migrations (filename) values ('$f.sql') on conflict do nothing;"
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f "supabase/migrations/$f.sql" \
+    -c "insert into schema_migrations (filename) values ('$f.sql');" \
+    || { echo "STOPPED at $f.sql: nothing from it was applied or recorded. Fix before continuing."; break; }
+  echo "applied and recorded $f.sql"
 done
 ```
+
+Check the last line printed. Anything other than `applied and recorded 141_engine_retry_redispatch_switch.sql`
+means the run stopped; files before the failed one stay applied and recorded (roll them back with
+the steps below if you do not want them on their own).
 
 **Verify:**
 
@@ -192,9 +232,11 @@ is blocked. 139 makes it valid. If someone unpaused Cross-Sell before this branc
 were deployed, the old engine could start sending. Both campaigns are paused with 0 enrollments.
 
 ```sh
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction -f supabase/migrations/139_campaign_purpose_marketing.sql
-psql "$DATABASE_URL" -c "insert into schema_migrations (filename) values ('139_campaign_purpose_marketing.sql') on conflict do nothing;"
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f supabase/migrations/139_campaign_purpose_marketing.sql \
+  -c "insert into schema_migrations (filename) values ('139_campaign_purpose_marketing.sql');"
 ```
+
+A non-zero exit means nothing was applied or recorded.
 
 **Verify:**
 
@@ -218,15 +260,115 @@ seeded state exactly.
 
 ## 6. Order on the day
 
-1. Section 0 check: confirm the Supabase integration will not deploy on merge.
-2. Sections 1 → 2 (prove, then record 128–134).
-3. Section 3 (137).
-4. Section 4 (138, 140, 141).
-5. Merge and deploy. `CRON_SECRET` and `SMS_A2P_APPROVED` are already set (owner).
-6. Section 5 (139).
-7. The canary checks in the audit report (§8), using the verified `comms_test_recipients` entries.
+1. Step 0: confirm a recent backup or the PITR window.
+2. Section 0 check: confirm the Supabase integration will not deploy on merge.
+3. Sections 1 → 2 (prove, then record 128–134).
+4. Section 3 (137).
+5. Section 4 (138, 140, 141); it stops at the first failure.
+6. Merge and deploy. `CRON_SECRET` and `SMS_A2P_APPROVED` are already set (owner).
+7. Section 5 (139).
+8. The canary checks in the audit report (§8), using the verified `comms_test_recipients` entries.
    Leave both switches `off` until they pass.
 
 Each file is additive or a config row, and each was proven forward → rollback → re-apply on a
 real Postgres by `tests/automation-migrations-rollback.test.mjs` (138–141). 137's rollback is the
 one written in its own file and is not part of that test.
+
+## 7. Optional, not for merge day — close the stale Win-Back threads (owner-approved, round 4)
+
+Run this **before Win-Back is unpaused**, not as part of the merge. It changes conversation status
+only; it deletes nothing and sends nothing. Approved by the owner in round 4.
+
+**What it does.** Of the 143 open threads (read-only, 2026-10-05):
+
+| Set | Count | Change |
+|---|---|---|
+| Open, no message ever (`last_message_at is null`) | 39 | `status` → `closed` |
+| Open, last message outbound and older than 30 days | 104 | `status` → `closed` |
+| `ai_autoreply = true` (all 3 are inside the sets above) | 3 | `ai_autoreply` → `false` |
+
+None has an unread inbound message (`unread_count > 0`: 0). A later inbound reply reopens its thread
+(`conversations.ts` sets `status: 'open'` on inbound). `comm_conversations` has no triggers, and
+`closed` is an allowed status.
+
+**Before — read-only, expect 39 / 104 / 3 / 0:**
+
+```sql
+begin read only;
+select
+  count(*) filter (where status = 'open' and last_message_at is null)                                          as empty_open,
+  count(*) filter (where status = 'open' and last_direction = 'outbound' and last_message_at < now() - interval '30 days') as outbound_old_open,
+  count(*) filter (where ai_autoreply)                                                                          as armed,
+  count(*) filter (where unread_count > 0)                                                                      as unread
+from comm_conversations;
+commit;
+```
+
+If the numbers differ, stop: the data moved since this was written. Re-read and adjust the counts
+in your run log before continuing.
+
+**Apply — one transaction.** Each changed thread's prior state is written to the append-only
+`audit_log` first; that row is what the rollback reads.
+
+```sql
+begin;
+with target as (
+  select id, status, ai_autoreply from comm_conversations
+  where status = 'open'
+    and (last_message_at is null
+         or (last_direction = 'outbound' and last_message_at < now() - interval '30 days'))
+)
+insert into audit_log (actor, action, entity, entity_id, diff)
+select 'owner:thread-disposition-2026-10', 'entity.updated', 'comm_conversation', id::text,
+       jsonb_build_object('status_before', status, 'ai_autoreply_before', ai_autoreply,
+                          'status_after', 'closed', 'ai_autoreply_after', false)
+from target;
+
+update comm_conversations c
+set status = 'closed', ai_autoreply = false, updated_at = now()
+from audit_log a
+where a.actor = 'owner:thread-disposition-2026-10'
+  and a.entity = 'comm_conversation'
+  and a.entity_id = c.id::text
+  and a.at = now()          -- only this transaction's rows: a re-run never re-closes a reopened thread
+  and c.status = 'open';
+-- psql prints UPDATE n — expect 143
+commit;
+```
+
+**Verify:**
+
+```sql
+begin read only;
+select count(*) from audit_log where actor = 'owner:thread-disposition-2026-10';   -- 143
+select count(*) from comm_conversations where status = 'open';                     -- 0 (unless a reply arrived since)
+select count(*) from comm_conversations where ai_autoreply;                        -- 0
+commit;
+```
+
+**Rollback** — restores each thread's prior status and AI setting from its audit row, but **only
+while the thread is still `closed`**: a thread an inbound reply has reopened since is left as it is.
+The rollback itself is audited.
+
+```sql
+begin;
+insert into audit_log (actor, action, entity, entity_id, diff)
+select 'owner:thread-disposition-2026-10:rollback', 'entity.updated', 'comm_conversation', a.entity_id,
+       jsonb_build_object('status_before', c.status, 'status_after', a.diff->>'status_before',
+                          'ai_autoreply_after', (a.diff->>'ai_autoreply_before')::boolean)
+from audit_log a join comm_conversations c on c.id::text = a.entity_id
+where a.actor = 'owner:thread-disposition-2026-10' and c.status = 'closed';
+
+update comm_conversations c
+set status = a.diff->>'status_before',
+    ai_autoreply = (a.diff->>'ai_autoreply_before')::boolean,
+    updated_at = now()
+from audit_log a
+where a.actor = 'owner:thread-disposition-2026-10'
+  and a.entity_id = c.id::text
+  and c.status = 'closed';
+commit;
+```
+
+Re-arming `ai_autoreply` on rollback restores AI auto-replies on those 3 threads; leave them `false`
+unless the FSA wants them live (edit the rollback's `ai_autoreply` line to keep `false`).

@@ -20,7 +20,7 @@ import { parseSubjectFromBody } from '@/lib/comms/template-subject'
 import { canDispatch } from './engine'
 import { evaluateNurtureEligibility, classifyRecheckOutcome } from './eligibility'
 import { computeTouchPlan, TOUCH_SCHEDULE, type TouchKind } from './schedule'
-import { loadCampaign, loadNurtureEligibilityInput, type NurtureCampaignConfig } from './data'
+import { hasOpenConversation, loadCampaign, loadNurtureEligibilityInput, type NurtureCampaignConfig } from './data'
 import { enrollAgent } from './enroll'
 import { resumeAfterWorkflow } from './inbound'
 
@@ -185,29 +185,28 @@ export async function districtNurtureTick(): Promise<NurtureTickResult> {
   }
 }
 
-/** Resume enrollments paused by a workflow whose conversation has since closed (no catch-up). */
+/**
+ * Resume enrollments paused by a workflow whose conversation has since closed (no catch-up).
+ *
+ * Follow-up R12g: keyed on the same thread the pause is — the agent's own address
+ * (hasOpenConversation) — not "the agency has no open thread". An unrelated client thread under the
+ * agency no longer holds the agent, their own open reply thread no longer resumes them, and a read
+ * error holds (hasOpenConversation fails closed).
+ */
 async function resumeSweep(db: ReturnType<typeof getDb>, campaignId: string): Promise<number> {
   const { data: paused } = await db
     .from('district_nurture_enrollments')
-    .select('id, agency_id, agency_owner_id')
+    .select('id, agency_owner_id, email, phone')
     .eq('campaign_id', campaignId)
     .eq('status', 'paused_for_conversation')
     .limit(2000)
 
   let resumed = 0
   for (const e of paused ?? []) {
-    const agencyId = (e as { agency_id: string | null }).agency_id
-    if (agencyId) {
-      const { count } = await db
-        .from('comm_conversations')
-        .select('id', { count: 'exact', head: true })
-        .eq('agency_id', agencyId)
-        .eq('status', 'open')
-      if ((count ?? 0) > 0) continue // conversation still open — stay paused
-    }
-    const agencyOwnerId = (e as { agency_owner_id: string | null }).agency_owner_id
-    if (!agencyOwnerId) continue
-    const r = await resumeAfterWorkflow({ campaignId, agencyOwnerId, actor: SYSTEM })
+    const row = e as { agency_owner_id: string | null; email: string | null; phone: string | null }
+    if (!row.agency_owner_id) continue
+    if (await hasOpenConversation(row.email, row.phone)) continue // their thread is still open — stay paused
+    const r = await resumeAfterWorkflow({ campaignId, agencyOwnerId: row.agency_owner_id, actor: SYSTEM })
     resumed += r.resumed
   }
   return resumed

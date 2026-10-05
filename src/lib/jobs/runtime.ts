@@ -144,9 +144,12 @@ export async function recordRouteRun<T>(
 ): Promise<T> {
   const db = getDb()
   const dedupeKey = `${job}:latest`
+  // Fenced on this tick's own started_at: an older overlapping tick that finishes last cannot
+  // overwrite the newer tick's outcome (CodeRabbit review of R17c).
+  const startedAt = new Date().toISOString()
   const mark = async (patch: Record<string, unknown>) => {
     try {
-      await db.from('job_runs').update(patch).eq('dedupe_key', dedupeKey)
+      await db.from('job_runs').update(patch).eq('dedupe_key', dedupeKey).eq('started_at', startedAt)
     } catch {
       /* bookkeeping only */
     }
@@ -155,7 +158,7 @@ export async function recordRouteRun<T>(
     await db
       .from('job_runs')
       .upsert(
-        { dedupe_key: dedupeKey, job, status: 'running', started_at: new Date().toISOString(), finished_at: null, error: null },
+        { dedupe_key: dedupeKey, job, status: 'running', started_at: startedAt, finished_at: null, error: null },
         { onConflict: 'dedupe_key' },
       )
   } catch {

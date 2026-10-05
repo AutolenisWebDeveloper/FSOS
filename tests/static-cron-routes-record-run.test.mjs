@@ -51,6 +51,19 @@ for (const [route, aliases] of ROUTES) {
     assert.ok(rows[0].error)
   })
 }
+const runtime = await bundle('src/lib/jobs/runtime.ts')
+await t('an older overlapping tick never overwrites a newer tick\'s outcome (CodeRabbit review of R17c)', async () => {
+  const db = memDb(); installDb(db)
+  let releaseOld
+  const oldDone = new Promise((r) => { releaseOld = r })
+  const older = runtime.recordRouteRun('route-x', async () => { await oldDone; return 'old ok' })
+  await new Promise((r) => setTimeout(r, 5)) // the newer tick starts later
+  await runtime.recordRouteRun('route-x', async () => { throw new Error('newer failed') }).catch(() => {})
+  releaseOld()
+  await older
+  const row = db.rows('job_runs').find((r) => r.dedupe_key === 'route-x:latest')
+  assert.equal(row.status, 'errored', `the older tick's success replaced the newer failure (${row.status})`)
+})
 await t('the Jobs page reads a static route\'s run by its route name', () => {
   const src = readFileSync('src/app/(super)/super/jobs/page.tsx', 'utf8')
   assert.doesNotMatch(src, /not recorded here/)

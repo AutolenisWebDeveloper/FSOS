@@ -639,6 +639,23 @@ console.log('\nTest-recipient consent')
   assert.equal(db.rows('comm_contact_consents').filter((r) => r.contact === 'unverified@example.com').length, 0, 'an unverified destination wrote a revoke')
   console.log('  ✓ a stuck verification is repaired by the next PATCH; an unverified destination is deleted without a revoke')
 }
+{
+  // CodeRabbit review: a stale PATCH must never undo a revoke written after the verification (a
+  // concurrent DELETE). Repair only when NOTHING was recorded since this destination was verified.
+  const db = memDb({ now: iso })
+  installDb(db)
+  const verifiedAt = new Date(Date.UTC(2026, 9, 5, 12, 0)).toISOString()
+  db.seed('comms_test_recipients', [{ id: 'tr-stale', user_id: 'client:client-user', channel: 'email', address: 'stale@example.com', verification_code: null, verified_at: verifiedAt }])
+  db.seed('comm_contact_consents', [
+    { id: 'g1', contact: 'stale@example.com', channel: 'email', action: 'granted', consent_version: 'test-recipient-v1', captured_at: verifiedAt },
+    { id: 'r1', contact: 'stale@example.com', channel: 'email', action: 'revoked', consent_version: 'test-recipient-v1', captured_at: new Date(Date.parse(verifiedAt) + 60_000).toISOString() },
+  ])
+  const r = await testRecipient.PATCH(makeReq('/api/comms/test/recipients/tr-stale', { method: 'PATCH', body: { code: '123456' } }), { params: Promise.resolve({ id: 'tr-stale' }) })
+  assert.equal(r.status, 200)
+  const events = db.rows('comm_contact_consents').filter((e) => e.contact === 'stale@example.com')
+  assert.equal(events.length, 2, 'a stale PATCH appended a grant after the revoke')
+  console.log('  ✓ a stale PATCH never re-grants after a revoke recorded since verification')
+}
 
 // Follow-up R13: EVERY stop condition cancels pending automation, not just an inbound STOP — the
 // unsubscribe link, one-click, web/portal and operator opt-outs, hard bounce, complaint and carrier

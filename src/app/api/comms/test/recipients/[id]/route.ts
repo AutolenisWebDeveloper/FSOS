@@ -40,18 +40,19 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     if (!row || row.user_id !== actor) return NextResponse.json({ error: 'Destination not found.', reason: 'not_found' }, { status: 404 })
     if (row.verified_at) {
       // Repair path (CodeRabbit review of R4): a verification whose grant write failed (and whose
-      // claim could not be reverted) is completed here, so it is never stuck verified-without-grant.
-      const { data: last, error: lastErr } = await db
+      // claim could not be reverted) is completed here. Only when NOTHING has been recorded for this
+      // device since it was verified — a revoke written after verification (a concurrent DELETE) is
+      // never undone by a stale PATCH.
+      const { data: since, error: sinceErr } = await db
         .from('comm_contact_consents')
-        .select('action, captured_at')
+        .select('id')
         .eq('contact', row.address)
         .eq('channel', row.channel)
         .eq('consent_version', TEST_RECIPIENT_CONSENT_VERSION)
-        .order('captured_at', { ascending: false })
+        .gte('captured_at', row.verified_at)
         .limit(1)
-      if (lastErr) return dbErrorResponse('comms/test/recipients/[id]', lastErr)
-      const latest = Array.isArray(last) ? (last[0] as { action?: string } | undefined) : undefined
-      if (latest?.action !== 'granted') {
+      if (sinceErr) return dbErrorResponse('comms/test/recipients/[id]', sinceErr)
+      if (!Array.isArray(since) || since.length === 0) {
         const { error: repairErr } = await db.from('comm_contact_consents').insert({
           contact: row.address,
           channel: row.channel,
@@ -61,6 +62,18 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
           source_url: '/app/comms/console',
         })
         if (repairErr) return dbErrorResponse('comms/test/recipients/[id]', repairErr)
+        // The destination may have been deleted meanwhile: then withdraw what was just granted.
+        const { data: still } = await db.from('comms_test_recipients').select('id').eq('id', id).maybeSingle()
+        if (!still) {
+          await db.from('comm_contact_consents').insert({
+            contact: row.address,
+            channel: row.channel,
+            action: 'revoked',
+            consent_text: 'Test destination removed by its operator.',
+            consent_version: TEST_RECIPIENT_CONSENT_VERSION,
+            source_url: '/app/comms/console',
+          })
+        }
       }
       return NextResponse.json({ ok: true, already_verified: true })
     }

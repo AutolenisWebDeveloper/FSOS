@@ -38,8 +38,8 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 \
   (**ASSUMPTION**: older clients may not wrap a mixed `-f`/`-c` run in one transaction; only 16
   was tested).
 
-**Every rollback below runs in its own transaction** (`begin; … commit;`). If any statement
-fails, type `rollback;` and stop.
+**Every rollback below runs in its own transaction** (`begin; … commit;`) with the same
+5-second lock timeout as the applies. If any statement fails, type `rollback;` and stop.
 
 ## Step 0 — Confirm you can restore (do this first)
 
@@ -254,10 +254,13 @@ select max_sms_per_day, max_combined_touches_per_day from comm_frequency_policy 
 **Rollback.** Unlike the block in the file, this resets a value **only if it still holds what 137
 set**, so an operator-tuned offset list or cap survives. Proven by
 `tests/automation-migrations-rollback.test.mjs`, which runs this exact block.
+137's longer `note` text on the `appointment` frequency row is left in place (a description only;
+nothing reads it).
 
 <!-- rollback:137 -->
 ```sql
 begin;
+set local lock_timeout = '5s';
 alter table booking_reminder_config alter column offsets_minutes set default '{1440}';
 update booking_reminder_config set offsets_minutes = '{1440}', updated_at = now()
  where id = 'global' and offsets_minutes = '{1440,720,60}';
@@ -299,10 +302,13 @@ select relrowsecurity from pg_class where oid='public.automation_switches'::regc
 `callback_engine_state` is seeded but no longer read: carrier opt-outs now always close
 automation (follow-up R13). `consent_population_execute` has no row; a missing row is `off`.
 
-**Rollback, in this order** (141 before 140):
+**Rollback, in this order** (141 before 140). `dnc_entries` is read by every send, so the same
+5-second lock timeout applies; on `lock timeout`, nothing was rolled back — run it again later.
 
+<!-- rollback:138-141 -->
 ```sql
 begin;
+set local lock_timeout = '5s';
 delete from automation_switches where key = 'engine_retry_redispatch';             -- 141
 drop table if exists automation_switches;                                          -- 140
 alter table dnc_entries drop column if exists lifted_reason;                       -- 138
@@ -355,6 +361,7 @@ select purpose, status from xsell_life_campaigns;  -- MARKETING, paused
 
 ```sql
 begin;
+set local lock_timeout = '5s';
 alter table life_campaigns alter column purpose set default 'POLICY_DEADLINE';
 update life_campaigns set purpose = 'POLICY_DEADLINE', updated_at = now() where purpose = 'MARKETING';
 alter table xsell_life_campaigns alter column purpose set default 'CLIENT_CARE_CROSS_SELL';

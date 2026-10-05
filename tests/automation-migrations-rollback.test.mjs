@@ -212,6 +212,16 @@ try {
     reapply('138_dnc_lift_marker.sql')
     assert.equal(col('dnc_entries', 'lifted_at'), '1')
   })
+  // ── The runbook's combined §4 rollback (the block the owner runs), then re-apply 138, 140, 141 ──
+  check('runbook §4 rollback removes 141, 140 and 138 in one transaction; re-applying all three restores them', () => {
+    runSql(runbookSql('rollback:138-141'))
+    assert.equal(table('automation_switches'), '0')
+    assert.equal(col('dnc_entries', 'lifted_at'), '0')
+    assert.equal(q(`select count(*) from schema_migrations where filename in ('138_dnc_lift_marker.sql','140_automation_switches.sql','141_engine_retry_redispatch_switch.sql')`), '0')
+    for (const f of ['138_dnc_lift_marker.sql', '140_automation_switches.sql', '141_engine_retry_redispatch_switch.sql']) reapply(f)
+    assert.equal(col('dnc_entries', 'lifted_at'), '1')
+    assert.equal(q(`select string_agg(key || '=' || mode, ',' order by key) from automation_switches`), 'callback_engine_state=off,engine_retry_redispatch=off')
+  })
 } finally {
   try { sh(`runuser -u postgres -- ${PGBIN}/pg_ctl -D ${D} stop > /dev/null 2>&1`) } catch { /* ignore */ }
 }

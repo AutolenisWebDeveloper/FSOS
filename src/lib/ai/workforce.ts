@@ -342,12 +342,40 @@ export interface BuildQueueResult {
 }
 
 /**
+ * Follow-up R12d: a 'held' row (a self-clearing hold — frequency, window, business hours) was never
+ * released or expired. A hold belongs to its queue day: rows held on an EARLIER day are expired to
+ * 'skipped' with the hold recorded, and the day's build re-queues a still-eligible target fresh.
+ * Returns how many were expired. Never throws.
+ */
+export async function expireStaleHolds(today: string = new Date().toISOString().slice(0, 10)): Promise<number> {
+  try {
+    const db = getDb()
+    const { data: stale, error } = await db.from('outreach_queue').select('id, block_reason').eq('status', 'held').lt('queue_date', today).limit(1000)
+    if (error || !Array.isArray(stale)) return 0
+    let n = 0
+    for (const r of stale as { id: string; block_reason: string | null }[]) {
+      const { data } = await db
+        .from('outreach_queue')
+        .update({ status: 'skipped', block_reason: `hold expired: ${r.block_reason ?? 'deferred'}`, updated_at: new Date().toISOString() })
+        .eq('id', r.id)
+        .eq('status', 'held')
+        .select('id')
+      if (Array.isArray(data) && data.length > 0) n++
+    }
+    return n
+  } catch {
+    return 0
+  }
+}
+
+/**
  * Build today's prioritized outreach queue for every enabled outreach agent, up to
  * each agent's daily quota. Idempotent: the unique (queue_date, agent, entity) keeps
- * re-runs from double-queuing. Returns per-agent counts.
+ * re-runs from double-queuing. Returns per-agent counts. Earlier days' held rows are expired first.
  */
 export async function buildQueue(): Promise<BuildQueueResult> {
   const db = getDb()
+  await expireStaleHolds()
   const targets = await loadTargets()
   const byAgent: Record<string, { queued: number; skipped: number }> = {}
   let queued = 0

@@ -110,6 +110,22 @@ operator-only route, and each guess is still checked against the stored code); c
 carry `consentWaived: true` as on `main` — R7 made them US-only and automated, and whether a campaign asset should
 also require recorded consent is a question for the owner, not changed here.
 
+### PR review bots (Graphify, CodeRabbit) — findings and outcomes
+
+| Finding | Outcome | Commit |
+|---|---|---|
+| Graphify: runbook §1 `idx_wreg_active_email` check ignored `workshop_id`; generation-0 check not NULL-safe | Fixed (column is NOT NULL, so the second was defensive only) | `6b870a3` |
+| Graphify: six coupling-delta notes (`POST`, `buildQueue`, `runOutreachAgent`, `dispatchCampaign`, `terminateAutomationForAddress`, `deliverLeg`) | Not changed: each added edge is a requested fix (recorded send, failure reporting, single stop fan-out); replied on each thread | — |
+| CodeRabbit: reminder SMS spacing only on planned targets — the gate can hold one leg until a second is due and both go out together | Fixed: at most one reminder SMS per appointment per pass, none within 2 h of the last one the ledger shows sent. Two lifecycle tests that asserted several reminder SMS in one burst contradicted R6 and were corrected | `9ab5ae9` |
+| CodeRabbit: phone 850 + a Central ZIP dropped 850's Eastern side | Fixed in the resolver and the dispatch policy; three or more zones → evaluated in every continental zone | `02abbbd` |
+| CodeRabbit: shared appointment check capped at 50 contacts / members | Fixed: paged reads, chunked appointment check | `aa12da7` |
+| CodeRabbit: `recordRouteRun` — an older overlapping tick could overwrite a newer outcome | Fixed: settle fenced on the tick's `started_at` | `f2e441f` |
+| CodeRabbit: district-nurture resume checked only the enrollment's stored address | Fixed: also the agent's current address; no current snapshot → stays paused | `c5b5c22` |
+| CodeRabbit: test-recipient wrong guesses not atomic, write error ignored (13 answers past a 5-guess cap in the repro) | Fixed: compare-and-set on every guess and on verify; lost race → 409, write error → 5xx | `8093481` |
+| CodeRabbit: a draft-claim release that fails leaves the referral `drafted` | Fixed: retried, then escalated (`outreach_release_failed`) | `062a30b` |
+| CodeRabbit: runbook §1 accepted any partial predicate on `idx_wreg_active_email`; 137 rollback reset an operator-set column default | Fixed: exact predicate compared (a wrong one reads false locally); default reset only while it is 137's | `aa2adca` |
+| CodeRabbit nit: stale "inert no-op" comment on the retry-queue read | Fixed | `52c9bdc` |
+
 ### Decisions taken inside the fixes (for the owner to confirm or reverse)
 
 - **R4, code storage.** `comms_test_recipients.verification_code` now holds `code:wrong_guesses` (no migration). A code

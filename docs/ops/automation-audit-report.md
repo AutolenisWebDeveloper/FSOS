@@ -50,7 +50,7 @@ placeholders are recorded as **UNANSWERED**; nothing is inferred for them.
 | Finding 5 — cron move | **Done.** `vercel.json`: the five dispatch crons run at `0 17-23 * * *`. Every hour in that range is inside 09:00–20:00 in every continental zone, standard and daylight. `gate.ts oneTouchPerDay` holds each enrollment to one touch per UTC day. No engine schedules two touches on one day, and each drip is single-channel, so the guard is also per channel. Regression: `cron-send-window`, `automation-wiring`. | `e052837` |
 | AI opener to non-US | **Done.** Only an opener the FSA **typed** is operator-initiated. A seeded campaign asset is rendered server-side and may never have been previewed, so it is automated (US only). The AI replies that follow are automated. | `ebdd2a0` |
 | Single send path | **Done.** The booking fallback notices, FSA alerts, visitor acks, the morning briefing and the form-link email now go through `sendMessage` and write a message record (see below). | `3d22208` |
-| START after re-consent | **Done.** A documented re-consent clears earlier opt-outs on the channel, except a hard bounce; START then works normally. Property test I5. | `59e3f37` |
+| START after re-consent | **Done, narrowed after review.** The signed-in client's own portal re-consent clears earlier opt-outs on the channel, except a hard bounce; START then works normally. Public form/booking opt-ins do not clear (review F1). Property test I5, I6. | `59e3f37`, review fixes |
 | Concurrency | **Closed with compare-and-set writes; the remaining window is documented below.** | `6043925` |
 | Migration runbook | [`migration-runbook.md`](migration-runbook.md) | docs commit |
 
@@ -81,12 +81,17 @@ placeholders are recorded as **UNANSWERED**; nothing is inferred for them.
   - There is no `sendThroughGate` any more. Its successor is `sendMessage` (`comms/send.ts`),
     which writes the record and then calls the chokepoint.
 - **Change:** all of them now go through `sendMessage` via `sendRecorded`.
-  - The record is written against the entity: appointment, briefing date or form submission.
-  - Three narrow options keep each delivered email unchanged: `replyTo` is kept, `track:false`
-    adds no open/click pixel, and `thread:false` opens no conversation, so the collision and reply
-    rules never see it.
-  - One header difference: these emails now carry the same List-Unsubscribe and
-    `X-FSOS-Message-Id` headers every other FSOS email carries.
+  - The record is written against the entity when it has a uuid id (appointment, form submission).
+    The briefing has no row of its own, so its record stands alone (`entity_type 'message'`).
+  - Narrow options keep each delivered email as before: `replyTo` is kept, `track:false` adds no
+    open/click pixel, `thread:false` opens no conversation (so the collision and reply rules never
+    see it), and `listUnsubscribe:false` adds **no** List-Unsubscribe header. A one-click
+    "Unsubscribe" on an FSA alert would put the practice's own inbox on DNC and block every later
+    alert. The only header added is `X-FSOS-Message-Id`.
+  - The bodies are already rendered and carry visitor-typed text, so `{{` is neutralized before
+    personalization: a typed `{{word}}` is neither substituted nor able to block the alert.
+  - `result.id` is now the FSOS message id, not the Resend id (the briefing API's `email_id` and
+    the form-link log line carry the FSOS id).
 - **Not moved: the password-setup email.** Its body is a one-time credential link, which must not
   be stored in a message record. It stays on the gated direct path.
 - `jobs/agent-runner.ts` has a direct `dispatch` hook with no record, but **no caller uses it**
@@ -95,10 +100,16 @@ placeholders are recorded as **UNANSWERED**; nothing is inferred for them.
 ### Re-consent (owner decision, round 3)
 
 - **What clears.** A documented re-consent on a channel clears the earlier opt-outs on that
-  channel. It comes from a source the gate already reads as channel consent:
-  - the client-portal grant;
-  - the public contact-form SMS opt-in;
-  - the booking SMS opt-in.
+  channel. **Only the authenticated client portal clears, and only for the signed-in client's own
+  address** (the household member whose email is the signed-in user's). Narrowed after review — see
+  "Adversarial review of round 3" below:
+  - the public contact-form and booking SMS opt-ins **do not clear**: nothing ties the submitter
+    to the handset, so a stranger could clear someone else's STOP. They still record a grant; the
+    person re-opens SMS by texting START, which lifts a keyword STOP as before;
+  - a portal grant by one household member does not clear another member's opt-out.
+
+  Each lift is audited through `recordConsentChange` (audit log + timeline). A row armed after the
+  re-consent started is never lifted.
 
   DNC rows are **lifted** (`lifted_at`), never deleted or relabelled. A row carrying a **hard
   bounce** stays active; no code path re-verifies an address today, so a bounce clears only by an
@@ -106,15 +117,40 @@ placeholders are recorded as **UNANSWERED**; nothing is inferred for them.
 - **Channel-wide web opt-outs.** A web opt-out recorded for **all channels** is split on an SMS
   re-consent: the email side gets its own row with the same reason, then the all-channel row is
   lifted.
-- **START after re-consent.** START judges only the opt-outs after the latest documented grant,
-  plus any hard bounce ever. START alone still never lifts a non-STOP opt-out.
+- **START after re-consent.** START judges only the opt-outs after the latest **clearing**
+  re-consent (the portal grant, `consent_version 'reconsent'`), plus any hard bounce ever. A public
+  opt-in does not move that window. START alone still never lifts a non-STOP opt-out.
 - **Not a clearing source:**
   - **Workshop-registration consent** is scoped to that workshop's reminders
     (`workshop_consent_events`), not channel consent at the gate.
   - A bare **email** contact has no documented-consent source in FSOS, so nothing clears an email
     opt-out for a non-member.
-  - For an existing **member**, a booking SMS opt-in clears the DNC rows but not the member's own
-    channel revoke. Only the member's portal grant restores that.
+  - For an existing **member**, a booking SMS opt-in clears nothing; START from the handset (or the
+    member's own portal grant) restores.
+
+### Adversarial review of round 3 — findings and fixes
+
+A fresh reviewer (no repairs written) reviewed `994fa05..2b2e705`. Each fix has a regression test
+that fails without it.
+
+| # | Finding | Fix | Regression |
+|---|---|---|---|
+| F1 (P0) | A stranger could clear someone's STOP through the public contact form or booking opt-in (unverified number), and automated SMS would resume. | Public sources no longer clear. Only the signed-in client's own portal grant clears. | property test I6 + "booking opt-in after a STOP" case; `booking-sms-consent` |
+| F2 (P1) | A portal grant cleared every household member's STOP / unsubscribe. | Clears only the member whose email is the signed-in user's; no unique match → nothing cleared. | property test "household member's portal grant" case |
+| F3 (P1) | The briefing could never send: it wrote a date into the uuid `comm_messages.entity_id` (live column type confirmed read-only: `uuid`), so the record failed and the send was withheld. | The briefing passes no entity; `sendRecorded` forwards only uuid entity ids. memdb now rejects a non-uuid `entity_id` like Postgres. | `transactional-notifications` |
+| F4 (P1) | A visitor-typed `{{word}}` blocked the FSA lead alert and the visitor ack (or substituted the FSA's own unsubscribe link). | `{{` neutralized in `sendRecorded` bodies. | `transactional-notifications` |
+| F5 (P2) | FSA alerts gained a one-click List-Unsubscribe; one click would DNC the practice inbox and block every later alert and briefing. | `listUnsubscribe:false` for `sendRecorded`; every other send unchanged. | `transactional-notifications` |
+| F6 (P2) | Member: booking opt-in after STOP lifted the DNC, leaving START unable to restore member consent. | Gone with F1 (booking clears nothing); START restores. | property test case |
+| F7 (P2) | Admin resume / replay / restart set `next_touch_at` to today, so an hourly tick could send a second touch the same day. | Each engine tick checks for a touch already **sent** today (UTC) before claiming; if so it moves `next_touch_at` to tomorrow. A read error holds the touch. | `cron-send-window` |
+| F8 (P2) | A re-consent lift wrote no audit entry. | Every lift goes through `recordConsentChange`; a failed audit returns `ok:false` (portal answers 500). | — (code path; audit seam stubbed in tests) |
+| P3 | `cleared` over-counted; a STOP between grant and lift could be lifted; wrong error text; unthreaded records labelled `conversation`; forms log called the FSOS id a Resend id. | Lift is `.select('id')`-counted; rows armed after the re-consent are skipped; error text fixed; label `message`; log fixed. | property test |
+
+Not changed (P3, recorded): legacy DNC rows from before revoke evidence, where a hard bounce
+re-armed a row first created for another reason, carry no `hard_bounce` evidence; a portal email
+re-consent would lift them (depends on legacy data). Splitting an `'all'` row keeps sms/email but
+not a `'call'` reading of it (display readers ignore `lifted_at` anyway). Drips with `delay_days ≥ 1`
+can drift by up to an hour per step. Migration 138's column comment still says unsubscribe rows are
+never lifted; changing it needs a new migration.
 
 ### Concurrency: do the opt-out writers serialize?
 
@@ -126,7 +162,7 @@ What closes the windows (`6043925`):
 |---|---|---|
 | START lifts while an opt-out re-arms the same row | The lift could land after the re-arm and undo the opt-out. | The START lift is **compare-and-set on `created_at`**. A re-arm after START's read makes the lift a no-op. |
 | START lifts between an opt-out's evidence write and its re-arm, or the clocks of two serverless instances disagree | The opt-out's re-arm could carry an older timestamp than the lift. | The re-arm takes a fresh timestamp after the evidence, then **re-reads the row**. If it is still lifted, `created_at` is pushed past `lifted_at`. |
-| A re-consent races an opt-out | The opt-out's evidence could predate the grant, so a later START ignored it. | The re-consent lift is compare-and-set on `created_at`. After its re-arm, the opt-out checks for a grant captured since its evidence and appends **fresh evidence** if there is one. |
+| A re-consent races an opt-out | The opt-out's evidence could predate the grant, so a later START ignored it. | The re-consent lift is compare-and-set on `created_at` and skips any row armed after the re-consent started. After its re-arm, the opt-out checks for a grant captured since its evidence and appends **fresh evidence** if there is one. |
 | START restores member consent while an operator or portal revoke lands | The upsert overwrote the later revoke. | The restore is **compare-and-set** on the STOP's own revoke (`status='revoked'` and the STOP's `source`). |
 
 **Remaining window.** Between an opt-out's post-check read and the end of its function, a START
@@ -212,13 +248,13 @@ enabled.
 | Today (`main`) | After deploy |
 |---|---|
 | Workforce `term_conversion` / `cross_sell` / `life_winback` would send if their audiences had consent | Stand down; the campaign engines own those audiences. |
-| Booking fallback, FSA alerts, visitor acks, briefing, form-link emails send with no FSOS record | Same emails, now recorded (no thread, no tracking). |
+| Booking fallback, FSA alerts, visitor acks, briefing, form-link emails send with no FSOS record | Same emails, now recorded (no thread, no tracking, no List-Unsubscribe). |
 | Automated SMS to a non-US or non-establishable number (none exist) | Hard-blocked. |
 | A typed opt-out on the web page stored as typed (mixed case / punctuation never matched) | Normalized; it blocks. |
 | A later opt-out relabelled an earlier one; START could undo an operator opt-out | Never relabelled; START respects every non-STOP opt-out. |
-| Re-consent never cleared a STOP/unsubscribe | Documented re-consent clears (not hard bounces). |
+| Re-consent never cleared a STOP/unsubscribe | The signed-in client's own portal re-consent clears (not hard bounces). Public form and booking opt-ins do not clear. |
 | Reminder SMS could land in quiet hours | Moved inside the floor, or skipped. |
-| Dispatch ticks at 12:00–16:00 UTC | Hourly 17:00–23:00 UTC, one touch per enrollment per day. |
+| Dispatch ticks at 12:00–16:00 UTC | Hourly 17:00–23:00 UTC, one touch per enrollment per day, also after an admin resume or restart. |
 | `x-vercel-cron` header alone authorized `/api/cron/[job]` | Bearer `CRON_SECRET` only (set). |
 
 **Canary set: empty in production.** `comms_test_recipients` has **0 rows** (read 2026-10-04,

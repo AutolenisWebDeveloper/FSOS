@@ -143,7 +143,7 @@ export async function campaignDispatch(): Promise<JobResult> {
     await assertKillSwitch('marketing_automation')
   } catch (err) {
     const which = err instanceof Error ? err.message : 'kill switch'
-    return { ok: true, handled: 0, note: `campaign-dispatch: halted — ${which} (broadcasts and drips not run)` }
+    return { ok: true, halted: true, handled: 0, note: `campaign-dispatch: halted — ${which} (broadcasts and drips not run)` }
   }
   const db = getDb()
   const nowISO = new Date().toISOString()
@@ -416,10 +416,12 @@ export async function workforceOrchestrator(): Promise<JobResult> {
   const { runWorkforce } = await import('@/lib/ai/workforce')
   const result = await runWorkforce()
   const parts = Object.entries(result.dispatch)
-    .map(([k, s]) => `${k}: ${s.sent} sent/${s.blocked} blocked/${s.escalated} esc/${s.skipped} skip`)
+    .map(([k, s]) => `${k}: ${s.sent} sent/${s.blocked} blocked/${s.escalated} esc/${s.skipped} skip${s.errored ? ` ERRORED (${s.errored})` : ''}`)
     .join('; ')
+  // R17b: an agent run that errored fails the job run instead of recording a success.
+  const errored = Object.values(result.dispatch).some((s) => s.errored)
   await writeAudit({ actor: SYSTEM, action: 'ai.run', entity: 'workforce', diff: { built: result.built.byAgent, dispatch: result.dispatch, greenzone: true } })
-  return { ok: true, handled: result.totalSent, note: `workforce: ${result.built.queued} queued; ${parts}` }
+  return { ok: !errored, handled: result.totalSent, note: `workforce: ${result.built.queued} queued; ${parts}` }
 }
 
 // data-quality — reconcile unlinked agency owners into the unified Contact Center
@@ -464,7 +466,7 @@ export async function lifeConversionTick(): Promise<JobResult> {
 }
 
 // life-conversion-retry — retry/dead-letter sweep for stuck Life Conversion executions (§20,
-// observability parity D9). Fails soft before migration 089 is applied (no-op, never a cron error).
+// observability parity D9). A queue it cannot read is reported ok:false (a failed run, R17b).
 export async function lifeConversionRetry(): Promise<JobResult> {
   const { runRetrySweep } = await import('@/lib/life-campaign/jobs')
   const r = await runRetrySweep()
@@ -482,7 +484,7 @@ export async function pipelineWinbackTick(): Promise<JobResult> {
 }
 
 // pipeline-winback-retry — retry/dead-letter sweep for stuck Pipeline Win-Back executions (§20,
-// observability parity C1/D9). Fails soft before migration 088 is applied (no-op, never a cron error).
+// observability parity C1/D9). A queue it cannot read is reported ok:false (a failed run, R17b).
 export async function pipelineWinbackRetry(): Promise<JobResult> {
   const { runRetrySweep } = await import('@/lib/pipeline-winback/jobs')
   const r = await runRetrySweep()
@@ -500,7 +502,7 @@ export async function districtNurtureTick(): Promise<JobResult> {
 }
 
 // district-nurture-retry — retry/dead-letter sweep for stuck District Nurture executions.
-// Fails soft before migration 114 is applied (no-op, never a cron error).
+// A queue it cannot read is reported ok:false (a failed run, R17b).
 export async function districtNurtureRetry(): Promise<JobResult> {
   const { runRetrySweep } = await import('@/lib/district-nurture/jobs')
   const r = await runRetrySweep()

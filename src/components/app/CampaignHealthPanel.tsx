@@ -17,7 +17,7 @@ import { runState, RUN_STATE_DOT, RUN_STATE_LABEL } from '@/lib/ops/automation-s
 
 interface HealthState {
   counts?: Record<string, number | null>
-  cron?: Record<string, { status: string; started_at: string; finished_at: string | null } | null>
+  cron?: Record<string, { status: string; started_at: string; finished_at: string | null; error?: string | null } | null>
   checked_at?: string
 }
 

@@ -66,13 +66,15 @@ export interface RetrySweepResult { ok: boolean; retried: number; deadLettered: 
 export async function runRetrySweep(maxAttempts = 5): Promise<RetrySweepResult> {
   const db = getDb()
   const nowISO = new Date().toISOString()
-  const { data: stuck } = await db
+  const { data: stuck, error: stuckErr } = await db
     .from('xsell_life_campaign_executions')
     .select('id, attempts, enrollment_id, touch_no, kind')
     .eq('status', 'scheduled')
     .not('idempotency_key', 'is', null)
     .lte('next_retry_at', nowISO)
     .limit(500)
+  // R17b: a failed read is a failed run, not "0 re-queued".
+  if (stuckErr) return { ok: false, retried: 0, deadLettered: 0, note: `cross-sell-life-retry: could not read the retry queue (${stuckErr.message})` }
   let retried = 0
   let deadLettered = 0
   let reconciled = 0

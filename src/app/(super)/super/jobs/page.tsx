@@ -13,6 +13,7 @@ export const dynamic = 'force-dynamic'
 // (J-07), so it shows here as Failed instead of vanishing.
 const STATE_VARIANT: Record<RunState, 'won' | 'lost' | 'pending' | 'outline'> = {
   succeeded: 'won',
+  halted: 'pending',
   failed: 'lost',
   timed_out: 'lost',
   running: 'pending',
@@ -29,7 +30,7 @@ export default async function SuperJobsPage() {
     [],
   )
   const nowMs = Date.now()
-  const latest = new Map<string, { status: string; started_at: string; finished_at: string | null }>()
+  const latest = new Map<string, { status: string; started_at: string; finished_at: string | null; error: string | null }>()
   if (rows.ok) for (const r of rows.data) if (!latest.has(r.job)) latest.set(r.job, r)
   const scheduled = AUTOMATIONS.filter((a) => a.trigger.kind === 'cron' || a.trigger.kind === 'cron_route')
 

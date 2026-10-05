@@ -4,7 +4,7 @@
 // handler checks the kill switch inside its own logic (P1) and routes client-
 // facing output through the dispatcher.
 import { NextRequest, NextResponse } from 'next/server'
-import { JOBS, isJob } from '@/jobs'
+import { JOBS, isJob, jobRunOutcome } from '@/jobs'
 import { runIdempotent } from '@/lib/jobs/runtime'
 import { cronAuthorized } from '@/lib/http'
 
@@ -31,7 +31,7 @@ export async function GET(req: NextRequest, props: { params: Promise<{ job: stri
   // idempotent at the per-touch/per-execution level (e.g. unique(enrollment_id, touch_no)).
   const bucket = new Date().toISOString().slice(0, 13) // YYYY-MM-DDTHH (UTC hour)
   try {
-    const outcome = await runIdempotent(`${job}:${bucket}`, job, () => JOBS[job]())
+    const outcome = await runIdempotent(`${job}:${bucket}`, job, () => JOBS[job](), { settle: jobRunOutcome })
     if (outcome.skipped) {
       return NextResponse.json({ job, skipped: true, reason: 'already ran for this window' })
     }

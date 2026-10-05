@@ -9,6 +9,20 @@ export interface JobResult {
   ok: boolean
   note?: string
   handled?: number
+  /** The job deliberately did not run (e.g. a kill switch). Recorded as a halt, not a success. */
+  halted?: boolean
+}
+
+/**
+ * How a job's returned result is recorded on job_runs (follow-up R17b). A job that reports
+ * ok:false failed internally and is recorded 'errored' (shown Failed, retryable). A halted job is
+ * recorded 'completed' with a `halted:` note in `error` (job_runs.status is CHECK-limited to
+ * running/completed/errored), which runState shows as Halted rather than Succeeded.
+ */
+export function jobRunOutcome(r: JobResult): { status: 'completed' | 'errored'; error: string | null } {
+  if (!r.ok) return { status: 'errored', error: r.note ?? 'job reported a failure' }
+  if (r.halted) return { status: 'completed', error: `halted: ${r.note ?? 'not run'}` }
+  return { status: 'completed', error: null }
 }
 
 export type JobHandler = () => Promise<JobResult>
@@ -48,14 +62,14 @@ export const JOBS: Record<string, JobHandler> = {
   // Life Conversion Campaign scheduler — advances the multi-channel 20-touch timeline,
   // rechecking eligibility before every touch and routing every send through the gate.
   'life-conversion-tick': async () => (await h()).lifeConversionTick(),
-  // Life Conversion retry/dead-letter sweep (§20 observability parity). Hourly; fails soft until
-  // migration 089 lands.
+  // Life Conversion retry/dead-letter sweep (§20 observability parity). Hourly; a queue it cannot read
+  // is recorded as a failed run (R17b).
   'life-conversion-retry': async () => (await h()).lifeConversionRetry(),
   // Pipeline Win-Back Campaign scheduler — daily enrollment sweep + advances the multi-channel
   // 24-touch timeline, rechecking eligibility before every touch, all sends through the gate.
   'pipeline-winback-tick': async () => (await h()).pipelineWinbackTick(),
-  // Pipeline Win-Back retry/dead-letter sweep (§20 observability parity). Hourly; fails soft until
-  // migration 088 lands.
+  // Pipeline Win-Back retry/dead-letter sweep (§20 observability parity). Hourly; a queue it cannot read
+  // is recorded as a failed run (R17b).
   'pipeline-winback-retry': async () => (await h()).pipelineWinbackRetry(),
   // Cross-Sell Life Campaign — daily eligibility+enrollment sweep, the 35-touch/180-day scheduler
   // tick, and the retry/dead-letter sweep. Every send routes through the gate; ticks are idempotent.

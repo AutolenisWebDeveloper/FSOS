@@ -5,7 +5,6 @@
 // with backoff, and checks the kill switch."
 
 import { getDb } from '@/lib/supabase/client'
-import { RUN_LEASE_MS } from '@/lib/ops/automation-status'
 
 export interface RetryOptions {
   retries?: number
@@ -41,7 +40,7 @@ export interface IdempotentOutcome<T> {
  * release the row. Such a claim is reclaimable so the work can actually run. Sized
  * comfortably above the longest legitimate single job (well under a cron window).
  */
-export const JOB_LEASE_MS = RUN_LEASE_MS
+export const JOB_LEASE_MS = 15 * 60 * 1000
 
 /**
  * Run `fn` at most once *successfully* per `dedupeKey`. Backed by job_runs
@@ -69,7 +68,11 @@ export async function runIdempotent<T>(
   dedupeKey: string,
   job: string,
   fn: () => Promise<T>,
-  opts: { leaseMs?: number } = {},
+  opts: {
+    leaseMs?: number
+    /** Map the returned result to the recorded outcome (R17b); default: completed. */
+    settle?: (result: T) => { status: 'completed' | 'errored'; error: string | null }
+  } = {},
 ): Promise<IdempotentOutcome<T>> {
   const db = getDb()
   const { error: claimError } = await db
@@ -104,9 +107,10 @@ export async function runIdempotent<T>(
 
   try {
     const result = await fn()
+    const settled = opts.settle ? opts.settle(result) : { status: 'completed' as const, error: null }
     await db
       .from('job_runs')
-      .update({ status: 'completed', finished_at: new Date().toISOString() })
+      .update({ status: settled.status, error: settled.error ? settled.error.slice(0, 500) : null, finished_at: new Date().toISOString() })
       .eq('dedupe_key', dedupeKey)
     return { skipped: false, result }
   } catch (err) {

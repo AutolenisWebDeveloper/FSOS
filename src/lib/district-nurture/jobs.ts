@@ -29,7 +29,7 @@ export async function runRetrySweep(maxAttempts = 5): Promise<RetrySweepResult> 
       .limit(500)
 
     if (error) {
-      return { ok: true, retried: 0, deadLettered: 0, note: `district-nurture-retry: skipped — schema pending (${error.message})` }
+      return { ok: false, retried: 0, deadLettered: 0, note: `district-nurture-retry: could not read the retry queue (${error.message})` }
     }
 
     let retried = 0
@@ -59,6 +59,6 @@ export async function runRetrySweep(maxAttempts = 5): Promise<RetrySweepResult> 
     }
     return { ok: true, retried, deadLettered, note: `district-nurture-retry: ${retried} re-queued, ${deadLettered} dead-lettered, ${reconciled} reconciled as sent, ${released} released for re-dispatch` }
   } catch (e) {
-    return { ok: true, retried: 0, deadLettered: 0, note: `district-nurture-retry: skipped (${e instanceof Error ? e.message : 'error'})` }
+    return { ok: false, retried: 0, deadLettered: 0, note: `district-nurture-retry: failed (${e instanceof Error ? e.message : 'error'})` }
   }
 }

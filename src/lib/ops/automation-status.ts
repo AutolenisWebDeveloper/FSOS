@@ -5,17 +5,20 @@
 // (I-11). job_runs.status is 'running' | 'completed' | 'errored' (runIdempotent); failures are now
 // recorded (J-07), so they can be shown.
 
-export type RunState = 'succeeded' | 'failed' | 'timed_out' | 'running' | 'stale' | 'none'
+export type RunState = 'succeeded' | 'halted' | 'failed' | 'timed_out' | 'running' | 'stale' | 'none'
 
 export interface RunEvidence {
   status: string
   started_at: string
   finished_at?: string | null
+  /** A completed run that halted carries `halted: <reason>` here (jobRunOutcome, R17b). */
+  error?: string | null
 }
 
 /**
  * A `running` claim older than this was hard-killed (serverless timeout / OOM) before it could
- * record an outcome. runIdempotent reclaims it after the same lease (JOB_LEASE_MS re-exports this).
+ * record an outcome. Equal to runIdempotent's JOB_LEASE_MS (pinned by tests/automation-run-state);
+ * kept separate so this read model stays pure.
  */
 export const RUN_LEASE_MS = 15 * 60 * 1000
 
@@ -35,11 +38,13 @@ export function runState(run: RunEvidence | null | undefined, nowMs: number, sta
   const at = Date.parse(run.finished_at ?? run.started_at)
   if (run.status !== 'completed' && run.status !== 'ok' && run.status !== 'success') return 'failed'
   if (!Number.isFinite(at) || nowMs - at > staleAfterMs) return 'stale'
+  if (typeof run.error === 'string' && run.error.startsWith('halted:')) return 'halted'
   return 'succeeded'
 }
 
 export const RUN_STATE_LABEL: Record<RunState, string> = {
   succeeded: 'Succeeded',
+  halted: 'Halted',
   failed: 'Failed',
   timed_out: 'Timed out',
   running: 'Running',
@@ -50,6 +55,7 @@ export const RUN_STATE_LABEL: Record<RunState, string> = {
 /** Design-system dot class for a run state (DESIGN.md status tokens). */
 export const RUN_STATE_DOT: Record<RunState, string> = {
   succeeded: 'bg-status-won',
+  halted: 'bg-status-pending',
   failed: 'bg-status-lost',
   timed_out: 'bg-status-lost',
   running: 'bg-status-pending',

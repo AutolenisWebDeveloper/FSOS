@@ -442,11 +442,11 @@ interface QueueItem {
  * queued items, up to the agent's remaining quota. Wraps jobs/agent-runner.runAgent
  * so every send is attributed, kill-switch-gated, and escalates on block.
  */
-export async function runOutreachAgent(agentKey: OutreachAgentKey): Promise<{ sent: number; blocked: number; escalated: number; skipped: number }> {
+export async function runOutreachAgent(agentKey: OutreachAgentKey): Promise<{ sent: number; blocked: number; escalated: number; skipped: number; errored?: string }> {
   const db = getDb()
   const targets = await loadTargets()
   const t = targets[agentKey]
-  const stats = { sent: 0, blocked: 0, escalated: 0, skipped: 0 }
+  const stats: { sent: number; blocked: number; escalated: number; skipped: number; errored?: string } = { sent: 0, blocked: 0, escalated: 0, skipped: 0 }
   if (!t || !t.enabled || t.daily_target <= 0) return stats
   // Owner decision 7: the campaign engines own this audience. Nothing dispatches; any row still
   // queued for this agent (built before the stand-down) is retired with its reason — never sent.
@@ -484,7 +484,7 @@ export async function runOutreachAgent(agentKey: OutreachAgentKey): Promise<{ se
   const queue = (items ?? []) as QueueItem[]
   if (queue.length === 0) return stats
 
-  await runAgent({
+  const run = await runAgent({
     agentKey,
     dedupeKey: `workforce:${agentKey}:${today}`,
     input: { phase: 'dispatch', count: queue.length },
@@ -637,13 +637,15 @@ export async function runOutreachAgent(agentKey: OutreachAgentKey): Promise<{ se
       }
     },
   })
+  // R17b: an errored agent run is reported to the job, not swallowed as a success.
+  if (run.status === 'errored') stats.errored = run.reason ?? 'agent run errored'
 
   return stats
 }
 
 export interface RunWorkforceResult {
   built: BuildQueueResult
-  dispatch: Record<string, { sent: number; blocked: number; escalated: number; skipped: number }>
+  dispatch: Record<string, { sent: number; blocked: number; escalated: number; skipped: number; errored?: string }>
   totalSent: number
 }
 

@@ -582,6 +582,33 @@ console.log('\nTest-recipient consent')
   assert.equal(db.rows('comm_contact_consents').filter((r) => r.action === 'granted').length, 0)
   console.log('  ✓ five wrong guesses burn the code; the right code no longer verifies')
 }
+{
+  // CodeRabbit review of R4: concurrent wrong guesses are each counted (compare-and-set on the
+  // stored state), so racing requests cannot get more than the cap's worth of "incorrect" answers;
+  // and a failed write of the guess count is an error, never a silent uncounted guess.
+  const db = memDb({ now: iso })
+  installDb(db)
+  globalThis.__sent = []
+  const add = await testRecipients.POST(makeReq('/api/comms/test/recipients', { body: { channel: 'email', address: 'race@example.com' } }))
+  const id = (await add.json()).recipient_id
+  const code = String(globalThis.__sent[0].body).match(/\d{6}/)[0]
+  const wrong = code === '000000' ? '111111' : '000000'
+  const verify = (c) => testRecipient.PATCH(makeReq(`/api/comms/test/recipients/${id}`, { method: 'PATCH', body: { code: c } }), { params: Promise.resolve({ id }) })
+  const statuses = (await Promise.all(Array.from({ length: 10 }, () => verify(wrong)))).map((r) => r.status)
+  for (let i = 0; i < 10; i++) statuses.push((await verify(wrong)).status)
+  const answered = statuses.filter((st) => st === 422).length
+  assert.ok(answered <= 4, `${answered} "incorrect" answers — the attempt cap was bypassed by concurrency (${statuses.join(',')})`)
+  assert.ok(statuses.includes(429), 'the code was eventually burned')
+
+  const db2 = memDb({ now: iso, failOn: (q) => q.table === 'comms_test_recipients' && q.method === 'update' })
+  installDb(db2)
+  globalThis.__sent = []
+  const add2 = await testRecipients.POST(makeReq('/api/comms/test/recipients', { body: { channel: 'email', address: 'err@example.com' } }))
+  const id2 = (await add2.json()).recipient_id
+  const r = await testRecipient.PATCH(makeReq(`/api/comms/test/recipients/${id2}`, { method: 'PATCH', body: { code: wrong } }), { params: Promise.resolve({ id: id2 }) })
+  assert.ok(r.status >= 500, `an unrecorded wrong guess answered ${r.status}`)
+  console.log('  ✓ concurrent wrong guesses are each counted; an unrecorded guess is an error')
+}
 
 // Follow-up R13: EVERY stop condition cancels pending automation, not just an inbound STOP — the
 // unsubscribe link, one-click, web/portal and operator opt-outs, hard bounce, complaint and carrier

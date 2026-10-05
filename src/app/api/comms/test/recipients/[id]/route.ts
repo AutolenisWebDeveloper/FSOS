@@ -40,13 +40,37 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     if (!row || row.user_id !== actor) return NextResponse.json({ error: 'Destination not found.', reason: 'not_found' }, { status: 404 })
     if (row.verified_at) return NextResponse.json({ ok: true, already_verified: true })
     const check = checkVerification(row.verification_code, v.data.code)
+    // Every write below is a compare-and-set on the stored state this request judged, so concurrent
+    // guesses are each counted and only one can verify (CodeRabbit review of R4). A request that
+    // loses the race is told to retry and learns nothing about its guess.
+    const raced = () => NextResponse.json({ error: 'Another attempt was in progress. Try again.', reason: 'retry' }, { status: 409 })
     if (!check.ok) {
       // Record the wrong guess; a burned code must be re-sent (follow-up R4).
-      await db.from('comms_test_recipients').update({ verification_code: check.next }).eq('id', id)
+      const { data: counted, error: guessErr } = await db
+        .from('comms_test_recipients')
+        .update({ verification_code: check.next })
+        .eq('id', id)
+        .eq('verification_code', row.verification_code)
+        .select('id')
+      if (guessErr) return dbErrorResponse('comms/test/recipients/[id]', guessErr)
+      if (!Array.isArray(counted) || counted.length === 0) return raced()
       return check.exhausted
         ? NextResponse.json({ error: 'Too many wrong codes. Remove and re-add the destination to get a new one.', reason: 'code_exhausted' }, { status: 429 })
         : NextResponse.json({ error: 'That code is incorrect.', reason: 'bad_code' }, { status: 422 })
     }
+
+    // Claim the verification first (compare-and-set), so a concurrent wrong guess cannot be lost and
+    // only one request records the grant.
+    const verifiedAt = new Date().toISOString()
+    const { data: claimed, error } = await db
+      .from('comms_test_recipients')
+      .update({ verified_at: verifiedAt, verification_code: null })
+      .eq('id', id)
+      .eq('verification_code', row.verification_code)
+      .is('verified_at', null)
+      .select('id')
+    if (error) return dbErrorResponse('comms/test/recipients/[id]', error)
+    if (!Array.isArray(claimed) || claimed.length === 0) return raced()
 
     // The operator's self-consent for THIS device, recorded only now that they proved they hold it.
     // It counts only for TEST sends (contact-consent-read.ts) and is never START evidence (inbound.ts).
@@ -58,12 +82,11 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       consent_version: TEST_RECIPIENT_CONSENT_VERSION,
       source_url: '/app/comms/console',
     })
-    if (grantErr) return dbErrorResponse('comms/test/recipients/[id]', grantErr)
-    const { error } = await db
-      .from('comms_test_recipients')
-      .update({ verified_at: new Date().toISOString(), verification_code: null })
-      .eq('id', id)
-    if (error) return dbErrorResponse('comms/test/recipients/[id]', error)
+    if (grantErr) {
+      // No grant recorded → the destination is not verified (best-effort revert of the claim).
+      await db.from('comms_test_recipients').update({ verified_at: null, verification_code: row.verification_code }).eq('id', id).eq('verified_at', verifiedAt)
+      return dbErrorResponse('comms/test/recipients/[id]', grantErr)
+    }
     await writeAudit({ actor, action: 'config.changed', entity: 'comms_test_recipient', entityId: id, diff: { verified: true } })
     return NextResponse.json({ ok: true, verified: true })
   } catch (e) {

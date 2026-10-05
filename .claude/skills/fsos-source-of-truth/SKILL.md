@@ -7,12 +7,14 @@ description: Use before any material FSOS Voice Agent change (code, schema, play
 
 ## Source precedence (highest first)
 1. The current approved stage prompt from the user
-2. `docs/voice/voice-agent-plan.md` (scope, agent model, 12-stage sequence, compliance rules, tools, metrics)
-3. `docs/voice/voice-agent-build-checklist.md` (definition of done, per-stage items, exit criteria, traceability)
-4. `docs/voice/repo-map.md` (what already exists in FSOS, with paths)
-5. The root `CLAUDE.md` FSOS rules
+2. The root `CLAUDE.md` FSOS rules (architecture invariants, compliance boundaries, protected paths). The voice documents never override them.
+3. `docs/voice/voice-agent-plan.md` (scope, agent model, 12-stage sequence, compliance rules, tools, metrics)
+4. `docs/voice/voice-agent-build-checklist.md` (definition of done, per-stage items, exit criteria, traceability)
+5. `docs/voice/repo-map.md` (what already exists in FSOS, with paths; §12 lists the reconciled conflicts)
 6. The design canvas (31 screens), for layout and content only; it uses mock data and temporary styling
 7. The existing implementation
+
+The plan and checklist were reconciled with the code on Oct 5, 2026. Lines tagged "owner decision pending, Cnn" carry a default the owner has not confirmed: treat them as BLOCKED, not as settled requirements.
 
 ## Procedure before proposing changes
 1. Read the plan section for the stage and the workflows involved.

@@ -271,7 +271,7 @@ request as the outcome to deliver.
 
 ## FSOS Voice Agent: build rules
 
-Status: the plan and checklist were reconciled with this repo on Oct 5, 2026 (`docs/voice/repo-map.md`). Lines tagged "owner decision pending, Cnn" use a default the owner has not yet confirmed; repo-map §12 lists them. The FSOS rules above win over anything in the voice documents or skills. The voice skills in `.claude/skills/fsos-*` still repeat some of the original assumptions (for example `sendThroughGate`, agency RLS, a `voice` schema and a 9 PM calling window); where they disagree with the plan, checklist or repo map, follow those.
+Status: the plan and checklist were reconciled with this repo on Oct 5, 2026 (`docs/voice/repo-map.md`). Lines tagged "owner decision pending, Cnn" use a default the owner has not yet confirmed; repo-map §12 lists them. The FSOS rules above win over anything in the voice documents or skills. The voice skills in `.claude/skills/fsos-*` and the voice subagents were updated to the same wording on Oct 5, 2026; if one still disagrees with the plan, checklist or repo map, follow those and fix the skill.
 
 ### Source of truth
 - Plan: `docs/voice/voice-agent-plan.md`

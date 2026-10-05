@@ -15,7 +15,7 @@ PASS (with evidence) · FAIL · BLOCKED (outside owner + decision needed) · N/A
 
 Evidence labels: CODE-VERIFIED · TEST-VERIFIED · INTEGRATION-VERIFIED · BROWSER-VERIFIED · COMPLIANCE-VERIFIED · EXTERNAL-DEPENDENCY · NOT VERIFIED.
 
-Items owned by Counsel, Compliance, Principal or Ops are BLOCKED until a person records the approval. The agent cannot mark them PASS.
+Items owned by Counsel, Compliance, Principal or Ops are BLOCKED until a person records the approval. The agent cannot mark them PASS. An item tagged "owner decision pending, Cnn" is BLOCKED (owner: the FSA, decision Cnn in `docs/voice/repo-map.md` §12) until the owner decides; do not build on the default as if it were settled.
 
 ## Completion rule
 Say PHASE COMPLETE only if all of these are true:

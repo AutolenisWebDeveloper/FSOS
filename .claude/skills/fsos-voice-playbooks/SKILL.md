@@ -1,11 +1,11 @@
 ---
 name: fsos-voice-playbooks
-description: Use when creating or changing any of the 18 Voice Agent workflows, their playbooks, scripts, allowed tools or exit rules, or the voice.playbooks table.
+description: Use when creating or changing any of the 18 Voice Agent workflows, their playbooks, scripts, allowed tools or exit rules, or the playbooks table.
 ---
 
 # FSOS Voice playbooks
 
-A playbook is a versioned bundle the single orchestrator loads per call. It is data, stored in `voice.playbooks`, tied to a release. It is not a separate agent.
+A playbook is a versioned bundle the single orchestrator loads per call. It is data, stored in the `playbooks` table (`public` unless the owner chooses a `voice` schema, (owner decision pending, C6)), tied to a release. It is not a separate agent.
 
 ## Required fields
 ```yaml
@@ -53,7 +53,7 @@ prompt_section:       # the model-facing instructions for this workflow
 "Likely" classifications are not confirmed until counsel records them. A playbook for an outbound workflow cannot be enabled while its classification is open.
 
 ## Rules
-- Outbound playbooks never choose who to call. Existing FSOS agents (`term_conversion`, `marketing_automation`) and calendar events create outreach intents; the playbook only runs the call.
+- Outbound playbooks never choose who to call. The existing FSOS campaign engines create outreach intents — Life Conversion (term conversion), Cross-Sell Life, Pipeline Win-Back and the workshop comms engine — together with calendar events, per owner decision 7 (`src/lib/ai/outreach.ts:30-42`) (owner decision pending, C3). The `term_conversion` and `marketing_automation` workforce agents do not pick audiences. The playbook only runs the call.
 - Every script and answer is approved in Change approvals before use; generated text never replaces a fixed script where one is required.
 - Scripts for workflows 6–11 contain no product names, rates, returns, benefit claims or comparisons.
 - Playbook changes ship through the release path (flag, canary, rollback) like code.

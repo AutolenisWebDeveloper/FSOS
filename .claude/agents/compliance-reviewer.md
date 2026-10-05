@@ -12,7 +12,7 @@ Check against the code and by running the relevant test suites:
 - Restricted topics always cancel the generated turn, play S-SEC-01 and route to a registered, on-duty person
 - Output guard runs on every spoken turn
 - No data above the caller's assurance level reaches the model or the caller; keypad digits never do
-- Every outbound path goes through sendThroughGate with all dial-time checks and persisted skip reasons
+- Every outbound path goes through the dispatch chokepoint (`src/lib/messaging.ts`) with all dial-time checks and persisted skip reasons; calling window never wider than the 9:00 AM–8:00 PM floor
 - Stop requests suppress immediately, cancel queued intents and need no verification
 - Scripts in use match approved versions; no product claims in outbound scripts
 - Complaints and flags reach supervision; the AI never decides reportability

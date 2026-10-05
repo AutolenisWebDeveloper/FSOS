@@ -612,4 +612,4 @@ conflict. Do not pick a side on your own."
 
 ## 15. Next step
 
-The plan and checklist now match this map (Oct 5, 2026). Remaining before Stage 0: the owner settles the pending decisions, especially C3, C4, C14 and C15 (and C20 before any screen work), and the kit's voice skills in `.claude/skills/fsos-*` are updated to the same wording; they still carry the original assumptions.
+The plan, checklist, voice skills (`.claude/skills/fsos-*`) and voice subagents now match this map (Oct 5, 2026). Remaining before Stage 0: the owner settles the pending decisions, especially C3, C4, C14 and C15 (and C20 before any screen work).

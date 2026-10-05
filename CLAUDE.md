@@ -266,3 +266,56 @@ is cheaper than an MCP round-trip.
 
 Treat repository behavior as evidence, documentation as context, and the current authorized
 request as the outcome to deliver.
+
+---
+
+## FSOS Voice Agent: build rules
+
+Status: the plan and checklist were reconciled with this repo on Oct 5, 2026 (`docs/voice/repo-map.md`). Lines tagged "owner decision pending, Cnn" use a default the owner has not yet confirmed; repo-map §12 lists them. The FSOS rules above win over anything in the voice documents or skills. The voice skills in `.claude/skills/fsos-*` and the voice subagents were updated to the same wording on Oct 5, 2026; if one still disagrees with the plan, checklist or repo map, follow those and fix the skill.
+
+### Source of truth
+- Plan: `docs/voice/voice-agent-plan.md`
+- Build checklist: `docs/voice/voice-agent-build-checklist.md`
+- Stage reports: `docs/voice/reports/stage-NN.md` (one per stage, from the checklist's phase completion report template)
+- Repo discovery notes: `docs/voice/repo-map.md` (written in the discovery session, kept up to date)
+- Design reference: the 31-screen canvas. It uses mock data and temporary styling. Build screens with FSOS design tokens and components, never the canvas colors.
+
+If the plan, the checklist and the code disagree, stop and report the conflict. Do not pick a side on your own.
+
+### Skills and subagents (in .claude/)
+Always use: fsos-source-of-truth, fsos-voice-architecture, fsos-phase-gate. Add the stage's domain skills:
+
+| Stage | Domain skills |
+|---|---|
+| 0 Foundations | fsos-twilio-voice, fsos-policy-tool-gate, fsos-data-security, fsos-testing-evals, fsos-release-governance |
+| 1 Receptionist + scheduling | fsos-voice-playbooks, fsos-twilio-voice, fsos-financial-compliance-firewall, fsos-outbound-consent-gate (stop requests), fsos-frontend-product, fsos-testing-evals, fsos-release-governance |
+| 2 Known-client recognition | fsos-identity-assurance, fsos-policy-tool-gate, fsos-data-security, fsos-frontend-product, fsos-testing-evals |
+| 3 Human transfer | fsos-human-handoff, fsos-identity-assurance, fsos-financial-compliance-firewall, fsos-twilio-voice, fsos-frontend-product, fsos-testing-evals |
+| 4 Logging + extraction | fsos-call-intelligence, fsos-data-security, fsos-frontend-product, fsos-testing-evals |
+| 5 Reminders | fsos-outbound-consent-gate, fsos-voice-playbooks, fsos-twilio-voice, fsos-testing-evals |
+| 6 Consent-controlled outbound | fsos-outbound-consent-gate, fsos-policy-tool-gate, fsos-data-security, fsos-financial-compliance-firewall, fsos-testing-evals |
+| 7–11 Outreach workflows | fsos-voice-playbooks, fsos-outbound-consent-gate, fsos-financial-compliance-firewall, fsos-testing-evals (stage 8 adds fsos-identity-assurance) |
+| 12 Optimization | fsos-testing-evals, fsos-release-governance, fsos-frontend-product, fsos-data-security, fsos-code-review |
+
+Subagents: voice-architect builds. voice-qa-engineer measures exit metrics. frontend-reviewer checks screens in a browser. compliance-reviewer checks regulated controls. phase-auditor runs last and alone decides PHASE COMPLETE. The agent that built a stage never audits it.
+
+### How work is done
+1. Work on one stage per session, and only the stage named in the prompt. Do not start the next stage.
+2. Before writing code, read the stage's section of the checklist, the universal definition of done, and `docs/voice/repo-map.md`. Then present a plan and wait for approval.
+3. Reuse and extend existing FSOS services. Search the repo before creating any file, table, API, component or utility. There is one outbound path, the dispatch chokepoint in `src/lib/messaging.ts` (`sendSms`/`sendEmail`, plus `startVoiceCall` for voice); extend it and never add a second one.
+4. The model never touches data directly. Every tool is schema-validated, runs through the policy engine (identity, permission, consent, workflow state, parameters), is idempotent and is written to the audit log.
+5. Never build: recommendInvestment, recommendAnnuity, selectProduct, determineSuitability, moveMoney, changeBeneficiary, approveUnderwriting, voiceprints, or any NIGO workflow.
+6. Database changes are migrations with a tested rollback. Never delete data. Every new table gets row-level security in the FSOS pattern (default-deny, role-based SELECT, service-role writes after `requireApiRole`).
+7. Keypad digits, PINs and one-time codes never reach the model or the logs.
+8. Every outbound feature ships behind its own `automation_switches` key, off by default.
+
+### Honesty rules
+- Label claims VERIFIED (seen in code or run), ASSUMPTION or UNVERIFIED.
+- Never report a test, command or check as passing unless you ran it in this session. Report mocked tests and live integration tests separately.
+- Checklist items that need Counsel, Compliance, Principal or Ops sign-off are BLOCKED until a person records the approval. You cannot mark them PASS.
+- A stage is complete only when the checklist says so. Anything FAIL, BLOCKED or NOT VERIFIED means PHASE NOT COMPLETE.
+
+### End of every session
+- Update the checklist items you touched: PASS (with the file, test name or PR as evidence), FAIL, BLOCKED (with owner) or N/A.
+- Write or update `docs/voice/reports/stage-NN.md` using the phase completion report template.
+- Give a short summary: what changed, what was verified, what's still open.

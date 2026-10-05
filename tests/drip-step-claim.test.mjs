@@ -15,6 +15,7 @@ process.on('exit', () => { try { rmSync(dir, { recursive: true, force: true }) }
 const sendStub = join(dir, 'send.mjs')
 writeFileSync(sendStub, `export async function sendMessage(ctx) {
   (globalThis.__sends ??= []).push(ctx)
+  if (globalThis.__onSend) await globalThis.__onSend(ctx)
   const mode = globalThis.__mode
   if (mode === 'timeout') throw new Error('function timed out after the provider accepted the message')
   if (mode === 'defer') return { sent: false, blocked: true, gate: { allowed: false, blockedStep: 'frequency' } }
@@ -58,6 +59,15 @@ await t('a deferral rolls the claim back: the same step is re-attempted, never s
   await handlers.dripAdvance()
   assert.equal(globalThis.__sends.filter((c) => c.sequenceStep === 0).length, 2, 'held, then sent')
   assert.equal(db.rows('comm_campaign_enrollments')[0].current_step, 1)
+})
+await t('a STOP processed while the step is in flight is never undone by the claim release (review of R12b)', async () => {
+  const db = seed(); globalThis.__sends = []
+  globalThis.__mode = 'defer'
+  // The STOP fan-out (terminateActiveEnrollments) lands between the claim and the gate's hold.
+  globalThis.__onSend = async () => { db.rows('comm_campaign_enrollments')[0].status = 'opted_out' }
+  await handlers.dripAdvance()
+  globalThis.__onSend = null
+  assert.equal(db.rows('comm_campaign_enrollments')[0].status, 'opted_out', 'the release revived an opted-out enrollment')
 })
 await t('two overlapping runs send a step once', async () => {
   const db = seed(); globalThis.__sends = []

@@ -239,6 +239,8 @@ export async function dripAdvance(): Promise<JobResult> {
         .update({ status: 'enrolled', current_step: e.current_step, next_send_at: e.next_send_at })
         .eq('id', e.id)
         .eq('current_step', nextStep)
+        // Only this run's own claim states: a STOP / opt-out that landed meanwhile is absorbing.
+        .in('status', ['enrolled', 'completed'])
     }
 
     if (to) {

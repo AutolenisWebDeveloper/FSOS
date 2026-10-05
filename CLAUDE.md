@@ -271,7 +271,7 @@ request as the outcome to deliver.
 
 ## FSOS Voice Agent: build rules
 
-Status: the plan and checklist below were written from the spec, not this repo. `docs/voice/repo-map.md` §12 lists 26 open conflicts with the code (for example, `sendThroughGate` is retired, FSOS has no offices or agency tenancy, and the calling window may not widen past 20:00). The FSOS rules above stay in force until the owner settles each conflict and the plan and checklist are updated. The voice skills in `.claude/skills/` repeat some of the original assumptions.
+Status: the plan and checklist were reconciled with this repo on Oct 5, 2026 (`docs/voice/repo-map.md`). Lines tagged "owner decision pending, Cnn" use a default the owner has not yet confirmed; repo-map §12 lists them. The FSOS rules above win over anything in the voice documents or skills. The voice skills in `.claude/skills/fsos-*` still repeat some of the original assumptions (for example `sendThroughGate`, agency RLS, a `voice` schema and a 9 PM calling window); where they disagree with the plan, checklist or repo map, follow those.
 
 ### Source of truth
 - Plan: `docs/voice/voice-agent-plan.md`
@@ -302,12 +302,12 @@ Subagents: voice-architect builds. voice-qa-engineer measures exit metrics. fron
 ### How work is done
 1. Work on one stage per session, and only the stage named in the prompt. Do not start the next stage.
 2. Before writing code, read the stage's section of the checklist, the universal definition of done, and `docs/voice/repo-map.md`. Then present a plan and wait for approval.
-3. Reuse and extend existing FSOS services. Search the repo before creating any file, table, API, component or utility. There is one outbound path, `sendThroughGate`; extend it and never add a second one.
+3. Reuse and extend existing FSOS services. Search the repo before creating any file, table, API, component or utility. There is one outbound path, the dispatch chokepoint in `src/lib/messaging.ts` (`sendSms`/`sendEmail`, plus `startVoiceCall` for voice); extend it and never add a second one.
 4. The model never touches data directly. Every tool is schema-validated, runs through the policy engine (identity, permission, consent, workflow state, parameters), is idempotent and is written to the audit log.
 5. Never build: recommendInvestment, recommendAnnuity, selectProduct, determineSuitability, moveMoney, changeBeneficiary, approveUnderwriting, voiceprints, or any NIGO workflow.
-6. Database changes are migrations with a tested rollback. Never delete data. Row-level security by agency goes on every new table.
+6. Database changes are migrations with a tested rollback. Never delete data. Every new table gets row-level security in the FSOS pattern (default-deny, role-based SELECT, service-role writes after `requireApiRole`).
 7. Keypad digits, PINs and one-time codes never reach the model or the logs.
-8. Every outbound feature ships behind a per-office feature flag, off by default.
+8. Every outbound feature ships behind its own `automation_switches` key, off by default.
 
 ### Honesty rules
 - Label claims VERIFIED (seen in code or run), ASSUMPTION or UNVERIFIED.

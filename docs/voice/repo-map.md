@@ -475,7 +475,7 @@ meeting links (`src/lib/zoom/client.ts`).
 
 ## 12. Conflicts between the plan/checklist and the code
 
-Each conflict needs a decision by the named owner. Nothing has been changed to resolve any of them.
+Each conflict needs a decision by the named owner. On Oct 5, 2026 the plan and checklist were updated to match the code and to use the proposed resolutions below as defaults; every line that depends on an open choice is tagged "owner decision pending, Cnn" in those documents.
 Per `CLAUDE.voice.md`: "If the plan, the checklist and the code disagree, stop and report the
 conflict. Do not pick a side on your own."
 
@@ -612,7 +612,4 @@ conflict. Do not pick a side on your own."
 
 ## 15. Next step
 
-The owner settles C3, C4, C8, C14 and C15 (plus C20 before any screen work). After that, update
-`voice-agent-plan.md` and `voice-agent-build-checklist.md`: rename `sendThroughGate`, re-scope
-per-office items, replace the `voice` consent and audit tables with the existing stores, and fix the
-calling window. Until then Stage 0 should not start.
+The plan and checklist now match this map (Oct 5, 2026). Remaining before Stage 0: the owner settles the pending decisions, especially C3, C4, C14 and C15 (and C20 before any screen work), and the kit's voice skills in `.claude/skills/fsos-*` are updated to the same wording; they still carry the original assumptions.

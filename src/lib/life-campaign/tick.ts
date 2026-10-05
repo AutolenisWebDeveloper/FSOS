@@ -77,11 +77,14 @@ export async function lifeCampaignTick(): Promise<TickResult> {
     // enrollContact re-checks the full eligibility gate (firewall / ownership / deadline / dup).
     enrolled += await enrollSweep(db, cfg, nowISO)
 
-    const { data: touchDefs } = await db
+    const { data: touchDefs, error: touchErr } = await db
       .from('life_campaign_touches')
       .select('touch_no, kind, template_id, asset_label')
       .eq('campaign_id', c.id)
       .order('touch_no', { ascending: true })
+    // Follow-up R12a: an unreadable touch plan HOLDS this campaign's run. Treated as "no touches", it
+    // marked every due enrollment completed.
+    if (touchErr || !Array.isArray(touchDefs)) continue
     const touchByNo = new Map<number, TouchRow>((touchDefs ?? []).map((t) => [t.touch_no, t as TouchRow]))
 
     const { data: due } = await db

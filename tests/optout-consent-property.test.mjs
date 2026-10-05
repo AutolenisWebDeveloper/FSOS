@@ -68,7 +68,7 @@ process.on('exit', () => { try { rmSync(stubDir, { recursive: true, force: true 
 const authStub = join(stubDir, 'auth.mjs')
 writeFileSync(authStub, `
 export async function requireApiRole() { return { ok: true, session: { sub: 'client-user', role: 'client' } } }
-export async function requirePermission() { return { ok: true } }
+export function requirePermission() { return null }
 export function actorOf() { return 'client:client-user' }`)
 const scopeStub = join(stubDir, 'scope.mjs')
 writeFileSync(scopeStub, `export async function householdIdFor() { return 'h1' }
@@ -88,6 +88,14 @@ const oneClick = await bundle('src/app/api/comms/unsubscribe/route.ts')
 const publicConsent = await bundle('src/app/api/public/consent/route.ts')
 const sessionStub = join(stubDir, 'session.mjs')
 writeFileSync(sessionStub, `export async function getCurrentUserEmail() { return globalThis.__signedInEmail ?? 'pat@example.com' }`)
+const sendStub = join(stubDir, 'send.mjs')
+writeFileSync(sendStub, `export async function sendMessage(ctx) { (globalThis.__sent ??= []).push(ctx); return { sent: true, blocked: false, gate: { allowed: true } } }`)
+const assetsStub = join(stubDir, 'assets.mjs')
+writeFileSync(assetsStub, `export async function adHocTemplateId() { return 'tpl-adhoc' }`)
+const testRecipients = await bundle('src/app/api/comms/test/recipients/route.ts', {
+  aliases: { '@/lib/auth/api': authStub, '@/lib/comms/send': sendStub, '@/lib/comms/assets': assetsStub },
+})
+const testRecipient = await bundle('src/app/api/comms/test/recipients/[id]/route.ts', { aliases: { '@/lib/auth/api': authStub } })
 const clientConsent = await bundle('src/app/api/client/consent/route.ts', {
   aliases: { '@/lib/auth/api': authStub, '@/lib/portal/scope': scopeStub, '@/lib/auth/session': sessionStub },
 })
@@ -515,6 +523,64 @@ for (const ch of ['sms', 'email']) {
   assert.equal(res.status, 409, 'no unique signed-in member → refused, not a silent success')
   assert.equal(await allowed('sms'), false, 'no unique signed-in member → nothing granted')
   console.log('  ✓ no unique signed-in member → no grant')
+}
+
+// Follow-up R4: a test destination creates no consent until it is verified; a test-recipient grant
+// counts only for TEST sends (never at the gate for other sends, never as START evidence); deleting
+// the destination appends a revoke; a code survives only a few wrong guesses.
+console.log('\nTest-recipient consent')
+{
+  const TEST_PHONE = '+12145550123'
+  const ctxFor = (isTest) => ({ channel: 'sms', to: TEST_PHONE, body: 'x', actor: 'test', templateKind: 'stored', templateId: 't1', ...(isTest ? { isTest: true } : {}) })
+  const gate = async (isTest) => (await policy.resolveDispatchPolicy(ctxFor(isTest), deps, GATE_NOW)).gate.allowed
+  const db = memDb({ now: iso })
+  installDb(db)
+  globalThis.__sent = []
+  clock.t += 60_000
+  const add = await testRecipients.POST(makeReq('/api/comms/test/recipients', { body: { channel: 'sms', address: TEST_PHONE } }))
+  assert.equal(add.status, 200)
+  const id = (await add.json()).recipient_id
+  const grantsBefore = db.rows('comm_contact_consents').filter((r) => r.action === 'granted')
+  assert.equal(grantsBefore.length, 0, 'an unverified test destination wrote a consent grant')
+  assert.equal(globalThis.__sent.length, 1, 'the verification code was sent')
+  const code = String(globalThis.__sent[0].body).match(/\d{6}/)[0]
+  const verify = (c) => testRecipient.PATCH(makeReq(`/api/comms/test/recipients/${id}`, { method: 'PATCH', body: { code: c } }), { params: Promise.resolve({ id }) })
+  clock.t += 60_000
+  assert.equal((await verify(code)).status, 200)
+  assert.equal(db.rows('comm_contact_consents').filter((r) => r.action === 'granted').length, 1, 'verification records the self-consent')
+  assert.equal(await gate(true), true, 'a verified test destination may receive TEST sends')
+  assert.equal(await gate(false), false, 'a test-recipient grant counted as consent for a non-test send')
+  // STOP → START from the device: the test grant is not START evidence.
+  const tcfg = { ch: 'sms', member: false, consent: false }
+  const conv = { id: 'conv-t', channel: 'sms', contact: TEST_PHONE }
+  clock.t += 60_000; await inbound.processInbound({ channel: 'sms', from: TEST_PHONE, body: 'STOP', provider: 'twilio', providerId: 'SM-t1' })
+  clock.t += 60_000; await inbound.processInbound({ channel: 'sms', from: TEST_PHONE, body: 'START', provider: 'twilio', providerId: 'SM-t2' })
+  assert.equal(await gate(false), false, 'START restored consent from a test-recipient grant')
+  void tcfg; void conv
+  // Delete → revoke appended.
+  clock.t += 60_000
+  const del = await testRecipient.DELETE(makeReq(`/api/comms/test/recipients/${id}`, { method: 'DELETE' }), { params: Promise.resolve({ id }) })
+  assert.equal(del.status, 200)
+  const last = db.rows('comm_contact_consents').filter((r) => r.contact === TEST_PHONE).sort((a, b) => (a.captured_at < b.captured_at ? -1 : 1)).at(-1)
+  assert.equal(last.action, 'revoked', 'deleting a test destination appends a revoke')
+  assert.equal(await gate(true), false, 'a deleted test destination no longer receives test sends')
+  console.log('  ✓ no grant before verification; grant counts only for test sends; not START evidence; delete revokes')
+}
+{
+  const db = memDb({ now: iso })
+  installDb(db)
+  globalThis.__sent = []
+  const add = await testRecipients.POST(makeReq('/api/comms/test/recipients', { body: { channel: 'email', address: 'op@example.com' } }))
+  const id = (await add.json()).recipient_id
+  const code = String(globalThis.__sent[0].body).match(/\d{6}/)[0]
+  const wrong = code === '000000' ? '111111' : '000000'
+  const verify = (c) => testRecipient.PATCH(makeReq(`/api/comms/test/recipients/${id}`, { method: 'PATCH', body: { code: c } }), { params: Promise.resolve({ id }) })
+  for (let i = 0; i < 4; i++) assert.equal((await verify(wrong)).status, 422, `wrong guess ${i + 1}`)
+  assert.equal((await verify(wrong)).status, 429, 'the fifth wrong guess burns the code')
+  const after = await verify(code)
+  assert.notEqual(after.status, 200, 'the right code still worked after the attempt cap')
+  assert.equal(db.rows('comm_contact_consents').filter((r) => r.action === 'granted').length, 0)
+  console.log('  ✓ five wrong guesses burn the code; the right code no longer verifies')
 }
 
 // A lost evidence row must fail the web opt-out (review P1): that row is what keeps a later START

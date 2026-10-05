@@ -2,6 +2,7 @@
 // other comms pure-core tests (comms-policy, comms-ai-authority): compile the pure source
 // with tsc, require the JS, assert offline (no DB). Run: node tests/comms-console.test.mjs
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { execSync } from 'node:child_process'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -27,6 +28,9 @@ const {
   isValidTestAddress,
   smsSegmentInfo,
   makeVerificationCode,
+  encodeVerification,
+  checkVerification,
+  MAX_VERIFICATION_ATTEMPTS,
 } = require(join(out, 'console.js'))
 
 let passed = 0
@@ -130,10 +134,24 @@ t('short GSM body is one segment; >160 GSM chars split; unicode shortens the bud
 
 console.log('Verification code')
 
-t('code is a zero-padded 6-digit string; rand is injectable', () => {
-  assert.equal(makeVerificationCode(0), '000000')
-  assert.equal(makeVerificationCode(0.123456), '123456')
-  assert.match(makeVerificationCode(), /^\d{6}$/)
+t('code is a zero-padded 6-digit string from the CSPRNG, never Math.random (follow-up R4)', () => {
+  for (let i = 0; i < 200; i++) assert.match(makeVerificationCode(), /^\d{6}$/)
+  const src = readFileSync('src/lib/comms/console.ts', 'utf8')
+  const fn = src.slice(src.indexOf('export function makeVerificationCode'), src.indexOf('export const MAX_VERIFICATION_ATTEMPTS'))
+  assert.ok(fn.includes('getRandomValues') && !fn.includes('Math.random'), 'crypto randomness')
+})
+
+t('a code survives at most MAX_VERIFICATION_ATTEMPTS wrong guesses (follow-up R4)', () => {
+  let stored = encodeVerification('123456')
+  for (let i = 1; i < MAX_VERIFICATION_ATTEMPTS; i++) {
+    const r = checkVerification(stored, '000000')
+    assert.equal(r.ok, false); assert.equal(r.exhausted, false); stored = r.next
+  }
+  const last = checkVerification(stored, '000000')
+  assert.equal(last.exhausted, true); assert.equal(last.next, null)
+  assert.equal(checkVerification(null, '123456').ok, false, 'a burned code never verifies')
+  assert.equal(checkVerification(encodeVerification('123456', 2), '123456').ok, true)
+  assert.equal(checkVerification('123456', '123456').ok, true, 'a legacy bare code still verifies')
 })
 
 console.log(`\n✅ comms-console: ${passed} passed`)

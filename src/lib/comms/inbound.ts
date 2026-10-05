@@ -31,7 +31,7 @@ import { shouldPauseOnReply } from './conversation-mode'
 import { recordConsentChange } from './consent-events'
 import { recordChannelOptOut, RECONSENT_LIFT_MARK, RECONSENT_VERSION } from './opt-out'
 import { terminateActiveEnrollments } from './stop-fanout'
-import { isDncLifted, isKeywordOptOutReason, isKeywordRevokeEvidence, KEYWORD_OPT_OUT_SOURCES, PRIOR_MEMBER_GRANT_MARKER } from './contact-consent'
+import { isDncLifted, isKeywordOptOutReason, isKeywordRevokeEvidence, KEYWORD_OPT_OUT_SOURCES, NOT_TEST_RECIPIENT, PRIOR_MEMBER_GRANT_MARKER } from './contact-consent'
 import { BUSINESS, CONTACT } from '@/lib/site'
 
 /** The HELP keyword auto-response (WS-033): identity, contact, opt-out — nothing else. */
@@ -260,7 +260,7 @@ async function applyOptIn(conv: Conversation, contact: string): Promise<boolean>
     // START's own restore grant, clears nothing and does not move the window (review F1). Any current
     // non-keyword evidence → no lift. Unreadable history → no lift (fail closed).
     const tail = conv.channel === 'sms' ? contact.replace(/[^\d]/g, '').slice(-10) : ''
-    const historyQ = db.from('comm_contact_consents').select('action, consent_text, consent_version, captured_at').eq('channel', conv.channel)
+    const historyQ = db.from('comm_contact_consents').select('action, consent_text, consent_version, captured_at').eq('channel', conv.channel).or(NOT_TEST_RECIPIENT)
     const { data: history, error: historyErr } = await (conv.channel === 'sms' && tail.length === 10
       ? historyQ.ilike('contact', `%${tail}`)
       : historyQ.eq('contact', contact)
@@ -289,8 +289,9 @@ async function applyOptIn(conv: Conversation, contact: string): Promise<boolean>
     // unreadable history restores nothing (fail closed).
     const armedAt = row.created_at ?? now
     const [{ data: priorGrants, error: priorErr }, { data: priorMember, error: memberErr }] = await Promise.all([
+      // A test-recipient self-consent is never START evidence (follow-up R4).
       db.from('comm_contact_consents').select('id').eq('contact', contact).eq('channel', conv.channel)
-        .eq('action', 'granted').lt('captured_at', armedAt).limit(1),
+        .eq('action', 'granted').lt('captured_at', armedAt).or(NOT_TEST_RECIPIENT).limit(1),
       db.from('comm_contact_consents').select('id').eq('contact', contact).eq('channel', conv.channel)
         .eq('action', 'revoked').gte('captured_at', armedAt).ilike('consent_text', `%${PRIOR_MEMBER_GRANT_MARKER}%`).limit(1),
     ])

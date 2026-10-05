@@ -116,11 +116,53 @@ export function isTestRecipientUsable(row: TestRecipientRow | null | undefined, 
   return row.user_id === actorUserId
 }
 
-/** A 6-digit ownership-verification code for a test destination. `rand` in [0,1) is injectable for tests. */
-export function makeVerificationCode(rand: number = Math.random()): string {
-  const n = Math.floor(rand * 1_000_000)
-  return String(n).padStart(6, '0')
+/**
+ * A 6-digit ownership-verification code for a test destination, from the platform CSPRNG
+ * (Web Crypto, rejection-sampled so every code is equally likely). Follow-up R4: never Math.random.
+ */
+export function makeVerificationCode(): string {
+  const buf = new Uint32Array(1)
+  const limit = Math.floor(0x1_0000_0000 / 1_000_000) * 1_000_000
+  let n: number
+  do {
+    globalThis.crypto.getRandomValues(buf)
+    n = buf[0]
+  } while (n >= limit)
+  return String(n % 1_000_000).padStart(6, '0')
 }
+
+/** Wrong guesses a verification code survives before it is burned (follow-up R4). */
+export const MAX_VERIFICATION_ATTEMPTS = 5
+
+/**
+ * The stored verification state. `comms_test_recipients.verification_code` (text) holds
+ * `<code>:<wrong guesses>`, so the attempt cap needs no schema change; a legacy bare code reads as 0.
+ */
+export function encodeVerification(code: string, wrongGuesses = 0): string {
+  return `${code}:${wrongGuesses}`
+}
+
+/**
+ * Check a submitted code. Returns whether it matched, and the value to store next: null when the
+ * code is used up (matched, or the cap reached). Constant-time on the code itself.
+ */
+export function checkVerification(stored: string | null | undefined, submitted: string): { ok: boolean; next: string | null; exhausted: boolean } {
+  if (!stored) return { ok: false, next: null, exhausted: true }
+  const [code, rawCount] = stored.split(':')
+  const wrong = Number.parseInt(rawCount ?? '0', 10) || 0
+  if (wrong >= MAX_VERIFICATION_ATTEMPTS) return { ok: false, next: null, exhausted: true }
+  const a = code ?? ''
+  const b = submitted.trim()
+  let diff = a.length ^ b.length
+  for (let i = 0; i < Math.max(a.length, b.length); i++) diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0)
+  if (diff === 0) return { ok: true, next: null, exhausted: false }
+  const used = wrong + 1
+  return used >= MAX_VERIFICATION_ATTEMPTS
+    ? { ok: false, next: null, exhausted: true }
+    : { ok: false, next: encodeVerification(a, used), exhausted: false }
+}
+
+export { TEST_RECIPIENT_CONSENT_VERSION } from './contact-consent'
 
 /**
  * Normalize a test destination for storage/matching: SMS → '+' + digits (E.164-ish),

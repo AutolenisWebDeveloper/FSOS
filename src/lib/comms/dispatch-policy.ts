@@ -204,8 +204,9 @@ export { CONTINENTAL_US_ZONES, localPartsInZone } from './recipient-timezone'
 export interface PolicyDeps {
   resolveContactLink(channel: Channel, to: string): Promise<{ memberId: string | null; householdId: string | null; agencyId: string | null }>
   memberConsent(memberId: string | null, channel: Channel): Promise<boolean>
-  contactConsent(to: string, channel: Channel): Promise<boolean>
-  consentRevoked(memberId: string | null, to: string, channel: Channel, purpose?: MessagePurpose): Promise<boolean>
+  /** `isTest`: a test-recipient self-consent counts only for test sends (follow-up R4). */
+  contactConsent(to: string, channel: Channel, isTest?: boolean): Promise<boolean>
+  consentRevoked(memberId: string | null, to: string, channel: Channel, purpose?: MessagePurpose, isTest?: boolean): Promise<boolean>
   onDNC(to: string, channel: Channel): Promise<boolean>
   templateApproved(templateId: string | null | undefined): Promise<boolean>
   aiPolicyApproved(agentKey?: string): Promise<boolean>
@@ -252,18 +253,18 @@ export const defaultPolicyDeps: PolicyDeps = {
       return false // fail closed
     }
   },
-  async contactConsent(to, channel) {
+  async contactConsent(to, channel, isTest) {
     try {
       const { durableContactConsentGranted } = await import('./contact-consent-read')
-      return await durableContactConsentGranted(to, channel)
+      return await durableContactConsentGranted(to, channel, { isTest: isTest === true })
     } catch {
       return false // fail closed
     }
   },
-  async consentRevoked(memberId, to, channel, purpose) {
+  async consentRevoked(memberId, to, channel, purpose, isTest) {
     try {
       const { contactConsentRevoked } = await import('./contact-consent-read')
-      return await contactConsentRevoked(memberId, to, channel, purpose)
+      return await contactConsentRevoked(memberId, to, channel, purpose, { isTest: isTest === true })
     } catch {
       return true // fail safe: an unverifiable revoke disables the waiver
     }
@@ -524,7 +525,7 @@ export async function resolveDispatchPolicy(
     convSecurity,
   ] = await Promise.all([
     deps.memberConsent(memberId, ctx.channel),
-    memberId ? Promise.resolve(false) : deps.contactConsent(ctx.to, ctx.channel),
+    memberId ? Promise.resolve(false) : deps.contactConsent(ctx.to, ctx.channel, ctx.isTest === true),
     deps.onDNC(ctx.to, ctx.channel),
     deps.templateApproved(ctx.templateId),
     deps.withinBusinessHours(),
@@ -537,7 +538,7 @@ export async function resolveDispatchPolicy(
   // documented opt-in (owner decision 5, audit G-08). consentRevoked is latest-wins on the contact
   // store and reads the member channel/purpose rows, and fails safe (true) on any read failure.
   const basisRevoked = ctx.consentWaived === true || ctx.durableConsentGranted === true
-    ? await deps.consentRevoked(memberId, ctx.to, ctx.channel, ctx.purpose)
+    ? await deps.consentRevoked(memberId, ctx.to, ctx.channel, ctx.purpose, ctx.isTest === true)
     : false
   const waiverApplies = ctx.consentWaived === true && !basisRevoked
   const durableApplies = ctx.durableConsentGranted === true && !basisRevoked

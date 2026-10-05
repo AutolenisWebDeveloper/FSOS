@@ -4,6 +4,7 @@ import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { z } from 'zod'
 import { writeAudit } from '@/lib/audit/log'
+import { checkVerification, TEST_RECIPIENT_CONSENT_VERSION } from '@/lib/comms/console'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -33,15 +34,31 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     const actor = actorOf(auth.session)
     const { data: row } = await db
       .from('comms_test_recipients')
-      .select('id, user_id, verification_code, verified_at')
+      .select('id, user_id, channel, address, verification_code, verified_at')
       .eq('id', id)
       .maybeSingle()
     if (!row || row.user_id !== actor) return NextResponse.json({ error: 'Destination not found.', reason: 'not_found' }, { status: 404 })
     if (row.verified_at) return NextResponse.json({ ok: true, already_verified: true })
-    if (!row.verification_code || row.verification_code !== v.data.code) {
-      return NextResponse.json({ error: 'That code is incorrect.', reason: 'bad_code' }, { status: 422 })
+    const check = checkVerification(row.verification_code, v.data.code)
+    if (!check.ok) {
+      // Record the wrong guess; a burned code must be re-sent (follow-up R4).
+      await db.from('comms_test_recipients').update({ verification_code: check.next }).eq('id', id)
+      return check.exhausted
+        ? NextResponse.json({ error: 'Too many wrong codes. Remove and re-add the destination to get a new one.', reason: 'code_exhausted' }, { status: 429 })
+        : NextResponse.json({ error: 'That code is incorrect.', reason: 'bad_code' }, { status: 422 })
     }
 
+    // The operator's self-consent for THIS device, recorded only now that they proved they hold it.
+    // It counts only for TEST sends (contact-consent-read.ts) and is never START evidence (inbound.ts).
+    const { error: grantErr } = await db.from('comm_contact_consents').insert({
+      contact: row.address,
+      channel: row.channel,
+      action: 'granted',
+      consent_text: 'Operator self-consent to receive FSOS test messages on an owned, verified device.',
+      consent_version: TEST_RECIPIENT_CONSENT_VERSION,
+      source_url: '/app/comms/console',
+    })
+    if (grantErr) return dbErrorResponse('comms/test/recipients/[id]', grantErr)
     const { error } = await db
       .from('comms_test_recipients')
       .update({ verified_at: new Date().toISOString(), verification_code: null })
@@ -65,8 +82,20 @@ export async function DELETE(_req: NextRequest, props: { params: Promise<{ id: s
   try {
     const db = getDb()
     const actor = actorOf(auth.session)
-    const { data: row } = await db.from('comms_test_recipients').select('id, user_id').eq('id', id).maybeSingle()
+    const { data: row } = await db.from('comms_test_recipients').select('id, user_id, channel, address, verified_at').eq('id', id).maybeSingle()
     if (!row || row.user_id !== actor) return NextResponse.json({ error: 'Destination not found.', reason: 'not_found' }, { status: 404 })
+    // Withdraw the self-consent first (follow-up R4): append a revoke, never delete the grant.
+    if (row.address && row.channel) {
+      const { error: revokeErr } = await db.from('comm_contact_consents').insert({
+        contact: row.address,
+        channel: row.channel,
+        action: 'revoked',
+        consent_text: 'Test destination removed by its operator.',
+        consent_version: TEST_RECIPIENT_CONSENT_VERSION,
+        source_url: '/app/comms/console',
+      })
+      if (revokeErr) return dbErrorResponse('comms/test/recipients/[id]', revokeErr)
+    }
     const { error } = await db.from('comms_test_recipients').delete().eq('id', id)
     if (error) return dbErrorResponse('comms/test/recipients/[id]', error)
     await writeAudit({ actor, action: 'config.changed', entity: 'comms_test_recipient', entityId: id, diff: { deleted: true } })

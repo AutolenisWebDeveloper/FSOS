@@ -48,7 +48,8 @@ export function memDb({ now = () => new Date().toISOString(), failOn = null, uui
     // "a.eq.x,b.ilike.%y" → predicates OR'ed
     return expr.split(',').map((part) => {
       const [col, op, ...rest] = part.split('.')
-      const val = rest.join('.')
+      const raw = rest.join('.')
+      const val = op === 'is' && raw === 'null' ? null : raw
       return (r) => test(r, op, col, val)
     })
   }

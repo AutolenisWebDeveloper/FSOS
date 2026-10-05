@@ -8,8 +8,9 @@ No client PII appears in this report. Production rows are referenced by the firs
 
 ## 1. Outcome
 
-Nothing reached a client. No live provider send was made: both canary contacts arrived as blank placeholders, so every
-check that needs a real phone or inbox is **NOT VERIFIED** (§8). Production was only read, with aggregate SELECTs inside
+Nothing reached a client. No live provider send was made. The canary set is the owner-verified `comms_test_recipients`
+entries (round 3); production had none when last read (2026-10-04), so every check that needs a real phone or inbox is
+**NOT VERIFIED** (§8). Production was only read, with aggregate SELECTs inside
 `begin read only` transactions. No migration, data fix or switch was applied anywhere. Nothing was merged or deployed.
 
 Production today sends nothing (0 outbound messages in 30 days). That is mostly as configured: every campaign is paused
@@ -28,9 +29,9 @@ placeholders are recorded as **UNANSWERED**; nothing is inferred for them.
 | Finding 3b | **Keep decision 1** for US numbers whose zone cannot be resolved (continental intersection). **Numbers outside the US — including +1 numbers in Canada and the Caribbean — are a hard block for automated SMS.** Update CLAUDE.md to match decision 1 and this rule. Report how many contacts resolve to unknown or non-US today, ids only. |
 | Property test | Before merge: an exhaustive property test of the opt-out/consent logic over every sequence of up to 4 events per channel, drawn from STOP, START, unsubscribe link, one-click unsubscribe, web/portal opt-out, operator opt-out, bounce, complaint, DNC add and documented re-consent. Invariants: appending an opt-out never makes a send allowed; START makes a send allowed only when the latest blocking event is a STOP and consent was on record before it; START never lifts DNC, bounce, complaint, unsubscribe, web/portal or operator opt-outs; no event deletes or relabels an earlier opt-out. |
 | Questions | Confirm migrations 138–141 are safe to apply while current production code runs; name what in the repo applies migrations to production; list everything that would send if `marketing_automation` were turned on today, with every campaign's current state; how production was read; what was found about the unmatched Resend sender. |
-| Canary contacts | **UNANSWERED** — both arrived as blank placeholders again (`+1 [___-___-____]`, `[___@___]`). No live send is possible. |
-| `CRON_SECRET` (Vercel Production) | **UNANSWERED** — the reply kept the template text `[set \| not set yet; I'll set it before merging]`. Merge stays blocked on it. |
-| `SMS_A2P_APPROVED` (Vercel Production) | **UNANSWERED** — `[value]` placeholder. |
+| Canary contacts | **UNANSWERED** — both arrived as blank placeholders again (`+1 [___-___-____]`, `[___@___]`). No live send is possible. *(Round 3: the verified `comms_test_recipients` entries are the canary set.)* |
+| `CRON_SECRET` (Vercel Production) | **UNANSWERED** — the reply kept the template text `[set \| not set yet; I'll set it before merging]`. Merge stays blocked on it. *(Round 3: set.)* |
+| `SMS_A2P_APPROVED` (Vercel Production) | **UNANSWERED** — `[value]` placeholder. *(Round 3: `true`.)* |
 
 ### Round 3 (owner, 2026-10-04)
 
@@ -42,6 +43,19 @@ placeholders are recorded as **UNANSWERED**; nothing is inferred for them.
 | Before merge | (1) `docs/ops/migration-runbook.md` (no PII) for the owner to run. (2) A deploy-impact list: everything that will send in the first 24 h after deploy (CRON_SECRET set, production as now), with counts and triggers, plus what sends today and will stop or change. (3) Booking notices and briefings with no FSOS message record must go through the gated send path and write one. (4) 3b counts for every store an automated text can resolve a recipient from, per store. (5) Whether the opt-out writers serialize concurrent events for one address, or the race window. |
 | Canary | The owner verified their phone and email in `/app/comms`. **The verified `comms_test_recipients` entries are the canary set**; their values are never copied anywhere. |
 | Owner-run | The owner runs the browser checks locally and sets `CRON_SECRET` and `SMS_A2P_APPROVED` themselves. When CI is green on the final head, mark the PR ready for review. **Do not merge.** |
+
+## 1d. Round 4 — owner decisions and what was implemented (2026-10-05)
+
+| Decision | Owner's words (essentials) | Implemented | Commit |
+|---|---|---|---|
+| Re-consent narrowing | **Confirmed.** Only the signed-in client's own portal grant clears earlier opt-outs; public form and booking opt-ins never do. | Already in place (`ad15bc6`); recorded here as decided. | `ad15bc6` |
+| Portal copy for SMS | Twilio keeps blocking a number that texted STOP (21610) until that handset texts START, whatever FSOS records. When a client turns texts back on in the portal and their SMS opt-out is a STOP, tell them to text START to the practice's texting number. **Copy only; no change to the consent logic.** | `smsStopNeedsStart` (`opt-out.ts`, read-only) decides whether the latest SMS opt-out on the client's number is a STOP or carrier 21610 that no START has answered. The portal route returns `textStart: { number }` (the registered A2P number, `SMS_CONSENT.from`), and `ClientConsentControls` shows "Text START to … to finish" with the reason. A read error shows the instruction (harmless where not needed). Consent writes are unchanged. Test: `optout-consent-property` (STOP → notice; STOP → START → none; portal opt-out → none; consent outcome unchanged). | `5b2c2a4` |
+| `workforce-orchestrator` | Approved: `0 15 * * *` → `0 17 * * *`, same reason as finding 5 (15:00 UTC is before 09:00 Pacific standard). | `vercel.json`; pinned test updated (`cron-send-window`). | `ad81136` |
+| Migration runbook | Stop at the first failure in §4; apply each file and record it in one transaction (`psql -v ON_ERROR_STOP=1 -1 -f <file> -c "insert …"`), no `on conflict do nothing` (also 137, 139); a first step confirming a recent backup or PITR window; an optional section for the 143-thread disposition (**approved**, to run before Win-Back is unpaused). | [`migration-runbook.md`](migration-runbook.md): Step 0, the one-transaction form (proven on a throwaway psql 16), §4's loop breaks on the first failure, §7 thread disposition with prior state in `audit_log`, verification and an audited rollback that leaves reopened threads alone (SQL exercised on a local copy of the two tables). | `0e59ee9` |
+| Stale report sections | Refresh §3, §4, §5 and §9. | Done in this commit. | docs |
+
+**What did not change:** no consent rule, gate step or send path. Production was read only (schema facts and aggregate
+counts for the thread section: 143 open, 39 empty, 104 outbound-last over 30 days, 3 armed, 0 unread).
 
 ## 1c. Round 3 — what was implemented, and the answers (2026-10-04)
 
@@ -233,7 +247,7 @@ enabled.
 | Booking confirmation / reschedule / cancel | a booking event | About 1 booking a month. The SMS goes if the booker ticked the SMS box and the number is US. The email goes through the transactional **fallback** (email templates unapproved), **now recorded**. Plus 1 FSA alert. |
 | Contact-form acknowledgement + FSA alert (email) | a form submission | About 1 a month, now recorded. |
 | Inbound replies: HELP (TwiML), STOP/START, AI auto-reply | an inbound text | 0 inbound in the last 30 days. 3 AI-armed threads (2 SMS) would auto-reply through the gate if the person writes. |
-| Workforce `referral_followup` | `workforce-orchestrator`, 15:00 UTC | **0**: no referral under 14 days. The other three agents stand down. |
+| Workforce `referral_followup` | `workforce-orchestrator`, 17:00 UTC (round 4; was 15:00) | **0**: no referral under 14 days. The other three agents stand down. |
 | Life Conversion, Win-Back, Cross-Sell, District nurture | ticks, hourly 17–23 UTC | **0**: paused or draft. |
 | Broadcasts and drips | `campaign-dispatch`, hourly 17–23 UTC | **0**: no active campaigns, sequences or enrollments. |
 | Workshop reminders, changes, nurture | `workshop-reminders`, every 15 min | **0**: no sessions in the reminder or nurture windows. |
@@ -540,7 +554,8 @@ workflows builder offered Enable with no executor. The pin was removed in the co
 
 ## 3. Status of every automation after this branch
 
-Statuses refer to the code on this branch. **Enablement is exactly as found**: nothing was turned on.
+Statuses refer to the code on this branch. **Enablement is exactly as found**: nothing was turned on. Production
+settings as the owner reported them (round 3): `CRON_SECRET` set, `SMS_A2P_APPROVED = true`.
 
 | Automation | Before | After (code) | Production enablement (unchanged) |
 |---|---|---|---|
@@ -548,16 +563,16 @@ Statuses refer to the code on this branch. **Enablement is exactly as found**: n
 | Twilio status callback | PARTIAL | WIRED — monotonic, 21610 applied; engine stop behind switch | live; `callback_engine_state` **off** |
 | Inbound SMS/email (STOP/START/HELP/replies) | PARTIAL | WIRED | live |
 | Resend events + suppression | PARTIAL | WIRED — 503 on lost suppression | live |
-| Booking confirmations/reminders | PARTIAL | WIRED — reminders respect the floor | live; SMS legs held by A2P (ASSUMPTION, §6) |
-| Life Conversion | BROKEN | WIRED (marketing, holds, stops on booking/inactive policy) | **paused** |
-| Cross-Sell Life | BROKEN (invalid purpose) | WIRED | **paused** |
-| Pipeline Win-Back | BROKEN (self-pause) | WIRED | **paused** |
-| District nurture | BROKEN (window, pause) | WIRED | **draft** |
+| Booking confirmations/reminders | PARTIAL | WIRED — reminders respect the floor | live; SMS legs **not** held: `SMS_A2P_APPROVED = true`, so they send wherever consent and the gate allow (deploy impact, §1c) |
+| Life Conversion | BROKEN | WIRED (marketing, holds, stops on booking/inactive policy); hourly 17–23 UTC, one touch per day | **paused** |
+| Cross-Sell Life | BROKEN (invalid purpose) | WIRED; hourly 17–23 UTC, one touch per day | **paused** |
+| Pipeline Win-Back | BROKEN (self-pause) | WIRED; hourly 17–23 UTC, one touch per day | **paused** (run runbook §7 before unpausing) |
+| District nurture | BROKEN (window, pause) | WIRED; hourly 17–23 UTC, one touch per day | **draft** |
 | Campaign retry sweeps | DISPLAY-ONLY recovery | Reconcile WIRED; re-dispatch behind switch | `engine_retry_redispatch` **off** |
-| Broadcast campaigns (`campaign-dispatch`) | BROKEN (12:00 UTC) | WIRED at 17:00 UTC; kill-switch aware | 0 active campaigns; `marketing_automation` agent must be enabled first |
+| Broadcast campaigns (`campaign-dispatch`) | BROKEN (12:00 UTC) | WIRED hourly 17:00–23:00 UTC; kill-switch aware | 0 active campaigns; `marketing_automation` agent must be enabled first |
 | Native drips | DISCONNECTED | Holds on inactive sequence (no activation added — hard stop) | 0 sequences |
-| AI workforce | BROKEN (daily re-message) | WIRED — referral_followup only; others stand down | agents enabled as found |
-| Workshop engine | fails open on read error | WIRED | runs only once `CRON_SECRET` is set |
+| AI workforce | BROKEN (daily re-message) | WIRED — referral_followup only; others stand down; runs 17:00 UTC (round 4) | agents enabled as found |
+| Workshop engine | fails open on read error | WIRED | live (`CRON_SECRET` set); sends nothing until a session is scheduled (§1c) |
 | Social publishing | PARTIAL | WIRED | 0 entries |
 | Public referral intake | BROKEN (insert failed) | WIRED | live |
 | Detection jobs (renewal, conversion, x-date, cross-sell scan, dormancy, SLA, commission, data quality, backup) | WIRED | WIRED; failures now recorded | live |
@@ -567,25 +582,34 @@ Statuses refer to the code on this branch. **Enablement is exactly as found**: n
 
 ## 4. Deploy order and prerequisites (owner)
 
-1. **Set `CRON_SECRET` in Vercel before merging**, or every cron answers 401 (decision 9; status UNANSWERED).
-2. Apply **137** (on `main`, not yet in production), then migrations **138, 139, 140, 141** before or with the code
-   (139 with or after it — §1b). Check first whether the Supabase GitHub integration deploys migrations on merge (§1b). Each is additive or a config row and carries a
-   `-- ROLLBACK:` block, proven on real Postgres by `tests/automation-migrations-rollback.test.mjs`. Roll back 141
-   before 140. The code is safe without 138 (no row ever reads as lifted) and without 140/141 (a missing switch row is
-   off).
-3. `marketing_automation` is seeded disabled by migration 010, **but production has it enabled** (read 2026-10-02, §1b).
-   On this branch, broadcasts and drips run only while it stays enabled; today there is nothing for them to send.
-4. Leave both switches **off** until the canary checks pass; then `canary`, then `on`.
+The step-by-step is [`migration-runbook.md`](migration-runbook.md) §6. In short:
+
+1. **Confirm a recent backup or PITR window** (runbook Step 0).
+2. Confirm the Supabase GitHub integration will not deploy migrations on merge (runbook §0).
+3. Prove 128–134 exist, then record them (record only). Apply **137**, then **138, 140, 141**. Each file and its
+   ledger record are one transaction, and §4's loop stops at the first failure. Do not run `npm run migrate`.
+4. Merge and deploy. `CRON_SECRET` and `SMS_A2P_APPROVED = true` are already set in Vercel Production (owner, round
+   3), so crons authenticate and SMS is on at the flag level: read the deploy-impact list (§1c) first.
+5. Apply **139** at or after the deploy.
+6. `marketing_automation` is enabled in production (read 2026-10-02, §1b); on this branch broadcasts and drips run
+   only while it stays enabled. Today there is nothing for them to send.
+7. Leave both switches **off** until the canary checks pass (§8); then `canary`, then `on`.
+8. Before unpausing Win-Back: runbook §7 (close the 143 stale threads, disarm the 3 armed ones; owner-approved).
+
+The code is safe without 138 (no row reads as lifted; lifts fail closed) and without 140/141 (a missing switch row
+is off). Each of 138–141 has a rollback proven on real Postgres by `tests/automation-migrations-rollback.test.mjs`.
 
 ## 5. Owner decisions recorded but left unanswered, and policy questions not acted on
 
-UNANSWERED placeholders from the checkpoint reply:
+Answered since the checkpoint (owner, round 3): `CRON_SECRET` is set and `SMS_A2P_APPROVED = true` in Vercel
+Production; the canary set is the verified `comms_test_recipients` entries (none existed in production when last
+read, 2026-10-04). Round 4 confirmed the re-consent narrowing and approved the `workforce-orchestrator` move and the
+thread disposition (§1d).
+
+Still open:
 
 - the production value of `QUIET_HOURS_RECIPIENT_LOCAL` (moot: no longer read);
-- `CRON_SECRET` status;
-- `SMS_A2P_APPROVED`;
-- the unmatched Resend sender;
-- the canary contacts.
+- the 80 Resend sends not attributable to an FSOS record (identify them in the Resend dashboard, §1b).
 
 The optional FNA switch was not started.
 
@@ -688,6 +712,11 @@ project), set `COMMS_CAPTURE_TRANSPORT` and no provider keys on Preview, and use
 
 **CODE-VERIFIED** (run in this session, output in the session log):
 
+- **Round 4 head (2026-10-05):** `npm test` 241/241 unit files; `npm run test:rls` with `CI_REQUIRE_INFRA=1` 25/25;
+  `npm run type-check` clean; `npm run lint` clean. The runbook's one-transaction psql form and the §7 thread SQL
+  were exercised on a throwaway local Postgres 16 (not production). CI on the pushed head is reported on the PR.
+  The list below is the round-1 record.
+
 - `npm test`: the full unit set, 239 files passed, 0 pinned (after the review fixes).
 - `npm run type-check`: clean.
 - `npm run lint`: "No ESLint warnings or errors".
@@ -740,7 +769,7 @@ server-side TypeScript, and the typecheck is clean after it.
 | 3a | P2 | Phone/ZIP zone disagreement: the ZIP zone alone now governs. The earlier flag-on mode required both. | **Decided (round 2): both zones. Fixed** `e66eeca`. |
 | 3b | P2 | An unresolved zone now sends inside the continental intersection; Alaska/Hawaii/foreign numbers are not covered. CLAUDE.md still describes a hard block. | **Decided (round 2): decision 1 kept for US numbers; non-US is a hard block. Fixed** `402cd60`; CLAUDE.md updated. |
 | 4 | P2 | A broadcast's quiet-hours hold never expired (due = now). | **Fixed** `37d495d`: bounded from `schedule_at`, else `created_at`. |
-| 5 | P2 | The Life / Win-Back (15:00 UTC) and Cross-Sell (16:00 UTC) ticks fall before 09:00 Pacific and Arizona, and are never inside the window for unresolved zones. With decision 2 those SMS touches are held each day, escalated, and written off after 72 h. | **Approved (round 2), not yet applied:** the cron edit was refused by the session's permission controls; schedule awaiting confirmation (§1b). Still pinned in `tests/cron-send-window.test.mjs`. |
+| 5 | P2 | The Life / Win-Back (15:00 UTC) and Cross-Sell (16:00 UTC) ticks fall before 09:00 Pacific and Arizona, and are never inside the window for unresolved zones. With decision 2 those SMS touches are held each day, escalated, and written off after 72 h. | **Applied** (round 3, `e052837`): the five dispatch crons run `0 17-23 * * *` with one touch per enrollment per day, also enforced at send time (`f56da8e`). `workforce-orchestrator` moved to `0 17 * * *` in round 4 (`ad81136`). Pinned in `tests/cron-send-window.test.mjs`. |
 | 6 | P3 | The floor also holds conversational SERVICING AI replies, wider than "campaign SMS". | Left as is. It fails safe and was chosen when widening the exempt set; owner may narrow. |
 | 7 | P3 | "Most recent revoke wins" ignores a newer opt-in not recorded in `comm_contact_consents`. | Left as is. Over-restrictive, not looser. |
 | 8 | P3 | A synchronous 21610 whose DNC write fails is only logged; there is no webhook to retry it. | Left as is. The next send gets 21610 again and retries the write. |
@@ -760,16 +789,20 @@ The reviewer found no material findings in:
 - provider error classification;
 - the sampled UI copy.
 
+**Later reviews.** Round 3's fresh reviewer found eight more issues (public re-consent, household scope, briefing
+uuid, typed tokens, List-Unsubscribe on alerts, START after booking, resume double-send, audit); all fixed with
+regression tests (§1c, "Adversarial review of round 3").
+
 **Remaining items for the owner:**
 
-- set `CRON_SECRET` (still UNANSWERED);
-- apply 137, then migrations 138–141 (§4);
-- confirm the finding-5 schedule (§1b); 3a and 3b are implemented;
-- check whether the Supabase GitHub integration deploys migrations on merge (§1b);
+- run the migration runbook (backup check first; 137, then 138/140/141; 139 at or after deploy) (§4);
+- check whether the Supabase GitHub integration deploys migrations on merge (runbook §0);
+- add the canary phone and email as verified `comms_test_recipients` in production, then run §8;
+- runbook §7 before Win-Back is unpaused;
 - identify the 80 unattributed Resend sends in the Resend dashboard (§1b);
-- answer the open questions in §5;
-- provide verified canary contacts (still blank);
-- isolate Preview (§6).
+- answer the open policy questions in §5;
+- isolate Preview (§6);
+- the independent review the owner will run in a fresh session.
 
 ## 10. Out-of-scope findings (recorded, not acted on)
 

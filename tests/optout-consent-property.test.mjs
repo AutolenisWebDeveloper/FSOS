@@ -462,6 +462,61 @@ console.log('\nPortal re-opt-in after a STOP asks the client to text START')
   console.log('  ✓ STOP → notice; STOP → START → none; portal opt-out → none')
 }
 
+// Follow-up R1: a portal GRANT applies only to the signed-in member. Another member's grant never makes
+// this member sendable — not directly, and not through STOP → START restoring a grant they never gave.
+console.log("\nA household member's portal grant never grants consent for another member")
+for (const ch of ['sms', 'email']) {
+  const cfg = { ch, member: true, consent: false }
+  const db = memDb({ now: iso })
+  installDb(db)
+  seedConfig(db, cfg)
+  db.seed('household_members', [{ id: 'm2', household_id: 'h1', full_name: 'Sam Example', phone: '+12145550199', email: 'sam@example.com' }])
+  assert.equal(await allowed(ch), false, 'harness: Pat starts with no consent')
+  globalThis.__signedInEmail = 'sam@example.com'
+  clock.t += 60_000
+  const res = await clientConsent.POST(makeReq('/api/client/consent', { body: { channel: ch, status: 'granted' } }))
+  globalThis.__signedInEmail = undefined
+  assert.equal(res.status, 200)
+  assert.equal(await allowed(ch), false, `${ch}: Sam's grant made Pat sendable`)
+  const patRow = db.rows('consents').find((r) => r.member_id === 'm1' && r.channel === ch)
+  assert.ok(!patRow || patRow.status !== 'granted', `${ch}: Sam's grant wrote a granted consents row for Pat`)
+  if (ch === 'sms') {
+    clock.t += 60_000; await apply('STOP', 'sms', cfg, 940001)
+    clock.t += 60_000; await apply('START', 'sms', cfg, 940002)
+    assert.equal(await allowed('sms'), false, "Pat's STOP → START restored a grant Pat never gave")
+  }
+  console.log(`  ✓ ${ch}: Sam's grant leaves Pat unsendable${ch === 'sms' ? ', also after STOP → START' : ''}`)
+}
+{
+  // A revoke stays household-wide.
+  const cfg = { ch: 'sms', member: true, consent: true }
+  const db = memDb({ now: iso })
+  installDb(db)
+  seedConfig(db, cfg)
+  db.seed('household_members', [{ id: 'm2', household_id: 'h1', full_name: 'Sam Example', phone: '+12145550199', email: 'sam@example.com' }])
+  globalThis.__signedInEmail = 'sam@example.com'
+  clock.t += 60_000
+  const res = await clientConsent.POST(makeReq('/api/client/consent', { body: { channel: 'sms', status: 'revoked' } }))
+  globalThis.__signedInEmail = undefined
+  assert.equal(res.status, 200)
+  assert.equal(await allowed('sms'), false, "a portal revoke still applies household-wide")
+  console.log('  ✓ a portal revoke still covers every member')
+}
+{
+  // No unique signed-in member → no grant at all.
+  const cfg = { ch: 'sms', member: true, consent: false }
+  const db = memDb({ now: iso })
+  installDb(db)
+  seedConfig(db, cfg)
+  globalThis.__signedInEmail = 'nobody@example.com'
+  clock.t += 60_000
+  const res = await clientConsent.POST(makeReq('/api/client/consent', { body: { channel: 'sms', status: 'granted' } }))
+  globalThis.__signedInEmail = undefined
+  assert.equal(res.status, 409, 'no unique signed-in member → refused, not a silent success')
+  assert.equal(await allowed('sms'), false, 'no unique signed-in member → nothing granted')
+  console.log('  ✓ no unique signed-in member → no grant')
+}
+
 // A lost evidence row must fail the web opt-out (review P1): that row is what keeps a later START
 // from lifting the STOP-labelled DNC row the opt-out re-armed.
 console.log('\nWeb opt-out evidence write failure')

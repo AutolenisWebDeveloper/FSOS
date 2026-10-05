@@ -5,6 +5,7 @@
 // with backoff, and checks the kill switch."
 
 import { getDb } from '@/lib/supabase/client'
+import { RUN_LEASE_MS } from '@/lib/ops/automation-status'
 
 export interface RetryOptions {
   retries?: number
@@ -40,7 +41,7 @@ export interface IdempotentOutcome<T> {
  * release the row. Such a claim is reclaimable so the work can actually run. Sized
  * comfortably above the longest legitimate single job (well under a cron window).
  */
-export const JOB_LEASE_MS = 15 * 60 * 1000
+export const JOB_LEASE_MS = RUN_LEASE_MS
 
 /**
  * Run `fn` at most once *successfully* per `dedupeKey`. Backed by job_runs

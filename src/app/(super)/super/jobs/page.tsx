@@ -14,6 +14,7 @@ export const dynamic = 'force-dynamic'
 const STATE_VARIANT: Record<RunState, 'won' | 'lost' | 'pending' | 'outline'> = {
   succeeded: 'won',
   failed: 'lost',
+  timed_out: 'lost',
   running: 'pending',
   stale: 'pending',
   none: 'outline',

@@ -144,8 +144,10 @@ try {
   check('137 runbook rollback leaves operator-tuned values alone (and re-apply does too)', () => {
     q(`update booking_reminder_config set offsets_minutes='{1440,120}' where id='global'`)
     q(`update comm_frequency_policy set max_sms_per_day=5, max_combined_touches_per_day=10 where id='appointment'`)
+    q(`alter table booking_reminder_config alter column offsets_minutes set default '{1440,180}'`)
     runSql(runbookSql('rollback:137'))
     assert.equal(cadence(), '{1440,120}|5/10', 'the rollback overwrote an operator value')
+    assert.match(q(`select column_default from information_schema.columns where table_name='booking_reminder_config' and column_name='offsets_minutes'`), /\{1440,180\}/, 'the rollback overwrote an operator-set default')
     reapply('137_booking_reminder_cadence.sql')
     assert.equal(cadence(), '{1440,120}|5/10', 're-apply overwrote an operator value')
     q(`update booking_reminder_config set offsets_minutes='{1440,720,60}' where id='global'`)

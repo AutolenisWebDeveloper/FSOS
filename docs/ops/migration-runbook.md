@@ -119,7 +119,7 @@ columns that A proves exist; on a database without them it errors).
 begin read only;
 select file, check_name, ok from (values
  ('128','guest_count CHECK 0..10', exists(select 1 from pg_constraint where conrelid='public.workshop_registrations'::regclass and contype='c' and pg_get_constraintdef(oid) like '%guest_count >= 0%' and pg_get_constraintdef(oid) like '%guest_count <= 10%')),
- ('128','idx_wreg_active_email UNIQUE on (workshop_id, lower(email)), partial', exists(select 1 from pg_index i join pg_class c on c.oid=i.indexrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname='idx_wreg_active_email' and i.indisunique and i.indpred is not null and pg_get_indexdef(i.indexrelid) like '%(workshop_id, lower(email))%')),
+ ('128','idx_wreg_active_email UNIQUE on (workshop_id, lower(email)) with 128''s predicate', exists(select 1 from pg_index i join pg_class c on c.oid=i.indexrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname='idx_wreg_active_email' and i.indisunique and pg_get_indexdef(i.indexrelid) like '%(workshop_id, lower(email))%' and pg_get_expr(i.indpred, i.indrelid) = '((email IS NOT NULL) AND (status <> ALL (ARRAY[''cancelled''::text, ''ffs_referred''::text])))')),
  ('128','fn workshop_claim_registration(uuid,uuid,text,text,text,text,text[],text,text,integer)', to_regprocedure('public.workshop_claim_registration(uuid,uuid,text,text,text,text,text[],text,text,integer)') is not null),
  ('128','fn: anon and authenticated cannot execute; service_role can', coalesce((select not has_function_privilege('anon', p, 'execute') and not has_function_privilege('authenticated', p, 'execute') and has_function_privilege('service_role', p, 'execute') from to_regprocedure('public.workshop_claim_registration(uuid,uuid,text,text,text,text,text[],text,text,integer)') p where p is not null), false)),
  ('129','registrations → workshops FK is ON DELETE RESTRICT (and the only one)', (select count(*) = 1 and bool_and(confdeltype = 'r') from pg_constraint where conrelid='public.workshop_registrations'::regclass and confrelid='public.workshops'::regclass and contype='f')),
@@ -160,7 +160,7 @@ What the rows prove, by file:
 
 | File | Proven by |
 |---|---|
-| 128 | the `guest_count` CHECK (0–10); `idx_wreg_active_email` is UNIQUE and partial on `(workshop_id, lower(email))`; `workshop_claim_registration` has the 10-argument signature; `anon` and `authenticated` cannot execute it and `service_role` can; no duplicate active registration survives |
+| 128 | the `guest_count` CHECK (0–10); `idx_wreg_active_email` is UNIQUE on `(workshop_id, lower(email))` with exactly 128's predicate (email present, status not cancelled / FFS-referred); `workshop_claim_registration` has the 10-argument signature; `anon` and `authenticated` cannot execute it and `service_role` can; no duplicate active registration survives |
 | 129 | the only registrations → workshops FK is `ON DELETE RESTRICT` (`confdeltype = 'r'`); the consent and senior columns; the consent backfill left no row without `consent_form_version` |
 | 130 | the publish gate fires `BEFORE INSERT` (the fix) and `UPDATE`; terminality and cancel-cascade triggers are enabled; no 3-column unique remains on `workshop_message_log`; `idx_wml_claim` is UNIQUE on the 4 columns; one-time kinds sit at generation 0; `wml_kind_chk`/`wmt_kind_chk` carry the new kinds; `change_kind`, `change_recorded_at`, `cadence_generation`, `cancelled_at`; its 7 template seeds |
 | 131 | `nurture_followup_delay_minutes`; its 5 template seeds; the instant-ack handle row |
@@ -251,8 +251,8 @@ select offsets_minutes from booking_reminder_config where id='global';          
 select max_sms_per_day, max_combined_touches_per_day from comm_frequency_policy where id='appointment';  -- 6, 12 (unless edited)
 ```
 
-**Rollback.** Unlike the block in the file, this resets a value **only if it still holds what 137
-set**, so an operator-tuned offset list or cap survives. Proven by
+**Rollback.** Unlike the block in the file, this resets a value — the row, the caps and the column
+default — **only if it still holds what 137 set**, so an operator-tuned value survives. Proven by
 `tests/automation-migrations-rollback.test.mjs`, which runs this exact block.
 137's longer `note` text on the `appointment` frequency row is left in place (a description only;
 nothing reads it).
@@ -261,7 +261,16 @@ nothing reads it).
 ```sql
 begin;
 set local lock_timeout = '5s';
-alter table booking_reminder_config alter column offsets_minutes set default '{1440}';
+do $$
+begin
+  -- Only the default 137 set is reverted; an operator-changed default is left alone.
+  if (select pg_get_expr(d.adbin, d.adrelid)
+        from pg_attrdef d join pg_attribute a on a.attrelid = d.adrelid and a.attnum = d.adnum
+       where d.adrelid = 'public.booking_reminder_config'::regclass and a.attname = 'offsets_minutes')
+     = '''{1440,720,60}''::integer[]' then
+    alter table booking_reminder_config alter column offsets_minutes set default '{1440}';
+  end if;
+end $$;
 update booking_reminder_config set offsets_minutes = '{1440}', updated_at = now()
  where id = 'global' and offsets_minutes = '{1440,720,60}';
 update comm_frequency_policy set max_sms_per_day = 4, max_combined_touches_per_day = 8

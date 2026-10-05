@@ -140,7 +140,8 @@ function makeDb(state) {
         if (col === 'starts_at') filters.starts_at_lte = val
         return b
       },
-      is() {
+      is(col, val) {
+        filters[`${col}_is`] = val
         return b
       },
       lt(col, val) {
@@ -210,6 +211,16 @@ function makeDb(state) {
             )
             for (const r of doomed) state.ledger.splice(state.ledger.indexOf(r), 1)
             return resolve({ data: doomed.map((r) => ({ id: r.id })), error: null })
+          }
+          // Conditional update of an appointment (the reminder-SMS slot reservation): a real
+          // compare-and-set on reminder_sent_at, returning the rows it changed.
+          if (op === 'update' && table === 'appointments') {
+            const hit = state.appointments.filter((a) =>
+              (!filters.id || a.id === filters.id) &&
+              (!('reminder_sent_at' in filters) || a.reminder_sent_at === filters.reminder_sent_at) &&
+              (!('reminder_sent_at_is' in filters) || (a.reminder_sent_at ?? null) === filters.reminder_sent_at_is))
+            for (const a of hit) Object.assign(a, pendingUpdate)
+            return resolve({ data: hit.map((a) => ({ id: a.id })), error: null })
           }
           if (op === 'insert' || op === 'update' || op === 'delete') return resolve({ data: null, error: null })
           return resolve({ data: rowsFor(), error: null })
@@ -664,6 +675,15 @@ await t('send-time spacing: at most one reminder SMS per pass, none within 2h of
   recent.ledger.push({ id: 'led-prev', appointment_id: 'appt-1', schedule_version: recent.appointments[0].schedule_version ?? 1, event: 'reminder', offset_minutes: 1440, channel: 'sms', status: 'sent', created_at: new Date(NOW.getTime() - 30 * 60_000).toISOString() })
   await notify.runBookingReminderPass(NOW)
   assert.equal(smsCalls().length, 0, 'a reminder SMS went out 30 minutes after the last one')
+})
+
+await t('overlapping passes cannot send two reminder SMS for one appointment (CodeRabbit review of R6)', async () => {
+  const st = setup()
+  st.config = { offsets_minutes: [1440, 60], email_enabled: false, sms_enabled: true }
+  st.appointments[0].booked_at = '2026-08-20T00:00:00.000Z'
+  st.appointments[0].starts_at = new Date(NOW.getTime() + 50 * 60_000).toISOString()
+  await Promise.all([notify.runBookingReminderPass(NOW), notify.runBookingReminderPass(NOW)])
+  assert.equal(smsCalls().length, 1, `${smsCalls().length} reminder SMS from two overlapping passes`)
 })
 
 console.log('\n4. Rescheduled appointments')

@@ -685,6 +685,13 @@ export async function runBookingReminderPass(
           result.deferred++
           continue
         }
+        // Durable, appointment-level reservation so OVERLAPPING passes cannot each send a different
+        // offset inside the spacing (CodeRabbit review of R6). Released if nothing went out.
+        const slot = await reserveReminderSmsSlot(db, appt.id, now)
+        if (!slot) {
+          result.deferred++
+          continue
+        }
         const smsOutcome = await deliverLeg(db, appt, {
           event: 'reminder',
           offsetMinutes: offset,
@@ -695,8 +702,11 @@ export async function runBookingReminderPass(
         if (smsOutcome.sent) {
           result.sent++
           lastSmsMs = now.getTime()
-        } else if (smsOutcome.reason === 'already_delivered') result.skipped++
-        else result.deferred++ // a2p hold / no SMS consent / not approved
+        } else {
+          await releaseReminderSmsSlot(db, appt.id, slot)
+          if (smsOutcome.reason === 'already_delivered') result.skipped++
+          else result.deferred++ // a2p hold / no SMS consent / not approved
+        }
       }
     }
   }
@@ -726,6 +736,38 @@ function reminderAllowedAt(bookerTimezone: string | null, phone: string | null |
     if (r.resolved) zones = r.secondaryTimeZone ? [r.timeZone, r.secondaryTimeZone] : [r.timeZone]
   }
   return (ms) => zones.every((z) => withinQuietHours(localPartsInZone(z, new Date(ms)).hour))
+}
+
+/**
+ * Reserve this appointment's reminder-SMS slot: a compare-and-set on appointments.reminder_sent_at
+ * (re-armed to null by a reschedule) that succeeds only when no reminder SMS was reserved within
+ * MIN_REMINDER_SPACING_MS. Returns the reservation (and the value it replaced), or null when another
+ * pass holds the slot or the row cannot be read/written (the leg is held, never sent unspaced).
+ */
+async function reserveReminderSmsSlot(db: Db, apptId: string, now: Date): Promise<{ at: string; prev: string | null } | null> {
+  try {
+    const { data: cur, error: readErr } = await db.from('appointments').select('reminder_sent_at').eq('id', apptId).maybeSingle()
+    if (readErr || !cur) return null
+    const prev = (cur as { reminder_sent_at: string | null }).reminder_sent_at ?? null
+    if (prev !== null && now.getTime() - Date.parse(prev) < MIN_REMINDER_SPACING_MS) return null
+    const at = now.toISOString()
+    let q = db.from('appointments').update({ reminder_sent_at: at }).eq('id', apptId)
+    q = prev === null ? q.is('reminder_sent_at', null) : q.eq('reminder_sent_at', prev)
+    const { data, error } = await q.select('id')
+    if (error || !Array.isArray(data) || data.length !== 1) return null
+    return { at, prev }
+  } catch {
+    return null
+  }
+}
+
+/** Give back a reservation whose leg did not go out (only if no later pass has replaced it). */
+async function releaseReminderSmsSlot(db: Db, apptId: string, slot: { at: string; prev: string | null }): Promise<void> {
+  try {
+    await db.from('appointments').update({ reminder_sent_at: slot.prev }).eq('id', apptId).eq('reminder_sent_at', slot.at)
+  } catch {
+    /* best-effort: an unreleased reservation only delays the next reminder by the spacing */
+  }
 }
 
 /**

@@ -25,7 +25,7 @@ import { sendVisitorAck } from '@/lib/notifications/transactional'
 import { signManageToken, manageTokenKey, MANAGE_TOKEN_TTL_MS } from './manage-tokens'
 import { buildBookingContext, buildBookingFallbackContent } from './notify-core'
 import { loadReminderConfig, reminderLeadHours } from './notification-config'
-import { type LifecycleEvent, sourceKeyFor, dueReminderOffsets, planSmsReminders } from './notify-events'
+import { type LifecycleEvent, sourceKeyFor, dueReminderOffsets, planSmsReminders, MIN_REMINDER_SPACING_MS } from './notify-events'
 import { withinQuietHours } from '../compliance/guardrail'
 // Relative (not @/): pure helpers the standalone-tsc booking tests must emit alongside notify.ts.
 import { CONTINENTAL_US_ZONES, localPartsInZone, resolveRecipientTimeZone } from '../comms/recipient-timezone'
@@ -659,6 +659,11 @@ export async function runBookingReminderPass(
       result.skipped++
       continue
     }
+    // CodeRabbit review of R6: the planner spaces TARGETS, but the gate resolves the recipient's own
+    // zone and can hold a leg until another offset is also due. Space actual SENDS too: at most one
+    // reminder SMS per appointment per pass, and none within MIN_REMINDER_SPACING_MS of the last
+    // one the ledger shows sent. An unreadable ledger holds the SMS legs this pass.
+    let lastSmsMs = smsDue.due.length > 0 ? await lastReminderSmsSentMs(db, appt) : null
     for (const offset of [...new Set([...due, ...smsDue.due])].sort((a, b) => a - b)) {
       if (emailEligible && due.includes(offset)) {
         const emailOutcome = await deliverLeg(db, appt, {
@@ -676,6 +681,10 @@ export async function runBookingReminderPass(
       // opt-in, A2P go-live, DNC/STOP, quiet-hours scope and template approval are each
       // enforced by the gate itself; nothing here waives any of them.
       if (config.smsEnabled && smsDue.due.includes(offset)) {
+        if (lastSmsMs === 'unknown' || (lastSmsMs !== null && now.getTime() - lastSmsMs < MIN_REMINDER_SPACING_MS)) {
+          result.deferred++
+          continue
+        }
         const smsOutcome = await deliverLeg(db, appt, {
           event: 'reminder',
           offsetMinutes: offset,
@@ -683,8 +692,10 @@ export async function runBookingReminderPass(
           actor: 'agent:booking-reminders',
           durableConsentGranted: false,
         })
-        if (smsOutcome.sent) result.sent++
-        else if (smsOutcome.reason === 'already_delivered') result.skipped++
+        if (smsOutcome.sent) {
+          result.sent++
+          lastSmsMs = now.getTime()
+        } else if (smsOutcome.reason === 'already_delivered') result.skipped++
         else result.deferred++ // a2p hold / no SMS consent / not approved
       }
     }
@@ -715,6 +726,34 @@ function reminderAllowedAt(bookerTimezone: string | null, phone: string | null |
     if (r.resolved) zones = r.secondaryTimeZone ? [r.timeZone, r.secondaryTimeZone] : [r.timeZone]
   }
   return (ms) => zones.every((z) => withinQuietHours(localPartsInZone(z, new Date(ms)).hour))
+}
+
+/**
+ * When the last reminder SMS for this appointment's current schedule actually went out, per the
+ * delivery ledger (ms), null if none, 'unknown' if the ledger could not be read (the caller holds).
+ */
+async function lastReminderSmsSentMs(db: Db, appt: ApptRow): Promise<number | null | 'unknown'> {
+  try {
+    const version = appt.schedule_version ?? 1
+    const { data, error } = await db
+      .from('booking_notification_deliveries')
+      .select('appointment_id, schedule_version, event, channel, status, created_at')
+      .eq('appointment_id', appt.id)
+      .eq('schedule_version', version)
+      .eq('event', 'reminder')
+      .eq('channel', 'sms')
+      .eq('status', 'sent')
+    if (error) return 'unknown'
+    let last: number | null = null
+    for (const r of (data ?? []) as { appointment_id: string; schedule_version: number; event: string; channel: string; status: string; created_at: string }[]) {
+      if (r.appointment_id !== appt.id || r.schedule_version !== version || r.event !== 'reminder' || r.channel !== 'sms' || r.status !== 'sent') continue
+      const t = Date.parse(r.created_at)
+      if (Number.isFinite(t) && (last === null || t > last)) last = t
+    }
+    return last
+  } catch {
+    return 'unknown'
+  }
 }
 
 /** Which SMS reminder offsets are due now under the floor; counts the ones with no allowed time left. */

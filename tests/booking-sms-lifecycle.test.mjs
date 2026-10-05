@@ -495,9 +495,13 @@ await t('multiple configured offsets each fire once, keyed independently', async
   state.appointments[0].starts_at = new Date(NOW.getTime() + 30 * 60_000).toISOString() // 30m out: both due
   state.appointments[0].booked_at = '2026-08-20T00:00:00.000Z'
   await notify.runBookingReminderPass(NOW)
-  assert.equal(smsCalls().length, 2)
-  assert.equal(ledgerFor(state, 'reminder', 'sms', 60).length, 1)
-  assert.equal(ledgerFor(state, 'reminder', 'sms', 1440).length, 1)
+  // R6: two reminder SMS are never sent within 2 hours, so a burst sends ONE; the other offset is
+  // held (unclaimed), never duplicated. Each offset keeps its own ledger key.
+  assert.equal(smsCalls().length, 1)
+  const claimed = [60, 1440].filter((o) => ledgerFor(state, 'reminder', 'sms', o).length === 1)
+  assert.equal(claimed.length, 1, 'one offset claimed, the other left for a later tick')
+  await notify.runBookingReminderPass(NOW)
+  assert.equal(smsCalls().length, 1, 'a second tick inside the 2h spacing sends nothing more')
 })
 
 await t('the shipped 24h + 12h + 1h cadence fires each offset once, on both channels', async () => {
@@ -509,12 +513,12 @@ await t('the shipped 24h + 12h + 1h cadence fires each offset once, on both chan
   state.appointments[0].booked_at = '2026-08-20T00:00:00.000Z' // long before any window opened
   state.appointments[0].starts_at = new Date(NOW.getTime() + 30 * 60_000).toISOString() // all three due
   for (let i = 0; i < 3; i++) await notify.runBookingReminderPass(NOW)
-  assert.equal(smsCalls().length, 3, 'one reminder SMS per offset, however many ticks run')
-  assert.equal(emailCalls().length, 3, 'and one reminder email per offset')
-  for (const offset of [1440, 720, 60]) {
-    assert.equal(ledgerFor(state, 'reminder', 'sms', offset).length, 1, `sms offset ${offset}`)
-    assert.equal(ledgerFor(state, 'reminder', 'email', offset).length, 1, `email offset ${offset}`)
-  }
+  // Email: one per offset, each its own ledger key. SMS: R6 spacing — a burst of due offsets sends
+  // ONE reminder SMS however many ticks run inside 2 hours, and never a duplicate.
+  assert.equal(emailCalls().length, 3, 'one reminder email per offset')
+  for (const offset of [1440, 720, 60]) assert.equal(ledgerFor(state, 'reminder', 'email', offset).length, 1, `email offset ${offset}`)
+  assert.equal(smsCalls().length, 1, 'one reminder SMS in the burst')
+  for (const offset of [1440, 720, 60]) assert.ok(ledgerFor(state, 'reminder', 'sms', offset).length <= 1, `sms offset ${offset} at most once`)
 })
 
 await t('a booking made inside an offset window does not get that reminder', async () => {
@@ -642,6 +646,24 @@ await t('only the attendee\'s own action is person-triggered: a staff cancel, re
   setup()
   await notify.sendBookingConfirmation('appt-1', 'user:fsa-1')
   assert.equal(smsCalls().at(-1).recipientTriggeredNotice, false, 'an FSA re-send of the confirmation')
+})
+
+await t('send-time spacing: at most one reminder SMS per pass, none within 2h of the last one sent (CodeRabbit review of R6)', async () => {
+  // Two offsets due in the same pass (the 24h one late, the 1h one now): only one SMS goes out.
+  const both = setup()
+  both.config = { offsets_minutes: [1440, 60], email_enabled: false, sms_enabled: true }
+  both.appointments[0].booked_at = '2026-08-20T00:00:00.000Z'
+  both.appointments[0].starts_at = new Date(NOW.getTime() + 50 * 60_000).toISOString()
+  await notify.runBookingReminderPass(NOW)
+  assert.equal(smsCalls().length, 1, `${smsCalls().length} reminder SMS in one pass`)
+  // The ledger shows a reminder SMS sent 30 minutes ago: the next one waits.
+  const recent = setup()
+  recent.config = { offsets_minutes: [1440, 60], email_enabled: false, sms_enabled: true }
+  recent.appointments[0].booked_at = '2026-08-20T00:00:00.000Z'
+  recent.appointments[0].starts_at = new Date(NOW.getTime() + 50 * 60_000).toISOString()
+  recent.ledger.push({ id: 'led-prev', appointment_id: 'appt-1', schedule_version: recent.appointments[0].schedule_version ?? 1, event: 'reminder', offset_minutes: 1440, channel: 'sms', status: 'sent', created_at: new Date(NOW.getTime() - 30 * 60_000).toISOString() })
+  await notify.runBookingReminderPass(NOW)
+  assert.equal(smsCalls().length, 0, 'a reminder SMS went out 30 minutes after the last one')
 })
 
 console.log('\n4. Rescheduled appointments')

@@ -630,6 +630,20 @@ await t('the notice-retry pass is a scheduled send: it never claims the person-t
   assert.equal(smsCalls().at(-1).recipientTriggeredNotice, false, 'reminders stay under the floor')
 })
 
+await t('only the attendee\'s own action is person-triggered: a staff cancel, reschedule or re-send stays under the floor (review of R3)', async () => {
+  for (const event of ['cancellation', 'rescheduled', 'confirmation']) {
+    setup()
+    await notify.sendAppointmentNotice('appt-1', event, { actor: 'user:fsa-1' })
+    assert.equal(smsCalls().at(-1).recipientTriggeredNotice, false, `staff ${event}`)
+    setup()
+    await notify.sendAppointmentNotice('appt-1', event, { actor: 'public' })
+    assert.equal(smsCalls().at(-1).recipientTriggeredNotice, true, `attendee ${event}`)
+  }
+  setup()
+  await notify.sendBookingConfirmation('appt-1', 'user:fsa-1')
+  assert.equal(smsCalls().at(-1).recipientTriggeredNotice, false, 'an FSA re-send of the confirmation')
+})
+
 console.log('\n4. Rescheduled appointments')
 await t('a reschedule sends the RESCHEDULED template, never a fresh confirmation', async () => {
   setup()

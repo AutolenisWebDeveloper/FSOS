@@ -485,8 +485,15 @@ const IMMEDIATE = 0
 
 /** Gate purpose for appointment SMS — transactional appointment content (see sendAppointmentMessage). */
 const APPOINTMENT_PURPOSE: MessagePurpose = 'APPOINTMENT'
-/** Lifecycle events the attendee's own action triggers (follow-up R3); recap / no-show are the advisor's. */
+/** Lifecycle events the attendee's own action can trigger (follow-up R3); recap / no-show are the advisor's. */
 const PERSON_TRIGGERED_EVENTS: LifecycleEvent[] = ['confirmation', 'rescheduled', 'cancellation']
+/**
+ * The attendee's own self-service actor. Every attendee path passes it: the public booking route
+ * (book.ts → sendBookingConfirmation default), the manage-token cancel (setAppointmentStatus
+ * 'public') and reschedule ('public'). Staff paths pass the advisor's actor, so an FSA cancel,
+ * reschedule or confirmation re-send is NOT person-triggered and keeps the floor (review of R3).
+ */
+const ATTENDEE_ACTOR = 'public'
 
 /**
  * The single lifecycle-notice entry point (P5). Classifies the event to its approved stored
@@ -529,8 +536,8 @@ export async function sendAppointmentNotice(
       channel: 'sms',
       actor,
       durableConsentGranted: false,
-      // Follow-up R3: the person's own booking / reschedule / cancellation, sent as it happens.
-      recipientTriggered: PERSON_TRIGGERED_EVENTS.includes(event),
+      // Follow-up R3: the attendee's own booking / reschedule / cancellation, sent as it happens.
+      recipientTriggered: actor === ATTENDEE_ACTOR && PERSON_TRIGGERED_EVENTS.includes(event),
     })
   }
   return emailOutcome

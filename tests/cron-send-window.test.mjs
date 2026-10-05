@@ -66,7 +66,7 @@ t('every engine cursor advance and the drip advance go through it', () => {
     assert.match(src, /next_touch_at: oneTouchPerDay\(/, f)
     assert.doesNotMatch(src, /next_touch_at: `\$\{(next\.dueDate|dueDay)\}T13:00:00\.000Z`/, `${f}: an unguarded cursor advance remains`)
   }
-  assert.match(readFileSync('src/jobs/handlers.ts', 'utf8'), /const next = oneTouchPerDay\(/)
+  assert.match(readFileSync('src/jobs/handlers.ts', 'utf8'), /next_send_at: oneTouchPerDay\(/)
 })
 t('a touch re-armed for today by resume / replay / restart is held at send time (every engine)', () => {
   for (const [f, ex] of [['life-campaign', 'life_campaign_executions'], ['pipeline-winback', 'pipeline_winback_executions'], ['cross-sell-life', 'xsell_life_campaign_executions'], ['district-nurture', 'district_nurture_executions']]) {

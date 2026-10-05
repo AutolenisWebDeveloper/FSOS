@@ -211,6 +211,36 @@ export async function dripAdvance(): Promise<JobResult> {
 
     const { data: member } = await db.from('household_members').select('email, phone, full_name').eq('id', e.member_id).maybeSingle()
     const to = camp.channel === 'email' ? member?.email : member?.phone
+
+    // Follow-up R12b: CLAIM the step before sending it, by advancing the cursor with a compare-and-set
+    // on the step the run read. A second run, or a retry after a run that died once the provider had
+    // accepted the message, finds the cursor already moved and sends nothing — at most once. A
+    // deferral below rolls the claim back so the same step is re-attempted, never skipped.
+    const nextStep = e.current_step + 1
+    const advance: Record<string, unknown> =
+      nextStep >= steps.length
+        ? { status: 'completed', current_step: nextStep }
+        : {
+            current_step: nextStep,
+            // Finding 5: hourly runs, at most one step per enrollment per day (each drip is single-channel).
+            next_send_at: oneTouchPerDay(new Date(Date.now() + Number(steps[nextStep]?.delay_days ?? 0) * 86400000).toISOString(), nowISO),
+          }
+    const { data: claimed, error: claimErr } = await db
+      .from('comm_campaign_enrollments')
+      .update(advance)
+      .eq('id', e.id)
+      .eq('status', 'enrolled')
+      .eq('current_step', e.current_step)
+      .select('id')
+    if (claimErr || !Array.isArray(claimed) || claimed.length === 0) continue
+    const releaseClaim = async () => {
+      await db
+        .from('comm_campaign_enrollments')
+        .update({ status: 'enrolled', current_step: e.current_step, next_send_at: e.next_send_at })
+        .eq('id', e.id)
+        .eq('current_step', nextStep)
+    }
+
     if (to) {
       const { data: tpl } = await db.from('comm_templates').select('body').eq('id', step.template_id).maybeSingle()
       // Slice 7 — purpose (campaign, else sequence default) + delegated-sender context.
@@ -257,22 +287,18 @@ export async function dripAdvance(): Promise<JobResult> {
       // Advancing would burn the step: the cursor is past it and nothing ever re-attempts
       // it — the exact failure the exempt-purpose defer rule exists to prevent. Terminal
       // blocks (consent, DNC, template, …) still advance past the step exactly as before.
-      if (!outcome.sent && isDeferralGateStep(outcome.gate.blockedStep)) continue
+      if (!outcome.sent && isDeferralGateStep(outcome.gate.blockedStep)) {
+        await releaseClaim()
+        continue
+      }
       // Owner decision 3: a quiet-hours withhold holds the step for the next window (cursor kept)
       // up to 72h past its due time; after that the step is passed over like any terminal block.
-      if (!outcome.sent && quietHoursHold(outcome.gate.blockedStep, e.next_send_at, nowISO) === 'hold') continue
+      if (!outcome.sent && quietHoursHold(outcome.gate.blockedStep, e.next_send_at, nowISO) === 'hold') {
+        await releaseClaim()
+        continue
+      }
+      if (outcome.sent) await db.from('comm_campaign_enrollments').update({ last_sent_at: nowISO }).eq('id', e.id)
       handled++
-    }
-
-    // Advance the cursor; schedule the next step by its delay, or complete.
-    const nextStep = e.current_step + 1
-    if (nextStep >= steps.length) {
-      await db.from('comm_campaign_enrollments').update({ status: 'completed', current_step: nextStep, last_sent_at: nowISO }).eq('id', e.id)
-    } else {
-      const delayDays = Number(steps[nextStep]?.delay_days ?? 0)
-      // Finding 5: hourly runs, at most one step per enrollment per day (each drip is single-channel).
-      const next = oneTouchPerDay(new Date(Date.now() + delayDays * 86400000).toISOString(), nowISO)
-      await db.from('comm_campaign_enrollments').update({ current_step: nextStep, next_send_at: next, last_sent_at: nowISO }).eq('id', e.id)
     }
   }
   return { ok: true, handled, note: `drip-advance: ${handled} steps sent through the gate` }

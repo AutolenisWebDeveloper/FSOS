@@ -5,8 +5,8 @@
 //   • Finding 5 (owner, 2026-10-04): the FIVE dispatch crons run HOURLY from 17:00 to 23:00 UTC,
 //     with at most one touch per enrollment per day (gate.ts oneTouchPerDay at every cursor
 //     advance, plus a send-time sent-today check that covers admin resume / replay / restart).
-// workforce-orchestrator is not a dispatch cron in that decision; it stays pinned so a change is
-// deliberate.
+//   • Owner decision (round 4): workforce-orchestrator moves from 0 15 to 0 17 UTC for the same
+//     reason (15:00 UTC is 07:00 Pacific standard time). Pinned so a change is deliberate.
 // Run: node tests/cron-send-window.test.mjs
 import assert from 'node:assert/strict'
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs'
@@ -35,10 +35,11 @@ t('every hour 17:00–23:00 UTC is inside 09:00–20:00 in every continental zon
   assert.equal(insideEverywhere(0), false, '00:00 UTC is 20:00 Eastern daylight — why it ends at 23')
 })
 
-console.log('\nReported, not changed — pinned so a change is deliberate')
-t('workforce-orchestrator stays 0 15 * * * (outside the floor in Pacific standard time)', () => {
-  assert.equal(sched('workforce-orchestrator'), '0 15 * * *')
-  assert.equal(insideEverywhere(15), false)
+console.log('\nworkforce-orchestrator (owner, round 4)')
+t('workforce-orchestrator runs at 0 17 * * * — inside the floor in every continental zone', () => {
+  assert.equal(sched('workforce-orchestrator'), '0 17 * * *')
+  assert.ok(insideEverywhere(17))
+  assert.equal(insideEverywhere(15), false, 'why it moved: 15:00 UTC is 07:00 Pacific standard')
 })
 
 console.log('\nAt most one touch per enrollment per day (oneTouchPerDay)')

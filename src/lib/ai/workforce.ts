@@ -570,11 +570,21 @@ export async function runOutreachAgent(agentKey: OutreachAgentKey): Promise<{ se
           })
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
-          await db
-            .from('outreach_queue')
-            .update({ status: 'held', block_reason: `draft_failed: ${msg}`.slice(0, 200), updated_at: new Date().toISOString() })
-            .eq('id', item.id)
-            .eq('status', 'drafted')
+          // The release is retried; if it still cannot be written the row would stay 'drafted' (and
+          // count as touched), so it is escalated for the operator to release by hand (CodeRabbit
+          // review of R12c). The original draft error is always rethrown.
+          let released = false
+          for (let attempt = 0; attempt < 3 && !released; attempt++) {
+            const { error: relErr } = await db
+              .from('outreach_queue')
+              .update({ status: 'held', block_reason: `draft_failed: ${msg}`.slice(0, 200), updated_at: new Date().toISOString() })
+              .eq('id', item.id)
+              .eq('status', 'drafted')
+            released = !relErr
+          }
+          if (!released) {
+            await ctx.escalate('outreach_release_failed', { targetType: item.entity_type, targetId: item.entity_id }).catch(() => {})
+          }
           throw err
         }
         let draft = res.text.trim()

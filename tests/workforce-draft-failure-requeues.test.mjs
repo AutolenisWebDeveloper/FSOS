@@ -16,7 +16,7 @@ process.on('exit', () => { try { rmSync(dir, { recursive: true, force: true }) }
 const stub = (name, src) => { const p = join(dir, name); writeFileSync(p, src); return p }
 const aliases = {
   '@/jobs/agent-runner': stub('runner.mjs', `export async function runAgent({ work }) {
-    const ctx = { runId: 'run-1', setConfidence() {}, async escalate() {}, async recordAction() {},
+    const ctx = { runId: 'run-1', setConfidence() {}, async escalate(kind, t) { (globalThis.__esc ??= []).push({ kind, ...t }) }, async recordAction() {},
       async gateway() { throw new Error('provider outage') } }
     try { await work(ctx); return { status: 'completed', runId: 'run-1' } } catch (e) { return { status: 'errored', runId: 'run-1', reason: e.message } }
   }`),
@@ -45,6 +45,18 @@ await t('the row is released as held, not left drafted, and the referral is not 
   assert.match(row.block_reason ?? '', /draft_failed/)
   assert.equal(await wf.referralAlreadyTouched('ref-1'), false)
   assert.equal(s.errored, 'provider outage', 'the run is still reported errored (R17b)')
+})
+
+await t('a release that cannot be written is escalated, never left silently drafted (CodeRabbit review)', async () => {
+  const db = memDb({ failOn: (q) => q.table === 'outreach_queue' && q.method === 'update' && q.payload?.status === 'held' }); installDb(db)
+  globalThis.__esc = []
+  const today = new Date().toISOString().slice(0, 10)
+  db.seed('agent_daily_targets', [{ agent_key: 'referral_followup', daily_target: 5, channel: 'email', enabled: true }])
+  db.seed('households', [{ id: 'h1', do_not_contact: false }])
+  db.seed('household_members', [{ id: 'm1', household_id: 'h1', email: 'pat@example.com', full_name: 'Pat' }])
+  db.seed('outreach_queue', [{ id: 'q1', queue_date: today, agent_key: 'referral_followup', source: 'referral_followup', entity_type: 'referral', entity_id: 'ref-1', household_id: 'h1', member_id: 'm1', channel: 'email', status: 'queued', priority: 1 }])
+  await wf.runOutreachAgent('referral_followup')
+  assert.deepEqual(globalThis.__esc.map((e) => [e.kind, e.targetId]), [['outreach_release_failed', 'ref-1']])
 })
 
 if (failed.length) { console.error(`\n✗ ${failed.length} failed`); process.exit(1) }

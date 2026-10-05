@@ -54,7 +54,7 @@ writeFileSync(
 // message-of-record (owner, round 3), so the database must hold what is written. It records the
 // tables touched so the test can still prove sendForm never queries consent for a transactional send.
 globalThis.__dbTables = []
-globalThis.__opDb = memDb()
+globalThis.__opDb = memDb({ uuidIds: true })
 const dbStub = join(out, 'db-stub.mjs')
 writeFileSync(
   dbStub,

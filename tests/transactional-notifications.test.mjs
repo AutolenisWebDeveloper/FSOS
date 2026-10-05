@@ -52,6 +52,7 @@ writeFileSync(
    // resolver in tests/guardrail-proof.test.mjs and tests/dispatch-chokepoint.test.mjs,
    // and the per-path declarations are proven in tests/chokepoint-paths.test.mjs.
    export async function resolveDispatchPolicy(ctx) {
+     globalThis.__policyCtx = ctx
      return {
        gate: { allowed: true, escalate: false },
        allowed: true,
@@ -145,13 +146,13 @@ await at('notifyFsa sends to the FSA inbox with subject/html/text + reply-to', a
 await at('every transactional send writes a message-of-record — no thread, no tracking (owner, round 3)', async () => {
   globalThis.__notifyDb = memDb()
   globalThis.__resendCalls = []
-  const r = await notify.notifyFsa({ subject: 'New booking', heading: 'h', lede: 'l', entity: { type: 'appointment', id: 'appt-1' } })
+  const r = await notify.notifyFsa({ subject: 'New booking', heading: 'h', lede: 'l', entity: { type: 'appointment', id: '11111111-1111-4111-8111-111111111111' } })
   assert.equal(r.ok, true)
   const rows = globalThis.__notifyDb.rows('comm_messages')
   assert.equal(rows.length, 1, 'one comm_messages row')
   assert.equal(rows[0].direction, 'outbound')
   assert.equal(rows[0].entity_type, 'appointment')
-  assert.equal(rows[0].entity_id, 'appt-1')
+  assert.equal(rows[0].entity_id, '11111111-1111-4111-8111-111111111111')
   assert.equal(rows[0].conversation_id, null, 'not threaded into a conversation')
   assert.equal(rows[0].delivery_status, 'sent')
   assert.equal(rows[0].provider_id, 'mock-email-id', 'the provider id is on the record (callbacks correlate)')
@@ -160,6 +161,47 @@ await at('every transactional send writes a message-of-record — no thread, no 
   const html = globalThis.__resendCalls[0].html
   assert.ok(!html.includes('/api/track/'), 'no open/click tracking added')
   assert.equal(globalThis.__resendCalls[0].headers?.['X-FSOS-Message-Id'], rows[0].id, 'the provider message carries the record id')
+})
+
+await at('sendRecorded declares TRANSACTIONAL, a code-resident template and non-suppressible to the chokepoint', async () => {
+  globalThis.__notifyDb = memDb()
+  globalThis.__policyCtx = null
+  const r = await notify.notifyFsa({ subject: 's', heading: 'h', lede: 'l' })
+  assert.equal(r.ok, true)
+  const c = globalThis.__policyCtx
+  assert.ok(c, 'the chokepoint policy was consulted')
+  assert.equal(c.purpose, 'TRANSACTIONAL')
+  assert.equal(c.templateKind, 'system_transactional')
+  assert.equal(c.suppressible, false)
+})
+
+await at('an internal alert carries no List-Unsubscribe header (an FSA click must not DNC the practice inbox)', async () => {
+  globalThis.__notifyDb = memDb()
+  globalThis.__resendCalls = []
+  await notify.notifyFsa({ subject: 's', heading: 'h', lede: 'l' })
+  const h = globalThis.__resendCalls[0].headers ?? {}
+  assert.equal(Object.keys(h).some((k) => /^list-unsubscribe/i.test(k)), false, JSON.stringify(h))
+})
+
+await at('a visitor-typed {{word}} neither blocks the alert nor is rewritten', async () => {
+  globalThis.__notifyDb = memDb()
+  globalThis.__resendCalls = []
+  const r = await notify.notifyFsa({ subject: 'New lead', heading: 'h', lede: 'l', rows: [{ label: 'Message', value: 'hi {{hello}} and {{unsubscribe_url}}' }] })
+  assert.equal(r.ok, true, `blocked: ${r.error}`)
+  const call = globalThis.__resendCalls[0]
+  assert.ok(!call.html.includes('/api/unsubscribe') && !call.html.includes('unsubscribe?'), 'no unsubscribe link substituted into the alert')
+  assert.ok(call.html.includes('hello') && call.text.includes('hello'), 'the typed text survives')
+})
+
+await at('an entity whose id is not a uuid is not written into the uuid column (the briefing failed on this)', async () => {
+  globalThis.__notifyDb = memDb()
+  globalThis.__resendCalls = []
+  const r = await notify.sendRecorded({ to: 'fsa@example.com', subject: 'Briefing', html: '<p>b</p>', consentWaived: true, actor: 'system:briefing', entity: { type: 'briefing', id: '2026-10-04' } })
+  assert.equal(r.ok, true, `blocked: ${r.error}`)
+  const rows = globalThis.__notifyDb.rows('comm_messages')
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].entity_id, null)
+  assert.equal(rows[0].entity_type, 'message')
 })
 
 await at('recipient-controlled values are HTML-escaped (XSS defense)', async () => {

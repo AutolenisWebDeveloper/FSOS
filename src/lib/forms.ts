@@ -162,7 +162,7 @@ export async function sendForm(input: SendFormInput): Promise<SendFormResult> {
         channel: 'email',
         destination: email,
       })
-      if (result.id) console.log('[forms] Resend accepted email id', result.id)
+      if (result.id) console.log('[forms] email sent; FSOS message id', result.id)
     } else {
       email_error = result.error || 'Email delivery failed'
       console.error('[forms] email send failed:', email_error)

@@ -286,6 +286,12 @@ export interface SendContext {
    */
   thread?: boolean
   /**
+   * Email only: false omits the RFC 8058 List-Unsubscribe headers. For internal ops alerts and
+   * transactional notices that never carried them: a one-click "Unsubscribe" on an FSA alert would
+   * put the practice's own inbox on DNC and block every later alert. Absent → headers, as before.
+   */
+  listUnsubscribe?: boolean
+  /**
    * Declares a fixed, CODE-RESIDENT transactional notice (a booking confirmation, a visitor
    * acknowledgement, a password-setup mail). These have no `comm_templates` row because they
    * are not operator-authored, but they are real reviewed templates that change only through
@@ -616,7 +622,7 @@ export async function sendMessage(ctx: SendContext): Promise<SendOutcome> {
         household_id: convHouseholdId,
         agency_id: convAgencyId,
         policy_id: ctx.policyId ?? null,
-        entity_type: ctx.entity?.type ?? (convHouseholdId ? 'household' : 'conversation'),
+        entity_type: ctx.entity?.type ?? (convHouseholdId ? 'household' : conversationId ? 'conversation' : 'message'),
         entity_id: ctx.entity?.id ?? convHouseholdId ?? conversationId,
         // Patched post-dispatch from the chokepoint's resolution, so the record can never
         // claim a consent state the gate did not actually evaluate.
@@ -757,6 +763,7 @@ export async function sendMessage(ctx: SendContext): Promise<SendOutcome> {
     // Caller-pinned stream wins over the purpose-derived one (see SendContext.emailStream).
     messageClass: ctx.emailStream ?? streamForPurpose(ctx.purpose),
     replyTo: ctx.channel === 'email' ? ctx.replyTo : undefined,
+    listUnsubscribe: ctx.channel === 'email' ? ctx.listUnsubscribe : undefined,
     actor: ctx.actor,
     entity: ctx.entity ?? (conversationId ? { type: 'conversation', id: conversationId } : undefined),
     templateKind,

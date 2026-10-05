@@ -134,10 +134,14 @@ export async function sendRecorded(opts: {
       channel: 'email',
       to: opts.to,
       subject: opts.subject,
-      body: opts.html,
-      bodyText: opts.text,
+      // These bodies are already rendered, and carry visitor-typed text (a lead's message, a booker's
+      // notes). Neutralize merge-token braces so sendMessage's personalization never rewrites — or
+      // blocks the alert on — a "{{word}}" someone typed. The old direct path never personalized.
+      body: literalBraces(opts.html, 'html'),
+      bodyText: opts.text === undefined ? undefined : literalBraces(opts.text, 'text'),
       actor: opts.actor ?? 'system:notify',
-      entity: opts.entity,
+      // comm_messages.entity_id is a uuid: an entity whose id is not one is not recorded as one.
+      entity: opts.entity && UUID_RE.test(opts.entity.id) ? opts.entity : undefined,
       purpose: 'TRANSACTIONAL',
       ...(opts.humanAuthored ? { humanAuthored: true } : { systemTransactional: true }),
       suppressible: false,
@@ -147,6 +151,7 @@ export async function sendRecorded(opts: {
       replyTo: opts.replyTo,
       track: false,
       thread: false,
+      listUnsubscribe: false,
     })
     return o.sent
       ? { ok: true, id: o.messageId }
@@ -156,6 +161,13 @@ export async function sendRecorded(opts: {
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) }
   }
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** "{{" → a form personalize()'s token pattern cannot match; renders identically in HTML (&#123;). */
+export function literalBraces(s: string, kind: 'html' | 'text'): string {
+  return s.replace(/\{\{/g, kind === 'html' ? '{&#123;' : '{\u200B{')
 }
 
 /** Log a non-fatal notification outcome uniformly (never throws). */

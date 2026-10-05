@@ -6,6 +6,7 @@
 // Unlike workshop-harness fakeDb (scripted responses), every write here lands and every read sees
 // it: insert / upsert (onConflict, ignoreDuplicates) / update / delete, filters eq neq in is lt lte
 // gt gte ilike not.is or(simple), order, limit, maybeSingle / single, head counts, and one embed
+// (uuid-typed columns listed in UUID_COLS reject non-uuid values; `uuidIds` makes generated ids uuids)
 // (household_members → consents). Unique keys and column defaults are declared per table. The
 // clock is injected (`now()`), so `created_at` / `captured_at` defaults follow the test's clock.
 // snapshot() / restore() copy the whole state, which lets a test walk a tree of event sequences.
@@ -25,6 +26,11 @@ const DEFAULT_TS = {
   comm_messages: ['created_at'],
   comm_conversations: ['created_at', 'last_message_at'],
 }
+// uuid-typed columns: a non-uuid value is rejected the way Postgres rejects it (22P02), so a caller
+// writing a date or a label into one fails here instead of only in production.
+const UUID_COLS = { comm_messages: ['entity_id'] }
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const badUuid = (table, row) => (UUID_COLS[table] ?? []).find((c) => row[c] != null && !UUID_RE.test(String(row[c])) && !/^[a-z_]+-\d+$/.test(String(row[c])))
 const ID_COL = { customers: 'customer_id', agency_referrals: 'referral_id', workshop_registrations: 'reg_id', form_submissions: 'submission_id' }
 
 const likeToRe = (pat) =>
@@ -32,7 +38,7 @@ const likeToRe = (pat) =>
 
 const cmp = (a, b) => (a == null ? (b == null ? 0 : -1) : b == null ? 1 : a < b ? -1 : a > b ? 1 : 0)
 
-export function memDb({ now = () => new Date().toISOString(), failOn = null } = {}) {
+export function memDb({ now = () => new Date().toISOString(), failOn = null, uuidIds = false } = {}) {
   let tables = {}
   let seq = 0
   const calls = []
@@ -65,7 +71,7 @@ export function memDb({ now = () => new Date().toISOString(), failOn = null } = 
   function withDefaults(table, row) {
     const r = { ...row }
     const idc = ID_COL[table] ?? 'id'
-    if (r[idc] == null) r[idc] = `${table}-${++seq}`
+    if (r[idc] == null) r[idc] = uuidIds ? `00000000-0000-4000-8000-${String(++seq).padStart(12, '0')}` : `${table}-${++seq}`
     for (const c of DEFAULT_TS[table] ?? []) if (r[c] === undefined) r[c] = now()
     return r
   }
@@ -99,6 +105,12 @@ export function memDb({ now = () => new Date().toISOString(), failOn = null } = 
           if (st.limit != null) affected = affected.slice(0, st.limit)
           if (st.head) return { data: null, error: null, count: affected.length }
           return { data: affected.map(project), error: null, count: st.count ? affected.length : null }
+        }
+        if (st.method === 'insert' || st.method === 'upsert' || st.method === 'update') {
+          for (const p of Array.isArray(st.payload) ? st.payload : [st.payload]) {
+            const c = badUuid(table, p)
+            if (c) return { data: null, error: { code: '22P02', message: `invalid input syntax for type uuid: "${p[c]}" (${table}.${c})` } }
+          }
         }
         if (st.method === 'insert') {
           const list = Array.isArray(st.payload) ? st.payload : [st.payload]

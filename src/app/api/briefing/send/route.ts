@@ -137,7 +137,8 @@ export async function POST(req: NextRequest) {
     text: body,
     actor: 'system:briefing',
     consentWaived: true,
-    entity: { type: 'briefing', id: today },
+    // No entity: comm_messages.entity_id is a uuid and a briefing has no row of its own (the date
+    // is not an id). The record stands alone, labelled 'message'.
   })
   if (!result.ok) {
     console.error('[briefing] send failed:', result.error)

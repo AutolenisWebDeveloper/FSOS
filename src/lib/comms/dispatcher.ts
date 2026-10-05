@@ -52,6 +52,8 @@ export interface DispatchRequest {
   messageClass?: EmailStream
   /** email only — a caller-chosen Reply-To (else the stream's). */
   replyTo?: string
+  /** email only — false omits the List-Unsubscribe headers (internal / transactional notices). */
+  listUnsubscribe?: boolean
   /** Retained for callers that still name a suppression subject; the chokepoint re-resolves. */
   suppressionSubject?: SuppressionSubject
   correlationId?: string
@@ -158,7 +160,7 @@ export async function dispatch(req: DispatchRequest): Promise<DispatchResult> {
   }
 }
 
-/** Envelope-From / reply-to / List-Unsubscribe headers for an outbound email. */
+/** Envelope-From / reply-to / List-Unsubscribe headers for an outbound email (List-Unsubscribe unless the caller opted out). */
 async function resolveEmailEnvelope(req: DispatchRequest): Promise<{
   from?: string
   replyTo?: string
@@ -172,7 +174,7 @@ async function resolveEmailEnvelope(req: DispatchRequest): Promise<{
       from: sender.from || undefined,
       replyTo: req.replyTo || sender.replyTo || replyToAddress(),
       headers: {
-        ...emailListUnsubscribeHeaders(req.to),
+        ...(req.listUnsubscribe === false ? {} : emailListUnsubscribeHeaders(req.to)),
         ...(req.correlationId ? { 'X-FSOS-Message-Id': req.correlationId } : {}),
       },
     }

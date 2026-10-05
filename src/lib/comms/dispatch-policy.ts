@@ -208,7 +208,8 @@ export { CONTINENTAL_US_ZONES, localPartsInZone } from './recipient-timezone'
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface PolicyDeps {
-  resolveContactLink(channel: Channel, to: string): Promise<{ memberId: string | null; householdId: string | null; agencyId: string | null }>
+  /** `failed`: the lookup errored — unresolved, NOT "no member" (follow-up R11). */
+  resolveContactLink(channel: Channel, to: string): Promise<{ memberId: string | null; householdId: string | null; agencyId: string | null; failed?: boolean }>
   memberConsent(memberId: string | null, channel: Channel): Promise<boolean>
   /** `isTest`: a test-recipient self-consent counts only for test sends (follow-up R4). */
   contactConsent(to: string, channel: Channel, isTest?: boolean): Promise<boolean>
@@ -244,9 +245,10 @@ export const defaultPolicyDeps: PolicyDeps = {
         memberId: link.memberId ?? null,
         householdId: link.householdId ?? null,
         agencyId: link.agencyId ?? null,
+        ...(link.failed ? { failed: true } : {}),
       }
     } catch {
-      return { memberId: null, householdId: null, agencyId: null }
+      return { memberId: null, householdId: null, agencyId: null, failed: true }
     }
   },
   async memberConsent(memberId, channel) {
@@ -298,11 +300,13 @@ export const defaultPolicyDeps: PolicyDeps = {
     try {
       const { getDb } = await import('../supabase/client')
       const db = getDb()
-      const [{ data: pol }, { data: agent }] = await Promise.all([
+      const [polRes, agentRes] = await Promise.all([
         db.from('ai_policies').select('gateway_enabled').eq('id', 'global').maybeSingle(),
         db.from('ai_agents').select('enabled').eq('key', agentKey).maybeSingle(),
       ])
-      return pol?.gateway_enabled !== false && agent?.enabled === true
+      // An unreadable kill switch or agent row is not approval (follow-up R11).
+      if (polRes.error || agentRes.error) return false
+      return polRes.data?.gateway_enabled !== false && agentRes.data?.enabled === true
     } catch {
       return false
     }
@@ -332,30 +336,36 @@ export const defaultPolicyDeps: PolicyDeps = {
       // On SMS the destination IS the phone — the most direct resolution input there is.
       let phone: string | null = channel === 'sms' ? to : null
       let zip: string | null = null
+      // Follow-up R11: an unreadable location yields NO location, so the quiet-hours evaluation
+      // falls back to every continental zone — never a zone guessed from half the evidence.
+      const UNKNOWN = { phone: null, zip: null }
       if (memberId) {
-        const { data } = await db.from('household_members').select('phone').eq('id', memberId).maybeSingle()
+        const { data, error } = await db.from('household_members').select('phone').eq('id', memberId).maybeSingle()
+        if (error) return UNKNOWN
         phone = phone ?? (data?.phone ?? null)
       }
       // `household_members` carries no address, so the ZIP comes from the household or,
       // for a contact-resolvable recipient, the contacts row.
       if (householdId) {
-        const { data } = await db.from('households').select('zip').eq('id', householdId).maybeSingle()
+        const { data, error } = await db.from('households').select('zip').eq('id', householdId).maybeSingle()
+        if (error) return UNKNOWN
         zip = data?.zip ?? null
       }
       if (!phone || !zip) {
         const col = channel === 'sms' ? 'phone_digits' : 'email_lc'
         const val = channel === 'sms' ? to.replace(/\D/g, '').slice(-10) : to.toLowerCase()
         const q = db.from('contacts').select('phone, zip').is('deleted_at', null).limit(1)
-        const { data } = channel === 'sms'
+        const { data, error } = channel === 'sms'
           ? await q.ilike(col, `%${val}`)
           : await q.eq(col, val)
+        if (error) return UNKNOWN
         const row = Array.isArray(data) ? data[0] : null
         phone = phone ?? (row?.phone ?? null)
         zip = zip ?? (row?.zip ?? null)
       }
       return { phone, zip }
     } catch {
-      return { phone: channel === 'sms' ? to : null, zip: null }
+      return { phone: null, zip: null }
     }
   },
   async hoursWindow(scopeKey) {
@@ -393,7 +403,8 @@ export const defaultPolicyDeps: PolicyDeps = {
       const { getDb } = await import('../supabase/client')
       const db = getDb()
       if (conversationId) {
-        const { data } = await db.from('comm_conversations').select('is_security').eq('id', conversationId).maybeSingle()
+        const { data, error } = await db.from('comm_conversations').select('is_security').eq('id', conversationId).maybeSingle()
+        if (error) return true // unreadable → treated as securities (follow-up R11)
         if (data?.is_security === true) return true
       }
       if (householdId) {
@@ -402,7 +413,7 @@ export const defaultPolicyDeps: PolicyDeps = {
       }
       return false
     } catch {
-      return false
+      return true // fail closed (follow-up R11)
     }
   },
 }
@@ -511,11 +522,16 @@ export async function resolveDispatchPolicy(
   let memberId = ctx.memberId ?? null
   let householdId = ctx.householdId ?? null
   let agencyId = ctx.agencyId ?? null
+  // Follow-up R11: a member lookup that ERRORED is unresolved, not "no member". It must not fall
+  // back to the contact-level consent store (which a member-level revoke does not reach), so the
+  // send is withheld at consent.
+  let linkFailed = false
   if (!memberId && !householdId) {
     const link = await deps.resolveContactLink(ctx.channel, ctx.to)
     memberId = link.memberId
     householdId = link.householdId
     agencyId = agencyId ?? link.agencyId
+    linkFailed = link.failed === true
   }
 
   const effectivePurpose: MessagePurpose = ctx.purpose ?? 'MARKETING'
@@ -548,7 +564,7 @@ export async function resolveDispatchPolicy(
     : false
   const waiverApplies = ctx.consentWaived === true && !basisRevoked
   const durableApplies = ctx.durableConsentGranted === true && !basisRevoked
-  let consent = memberConsentOk || contactConsentOk || durableApplies || waiverApplies
+  let consent = !linkFailed && (memberConsentOk || contactConsentOk || durableApplies || waiverApplies)
 
   // ── Gate step 4: approved content. ──
   const approved =

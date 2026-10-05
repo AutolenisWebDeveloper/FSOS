@@ -15,6 +15,8 @@ export interface ContactLink {
   memberId: string | null
   householdId: string | null
   agencyId: string | null
+  /** The lookup ERRORED (follow-up R11): unresolved, not "no member". The gate withholds on it. */
+  failed?: boolean
 }
 
 /** Normalize a contact address so the same person always maps to one thread. */
@@ -45,13 +47,14 @@ export async function resolveContact(channel: Channel, contact: string): Promise
     let householdId: string | null = null
 
     if (channel === 'email') {
-      const { data } = await db
+      const { data, error } = await db
         .from('household_members')
         .select('id, household_id')
         .ilike('email', contact)
         .order('id', { ascending: true }) // deterministic when several members share an address
         .limit(1)
         .maybeSingle()
+      if (error) return { ...empty, failed: true }
       if (data) {
         memberId = data.id
         householdId = data.household_id
@@ -59,12 +62,13 @@ export async function resolveContact(channel: Channel, contact: string): Promise
     } else {
       const tail = last10(contact)
       if (tail.length >= 7) {
-        const { data } = await db
+        const { data, error } = await db
           .from('household_members')
           .select('id, household_id, phone')
           .ilike('phone', `%${tail}%`)
           .order('id', { ascending: true }) // deterministic when several members share a number
           .limit(5)
+        if (error) return { ...empty, failed: true }
         const hit = (data ?? []).find((r: { phone: string | null }) => last10(r.phone ?? '') === tail)
         if (hit) {
           memberId = hit.id
@@ -85,7 +89,7 @@ export async function resolveContact(channel: Channel, contact: string): Promise
 
     return { memberId, householdId, agencyId }
   } catch {
-    return empty
+    return { ...empty, failed: true }
   }
 }
 
@@ -124,16 +128,17 @@ export async function conversationIsSecurity(householdId: string | null): Promis
   if (!householdId) return false
   try {
     const db = getDb()
-    const { data } = await db
+    const { data, error } = await db
       .from('household_policies')
       .select('id')
       .eq('household_id', householdId)
       .eq('is_security', true)
       .is('deleted_at', null)
       .limit(1)
+    if (error) return true // unreadable → treated as securities (follow-up R11)
     return Array.isArray(data) && data.length > 0
   } catch {
-    return false
+    return true
   }
 }
 

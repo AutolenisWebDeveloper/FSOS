@@ -114,6 +114,8 @@ export async function sendPasswordSetupEmail(input: PasswordSetupEmailInput): Pr
     templateKind: 'system_transactional',
     suppressible: false,
     consentWaived: true,
+    // The body is a one-time recovery link: never stored if the send is withheld (follow-up R9).
+    containsCredential: true,
   }
   const result = await sendEmail(input.email, subject, html, text, { policy })
   if (!result.ok) {

@@ -112,6 +112,11 @@ export interface DispatchPolicyContext {
    * it from the quiet-hours floor and the Sunday hold — and never when a campaign key is present.
    */
   recipientTriggeredNotice?: boolean
+  /**
+   * Follow-up R9: the body carries a live credential (a password-setup / recovery link). A withheld
+   * send then records a redaction marker in the escalation queue, never the body itself.
+   */
+  containsCredential?: boolean
   isTest?: boolean
   /**
    * A person started this send from an operator surface (console 1:1 send, conversation reply,

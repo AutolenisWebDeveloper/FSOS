@@ -233,13 +233,12 @@ console.log('\nQuiet-hours defers SMS in the RECIPIENT zone, BEFORE the gate (WS
     reg: regWithPhone(inw.phone), workshop: WORKSHOP, session: session(venueZone()), kind: 'reminder_1h', channel: 'sms', config: CONFIG,
   })
   ok(`recipient-local ${inw.hour}:00 (${inw.zone}) → dispatched through the gate`, status2 === 'sent' && globalThis.__gateCalls.length === 1)
-  // Same property, expressed against the zone contract the merge adopted: the chokepoint
-  // is handed the RECIPIENT's zone, and its local hour is the recipient's — computed by
-  // Intl, so it is exact in half-hour zones where the old rounded offset was 30 min out.
-  ok('the chokepoint receives the RECIPIENT zone (its local hour matches the picked zone)',
-    globalThis.__gateCalls[0].timeZone === inw.zone &&
-      localHourIn(globalThis.__gateCalls[0].timeZone) === localHourIn(inw.zone),
-    `sent=${globalThis.__gateCalls[0].timeZone} expected=${inw.zone}`)
+  // Follow-up R16: the engine no longer hands the chokepoint its phone-only zone as the CALLER
+  // zone (that override skipped the ZIP and the both-zones rule). It passes the recipient's phone
+  // and lets the chokepoint resolve the zone itself.
+  ok('the chokepoint resolves the recipient zone itself (no caller zone; the recipient phone is passed)',
+    globalThis.__gateCalls[0].timeZone === undefined && globalThis.__gateCalls[0].recipientPhone === inw.phone,
+    `timeZone=${globalThis.__gateCalls[0].timeZone} recipientPhone=${globalThis.__gateCalls[0].recipientPhone}`)
 }
 
 console.log('\nUnresolvable recipient zone fails CLOSED (WS-005: no default, no send)')

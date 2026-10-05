@@ -521,7 +521,8 @@ export function resolveDispatchTimeZone(
     zone: resolution.timeZone,
     localHour: hour,
     localDay: day,
-    secondaryZone: null,
+    // Follow-up R16: a split area code / ZIP range names its minority side; the floor must hold there too.
+    secondaryZone: resolution.secondaryTimeZone ?? null,
     legacy: false,
   }
 }

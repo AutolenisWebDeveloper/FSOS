@@ -290,9 +290,8 @@ async function capture(opts = {}) {
 }
 
 const capResult = await capture()
-t('a recorded SMS opt-in is a documented re-consent: it clears earlier SMS opt-outs on the number', () => {
-  assert.equal(reconsents.length, 1)
-  assert.deepEqual(reconsents[0], { contact: '+15125551234', channel: 'sms', source: 'booking_sms_optin' })
+t('a public booking opt-in never clears an earlier STOP on the number (anyone can type a number — review F1)', () => {
+  assert.equal(reconsents.length, 0)
 })
 t('the grant row carries the booking reference, the exact wording, and the capture context', () => {
   const row = rowsFor('comm_contact_consents')[0]?.row

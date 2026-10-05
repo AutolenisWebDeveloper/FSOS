@@ -43,7 +43,7 @@ function from(table) {
   const filters = {}
   const writeResult = () => (state.failWrites.has(table) ? { data: null, error: ERR } : { data: null, error: null })
   const b = {
-    select: () => b, eq: (c, v) => { filters[c] = v; return b }, in: () => b, gt: () => b, ilike: () => b,
+    select: () => b, eq: (c, v) => { filters[c] = v; return b }, in: () => b, gt: () => b, gte: () => b, lt: () => b, ilike: () => b,
     is: () => b, or: () => b, order: () => b, limit: () => b, not: () => b,
     insert: (row) => { op = 'insert'; payload = row; state.writes.push({ table, op, row }); return b },
     update: (row) => { op = 'update'; payload = row; state.writes.push({ table, op, row }); return b },

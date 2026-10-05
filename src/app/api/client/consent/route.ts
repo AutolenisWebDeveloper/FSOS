@@ -7,6 +7,7 @@ import { recordConsentChange } from '@/lib/comms/consent-events'
 import { householdIdFor } from '@/lib/portal/scope'
 import { armDncEntry, applyDocumentedReconsent } from '@/lib/comms/opt-out'
 import { consentContactKey } from '@/lib/comms/contact-consent'
+import { getCurrentUserEmail } from '@/lib/auth/session'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -41,6 +42,13 @@ export async function POST(req: NextRequest) {
     // A failed DNC write must not leave the member's consent change unaudited or skip the other
     // members: record every change, then fail the request so the client retries.
     let dncFailed = false
+    let grantFailed = false
+    // A re-consent clears earlier opt-outs only for the signed-in client's OWN address (review F2):
+    // a household member's STOP or unsubscribe is theirs, and a spouse's toggle must not lift it.
+    // The member is the one whose email is the signed-in user's; no unique match → nothing is lifted.
+    const signedInEmail = (await getCurrentUserEmail())?.trim().toLowerCase() ?? null
+    const own = (members ?? []).filter((m) => !!signedInEmail && String(m.email ?? '').trim().toLowerCase() === signedInEmail)
+    const selfMemberId = own.length === 1 ? own[0].id : null
     for (const m of members ?? []) {
       const prior = (m as { consents?: { channel: string; status: string }[] }).consents?.find(
         (c) => c.channel === v.data.channel,
@@ -60,11 +68,19 @@ export async function POST(req: NextRequest) {
       }
       // A documented re-consent by the client clears the earlier opt-outs on this channel (owner,
       // round 3) — except a hard bounce, which only re-verifying the address clears.
-      if (v.data.status === 'granted' && v.data.channel !== 'call') {
+      if (v.data.status === 'granted' && v.data.channel !== 'call' && m.id === selfMemberId) {
         const contact = v.data.channel === 'email' ? m.email : m.phone
         if (contact) {
-          const rc = await applyDocumentedReconsent({ contact: consentContactKey(v.data.channel, contact), channel: v.data.channel, source: 'client_portal', recordGrant: true })
-          if (!rc.ok) dncFailed = true
+          const rc = await applyDocumentedReconsent({
+            contact: consentContactKey(v.data.channel, contact),
+            channel: v.data.channel,
+            source: 'client_portal',
+            recordGrant: true,
+            actor,
+            memberId: m.id,
+            householdId,
+          })
+          if (!rc.ok) grantFailed = true
         }
       }
       // ONE consent-logging path → audit_log AND the CRM timeline (§C).
@@ -80,6 +96,7 @@ export async function POST(req: NextRequest) {
       })
     }
     if (dncFailed) return NextResponse.json({ error: 'Could not record the opt-out. Please try again.' }, { status: 500 })
+    if (grantFailed) return NextResponse.json({ error: 'Could not record your preference. Please try again.' }, { status: 500 })
     return NextResponse.json({ ok: true })
   } catch (e) {
     return configErrorResponse(e) ?? NextResponse.json({ error: 'Failed' }, { status: 500 })

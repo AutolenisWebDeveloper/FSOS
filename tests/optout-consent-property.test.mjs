@@ -86,8 +86,10 @@ const policy = await bundle('src/lib/comms/dispatch-policy.ts')
 const optOutPage = await bundle('src/app/api/consent/opt-out/route.ts')
 const oneClick = await bundle('src/app/api/comms/unsubscribe/route.ts')
 const publicConsent = await bundle('src/app/api/public/consent/route.ts')
+const sessionStub = join(stubDir, 'session.mjs')
+writeFileSync(sessionStub, `export async function getCurrentUserEmail() { return globalThis.__signedInEmail ?? 'pat@example.com' }`)
 const clientConsent = await bundle('src/app/api/client/consent/route.ts', {
-  aliases: { '@/lib/auth/api': authStub, '@/lib/portal/scope': scopeStub },
+  aliases: { '@/lib/auth/api': authStub, '@/lib/portal/scope': scopeStub, '@/lib/auth/session': sessionStub },
 })
 
 const PHONE = '+12145550147'
@@ -129,7 +131,11 @@ const eventChannel = (e, ch) => (EMAIL_ONLY.has(e) ? 'email' : ch)
 /** Whether event e is an effective opt-out ON the channel under test, for this recipient. */
 const appliesHere = (e, ch, cfg) => OPT_OUTS.has(e) && eventChannel(e, ch) === ch && !(e === 'OPERATOR' && !cfg.member)
 /** Whether a documented re-consent source exists for this recipient on the channel under test. */
-const reconsentApplies = (cfg) => cfg.member || cfg.ch === 'sms'
+// Who may CLEAR earlier opt-outs: only the authenticated portal, for the signed-in member's own
+// address (review F1/F2). The public booking opt-in still records a documented grant (so START can
+// restore after a later STOP) but never clears an opt-out: anyone can type anyone's number there.
+const reconsentClears = (cfg) => cfg.member
+const reconsentGrants = (cfg) => cfg.member || cfg.ch === 'sms'
 
 let ipSeq = 0
 async function apply(e, ch, cfg, n) {
@@ -243,10 +249,15 @@ function facts(seq, cfg) {
   let latestBlockingIdx = -1
   // A documented re-consent clears every earlier opt-out on the channel (owner, round 3) — except a
   // hard bounce, which stays in effect whenever it happened.
-  const lastRc = reconsentApplies(cfg) ? seq.lastIndexOf('RECONSENT') : -1
+  const lastRc = reconsentClears(cfg) ? seq.lastIndexOf('RECONSENT') : -1
   const inEffect = (i) => i > lastRc || seq[i] === 'BOUNCE'
   for (let i = 0; i < seq.length; i++) if (appliesHere(seq[i], cfg.ch, cfg) && inEffect(i)) { latestBlocking = seq[i]; latestBlockingIdx = i }
-  const grantBefore = (idx) => cfg.consent || (reconsentApplies(cfg) && seq.slice(0, idx).includes('RECONSENT'))
+  // A clearing re-consent counts where it happened; a public opt-in is a grant on record whenever it
+  // happened (START from the handset after it restores — the handset owner's own re-opt-in).
+  const grantBefore = (idx) =>
+    cfg.consent ||
+    (reconsentClears(cfg) && seq.slice(0, idx).includes('RECONSENT')) ||
+    (!reconsentClears(cfg) && reconsentGrants(cfg) && seq.includes('RECONSENT'))
   return { latestBlocking, latestBlockingIdx, grantBefore, inEffect }
 }
 
@@ -294,7 +305,15 @@ async function walk(db, cfg, seq, parentAllowed, parentRecords) {
       }
     }
     // I5 — a documented re-consent clears the earlier opt-outs on the channel, except a hard bounce.
-    if (e === 'RECONSENT' && reconsentApplies(cfg)) {
+    // I6 — a public opt-in (no tie between the submitter and the handset) never clears an opt-out.
+    if (e === 'RECONSENT' && !reconsentClears(cfg) && reconsentGrants(cfg)) {
+      checks++
+      for (const r of records.dnc) {
+        const before = parentRecords.dnc.find((p) => p.id === r.id)
+        if (before && before.lifted_at !== r.lifted_at) fail(cfg, next, `I6: a public opt-in lifted a DNC row (${r.reason})`)
+      }
+    }
+    if (e === 'RECONSENT' && reconsentClears(cfg)) {
       checks++
       const bounced = cfg.ch === 'email' && seq.includes('BOUNCE')
       if (now && !parentAllowed) clearedByReconsent++
@@ -338,7 +357,7 @@ for (const cfg of CONFIGS) {
   if (cfg.consent) assert.ok(restoredByStart > restoredBefore, `harness: START never restored a send for ${cfg.ch} ${cfg.member ? 'member' : 'contact'}`)
   // Not vacuous: where a re-consent source exists, it must really clear opt-outs, and START must
   // really work again after it (owner, round 3).
-  if (reconsentApplies(cfg)) {
+  if (reconsentClears(cfg)) {
     assert.ok(clearedByReconsent > clearedBefore, `harness: re-consent never cleared an opt-out (${cfg.ch} ${cfg.member ? 'member' : 'contact'})`)
     assert.ok(startAfterReconsent > startRcBefore, `harness: START never worked after a re-consent (${cfg.ch} ${cfg.member ? 'member' : 'contact'})`)
   }
@@ -363,7 +382,7 @@ for (const [ch, typed] of [['email', 'Pat@Example.COM'], ['sms', '(214) 555-0147
 // opt-out stays in force (a new email row carries the same reason; the 'all' row is lifted, not deleted).
 console.log('\nRe-consent on one channel against an all-channel opt-out')
 {
-  const cfg = { ch: 'sms', member: false, consent: true }
+  const cfg = { ch: 'sms', member: true, consent: true }
   const db = memDb({ now: iso })
   installDb(db)
   seedConfig(db, cfg)
@@ -378,6 +397,44 @@ console.log('\nRe-consent on one channel against an all-channel opt-out')
   assert.ok(rows.some((r) => r.channel === 'all' && r.lifted_at), "the 'all' row is lifted, not deleted")
   assert.ok(rows.some((r) => r.channel === 'email' && r.reason === 'public opt-out' && !r.lifted_at), 'the email opt-out stays in force with its reason')
   console.log('  ✓ SMS cleared; the email opt-out stays (same reason, new row); nothing deleted')
+}
+
+// Review F2: a portal grant by one household member never clears another member's opt-out.
+console.log("\nA household member's portal grant leaves another member's STOP in force")
+{
+  const cfg = { ch: 'sms', member: true, consent: true }
+  const db = memDb({ now: iso })
+  installDb(db)
+  seedConfig(db, cfg)
+  db.seed('household_members', [{ id: 'm2', household_id: 'h1', full_name: 'Sam Example', phone: '+12145550199', email: 'sam@example.com' }])
+  clock.t += 60_000; await apply('STOP', 'sms', cfg, 910001)
+  assert.equal(await allowed('sms'), false)
+  globalThis.__signedInEmail = 'sam@example.com'
+  clock.t += 60_000
+  const res = await clientConsent.POST(makeReq('/api/client/consent', { body: { channel: 'sms', status: 'granted' } }))
+  globalThis.__signedInEmail = undefined
+  assert.equal(res.status, 200)
+  const stopRow = db.rows('dnc_entries').find((r) => (r.reason ?? '').startsWith('inbound STOP'))
+  assert.ok(stopRow && !stopRow.lifted_at, "Pat's STOP row is not lifted by Sam's grant")
+  assert.equal(await allowed('sms'), false, "Pat still receives no SMS")
+  console.log("  ✓ Pat's STOP stands after Sam turns SMS on in the portal")
+}
+
+// Review F1/F6: a public booking opt-in after a member's STOP clears nothing, and START still works.
+console.log('\nA public booking opt-in after a STOP: nothing cleared; START restores')
+{
+  const cfg = { ch: 'sms', member: true, consent: true }
+  const db = memDb({ now: iso })
+  installDb(db)
+  seedConfig(db, cfg)
+  clock.t += 60_000; await apply('STOP', 'sms', cfg, 920001)
+  clock.t += 60_000
+  const r = await booking.captureBookingSmsConsent({ contactId: 'c1', appointmentId: 'a-920002', phone: PHONE, capturedAt: iso() })
+  assert.equal(r.recorded, true)
+  assert.equal(await allowed('sms'), false, 'the booking tick did not clear the STOP')
+  clock.t += 60_000; await apply('START', 'sms', cfg, 920003)
+  assert.equal(await allowed('sms'), true, 'START from the handset restores sending')
+  console.log('  ✓ blocked after the booking tick; START restores')
 }
 
 // A lost evidence row must fail the web opt-out (review P1): that row is what keeps a later START

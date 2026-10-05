@@ -284,26 +284,36 @@ export const RECONSENT_VERSION = 'reconsent'
 const NEVER_CLEARED_BY_CONSENT = ['hard_bounce']
 
 /**
- * Owner decision (round 3): a DOCUMENTED re-consent on a channel — from a source that counts as
- * channel consent today (client portal grant, the public contact-form SMS opt-in, the booking SMS
- * opt-in) — clears the earlier opt-outs on that channel, after which START works normally for a
- * later STOP. Rows are LIFTED (`lifted_at`), never deleted or relabelled. Hard bounces are not
- * consent: a row that carries one stays active until the address is verified again.
+ * Owner decision (round 3): a DOCUMENTED re-consent on a channel clears the earlier opt-outs on that
+ * channel, after which START works normally for a later STOP. Rows are LIFTED (`lifted_at`), never
+ * deleted or relabelled. Hard bounces are not consent: a row that carries one stays active until the
+ * address is verified again.
+ *
+ * WHO may call it: only a source that ties the person to the address — today the authenticated
+ * client portal, for the signed-in client's OWN address. The public contact form and the public
+ * booking opt-in do NOT call it: anyone can type anyone's number there, so a stranger could clear
+ * someone else's STOP. Those people re-open SMS by texting START from the handset, which lifts a
+ * keyword STOP as before.
  *
  *   • Reads the address's DNC rows on this channel (SMS: last-10 suffix, like the gate) and on 'all'.
  *   • A row with a hard-bounce reason, or any hard-bounce revoke evidence for the address, is kept.
+ *   • A row armed at or after this re-consent started is kept (that opt-out came later).
  *   • An 'all' row covers the other channel too: the other channel is first armed with the same
  *     reason (a new row; its opt-out stands), then the 'all' row is lifted.
  *   • Lifts are compare-and-set on created_at, so an opt-out re-arming the row concurrently wins.
+ *   • Every lift is audited through the one consent-logging path (recordConsentChange).
  *   • `recordGrant` appends contact-level GRANT evidence (for a source that wrote none, e.g. the
  *     portal) so a later START's evidence window starts here.
- * Fails closed: any read error clears nothing. Never throws.
+ * Fails closed: any read error clears nothing; a failed audit reports ok:false. Never throws.
  */
 export async function applyDocumentedReconsent(r: {
   contact: string
   channel: 'sms' | 'email'
   source: string
   recordGrant?: boolean
+  actor?: string
+  memberId?: string | null
+  householdId?: string | null
 }): Promise<{ ok: boolean; cleared: number }> {
   const db = getDb()
   const now = new Date().toISOString()
@@ -329,10 +339,12 @@ export async function applyDocumentedReconsent(r: {
     const { data: rows, error } = await (suffix ? dq.ilike('contact', `%${tail}`) : dq.eq('contact', r.contact)).limit(20)
     if (error || !Array.isArray(rows)) return { ok: false, cleared: 0 }
     let cleared = 0
+    let audited = true
     for (const row of rows as { id: string; contact: string; channel: string; reason?: string | null; created_at?: string | null; lifted_at?: string | null }[]) {
       const lifted = !!row.lifted_at && !!row.created_at && Date.parse(row.lifted_at) > Date.parse(row.created_at)
       if (lifted) continue
       if (bounced || NEVER_CLEARED_BY_CONSENT.includes(row.reason ?? '')) continue
+      if (row.created_at && Date.parse(row.created_at) >= Date.parse(now)) continue // armed after this re-consent
       if (row.channel === 'all') {
         const other = r.channel === 'sms' ? 'email' : 'sms'
         const keep = await armDncEntry({ contact: row.contact, channel: other, reason: row.reason ?? 'opt-out', evidence: false })
@@ -340,10 +352,22 @@ export async function applyDocumentedReconsent(r: {
       }
       let q = db.from('dnc_entries').update({ lifted_at: now, lifted_reason: `${RECONSENT_LIFT_MARK} (${r.source})` }).eq('id', row.id)
       q = row.created_at ? q.eq('created_at', row.created_at) : q.is('created_at', null)
-      const { error: uErr } = await q
-      if (!uErr) cleared++
+      const { data: hit, error: uErr } = await q.select('id')
+      if (uErr || !Array.isArray(hit) || hit.length === 0) continue
+      cleared++
+      const a = await recordConsentChange({
+        actor: r.actor ?? 'system',
+        channel: r.channel,
+        newStatus: 'granted',
+        previousStatus: 'revoked',
+        source: r.source,
+        reason: `${RECONSENT_LIFT_MARK}: lifted DNC opt-out (${row.channel}: ${row.reason ?? 'opt-out'})`,
+        memberId: r.memberId ?? null,
+        householdId: r.householdId ?? null,
+      })
+      if (!a.audited) audited = false
     }
-    return { ok: true, cleared }
+    return { ok: audited, cleared }
   } catch {
     return { ok: false, cleared: 0 }
   }

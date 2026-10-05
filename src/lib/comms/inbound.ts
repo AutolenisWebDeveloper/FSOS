@@ -29,7 +29,7 @@ import { classifyReply } from './reply-classification'
 import { checkTurnLimit, type TurnLimitDecision } from './turn-limit'
 import { shouldPauseOnReply } from './conversation-mode'
 import { recordConsentChange } from './consent-events'
-import { recordChannelOptOut, RECONSENT_LIFT_MARK } from './opt-out'
+import { recordChannelOptOut, RECONSENT_LIFT_MARK, RECONSENT_VERSION } from './opt-out'
 import { terminateActiveEnrollments } from './stop-fanout'
 import { isDncLifted, isKeywordOptOutReason, isKeywordRevokeEvidence, KEYWORD_OPT_OUT_SOURCES, PRIOR_MEMBER_GRANT_MARKER } from './contact-consent'
 import { BUSINESS, CONTACT } from '@/lib/site'
@@ -254,9 +254,11 @@ async function applyOptIn(conv: Conversation, contact: string): Promise<boolean>
     const clearedByReconsent = (row.lifted_reason ?? '').includes(RECONSENT_LIFT_MARK)
     if (!isKeywordOptOut(row) && !clearedByReconsent) return false
     // Evidence: every opt-out writer leaves contact-level revoke evidence. Only evidence AFTER the
-    // latest documented grant is current — a documented re-consent clears what came before it — except
-    // a hard bounce, which no consent clears. Any current non-keyword evidence → no lift. Unreadable
-    // history → no lift (fail closed). A START's own restore grant ('opt-in') is not a documented grant.
+    // latest documented RE-CONSENT is current — that grant (consent_version RECONSENT_VERSION, written
+    // only by applyDocumentedReconsent, i.e. the signed-in client's own portal grant) cleared what came
+    // before it — except a hard bounce, which no consent clears. A public form or booking opt-in, or a
+    // START's own restore grant, clears nothing and does not move the window (review F1). Any current
+    // non-keyword evidence → no lift. Unreadable history → no lift (fail closed).
     const tail = conv.channel === 'sms' ? contact.replace(/[^\d]/g, '').slice(-10) : ''
     const historyQ = db.from('comm_contact_consents').select('action, consent_text, consent_version, captured_at').eq('channel', conv.channel)
     const { data: history, error: historyErr } = await (conv.channel === 'sms' && tail.length === 10
@@ -266,7 +268,7 @@ async function applyOptIn(conv: Conversation, contact: string): Promise<boolean>
     if (historyErr || !Array.isArray(history)) return false
     type Ev = { action?: string; consent_text?: string | null; consent_version?: string | null; captured_at?: string | null }
     const evs = history as Ev[]
-    const lastGrantMs = Math.max(-Infinity, ...evs.filter((e) => e.action === 'granted' && e.consent_version !== START_RESTORE_VERSION).map((e) => Date.parse(e.captured_at ?? '') || -Infinity))
+    const lastGrantMs = Math.max(-Infinity, ...evs.filter((e) => e.action === 'granted' && e.consent_version === RECONSENT_VERSION).map((e) => Date.parse(e.captured_at ?? '') || -Infinity))
     const current = evs.filter((e) => e.action === 'revoked' && ((Date.parse(e.captured_at ?? '') || Infinity) > lastGrantMs || e.consent_text === 'hard_bounce'))
     if (current.some((e) => !isKeywordRevokeEvidence(e))) return false
     if (!isKeywordOptOut(row) && current.length === 0) return false // nothing a STOP did since the re-consent

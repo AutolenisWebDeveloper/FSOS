@@ -125,6 +125,11 @@ also require recorded consent is a question for the owner, not changed here.
 | CodeRabbit: a draft-claim release that fails leaves the referral `drafted` | Fixed: retried, then escalated (`outreach_release_failed`) | `062a30b` |
 | CodeRabbit: runbook §1 accepted any partial predicate on `idx_wreg_active_email`; 137 rollback reset an operator-set column default | Fixed: exact predicate compared (a wrong one reads false locally); default reset only while it is 137's | `aa2adca` |
 | CodeRabbit nit: stale "inert no-op" comment on the retry-queue read | Fixed | `52c9bdc` |
+| CodeRabbit (2nd pass): two overlapping reminder passes could each send a different offset inside 2 h | Fixed: appointment-level reservation (compare-and-set on `appointments.reminder_sent_at`, released if nothing went out) | `ffe9be8` |
+| CodeRabbit (2nd pass): a verification whose grant and revert both failed stayed "verified" with no grant | Fixed: a later PATCH writes the missing grant | `aa49fc9` |
+| CodeRabbit (2nd pass): deleting an unverified destination wrote a revoke | Fixed: revoke only for a verified destination | `aa49fc9` |
+| CodeRabbit (2nd pass): runbook index checks did not pin the owning table / exact key / 134's predicate | Fixed; a wrong 134 index reads false locally | `b949944` |
+| CI: two test stubs lacked `order()`/`range()` used by the paged booking check | Fixed (test-only) | `2e4558d` |
 
 ### Decisions taken inside the fixes (for the owner to confirm or reverse)
 

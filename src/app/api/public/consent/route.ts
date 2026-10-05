@@ -6,6 +6,7 @@ import { rateLimit, clientIp } from '@/lib/http/rate-limit'
 import { writeAudit } from '@/lib/audit/log'
 import { consentContactKey } from '@/lib/comms/contact-consent'
 import { armDncEntry } from '@/lib/comms/opt-out'
+import { terminateAutomationForAddress } from '@/lib/comms/stop-fanout'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -66,6 +67,10 @@ export async function POST(req: NextRequest) {
     const dncKey = consentContactKey(v.data.contact.includes('@') ? 'email' : 'sms', v.data.contact)
     const dnc = await armDncEntry({ contact: dncKey, channel: v.data.channel, reason: 'public opt-out', evidence: false })
     if (!dnc.ok) return dbErrorResponse('public/consent', { message: dnc.error ?? 'DNC write failed' })
+    // A stop condition: close the address's live automation (follow-up R13).
+    for (const ch of revokeChannels) {
+      await terminateAutomationForAddress(ch, consentContactKey(ch, v.data.contact), 'public opt-out', 'opted_out')
+    }
 
     await writeAudit({
       actor,

@@ -111,6 +111,12 @@ export async function suppressContact(
         return { ok: false, channels }
       }
     }
+    // Follow-up R13: an unsubscribe, one-click, opt-out page, hard bounce or complaint is a stop
+    // condition — close the address's live automation (every member at it, and district nurture).
+    {
+      const { terminateAutomationForAddress } = await import('./stop-fanout')
+      for (const ch of channels) await terminateAutomationForAddress(ch, normFor(ch, contact), reason, 'opted_out')
+    }
     // Best-effort: resolve the member/household this contact belongs to so the opt-out is
     // anchored on the customer 360 timeline (not only audit-only). A bare contact with no
     // member (e.g. a public email with no household) is still audited via recordConsentChange.

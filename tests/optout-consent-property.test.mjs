@@ -583,6 +583,48 @@ console.log('\nTest-recipient consent')
   console.log('  ✓ five wrong guesses burn the code; the right code no longer verifies')
 }
 
+// Follow-up R13: EVERY stop condition cancels pending automation, not just an inbound STOP — the
+// unsubscribe link, one-click, web/portal and operator opt-outs, hard bounce, complaint and carrier
+// 21610. District nurture (keyed by address, not member) is part of the fan-out.
+console.log('\nEvery opt-out closes live automation in all five engines')
+{
+  const LIVE = {
+    comm_campaign_enrollments: 'enrolled',
+    life_campaign_enrollments: 'active',
+    pipeline_winback_enrollments: 'active',
+    xsell_life_campaign_enrollments: 'running',
+    district_nurture_enrollments: 'active',
+  }
+  const seedLive = (db) => {
+    for (const [t, status] of Object.entries(LIVE)) {
+      db.seed(t, [t === 'district_nurture_enrollments'
+        ? { id: `${t}-1`, contact_id: 'c1', email: EMAIL, phone: PHONE, status }
+        : { id: `${t}-1`, member_id: 'm1', household_id: 'h1', status }])
+    }
+  }
+  const stillLive = (db) => Object.entries(LIVE).filter(([t, status]) => db.rows(t).some((r) => r.status === status)).map(([t]) => t)
+  const cases = [['STOP', 'sms'], ['UNSUB_LINK', 'email'], ['ONE_CLICK', 'email'], ['WEB_PORTAL', 'sms'], ['WEB_PORTAL', 'email'], ['OPERATOR', 'sms'], ['BOUNCE', 'email'], ['COMPLAINT', 'email']]
+  for (const [e, ch] of cases) {
+    for (const member of [true, false]) {
+      if (e === 'OPERATOR' && !member) continue
+      const cfg = { ch, member, consent: true }
+      const db = memDb({ now: iso }); installDb(db); seedConfig(db, cfg); seedLive(db)
+      clock.t += 60_000; await apply(e, ch, cfg, 950000)
+      const live = stillLive(db).filter((t) => member || t === 'district_nurture_enrollments')
+      assert.deepEqual(live, [], `${e} (${ch}, ${member ? 'member' : 'contact'}) left live: ${live.join(', ')}`)
+    }
+  }
+  {
+    // Carrier 21610 (switch row absent → off): the stop fan-out is not behind the engine-state switch.
+    const cfg = { ch: 'sms', member: true, consent: true }
+    const db = memDb({ now: iso }); installDb(db); seedConfig(db, cfg); seedLive(db)
+    clock.t += 60_000
+    assert.deepEqual(await optOut.recordCarrierOptOut(PHONE, '21610'), { ok: true })
+    assert.deepEqual(stillLive(db), [], `21610 left live: ${stillLive(db).join(', ')}`)
+  }
+  console.log('  ✓ STOP, unsubscribe link, one-click, web/portal, operator, bounce, complaint and 21610 each close every engine')
+}
+
 // A lost evidence row must fail the web opt-out (review P1): that row is what keeps a later START
 // from lifting the STOP-labelled DNC row the opt-out re-armed.
 console.log('\nWeb opt-out evidence write failure')

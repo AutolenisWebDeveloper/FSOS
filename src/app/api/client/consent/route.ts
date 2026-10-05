@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { recordConsentChange } from '@/lib/comms/consent-events'
 import { householdIdFor } from '@/lib/portal/scope'
 import { armDncEntry, applyDocumentedReconsent, smsStopNeedsStart } from '@/lib/comms/opt-out'
+import { terminateAutomationForAddress } from '@/lib/comms/stop-fanout'
 import { SMS_CONSENT } from '@/lib/site'
 import { consentContactKey } from '@/lib/comms/contact-consent'
 import { getCurrentUserEmail } from '@/lib/auth/session'
@@ -74,6 +75,8 @@ export async function POST(req: NextRequest) {
           const key = ch === 'call' ? contact : consentContactKey(ch, contact)
           const dnc = await armDncEntry({ contact: key, channel: ch, reason: 'client opt-out' })
           if (!dnc.ok) dncFailed = true
+          // A stop condition: close live automation at this address (follow-up R13).
+          if (ch !== 'call') await terminateAutomationForAddress(ch, key, 'client opt-out', 'opted_out')
         }
       }
       // A documented re-consent by the client clears the earlier opt-outs on this channel (owner,

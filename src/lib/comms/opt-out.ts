@@ -260,15 +260,12 @@ export async function recordCarrierOptOut(toRaw: string, errorCode: string): Pro
       memberId: link.memberId,
       householdId: link.householdId,
     })
-    // Callbacks → engine state (audit B-10 / D-12), behind the off-by-default switch. DNC already
-    // blocks every later send; this only stops the cadences from re-attempting (and escalating) a
-    // number the carrier has unsubscribed — the same terminal fan-out an inbound STOP applies.
+    // Follow-up R13: a carrier opt-out is a stop condition like an inbound STOP, so it closes the
+    // cadences unconditionally — the same terminal fan-out. It only ever STOPS sends; it no longer
+    // waits on the callback_engine_state switch.
     if (res.ok) {
-      const { switchAllows } = await import('../ops/automation-switch')
-      if (await switchAllows('callback_engine_state', { channel: 'sms', address: contact })) {
-        const { terminateAutomationForAddress } = await import('./stop-fanout')
-        await terminateAutomationForAddress('sms', contact, `carrier opt-out (Twilio ${errorCode})`, 'opted_out')
-      }
+      const { terminateAutomationForAddress } = await import('./stop-fanout')
+      await terminateAutomationForAddress('sms', contact, `carrier opt-out (Twilio ${errorCode})`, 'opted_out')
     }
     return res
   } catch {

@@ -30,7 +30,7 @@ import { checkTurnLimit, type TurnLimitDecision } from './turn-limit'
 import { shouldPauseOnReply } from './conversation-mode'
 import { recordConsentChange } from './consent-events'
 import { recordChannelOptOut, RECONSENT_LIFT_MARK, RECONSENT_VERSION } from './opt-out'
-import { terminateActiveEnrollments } from './stop-fanout'
+import { terminateActiveEnrollments, terminateDistrictNurtureForAddress } from './stop-fanout'
 import { isDncLifted, isKeywordOptOutReason, isKeywordRevokeEvidence, KEYWORD_OPT_OUT_SOURCES, NOT_TEST_RECIPIENT, PRIOR_MEMBER_GRANT_MARKER } from './contact-consent'
 import { BUSINESS, CONTACT } from '@/lib/site'
 
@@ -461,6 +461,8 @@ export async function processInbound(input: InboundInput): Promise<InboundResult
     // DNC already block every send at the gate, but leaving the rows live meant the drip
     // runner kept selecting them and each attempt escalated — an opt-out generating ongoing
     // work. Terminal, never paused: a paused row would be resumed by the quiet-window job.
+    // District nurture is keyed by address, not member (follow-up R13).
+    await terminateDistrictNurtureForAddress(input.channel, contact, `inbound STOP (conversation ${conv.id})`)
     const stopMembers = await membersAtAddress(conv, contact)
     for (const memberId of stopMembers) {
       const closed = await terminateActiveEnrollments(memberId, `inbound STOP (conversation ${conv.id})`, 'opted_out')

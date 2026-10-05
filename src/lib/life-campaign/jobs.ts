@@ -34,7 +34,7 @@ export async function runRetrySweep(maxAttempts = 5): Promise<RetrySweepResult> 
       .lte('next_retry_at', nowISO)
       .limit(500)
 
-    // Schema not yet migrated (missing columns) → inert no-op, never a cron failure.
+    // An unreadable retry queue is a failed run (ok:false → recorded errored, R17b), not a no-op.
     if (error) {
       return { ok: false, retried: 0, deadLettered: 0, note: `life-conversion-retry: could not read the retry queue (${error.message})` }
     }

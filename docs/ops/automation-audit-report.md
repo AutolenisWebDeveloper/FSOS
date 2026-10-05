@@ -95,6 +95,21 @@ Reproduce an item with `git checkout <commit>~1 -- <src files>` and `node tests/
 | M6 | n/a (instruction) | — | rewritten for merged state; Step 0b ledger read; Vercel Production SHA + `git merge-base --is-ancestor 804222f` before 139 | `587e8b8` |
 | M7 | REPRODUCED → FIXED | sudo CI_REQUIRE_INFRA=1 node tests/automation-migrations-rollback.test.mjs with an assertion after the 140 cycle → engine_retry_redispatch count '0' | re-apply 141; 137 covered by running the runbook block (forward, rollback, re-apply, tuned values survive) | `f5c3066` |
 
+### Adversarial review of this round (fresh reviewer that wrote none of it) — findings and fixes
+
+| # | Finding (severity) | Reproduced by (failing before) | Fix | Commit |
+|---|---|---|---|---|
+| 1 | R11 made an unreadable securities read answer `true`, and `getOrCreateConversation` **stored** it on `comm_conversations.is_security`, which nothing clears: one transient error would block every later appointment and service message on the thread (blocking) | `security-flag-not-persisted-on-error`: new and existing thread both stored `is_security = true` | `householdSecurityState()` returns null when unreadable; send time still treats it as securities; only a confirmed `true` is written | `20a7879` |
+| 2 | R3's exemption keyed on the event name only, so an FSA cancel, FSA reschedule and FSA confirmation re-send were exempt from the floor (should-fix; main exempted all appointment SMS) | `booking-sms-lifecycle`: staff `cancellation`/`rescheduled`/`confirmation` → `recipientTriggeredNotice: true` | also requires the attendee's self-service actor (`public`), which every attendee path passes | `afa7544` |
+| 3 | R12b's claim release filtered only on the step, so a STOP landing mid-send was reverted to `enrolled` by a hold (should-fix; DNC still blocked the send) | `drip-step-claim`: opted_out → enrolled | release requires `status in (enrolled, completed)` | `037cbf1` |
+| 4 | R12c: an AI draft failure after the claim left the row `drafted` forever, so the referral was never contacted (should-fix) | `workforce-draft-failure-requeues`: row left `drafted` | a draft failure sets the row `held` (`draft_failed`); the hold expires and the next build re-queues; the run is still recorded errored | `5b8d030` |
+| 5 | Runbook rollbacks had no lock timeout although they drop columns on `dnc_entries` (should-fix); the §4 combined rollback was not the block the test ran | — (doc) | rollbacks set `lock_timeout = '5s'`; the test runs the runbook's §4 block and re-applies 138/140/141 | `970cdcd` |
+
+Not changed, with reasons: the 5-guess cap on a test-recipient code is not atomic under concurrent guesses (nit; an
+operator-only route, and each guess is still checked against the stored code); campaign-asset console sends still
+carry `consentWaived: true` as on `main` — R7 made them US-only and automated, and whether a campaign asset should
+also require recorded consent is a question for the owner, not changed here.
+
 ### Decisions taken inside the fixes (for the owner to confirm or reverse)
 
 - **R4, code storage.** `comms_test_recipients.verification_code` now holds `code:wrong_guesses` (no migration). A code
@@ -133,7 +148,8 @@ messages. Left as is for the principal to rule on.
 
 ### Verification for this round
 
-- **CODE-VERIFIED** (run on the final head, 2026-10-05): `npm test` → "All 264 unpinned unit test file(s) passed";
+- **CODE-VERIFIED** (run on the head before the review fixes, 2026-10-05; the review fixes were re-run as listed in
+  the PR): `npm test` → "All 264 unpinned unit test file(s) passed";
   `sudo env "PATH=$PATH" CI_REQUIRE_INFRA=1 npm run test:rls` → "All 25 unpinned rls test file(s) passed";
   `npm run type-check` clean; `npm run lint` → "No ESLint warnings or errors"; `npm run build` exit 0.
   Runbook SQL (Sections 1, 4's lock timeout, 3's rollback, 7) run on throwaway local Postgres 16 as described in the

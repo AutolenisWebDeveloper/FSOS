@@ -3,28 +3,17 @@ import { getDb } from '@/lib/supabase/client'
 import { configErrorResponse, escapeHtml } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { getCurrentUserEmail } from '@/lib/auth/session'
-import { dispatch } from '@/lib/comms/dispatcher'
+import { sendRecorded } from '@/lib/notifications/transactional'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 // "Email me this briefing" (docs/legacy-port.md §2.10). Merges the legacy
 // api/briefing/send into the FSOS briefing: it assembles today's priorities from
-// live signals and sends the FSA their own digest — but the send routes through
-// the comms dispatcher's 7-step gate (lib/comms/dispatcher.ts) like every other
-// automated send, not raw Resend. A gate block is logged + escalated, never a
-// silent send. No product recommendations; no securities data.
+// live signals and sends the FSA their own digest — recorded through sendRecorded and
+// the one send chokepoint like every other send, not raw Resend. A gate block is logged +
+// escalated, never a silent send. No product recommendations; no securities data.
 
-/** Current hour (0–23) in the configured operator timezone (TX). */
-function operatorLocalHour(): number {
-  const s = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Chicago',
-    hourCycle: 'h23',
-    hour: '2-digit',
-  }).format(new Date())
-  const h = Number.parseInt(s, 10)
-  return Number.isFinite(h) ? h % 24 : 12
-}
 
 export async function POST(_req: NextRequest) {
   const auth = await requireApiRole('fsa')
@@ -67,43 +56,22 @@ export async function POST(_req: NextRequest) {
         <p style="color:#718096;font-size:12px;margin-top:16px">Open FSOS to act on these: /app/executive/briefing</p>
       </div>`.trim()
 
-    // Route through the dispatcher gate. This is an operator's own approved internal
-    // digest: consent by nature, approved template, no securities, no recommendation.
-    // Quiet hours + DNC are still evaluated honestly (a block escalates, never sends).
-    // This used to hand the dispatcher HARDCODED gate booleans — hasConsent: true,
-    // onDNC: false, usesApprovedTemplateOrPolicy: true — which asserted away three checks
-    // rather than passing them. Those fields are no longer forwarded by the dispatcher at
-    // all: consent, DNC and suppression are resolved fresh at the chokepoint from the
-    // recipient address. What remains here is an honest declaration of what this send IS.
-    //
-    // The recipient is the AUTHENTICATED OPERATOR'S OWN address (getCurrentUserEmail), so
-    // the consent waiver applies and stays opt-out-safe.
-    const result = await dispatch({
-      channel: 'email',
+    // Follow-up R14: through sendRecorded, like the other briefing path (briefing/send): a
+    // comm_messages record is written, no tracking, and no List-Unsubscribe header on the FSA's own
+    // inbox. The chokepoint still resolves consent (the self-send waiver, revoke-checked), DNC,
+    // suppression and the red line fresh from the recipient address.
+    // The recipient is the AUTHENTICATED OPERATOR'S OWN address (getCurrentUserEmail).
+    const result = await sendRecorded({
       to,
       subject: 'Your FSOS Daily Briefing',
-      body,
+      html: body,
       actor,
-      entity: { type: 'briefing', id: auth.session.userId },
-      escalationNote: 'Self-directed daily briefing email blocked by the comms gate.',
-      templateKind: 'system_transactional',
-      policy: {
-        purpose: 'TRANSACTIONAL',
-        suppressible: false,
-        consentWaived: true,
-      },
-      gate: {
-        hasConsent: false,
-        recipientLocalHour: operatorLocalHour(),
-        onDNC: false,
-        usesApprovedTemplateOrPolicy: false,
-        isSecurity: false,
-      },
+      consentWaived: true,
     })
 
-    if (!result.sent) {
+    if (!result.ok) {
       return NextResponse.json(
-        { sent: false, blocked: true, reason: result.gate.reason, step: result.gate.blockedStep },
+        { sent: false, blocked: result.blocked === true, reason: result.reason ?? result.error, step: result.blockedStep },
         { status: 200 },
       )
     }

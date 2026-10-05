@@ -38,7 +38,32 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
       .eq('id', id)
       .maybeSingle()
     if (!row || row.user_id !== actor) return NextResponse.json({ error: 'Destination not found.', reason: 'not_found' }, { status: 404 })
-    if (row.verified_at) return NextResponse.json({ ok: true, already_verified: true })
+    if (row.verified_at) {
+      // Repair path (CodeRabbit review of R4): a verification whose grant write failed (and whose
+      // claim could not be reverted) is completed here, so it is never stuck verified-without-grant.
+      const { data: last, error: lastErr } = await db
+        .from('comm_contact_consents')
+        .select('action, captured_at')
+        .eq('contact', row.address)
+        .eq('channel', row.channel)
+        .eq('consent_version', TEST_RECIPIENT_CONSENT_VERSION)
+        .order('captured_at', { ascending: false })
+        .limit(1)
+      if (lastErr) return dbErrorResponse('comms/test/recipients/[id]', lastErr)
+      const latest = Array.isArray(last) ? (last[0] as { action?: string } | undefined) : undefined
+      if (latest?.action !== 'granted') {
+        const { error: repairErr } = await db.from('comm_contact_consents').insert({
+          contact: row.address,
+          channel: row.channel,
+          action: 'granted',
+          consent_text: 'Operator self-consent to receive FSOS test messages on an owned, verified device.',
+          consent_version: TEST_RECIPIENT_CONSENT_VERSION,
+          source_url: '/app/comms/console',
+        })
+        if (repairErr) return dbErrorResponse('comms/test/recipients/[id]', repairErr)
+      }
+      return NextResponse.json({ ok: true, already_verified: true })
+    }
     const check = checkVerification(row.verification_code, v.data.code)
     // Every write below is a compare-and-set on the stored state this request judged, so concurrent
     // guesses are each counted and only one can verify (CodeRabbit review of R4). A request that
@@ -108,7 +133,8 @@ export async function DELETE(_req: NextRequest, props: { params: Promise<{ id: s
     const { data: row } = await db.from('comms_test_recipients').select('id, user_id, channel, address, verified_at').eq('id', id).maybeSingle()
     if (!row || row.user_id !== actor) return NextResponse.json({ error: 'Destination not found.', reason: 'not_found' }, { status: 404 })
     // Withdraw the self-consent first (follow-up R4): append a revoke, never delete the grant.
-    if (row.address && row.channel) {
+    // Only a VERIFIED destination ever had a grant, so only it gets a revoke (CodeRabbit review of R4).
+    if (row.verified_at && row.address && row.channel) {
       const { error: revokeErr } = await db.from('comm_contact_consents').insert({
         contact: row.address,
         channel: row.channel,

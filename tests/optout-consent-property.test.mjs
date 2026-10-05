@@ -609,6 +609,36 @@ console.log('\nTest-recipient consent')
   assert.ok(r.status >= 500, `an unrecorded wrong guess answered ${r.status}`)
   console.log('  ✓ concurrent wrong guesses are each counted; an unrecorded guess is an error')
 }
+{
+  // CodeRabbit review of R4: (a) a verification whose grant insert AND compensating revert both
+  // failed must be repairable by a later PATCH, not stuck "already verified" with no grant;
+  // (b) deleting an UNVERIFIED destination writes no revoke (it never had a grant, and an address in
+  // another format could otherwise revoke a different operator's verified test number).
+  let grantFails = 1
+  const db = memDb({ now: iso, failOn: (q) =>
+    (q.table === 'comm_contact_consents' && q.method === 'insert' && q.payload?.action === 'granted' && grantFails-- > 0) ||
+    (q.table === 'comms_test_recipients' && q.method === 'update' && q.payload?.verified_at === null) })
+  installDb(db)
+  globalThis.__sent = []
+  const add = await testRecipients.POST(makeReq('/api/comms/test/recipients', { body: { channel: 'email', address: 'stuck@example.com' } }))
+  const id = (await add.json()).recipient_id
+  const code = String(globalThis.__sent[0].body).match(/\d{6}/)[0]
+  const verify = () => testRecipient.PATCH(makeReq(`/api/comms/test/recipients/${id}`, { method: 'PATCH', body: { code } }), { params: Promise.resolve({ id }) })
+  assert.ok((await verify()).status >= 500, 'the failed grant is reported')
+  const again = await verify()
+  assert.equal(again.status, 200)
+  const grants = db.rows('comm_contact_consents').filter((r) => r.contact === 'stuck@example.com' && r.action === 'granted')
+  assert.equal(grants.length, 1, 'a later PATCH repaired the missing grant')
+
+  installDb(db)
+  globalThis.__sent = []
+  const add2 = await testRecipients.POST(makeReq('/api/comms/test/recipients', { body: { channel: 'email', address: 'unverified@example.com' } }))
+  const id2 = (await add2.json()).recipient_id
+  const del = await testRecipient.DELETE(makeReq(`/api/comms/test/recipients/${id2}`, { method: 'DELETE' }), { params: Promise.resolve({ id: id2 }) })
+  assert.equal(del.status, 200)
+  assert.equal(db.rows('comm_contact_consents').filter((r) => r.contact === 'unverified@example.com').length, 0, 'an unverified destination wrote a revoke')
+  console.log('  ✓ a stuck verification is repaired by the next PATCH; an unverified destination is deleted without a revoke')
+}
 
 // Follow-up R13: EVERY stop condition cancels pending automation, not just an inbound STOP — the
 // unsubscribe link, one-click, web/portal and operator opt-outs, hard bounce, complaint and carrier

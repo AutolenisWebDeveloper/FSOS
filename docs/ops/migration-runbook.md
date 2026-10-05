@@ -119,7 +119,7 @@ columns that A proves exist; on a database without them it errors).
 begin read only;
 select file, check_name, ok from (values
  ('128','guest_count CHECK 0..10', exists(select 1 from pg_constraint where conrelid='public.workshop_registrations'::regclass and contype='c' and pg_get_constraintdef(oid) like '%guest_count >= 0%' and pg_get_constraintdef(oid) like '%guest_count <= 10%')),
- ('128','idx_wreg_active_email UNIQUE on (workshop_id, lower(email)) with 128''s predicate', exists(select 1 from pg_index i join pg_class c on c.oid=i.indexrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname='idx_wreg_active_email' and i.indisunique and pg_get_indexdef(i.indexrelid) like '%(workshop_id, lower(email))%' and pg_get_expr(i.indpred, i.indrelid) = '((email IS NOT NULL) AND (status <> ALL (ARRAY[''cancelled''::text, ''ffs_referred''::text])))')),
+ ('128','idx_wreg_active_email UNIQUE on (workshop_id, lower(email)) with 128''s predicate', exists(select 1 from pg_index i join pg_class c on c.oid=i.indexrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname='idx_wreg_active_email' and i.indrelid='public.workshop_registrations'::regclass and i.indnkeyatts = 2 and i.indisunique and pg_get_indexdef(i.indexrelid) like '%(workshop_id, lower(email))%' and pg_get_expr(i.indpred, i.indrelid) = '((email IS NOT NULL) AND (status <> ALL (ARRAY[''cancelled''::text, ''ffs_referred''::text])))')),
  ('128','fn workshop_claim_registration(uuid,uuid,text,text,text,text,text[],text,text,integer)', to_regprocedure('public.workshop_claim_registration(uuid,uuid,text,text,text,text,text[],text,text,integer)') is not null),
  ('128','fn: anon and authenticated cannot execute; service_role can', coalesce((select not has_function_privilege('anon', p, 'execute') and not has_function_privilege('authenticated', p, 'execute') and has_function_privilege('service_role', p, 'execute') from to_regprocedure('public.workshop_claim_registration(uuid,uuid,text,text,text,text,text[],text,text,integer)') p where p is not null), false)),
  ('129','registrations → workshops FK is ON DELETE RESTRICT (and the only one)', (select count(*) = 1 and bool_and(confdeltype = 'r') from pg_constraint where conrelid='public.workshop_registrations'::regclass and confrelid='public.workshops'::regclass and contype='f')),
@@ -134,7 +134,7 @@ select file, check_name, ok from (values
  ('131','workshop_comms_config.nurture_followup_delay_minutes', exists(select 1 from information_schema.columns where table_schema='public' and table_name='workshop_comms_config' and column_name='nurture_followup_delay_minutes')),
  ('132','watt_capture_method_chk allows derived', exists(select 1 from pg_constraint where conrelid='public.workshop_attendance'::regclass and conname='watt_capture_method_chk' and pg_get_constraintdef(oid) like '%derived%')),
  ('132','wreg_marketing_capture_chk exists and is validated', exists(select 1 from pg_constraint where conrelid='public.workshop_registrations'::regclass and conname='wreg_marketing_capture_chk' and convalidated)),
- ('134','idx_opportunities_live_referral UNIQUE (referral_id) where live', exists(select 1 from pg_index i join pg_class c on c.oid=i.indexrelid where i.indrelid='public.opportunities'::regclass and c.relname='idx_opportunities_live_referral' and i.indisunique and pg_get_expr(i.indpred, i.indrelid) like '%referral_id IS NOT NULL%' and pg_get_expr(i.indpred, i.indrelid) like '%deleted_at IS NULL%'))
+ ('134','idx_opportunities_live_referral UNIQUE on exactly (referral_id) with 134''s predicate', exists(select 1 from pg_index i join pg_class c on c.oid=i.indexrelid where i.indrelid='public.opportunities'::regclass and c.relname='idx_opportunities_live_referral' and i.indisunique and i.indnkeyatts = 1 and pg_get_indexdef(i.indexrelid) like '%USING btree (referral_id) WHERE%' and pg_get_expr(i.indpred, i.indrelid) = '((referral_id IS NOT NULL) AND (deleted_at IS NULL))'))
 ) v(file, check_name, ok) order by file, check_name;
 commit;
 ```
@@ -166,7 +166,7 @@ What the rows prove, by file:
 | 131 | `nurture_followup_delay_minutes`; its 5 template seeds; the instant-ack handle row |
 | 132 | the ack handle is not "approved" without an approver (132 reverses 131's unattributed approval; a later principal approval stamps `approved_by` and passes); `derived` capture method; `wreg_marketing_capture_chk` exists and is validated |
 | 133 | the sender address is set and is not the placeholder |
-| 134 | `idx_opportunities_live_referral` is UNIQUE on `referral_id`, partial on live rows |
+| 134 | `idx_opportunities_live_referral` is UNIQUE on exactly `(referral_id)` with 134's live-row predicate |
 
 132's `opportunities.source` column and index are not checked: migration 045 created both, so
 132's statements for them are no-ops and cannot prove 132 ran.

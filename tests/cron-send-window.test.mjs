@@ -3,8 +3,8 @@
 // every hold escalates.
 //   • Owner decision 8 moved campaign-dispatch and district-nurture-tick off 12:00/14:00 UTC.
 //   • Finding 5 (owner, 2026-10-04): the FIVE dispatch crons run HOURLY from 17:00 to 23:00 UTC,
-//     with at most one touch per enrollment per day (gate.ts oneTouchPerDay, applied at every
-//     cursor advance), so hourly runs cannot compress a cadence.
+//     with at most one touch per enrollment per day (gate.ts oneTouchPerDay at every cursor
+//     advance, plus a send-time sent-today check that covers admin resume / replay / restart).
 // workforce-orchestrator is not a dispatch cron in that decision; it stays pinned so a change is
 // deliberate.
 // Run: node tests/cron-send-window.test.mjs
@@ -66,6 +66,16 @@ t('every engine cursor advance and the drip advance go through it', () => {
     assert.doesNotMatch(src, /next_touch_at: `\$\{(next\.dueDate|dueDay)\}T13:00:00\.000Z`/, `${f}: an unguarded cursor advance remains`)
   }
   assert.match(readFileSync('src/jobs/handlers.ts', 'utf8'), /const next = oneTouchPerDay\(/)
+})
+t('a touch re-armed for today by resume / replay / restart is held at send time (every engine)', () => {
+  for (const [f, ex] of [['life-campaign', 'life_campaign_executions'], ['pipeline-winback', 'pipeline_winback_executions'], ['cross-sell-life', 'xsell_life_campaign_executions'], ['district-nurture', 'district_nurture_executions']]) {
+    const src = readFileSync(`src/lib/${f}/tick.ts`, 'utf8')
+    const guard = src.search(new RegExp(`\\.from\\('${ex}'\\)\\s*\\.select\\('id'\\)\\s*\\.eq\\('enrollment_id', e\\.id\\)\\s*\\.eq\\('status', 'sent'\\)\\s*\\.gte\\('executed_at', `))
+    const claim = src.indexOf('// Idempotency: claim')
+    assert.ok(guard > 0, `${f}: no send-time sent-today check`)
+    assert.ok(guard < claim, `${f}: the check must run before the touch is claimed`)
+    assert.match(src, /if \(sentTodayErr\) continue/, `${f}: a failed read must hold the touch`)
+  }
 })
 t('no engine schedules two touches on one day by design (so per-enrollment = per-channel)', () => {
   for (const f of ['life-campaign', 'pipeline-winback', 'cross-sell-life', 'district-nurture']) {

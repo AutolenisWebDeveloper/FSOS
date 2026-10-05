@@ -122,6 +122,24 @@ export async function crossSellLifeTick(): Promise<TickResult> {
         if ((tpl?.channel === 'email' ? 'email' : 'sms') === 'sms') continue
       }
 
+      // Finding 5 at SEND time: the hourly ticks fire at most one message touch per enrollment per UTC
+      // day, whichever path set the cursor (advance, admin resume/replay, restart from day 1). A touch
+      // already sent today pushes this one to tomorrow; a read error holds it (fail closed).
+      if (touch.kind !== 'advisor_outreach') {
+        const { data: sentToday, error: sentTodayErr } = await db
+          .from('xsell_life_campaign_executions')
+          .select('id')
+          .eq('enrollment_id', e.id)
+          .eq('status', 'sent')
+          .gte('executed_at', `${nowISO.slice(0, 10)}T00:00:00.000Z`)
+          .limit(1)
+        if (sentTodayErr) continue
+        if ((sentToday ?? []).length > 0) {
+          await db.from('xsell_life_campaign_enrollments').update({ next_touch_at: oneTouchPerDay(nowISO, nowISO), updated_at: nowISO }).eq('id', e.id)
+          continue
+        }
+      }
+
       // Idempotency: claim this touch's execution row with a deterministic key. If it already
       // exists, this touch already fired (or is claimed) — advance the cursor, never send twice.
       const channelForKey = touch.kind === 'email' ? 'email' : 'sms'

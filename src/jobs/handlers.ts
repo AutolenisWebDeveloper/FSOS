@@ -232,6 +232,8 @@ export async function dripAdvance(): Promise<JobResult> {
       const outcome = await sendMessage({
         channel: camp.channel as 'sms' | 'email',
         to,
+        // One logical send per enrollment step: a retry reuses the provider idempotency key (R15).
+        idempotencyKey: `drip:${e.id}:${e.current_step}`,
         subject: step.subject,
         body: tpl?.body ?? '',
         actor: 'agent:marketing_automation',

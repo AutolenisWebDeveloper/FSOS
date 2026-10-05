@@ -117,7 +117,7 @@ export type NotifyOutcome = {
 /** Send one appointment message on a channel (email or SMS) through the gate. */
 async function sendAppointmentMessage(
   db: Db,
-  opts: { channel: 'email' | 'sms'; sourceKey: string; appt: ApptRow; actor: string; durableConsentGranted: boolean; recipientTriggered?: boolean },
+  opts: { channel: 'email' | 'sms'; sourceKey: string; appt: ApptRow; actor: string; durableConsentGranted: boolean; recipientTriggered?: boolean; ledgerKey?: string },
 ): Promise<NotifyOutcome> {
   const contact = unwrapOne(opts.appt.contacts)
   const type = unwrapOne(opts.appt.appointment_types)
@@ -143,6 +143,8 @@ async function sendAppointmentMessage(
   const outcome = await sendMessage({
     channel: opts.channel,
     to,
+    // One logical send per delivery-ledger leg: a retry reuses the provider idempotency key (R15).
+    ...(opts.ledgerKey ? { idempotencyKey: `booking:${opts.ledgerKey}` } : {}),
     // Classify BOTH legs. APPOINTMENT is what these messages are — transactional appointment
     // content with no promotional ask — and every purpose-keyed control then does the right
     // thing on its own instead of being special-cased:
@@ -438,6 +440,7 @@ async function deliverLeg(
       actor: args.actor,
       durableConsentGranted: args.durableConsentGranted,
       recipientTriggered: args.recipientTriggered === true,
+      ledgerKey: `${appt.id}:${scheduleVersion}:${args.event}:${args.offsetMinutes}:${args.channel}`,
     })
   } catch (err) {
     await releaseDelivery(db, claim.id)

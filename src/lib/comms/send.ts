@@ -264,6 +264,8 @@ export interface SendContext {
    * (dispatch-policy.ts). Never set by a broadcast, sequence, drip, engine or retry pass.
    */
   recipientTriggeredNotice?: boolean
+  /** Follow-up R15: the logical send's identity — retries reuse it as the provider idempotency key. */
+  idempotencyKey?: string
   /** Follow-up R10: an internal FSA ops alert (honoured at the chokepoint only for the practice's own inbox). */
   internalFsaRecipient?: boolean
   /**
@@ -766,6 +768,7 @@ export async function sendMessage(ctx: SendContext): Promise<SendOutcome> {
     subject: resolvedSubject,
     body: sendBody,
     correlationId: messageId,
+    idempotencyKey: ctx.idempotencyKey,
     bodyText: ctx.channel === 'email' ? identityText : undefined,
     attachments: ctx.channel === 'email' ? ctx.attachments : undefined,
     // Caller-pinned stream wins over the purpose-derived one (see SendContext.emailStream).

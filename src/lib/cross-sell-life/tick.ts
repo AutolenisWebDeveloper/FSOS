@@ -259,6 +259,8 @@ export async function fireMessageTouch(
   const outcome = await sendMessage({
     channel,
     to,
+    // One logical send per enrollment touch: a retry reuses the provider idempotency key (R15).
+    idempotencyKey: `xsell:${e.id}:${touchNo}`,
     subject: channel === 'email' ? parseSubjectFromBody(tpl.body) : undefined,
     body: tpl.body,
     actor: SYSTEM,

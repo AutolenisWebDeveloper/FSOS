@@ -553,6 +553,8 @@ export async function runOutreachAgent(agentKey: OutreachAgentKey): Promise<{ se
         const outcome = await sendMessage({
           channel: item.channel,
           to: rec.contact,
+          // One logical send per queue row (R15).
+          idempotencyKey: `workforce:${item.id}`,
           subject: item.channel === 'email' ? 'A quick note from Markist' : undefined,
           body,
           actor: `agent:${agentKey}`,

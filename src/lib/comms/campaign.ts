@@ -271,6 +271,8 @@ export async function dispatchCampaign(campaignId: string, actor: string): Promi
     const outcome = await sendMessage({
       channel,
       to,
+      // One logical send per broadcast recipient (R15).
+      idempotencyKey: `broadcast:${campaignId}:${r.member_id}`,
       subject: channel === 'email' ? variant.subject ?? campaign.subject ?? 'A note from your Farmers FSA' : undefined,
       body: bodies.get(variant.template_id)?.body ?? '',
       bodyText: bodies.get(variant.template_id)?.bodyText ?? undefined,

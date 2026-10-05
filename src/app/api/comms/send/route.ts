@@ -115,6 +115,8 @@ export async function POST(req: NextRequest) {
       sendMessage({
         channel,
         to: d.to,
+        // The console's own idempotency key names the logical send (R15).
+        idempotencyKey: `console:${d.idempotency_key}`,
         subject,
         body,
         actor,

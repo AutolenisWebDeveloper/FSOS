@@ -123,8 +123,13 @@ export async function resolveAllMemberIds(channel: Channel, contact: string): Pr
   }
 }
 
-/** Whether the resolved household/policy carries the securities firewall flag. */
-export async function conversationIsSecurity(householdId: string | null): Promise<boolean> {
+/**
+ * The household's securities state: true / false when read, null when the read failed.
+ * Persisting callers store only a confirmed `true` — an unreadable read is a send-time hold, never
+ * a durable `is_security` flag (follow-up review of R11: one transient error must not mark a
+ * thread securities for good).
+ */
+export async function householdSecurityState(householdId: string | null): Promise<boolean | null> {
   if (!householdId) return false
   try {
     const db = getDb()
@@ -135,11 +140,17 @@ export async function conversationIsSecurity(householdId: string | null): Promis
       .eq('is_security', true)
       .is('deleted_at', null)
       .limit(1)
-    if (error) return true // unreadable → treated as securities (follow-up R11)
+    if (error) return null
     return Array.isArray(data) && data.length > 0
   } catch {
-    return true
+    return null
   }
+}
+
+/** Whether the resolved household/policy carries the securities firewall flag, at send time. */
+export async function conversationIsSecurity(householdId: string | null): Promise<boolean> {
+  // Unreadable → treated as securities for THIS send (follow-up R11).
+  return (await householdSecurityState(householdId)) ?? true
 }
 
 export interface Conversation {
@@ -180,7 +191,8 @@ export async function getOrCreateConversation(channel: Channel, rawContact: stri
     .maybeSingle()
 
   const link = await resolveContact(channel, contact)
-  const isSecurity = await conversationIsSecurity(link.householdId)
+  // Only a confirmed securities household is written to the thread; an unreadable read is not.
+  const isSecurity = (await householdSecurityState(link.householdId)) === true
 
   if (existing) {
     // Backfill association if the contact has since been matched to a member.

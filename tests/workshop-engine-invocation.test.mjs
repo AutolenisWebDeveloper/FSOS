@@ -15,6 +15,17 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { bundle, fakeDb, installDb } from './helpers/workshop-harness.mjs'
 
+// Follow-up R18: an INJECTED clock. phoneWithLocalHour() and the engine both read the time; on the
+// real clock, between 10:00 and 12:00 UTC (13:00 in winter) no candidate zone is inside 09:00–20:00
+// and the file failed every day. 18:00 UTC puts candidates both inside and outside the window, in
+// standard and daylight time alike.
+const RealDate = Date
+const FIXED_NOW = RealDate.UTC(2026, 9, 5, 18, 0)
+globalThis.Date = class FixedDate extends RealDate {
+  constructor(...a) { if (a.length === 0) super(FIXED_NOW); else super(...a) }
+  static now() { return FIXED_NOW }
+}
+
 let passed = 0
 const ok = (name, cond, extra) => { assert.ok(cond, `${name}${extra ? `\n${extra}` : ''}`); console.log(`  ✓ ${name}`); passed++ }
 

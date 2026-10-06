@@ -46,6 +46,9 @@ const RLS = new Set([
   'migration-chain.test.mjs',
   // Automation-audit migrations 138–141: forward → documented ROLLBACK → re-apply, on real Postgres.
   'automation-migrations-rollback.test.mjs',
+  // Migrations 142/143 (live-audit residual gaps + security-advisor hardening) on a Supabase-shaped
+  // Postgres: grant/search_path/view invariants, behaviour, owner apply, ROLLBACK, re-apply.
+  'security-advisor-hardening.test.mjs',
   // Batch 0 GUARANTEE tests — full engine + gate against ephemeral Postgres. Pinned RED
   // in tests/expected-failures.json until the batch named there lands.
   'workshop-guarantee-send-once.test.mjs',

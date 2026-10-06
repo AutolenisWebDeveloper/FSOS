@@ -177,6 +177,19 @@ export async function revokeConsentForMembers(
     }
   }
 
+  // An operator opt-out is a stop condition: close every requested member's live automation, at
+  // their address (all members there, and district nurture) and by member id (follow-up R13).
+  {
+    const { terminateAutomationForAddress, terminateActiveEnrollments } = await import('./stop-fanout')
+    for (const m of members) {
+      await terminateActiveEnrollments(m.id, `operator opt-out (${source})`, 'opted_out')
+      for (const ch of channels) {
+        const raw = ch === 'sms' ? m.phone : m.email
+        if (raw) await terminateAutomationForAddress(ch, consentContactKey(ch, raw), `operator opt-out (${source})`, 'opted_out')
+      }
+    }
+  }
+
   // The bulk revoke is itself an audited event — one summary row with the report.
   await writeAudit({
     actor,

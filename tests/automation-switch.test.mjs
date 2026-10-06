@@ -97,31 +97,18 @@ await t('the canary allow-list requires verified_at, and an unreadable list is n
   reset({ canary: false }); assert.equal(await sw.isCanaryDestination('sms', PHONE), false)
 })
 
-console.log('\nCarrier opt-out → engine state, behind callback_engine_state')
-const closes = () => st.updates.filter((u) => ['comm_campaign_enrollments', 'life_campaign_enrollments', 'pipeline_winback_enrollments', 'xsell_life_campaign_enrollments'].includes(u.table))
-await t('OFF (seeded / no row): the opt-out is written, no cadence is closed', async () => {
-  reset()
-  assert.deepEqual(await recordCarrierOptOut(PHONE, '21610'), { ok: true })
-  assert.equal(closes().length, 0)
-})
-await t('canary + NOT a verified test destination: nothing is closed', async () => {
-  reset({ mode: 'canary', canary: false })
-  await recordCarrierOptOut(PHONE, '21610')
-  assert.equal(closes().length, 0)
-})
-await t('canary + verified test destination: every engine is closed as opted_out', async () => {
-  reset({ mode: 'canary', canary: true })
-  await recordCarrierOptOut(PHONE, '21610')
-  const tables = new Set(closes().map((u) => u.table))
-  for (const tb of ['comm_campaign_enrollments', 'life_campaign_enrollments', 'pipeline_winback_enrollments', 'xsell_life_campaign_enrollments']) assert.ok(tables.has(tb), tb)
-  for (const u of closes()) if (u.row.exit_reason) assert.equal(u.row.exit_reason, 'opted_out')
-})
-await t('ON: closed for any recipient', async () => {
-  reset({ mode: 'on' })
-  await recordCarrierOptOut(PHONE, '21610')
-  assert.ok(closes().length >= 4)
-})
-await t('ON but a non-opt-out code (30007 filtering): nothing written, nothing closed', async () => {
+console.log('\nCarrier opt-out → engine state (follow-up R13: a stop condition, no longer behind callback_engine_state)')
+const closes = () => st.updates.filter((u) => ['comm_campaign_enrollments', 'life_campaign_enrollments', 'pipeline_winback_enrollments', 'xsell_life_campaign_enrollments', 'district_nurture_enrollments'].includes(u.table))
+for (const [label, opts] of [['OFF (seeded / no row)', {}], ['canary, not a test destination', { mode: 'canary', canary: false }], ['ON', { mode: 'on' }]]) {
+  await t(`${label}: a 21610 writes the opt-out AND closes every engine`, async () => {
+    reset(opts)
+    assert.deepEqual(await recordCarrierOptOut(PHONE, '21610'), { ok: true })
+    const tables = new Set(closes().map((u) => u.table))
+    for (const tb of ['comm_campaign_enrollments', 'life_campaign_enrollments', 'pipeline_winback_enrollments', 'xsell_life_campaign_enrollments', 'district_nurture_enrollments']) assert.ok(tables.has(tb), tb)
+    for (const u of closes()) if (u.row.exit_reason) assert.equal(u.row.exit_reason, 'opted_out')
+  })
+}
+await t('a non-opt-out code (30007 filtering): nothing written, nothing closed', async () => {
   reset({ mode: 'on' })
   await recordCarrierOptOut(PHONE, '30007')
   assert.equal(st.updates.length, 0)

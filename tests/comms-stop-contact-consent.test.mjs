@@ -86,6 +86,9 @@ function makeDb() {
         return b
       },
       is: () => b,
+      // .or() narrows the START reads to non-test-recipient rows (follow-up R4); this fake's rows
+      // carry no test-recipient version, so it is a pass-through.
+      or: () => b,
       order: () => b,
       limit: () => b,
       insert: (row) => {

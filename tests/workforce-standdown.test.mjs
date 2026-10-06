@@ -66,7 +66,9 @@ t('a sent referral first touch stamps referrals.first_touch_at (conditional, aud
 t('referral exclusion lookups fail closed', () => {
   for (const fn of ['referralAlreadyTouched', 'householdHasUpcomingAppointment', 'memberRepliedWithin']) {
     const body = wf.slice(wf.indexOf(`async function ${fn}`), wf.indexOf('\n}\n', wf.indexOf(`async function ${fn}`)))
-    assert.match(body, /if \(error\) return true/, fn)
+    // householdHasUpcomingAppointment delegates to the shared read (follow-up R2): 'unknown' !== 'no' → booked.
+    if (fn === 'householdHasUpcomingAppointment') assert.match(body, /upcomingAppointmentState\(householdId\)\)\s*!==\s*'no'/, fn)
+    else assert.match(body, /if \(error\) return true/, fn)
   }
 })
 console.log(`\nAll ${passed} assertions passed.`)

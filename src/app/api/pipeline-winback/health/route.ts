@@ -47,18 +47,18 @@ export async function GET(_req: NextRequest) {
       safeCount(db.from('pipeline_winback_enrollments').select('id', { count: 'exact', head: true }).eq('status', 'active')),
       db
         .from('job_runs')
-        .select('job, status, started_at, finished_at')
+        .select('job, status, started_at, finished_at, error')
         .in('job', CRON_JOBS as unknown as string[])
         .order('started_at', { ascending: false })
         .limit(300),
     ])
 
-    const lastRun: Record<string, { status: string; started_at: string; finished_at: string | null } | null> = {}
+    const lastRun: Record<string, { status: string; started_at: string; finished_at: string | null; error?: string | null } | null> = {}
     for (const job of CRON_JOBS) lastRun[job] = null
     for (const r of jobRows.data ?? []) {
       const job = r.job as string
       if (job in lastRun && lastRun[job] === null) {
-        lastRun[job] = { status: r.status as string, started_at: r.started_at as string, finished_at: (r.finished_at as string | null) ?? null }
+        lastRun[job] = { status: r.status as string, started_at: r.started_at as string, finished_at: (r.finished_at as string | null) ?? null, error: (r.error as string | null) ?? null }
       }
     }
 

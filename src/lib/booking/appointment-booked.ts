@@ -64,7 +64,8 @@ async function exitAllCrossSell(
 
 /**
  * Whether the household has an upcoming SCHEDULED appointment, counting native bookings linked
- * only through contact_id and review appointments that carry only scheduled_at. Fails CLOSED
+ * only through contact_id — by a contact on the household, or one matching a member's email or phone
+ * (follow-up R2) — and review appointments that carry only scheduled_at. Fails CLOSED
  * (true) on a read error: the caller stops the touch rather than sending to a possibly-booked
  * client.
  */
@@ -87,16 +88,59 @@ export async function upcomingAppointmentState(householdId: string, nowISO: stri
     .or(upcoming)
   if (direct.error) return 'unknown'
   if ((direct.count ?? 0) > 0) return 'yes'
-  const contacts = await db.from('contacts').select('id').eq('household_id', householdId).is('deleted_at', null).limit(50)
-  if (contacts.error) return 'unknown'
-  const ids = (contacts.data ?? []).map((c: { id: string }) => c.id)
-  if (ids.length === 0) return 'no'
-  const viaContact = await db
-    .from('appointments')
-    .select('id', { count: 'exact', head: true })
-    .in('contact_id', ids)
-    .eq('status', 'scheduled')
-    .or(upcoming)
-  if (viaContact.error) return 'unknown'
-  return (viaContact.count ?? 0) > 0 ? 'yes' : 'no'
+  // CodeRabbit review of R2: every matching row is read (paged), never the first 50 — a booking on
+  // a later contact would otherwise read as "no appointment" and prospecting would continue.
+  const householdContacts = await allRows<{ id: string }>((from, to) =>
+    db.from('contacts').select('id').eq('household_id', householdId).is('deleted_at', null).order('id', { ascending: true }).range(from, to),
+  )
+  if (householdContacts === null) return 'unknown'
+  const ids = new Set(householdContacts.map((c) => c.id))
+  // Follow-up R2: a public booking's contact is often not linked to the household — it matches a
+  // MEMBER by email or phone. Count those contacts too, so a booking by any member stops prospecting.
+  const members = await allRows<{ email?: string | null; phone?: string | null }>((from, to) =>
+    db.from('household_members').select('id, email, phone').eq('household_id', householdId).order('id', { ascending: true }).range(from, to),
+  )
+  if (members === null) return 'unknown'
+  const emails = [...new Set(members.map((m) => (m.email ?? '').trim().toLowerCase()).filter(Boolean))]
+  // phone_digits is digits-only as entered (normalize.ts), so match the 10-digit form and its +1 form.
+  const tails = [...new Set(members.map((m) => (m.phone ?? '').replace(/\D/g, '').slice(-10)).filter((d) => d.length === 10))]
+  const digits = tails.flatMap((d) => [d, `1${d}`])
+  for (const [col, vals] of [['email_lc', emails], ['phone_digits', digits]] as const) {
+    if (vals.length === 0) continue
+    const byAddr = await allRows<{ id: string }>((from, to) =>
+      db.from('contacts').select('id').in(col, vals).is('deleted_at', null).order('id', { ascending: true }).range(from, to),
+    )
+    if (byAddr === null) return 'unknown'
+    for (const c of byAddr) ids.add(c.id)
+  }
+  if (ids.size === 0) return 'no'
+  const all = [...ids]
+  for (let i = 0; i < all.length; i += ID_CHUNK) {
+    const viaContact = await db
+      .from('appointments')
+      .select('id', { count: 'exact', head: true })
+      .in('contact_id', all.slice(i, i + ID_CHUNK))
+      .eq('status', 'scheduled')
+      .or(upcoming)
+    if (viaContact.error) return 'unknown'
+    if ((viaContact.count ?? 0) > 0) return 'yes'
+  }
+  return 'no'
+}
+
+const PAGE = 500
+const ID_CHUNK = 200
+
+/** Every row of a paged query (stable order required), or null on any read error. */
+async function allRows<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: unknown; error: unknown }>,
+): Promise<T[] | null> {
+  const out: T[] = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await page(from, from + PAGE - 1)
+    if (error) return null
+    const rows = (Array.isArray(data) ? data : []) as T[]
+    out.push(...rows)
+    if (rows.length < PAGE) return out
+  }
 }

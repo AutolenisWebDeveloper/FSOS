@@ -34,9 +34,9 @@ export async function runRetrySweep(maxAttempts = 5): Promise<RetrySweepResult> 
       .lte('next_retry_at', nowISO)
       .limit(500)
 
-    // Schema not yet migrated (missing columns) → inert no-op, never a cron failure.
+    // An unreadable retry queue is a failed run (ok:false → recorded errored, R17b), not a no-op.
     if (error) {
-      return { ok: true, retried: 0, deadLettered: 0, note: `life-conversion-retry: skipped — schema pending (${error.message})` }
+      return { ok: false, retried: 0, deadLettered: 0, note: `life-conversion-retry: could not read the retry queue (${error.message})` }
     }
 
     let retried = 0
@@ -66,7 +66,7 @@ export async function runRetrySweep(maxAttempts = 5): Promise<RetrySweepResult> 
     }
     return { ok: true, retried, deadLettered, note: `life-conversion-retry: ${retried} re-queued, ${deadLettered} dead-lettered, ${reconciled} reconciled as sent, ${released} released for re-dispatch` }
   } catch (e) {
-    // Defensive: any unexpected failure fails soft so the hourly cron never hard-errors.
-    return { ok: true, retried: 0, deadLettered: 0, note: `life-conversion-retry: skipped (${e instanceof Error ? e.message : 'error'})` }
+    // Any unexpected failure is reported (ok:false → recorded errored, R17b) rather than thrown.
+    return { ok: false, retried: 0, deadLettered: 0, note: `life-conversion-retry: failed (${e instanceof Error ? e.message : 'error'})` }
   }
 }

@@ -103,7 +103,7 @@ async function isOptedOut(email: string | null, phone: string | null): Promise<b
  * agency paused it indefinitely (audit B-11 / H-06 / H-07). A read error counts as in a
  * conversation (fail closed — the touch is held).
  */
-async function hasOpenConversation(email: string | null, phone: string | null): Promise<boolean> {
+export async function hasOpenConversation(email: string | null, phone: string | null): Promise<boolean> {
   const db = getDb()
   const em = (email ?? '').trim().toLowerCase()
   const tail = phoneTail(phone)

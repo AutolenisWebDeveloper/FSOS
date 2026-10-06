@@ -158,8 +158,9 @@ await t('path 8 (briefing/email) + 9 (agent-runner): dispatch() forwards to the 
   }
   // And the two callers reach it with an honest declaration, not asserted-away booleans.
   const briefing = read('src/app/api/briefing/email/route.ts')
-  assert.ok(/hasConsent: false/.test(briefing), 'briefing/email no longer asserts hasConsent:true')
+  assert.ok(!/hasConsent: true/.test(briefing), 'briefing/email never asserts hasConsent:true')
   assert.ok(/consentWaived: true/.test(briefing), 'briefing/email declares the self-send waiver instead')
+  assert.ok(/sendRecorded\(/.test(briefing), 'briefing/email is a recorded send (follow-up R14)')
   const runner = read('src/jobs/agent-runner.ts')
   assert.ok(/workerKey: args.agentKey/.test(runner), 'agent-runner scopes the per-worker window')
 })

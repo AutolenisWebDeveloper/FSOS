@@ -342,12 +342,17 @@ function escalationCtx(
   return {
     channel,
     to,
-    body,
+    // Follow-up R9: a credential email's body (a live recovery link) is never stored with the
+    // escalation — the FSA queue displays it. Record that it was redacted instead.
+    body: policy?.containsCredential === true ? CREDENTIAL_BODY_REDACTED : body,
     actor: policy?.actor ?? 'system',
     entity: policy?.entity,
     note: policy?.templateKind ? `templateKind:${policy.templateKind}` : undefined,
   }
 }
+
+/** What the escalation queue stores in place of a credential email's body (follow-up R9). */
+export const CREDENTIAL_BODY_REDACTED = '[redacted: this email carried a live credential link and is not stored]'
 
 /** Build the full policy context from the caller's (possibly absent) enrichment. */
 function policyContext(

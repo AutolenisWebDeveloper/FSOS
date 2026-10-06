@@ -245,34 +245,32 @@ async function lifeWinbackCandidates(channel: 'sms' | 'email'): Promise<Outreach
 
 /**
  * The durable first-touch record for a referral (owner decision 7): any outreach_queue row for
- * this referral that reached the provider. Fails CLOSED — an unreadable history counts as touched,
- * so the referral is never re-contacted on a guess.
+ * this referral that reached the provider — or MAY have: a 'drafted' row was claimed for sending and
+ * its outcome never recorded (the run died after the claim), so it counts as touched too (follow-up
+ * R12c: at most once). Fails CLOSED — an unreadable history counts as touched, so the referral is
+ * never re-contacted on a guess.
  */
-async function referralAlreadyTouched(referralId: string): Promise<boolean> {
+export async function referralAlreadyTouched(referralId: string): Promise<boolean> {
   const { count, error } = await getDb()
     .from('outreach_queue')
     .select('id', { count: 'exact', head: true })
     .eq('agent_key', 'referral_followup')
     .eq('entity_type', 'referral')
     .eq('entity_id', referralId)
-    .eq('status', 'sent')
+    .in('status', ['sent', 'drafted'])
   if (error) return true
   return (count ?? 0) > 0
 }
 
-/** An upcoming scheduled appointment for the household. Fails CLOSED (treated as booked). */
+/**
+ * An upcoming scheduled appointment for the household — the shared read Life uses (follow-up R2), so a
+ * native booking linked only through contact_id (a household contact, or one matching a member)
+ * counts. Fails CLOSED: an unreadable state is treated as booked.
+ */
 async function householdHasUpcomingAppointment(householdId: string | null): Promise<boolean> {
   if (!householdId) return false
-  const nowISO = new Date().toISOString()
-  const { count, error } = await getDb()
-    .from('appointments')
-    .select('id', { count: 'exact', head: true })
-    .eq('household_id', householdId)
-    .eq('status', 'scheduled')
-    // Native bookings carry starts_at; FSA review-created appointments carry only scheduled_at.
-    .or(`starts_at.gt.${nowISO},scheduled_at.gt.${nowISO}`)
-  if (error) return true
-  return (count ?? 0) > 0
+  const { upcomingAppointmentState } = await import('@/lib/booking/appointment-booked')
+  return (await upcomingAppointmentState(householdId)) !== 'no'
 }
 
 /** The member messaged us within the conversation quiet window. Fails CLOSED (treated as replied). */
@@ -344,12 +342,40 @@ export interface BuildQueueResult {
 }
 
 /**
+ * Follow-up R12d: a 'held' row (a self-clearing hold — frequency, window, business hours) was never
+ * released or expired. A hold belongs to its queue day: rows held on an EARLIER day are expired to
+ * 'skipped' with the hold recorded, and the day's build re-queues a still-eligible target fresh.
+ * Returns how many were expired. Never throws.
+ */
+export async function expireStaleHolds(today: string = new Date().toISOString().slice(0, 10)): Promise<number> {
+  try {
+    const db = getDb()
+    const { data: stale, error } = await db.from('outreach_queue').select('id, block_reason').eq('status', 'held').lt('queue_date', today).limit(1000)
+    if (error || !Array.isArray(stale)) return 0
+    let n = 0
+    for (const r of stale as { id: string; block_reason: string | null }[]) {
+      const { data } = await db
+        .from('outreach_queue')
+        .update({ status: 'skipped', block_reason: `hold expired: ${r.block_reason ?? 'deferred'}`, updated_at: new Date().toISOString() })
+        .eq('id', r.id)
+        .eq('status', 'held')
+        .select('id')
+      if (Array.isArray(data) && data.length > 0) n++
+    }
+    return n
+  } catch {
+    return 0
+  }
+}
+
+/**
  * Build today's prioritized outreach queue for every enabled outreach agent, up to
  * each agent's daily quota. Idempotent: the unique (queue_date, agent, entity) keeps
- * re-runs from double-queuing. Returns per-agent counts.
+ * re-runs from double-queuing. Returns per-agent counts. Earlier days' held rows are expired first.
  */
 export async function buildQueue(): Promise<BuildQueueResult> {
   const db = getDb()
+  await expireStaleHolds()
   const targets = await loadTargets()
   const byAgent: Record<string, { queued: number; skipped: number }> = {}
   let queued = 0
@@ -416,11 +442,11 @@ interface QueueItem {
  * queued items, up to the agent's remaining quota. Wraps jobs/agent-runner.runAgent
  * so every send is attributed, kill-switch-gated, and escalates on block.
  */
-export async function runOutreachAgent(agentKey: OutreachAgentKey): Promise<{ sent: number; blocked: number; escalated: number; skipped: number }> {
+export async function runOutreachAgent(agentKey: OutreachAgentKey): Promise<{ sent: number; blocked: number; escalated: number; skipped: number; errored?: string }> {
   const db = getDb()
   const targets = await loadTargets()
   const t = targets[agentKey]
-  const stats = { sent: 0, blocked: 0, escalated: 0, skipped: 0 }
+  const stats: { sent: number; blocked: number; escalated: number; skipped: number; errored?: string } = { sent: 0, blocked: 0, escalated: 0, skipped: 0 }
   if (!t || !t.enabled || t.daily_target <= 0) return stats
   // Owner decision 7: the campaign engines own this audience. Nothing dispatches; any row still
   // queued for this agent (built before the stand-down) is retired with its reason — never sent.
@@ -458,7 +484,7 @@ export async function runOutreachAgent(agentKey: OutreachAgentKey): Promise<{ se
   const queue = (items ?? []) as QueueItem[]
   if (queue.length === 0) return stats
 
-  await runAgent({
+  const run = await runAgent({
     agentKey,
     dedupeKey: `workforce:${agentKey}:${today}`,
     input: { phase: 'dispatch', count: queue.length },
@@ -524,18 +550,43 @@ export async function runOutreachAgent(agentKey: OutreachAgentKey): Promise<{ se
         }
 
         // Draft a green-zone message via the gateway (Claude-first, fallbacks).
-        const knowledge = renderKnowledgeContext(
-          await searchKnowledge(item.reason ?? item.source, { limit: 3, clientSafeOnly: true }),
-        )
-        const userContent = buildDraftUserContent(
-          { source: item.source as OutreachCandidate['source'], channel: item.channel, reason: item.reason ?? item.source, recipientName: rec.name },
-          knowledge,
-        )
-        const res = await ctx.gateway({
-          system: OUTREACH_PROMPTS[agentKey],
-          maxTokens: 400,
-          messages: [{ role: 'user', content: userContent }],
-        })
+        // Review of R12c: a 'drafted' row counts as touched (it may have been sent). A failure here
+        // is BEFORE any send, so release the row as held instead of stranding it 'drafted' forever:
+        // the hold expires (expireStaleHolds) and the next build re-queues the referral. The error
+        // is rethrown so the agent run is still recorded errored (R17b).
+        let res: { text: string }
+        try {
+          const knowledge = renderKnowledgeContext(
+            await searchKnowledge(item.reason ?? item.source, { limit: 3, clientSafeOnly: true }),
+          )
+          const userContent = buildDraftUserContent(
+            { source: item.source as OutreachCandidate['source'], channel: item.channel, reason: item.reason ?? item.source, recipientName: rec.name },
+            knowledge,
+          )
+          res = await ctx.gateway({
+            system: OUTREACH_PROMPTS[agentKey],
+            maxTokens: 400,
+            messages: [{ role: 'user', content: userContent }],
+          })
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          // The release is retried; if it still cannot be written the row would stay 'drafted' (and
+          // count as touched), so it is escalated for the operator to release by hand (CodeRabbit
+          // review of R12c). The original draft error is always rethrown.
+          let released = false
+          for (let attempt = 0; attempt < 3 && !released; attempt++) {
+            const { error: relErr } = await db
+              .from('outreach_queue')
+              .update({ status: 'held', block_reason: `draft_failed: ${msg}`.slice(0, 200), updated_at: new Date().toISOString() })
+              .eq('id', item.id)
+              .eq('status', 'drafted')
+            released = !relErr
+          }
+          if (!released) {
+            await ctx.escalate('outreach_release_failed', { targetType: item.entity_type, targetId: item.entity_id }).catch(() => {})
+          }
+          throw err
+        }
         let draft = res.text.trim()
 
         // Belt-and-suspenders: reject recommendation language BEFORE the send (the
@@ -557,6 +608,8 @@ export async function runOutreachAgent(agentKey: OutreachAgentKey): Promise<{ se
         const outcome = await sendMessage({
           channel: item.channel,
           to: rec.contact,
+          // One logical send per queue row (R15).
+          idempotencyKey: `workforce:${item.id}`,
           subject: item.channel === 'email' ? 'A quick note from Markist' : undefined,
           body,
           actor: `agent:${agentKey}`,
@@ -609,13 +662,15 @@ export async function runOutreachAgent(agentKey: OutreachAgentKey): Promise<{ se
       }
     },
   })
+  // R17b: an errored agent run is reported to the job, not swallowed as a success.
+  if (run.status === 'errored') stats.errored = run.reason ?? 'agent run errored'
 
   return stats
 }
 
 export interface RunWorkforceResult {
   built: BuildQueueResult
-  dispatch: Record<string, { sent: number; blocked: number; escalated: number; skipped: number }>
+  dispatch: Record<string, { sent: number; blocked: number; escalated: number; skipped: number; errored?: string }>
   totalSent: number
 }
 

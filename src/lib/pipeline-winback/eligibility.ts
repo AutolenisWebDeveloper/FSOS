@@ -70,7 +70,8 @@ export interface WinbackEligibilityInput {
   /** Precedence #1: the household has a fresh/active advisor-owned opportunity (see data.ts). */
   hasActiveAdvisorOpportunity: boolean
   /** Shared suppression: an upcoming (scheduled, future) appointment for the household. */
-  hasUpcomingAppointment: boolean
+  /** null = unknown (a read failed) — never eligible. */
+  hasUpcomingAppointment: boolean | null
   /** Shared suppression: an active/paused-for-conversation enrollment or open comms conversation. */
   inActiveConversation: boolean
   /** Idempotency: a live enrollment already exists for this opportunity+campaign. */
@@ -98,7 +99,7 @@ export function evaluateWinbackEligibility(input: WinbackEligibilityInput): Winb
   if (input.hasActiveAdvisorOpportunity) reasons.push('active_advisor_opportunity')
 
   // Shared suppression: an existing appointment or an active conversation pauses outreach.
-  if (input.hasUpcomingAppointment) reasons.push('active_appointment')
+  if (input.hasUpcomingAppointment !== false) reasons.push('active_appointment')
   if (input.inActiveConversation) reasons.push('in_conversation')
 
   // Duplicate-enrollment guard (§4a) — one live enrollment per opportunity.

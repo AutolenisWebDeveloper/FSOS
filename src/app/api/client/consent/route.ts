@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { recordConsentChange } from '@/lib/comms/consent-events'
 import { householdIdFor } from '@/lib/portal/scope'
 import { armDncEntry, applyDocumentedReconsent, smsStopNeedsStart } from '@/lib/comms/opt-out'
+import { terminateAutomationForAddress } from '@/lib/comms/stop-fanout'
 import { SMS_CONSENT } from '@/lib/site'
 import { consentContactKey } from '@/lib/comms/contact-consent'
 import { getCurrentUserEmail } from '@/lib/auth/session'
@@ -34,8 +35,9 @@ export async function POST(req: NextRequest) {
     const householdId = await householdIdFor(auth.session)
     if (!householdId) return NextResponse.json({ error: 'No household scope.' }, { status: 403 })
 
-    // Update every member of this household on the channel. Read the prior status first so
-    // each consent change records its true previous→new transition (audit + CRM timeline).
+    // A REVOKE covers every member of the household on the channel; a GRANT covers only the signed-in
+    // member (follow-up R1: one person's toggle is not another person's consent). Read the prior status
+    // first so each consent change records its true previous→new transition (audit + CRM timeline).
     const { data: members } = await db
       .from('household_members')
       .select('id, email, phone, consents(channel, status)')
@@ -51,7 +53,14 @@ export async function POST(req: NextRequest) {
     const signedInEmail = (await getCurrentUserEmail())?.trim().toLowerCase() ?? null
     const own = (members ?? []).filter((m) => !!signedInEmail && String(m.email ?? '').trim().toLowerCase() === signedInEmail)
     const selfMemberId = own.length === 1 ? own[0].id : null
+    if (v.data.status === 'granted' && !selfMemberId) {
+      return NextResponse.json(
+        { error: "We couldn't match your sign-in to a member of this household, so nothing was changed. Please contact us." },
+        { status: 409 },
+      )
+    }
     for (const m of members ?? []) {
+      if (v.data.status === 'granted' && m.id !== selfMemberId) continue
       const prior = (m as { consents?: { channel: string; status: string }[] }).consents?.find(
         (c) => c.channel === v.data.channel,
       )
@@ -66,11 +75,13 @@ export async function POST(req: NextRequest) {
           const key = ch === 'call' ? contact : consentContactKey(ch, contact)
           const dnc = await armDncEntry({ contact: key, channel: ch, reason: 'client opt-out' })
           if (!dnc.ok) dncFailed = true
+          // A stop condition: close live automation at this address (follow-up R13).
+          if (ch !== 'call') await terminateAutomationForAddress(ch, key, 'client opt-out', 'opted_out')
         }
       }
       // A documented re-consent by the client clears the earlier opt-outs on this channel (owner,
       // round 3) — except a hard bounce, which only re-verifying the address clears.
-      if (v.data.status === 'granted' && v.data.channel !== 'call' && m.id === selfMemberId) {
+      if (v.data.status === 'granted' && v.data.channel !== 'call') {
         const contact = v.data.channel === 'email' ? m.email : m.phone
         if (contact) {
           // Owner decision (round 4), copy only: a STOP stays blocked at the carrier until START.

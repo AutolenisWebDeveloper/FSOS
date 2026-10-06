@@ -19,6 +19,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { cronAuthorized } from '@/lib/http'
 import { runBookingReminderPass, runBookingNoticeRetryPass } from '@/lib/booking/notify'
 import { configErrorResponse } from '@/lib/http'
+import { recordRouteRun } from '@/lib/jobs/runtime'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -34,10 +35,13 @@ export async function GET(req: NextRequest) {
   }
   try {
     const now = new Date()
-    const result = await runBookingReminderPass(now)
-    // Sequential, not parallel: both passes claim on the same ledger, and one shared connection
-    // budget is easier to reason about than two concurrent sweeps of the same table.
-    const notices = await runBookingNoticeRetryPass(now)
+    const { result, notices } = await recordRouteRun('booking-reminders', async () => {
+      const result = await runBookingReminderPass(now)
+      // Sequential, not parallel: both passes claim on the same ledger, and one shared connection
+      // budget is easier to reason about than two concurrent sweeps of the same table.
+      const notices = await runBookingNoticeRetryPass(now)
+      return { result, notices }
+    })
     return NextResponse.json({ job: 'booking-reminders', ...result, notices })
   } catch (err) {
     return (

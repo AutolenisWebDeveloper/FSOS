@@ -193,6 +193,33 @@ await at('a visitor-typed {{word}} neither blocks the alert nor is rewritten', a
   assert.ok(call.html.includes('hello') && call.text.includes('hello'), 'the typed text survives')
 })
 
+await at('follow-up R8: triple braces {{{word}}} in typed text neither block the alert nor the ack', async () => {
+  for (const send of [
+    (v) => notify.notifyFsa({ subject: 'New lead', heading: 'h', lede: 'l', rows: [{ label: 'Message', value: v }] }),
+    (v) => notify.sendVisitorAck({ to: 'visitor@example.com', subject: 'Thanks', heading: 'h', lede: v }),
+  ]) {
+    for (const v of ['{{{hello}}}', '{{{{hello}}}}', 'a {{ {hello}} b']) {
+      globalThis.__notifyDb = memDb()
+      globalThis.__resendCalls = []
+      globalThis.__policyCtx = null
+      const r = await send(v)
+      assert.equal(r.ok, true, `blocked on ${v}: ${r.error}`)
+      // The gate's personalization step would block on an unresolved token; this harness stubs the
+      // gate, so assert what sendMessage hands it.
+      assert.notEqual(globalThis.__policyCtx?.gate?.personalizationResolved ?? globalThis.__policyCtx?.personalizationResolved, false, `typed ${v} read as an unresolved merge token`)
+    }
+  }
+  for (const kind of ['html', 'text']) {
+    const out = notify.literalBraces('x {{{a}}} {{{{b}}}}', kind)
+    assert.doesNotMatch(out, /\{\{/, `${kind}: a "{{" survived: ${out}`)
+  }
+})
+await at('follow-up R8: the workshop registration receipt neutralizes typed braces too', () => {
+  const src = readFileSync(join(root, 'src/app/api/public/workshops/register/route.ts'), 'utf8')
+  assert.match(src, /body: literalBraces\(renderHtml\(ackContent\), 'html'\)/)
+  assert.match(src, /bodyText: literalBraces\(renderText\(ackContent\), 'text'\)/)
+})
+
 await at('an entity whose id is not a uuid is not written into the uuid column (the briefing failed on this)', async () => {
   globalThis.__notifyDb = memDb()
   globalThis.__resendCalls = []

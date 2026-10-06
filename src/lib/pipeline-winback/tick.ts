@@ -74,11 +74,14 @@ export async function pipelineWinbackTick(): Promise<WinbackTickResult> {
 
     enrolled += await enrollSweep(db, cfg, nowISO)
 
-    const { data: touchDefs } = await db
+    const { data: touchDefs, error: touchErr } = await db
       .from('pipeline_winback_touches')
       .select('touch_no, kind, template_id, asset_label')
       .eq('campaign_id', c.id)
       .order('touch_no', { ascending: true })
+    // Follow-up R12a: an unreadable touch plan HOLDS this campaign's run. Treated as "no touches", it
+    // marked every due enrollment completed.
+    if (touchErr || !Array.isArray(touchDefs)) continue
     const touchByNo = new Map<number, TouchRow>((touchDefs ?? []).map((t) => [t.touch_no, t as TouchRow]))
 
     const { data: due } = await db
@@ -116,6 +119,9 @@ export async function pipelineWinbackTick(): Promise<WinbackTickResult> {
         exited++
         continue
       }
+      // The appointment read failed: hold this touch rather than exiting on a transient error, and
+      // never send while it is unknown (follow-up R2).
+      if (input.hasUpcomingAppointment === null) continue
       const elig = evaluateWinbackEligibility(input)
       if (!elig.eligible) {
         await handleIneligible(db, e.id, elig.reasons, nowISO)
@@ -296,6 +302,8 @@ export async function fireMessageTouch(
   const outcome = await sendMessage({
     channel,
     to,
+    // One logical send per enrollment touch: a retry reuses the provider idempotency key (R15).
+    idempotencyKey: `winback:${e.id}:${touchNo}`,
     subject: parseSubjectFromBody(tpl.body),
     body: tpl.body,
     actor: SYSTEM,

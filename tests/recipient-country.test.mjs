@@ -138,7 +138,6 @@ await t('no consent → the consent step reports first (1a runs after step 1)', 
 
 console.log('\nWho may declare operatorInitiated (static)')
 const OPERATOR_SITES = [
-  'src/app/api/comms/send/route.ts',
   'src/app/api/comms/test/route.ts',
   'src/app/api/comms/test/recipients/route.ts',
   'src/app/api/comms/conversations/[id]/route.ts',
@@ -153,6 +152,9 @@ await t('conversation start: only an FSA-typed opener is operator-initiated, nev
   const src = readFileSync('src/app/api/comms/conversations/start/route.ts', 'utf8')
   assert.match(src, /operatorInitiated: seededFrom === 'blank',/)
   assert.match(src, /seededFrom = 'approved_template'/)
+})
+await t('console send: a campaign asset is automated, a typed message is operator-initiated (follow-up R7)', () => {
+  assert.match(readFileSync('src/app/api/comms/send/route.ts', 'utf8'), /operatorInitiated: sourceKind !== 'campaign_asset',/)
 })
 await t('only the operator surfaces set operatorInitiated: true', () => {
   const setters = walk('src').filter((f) => /\.tsx?$/.test(f) && /operatorInitiated:\s*true/.test(readFileSync(f, 'utf8')))

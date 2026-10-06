@@ -140,7 +140,8 @@ function makeDb(state) {
         if (col === 'starts_at') filters.starts_at_lte = val
         return b
       },
-      is() {
+      is(col, val) {
+        filters[`${col}_is`] = val
         return b
       },
       lt(col, val) {
@@ -210,6 +211,16 @@ function makeDb(state) {
             )
             for (const r of doomed) state.ledger.splice(state.ledger.indexOf(r), 1)
             return resolve({ data: doomed.map((r) => ({ id: r.id })), error: null })
+          }
+          // Conditional update of an appointment (the reminder-SMS slot reservation): a real
+          // compare-and-set on reminder_sent_at, returning the rows it changed.
+          if (op === 'update' && table === 'appointments') {
+            const hit = state.appointments.filter((a) =>
+              (!filters.id || a.id === filters.id) &&
+              (!('reminder_sent_at' in filters) || a.reminder_sent_at === filters.reminder_sent_at) &&
+              (!('reminder_sent_at_is' in filters) || (a.reminder_sent_at ?? null) === filters.reminder_sent_at_is))
+            for (const a of hit) Object.assign(a, pendingUpdate)
+            return resolve({ data: hit.map((a) => ({ id: a.id })), error: null })
           }
           if (op === 'insert' || op === 'update' || op === 'delete') return resolve({ data: null, error: null })
           return resolve({ data: rowsFor(), error: null })
@@ -495,9 +506,13 @@ await t('multiple configured offsets each fire once, keyed independently', async
   state.appointments[0].starts_at = new Date(NOW.getTime() + 30 * 60_000).toISOString() // 30m out: both due
   state.appointments[0].booked_at = '2026-08-20T00:00:00.000Z'
   await notify.runBookingReminderPass(NOW)
-  assert.equal(smsCalls().length, 2)
-  assert.equal(ledgerFor(state, 'reminder', 'sms', 60).length, 1)
-  assert.equal(ledgerFor(state, 'reminder', 'sms', 1440).length, 1)
+  // R6: two reminder SMS are never sent within 2 hours, so a burst sends ONE; the other offset is
+  // held (unclaimed), never duplicated. Each offset keeps its own ledger key.
+  assert.equal(smsCalls().length, 1)
+  const claimed = [60, 1440].filter((o) => ledgerFor(state, 'reminder', 'sms', o).length === 1)
+  assert.equal(claimed.length, 1, 'one offset claimed, the other left for a later tick')
+  await notify.runBookingReminderPass(NOW)
+  assert.equal(smsCalls().length, 1, 'a second tick inside the 2h spacing sends nothing more')
 })
 
 await t('the shipped 24h + 12h + 1h cadence fires each offset once, on both channels', async () => {
@@ -509,12 +524,12 @@ await t('the shipped 24h + 12h + 1h cadence fires each offset once, on both chan
   state.appointments[0].booked_at = '2026-08-20T00:00:00.000Z' // long before any window opened
   state.appointments[0].starts_at = new Date(NOW.getTime() + 30 * 60_000).toISOString() // all three due
   for (let i = 0; i < 3; i++) await notify.runBookingReminderPass(NOW)
-  assert.equal(smsCalls().length, 3, 'one reminder SMS per offset, however many ticks run')
-  assert.equal(emailCalls().length, 3, 'and one reminder email per offset')
-  for (const offset of [1440, 720, 60]) {
-    assert.equal(ledgerFor(state, 'reminder', 'sms', offset).length, 1, `sms offset ${offset}`)
-    assert.equal(ledgerFor(state, 'reminder', 'email', offset).length, 1, `email offset ${offset}`)
-  }
+  // Email: one per offset, each its own ledger key. SMS: R6 spacing — a burst of due offsets sends
+  // ONE reminder SMS however many ticks run inside 2 hours, and never a duplicate.
+  assert.equal(emailCalls().length, 3, 'one reminder email per offset')
+  for (const offset of [1440, 720, 60]) assert.equal(ledgerFor(state, 'reminder', 'email', offset).length, 1, `email offset ${offset}`)
+  assert.equal(smsCalls().length, 1, 'one reminder SMS in the burst')
+  for (const offset of [1440, 720, 60]) assert.ok(ledgerFor(state, 'reminder', 'sms', offset).length <= 1, `sms offset ${offset} at most once`)
 })
 
 await t('a booking made inside an offset window does not get that reminder', async () => {
@@ -571,6 +586,104 @@ await t('pure: no allowed instant before the appointment → skip; an earlier sh
   assert.equal(reminderSmsTiming({ windowOpenMs: D0 + 2 * H, startMs: D0 + 5 * H, anchorMs: D0 + 1 * H, nowMs: D0 + 2 * H }, dayOnly), 'skip')
   // a tick past the target but at night with no window left before the start → skip
   assert.equal(reminderSmsTiming({ windowOpenMs: D0 + 18 * H, startMs: D0 + 22 * H, anchorMs: null, nowMs: D0 + 21 * H }, dayOnly), 'skip')
+})
+
+console.log('\n3c. Reminder timing (follow-up R6)')
+// A 09:00 CDT appointment with migration 137's offsets: the 12h reminder (21:00) moves to 19:30 the
+// evening before; the 1h reminder (08:00) would move 12.5h earlier — more than half its offset — so
+// it is SKIPPED, never sent alongside the 12h one the evening before.
+await t('a 09:00 appointment never gets the 12h and 1h reminders together the evening before', async () => {
+  const state = setup()
+  state.config = { offsets_minutes: [720, 60], email_enabled: false, sms_enabled: true }
+  state.appointments[0].starts_at = NIGHT_APPT
+  state.appointments[0].booked_at = '2026-08-20T00:00:00.000Z'
+  for (let i = 0; i < 3; i++) await notify.runBookingReminderPass(new Date('2026-09-02T00:30:00.000Z')) // 19:30 CDT
+  assert.equal(smsCalls().length, 1, 'only the 12h reminder goes the evening before')
+  // 08:00 CDT the morning of: the 1h reminder's own time is outside the floor and it may not move.
+  await notify.runBookingReminderPass(new Date('2026-09-02T13:00:00.000Z'))
+  assert.equal(smsCalls().length, 1, 'the 1h reminder is skipped, not sent at night or early')
+})
+await t('two reminders for one appointment are never sent within 2 hours of each other', async () => {
+  // 10:30 CDT appointment, offsets 2h and 1h: the 2h one (08:30) would move to 09:00, 30 minutes
+  // before the 1h one (09:30). The one closer to the appointment is kept.
+  const state = setup()
+  state.config = { offsets_minutes: [120, 60], email_enabled: false, sms_enabled: true }
+  state.appointments[0].starts_at = '2026-09-02T15:30:00.000Z' // 10:30 CDT
+  state.appointments[0].booked_at = '2026-08-20T00:00:00.000Z'
+  for (const at of ['2026-09-02T14:00:00.000Z', '2026-09-02T14:15:00.000Z', '2026-09-02T14:30:00.000Z', '2026-09-02T14:45:00.000Z']) {
+    await notify.runBookingReminderPass(new Date(at)) // 09:00 → 09:45 CDT
+  }
+  assert.equal(smsCalls().length, 1, 'one reminder, not two within 30 minutes')
+})
+await t('a booking with no captured zone resolves it from the phone area code before the continental window', async () => {
+  // 212 = New York. 10:00 EDT is 07:00 Pacific — outside the all-continental window, inside Eastern.
+  const state = setup()
+  state.config = { offsets_minutes: [1440], email_enabled: false, sms_enabled: true }
+  state.appointments[0].booker_timezone = null
+  state.appointments[0].contacts = { ...state.appointments[0].contacts, phone: '+12125551234' }
+  state.appointments[0].starts_at = '2026-09-03T14:00:00.000Z' // 10:00 EDT
+  state.appointments[0].booked_at = '2026-08-20T00:00:00.000Z'
+  await notify.runBookingReminderPass(new Date('2026-09-02T14:00:00.000Z')) // 10:00 EDT, 07:00 PDT
+  assert.equal(smsCalls().length, 1, 'the Eastern number gets its reminder at 10:00 Eastern')
+})
+await t('the notice-retry pass is a scheduled send: it never claims the person-triggered floor exemption', async () => {
+  const state = setup()
+  sendSpy.script = (ctx) => (ctx.channel === 'sms' ? DEFERRED_FREQUENCY : SENT)
+  await notify.sendBookingConfirmation('appt-1')
+  const immediate = smsCalls().at(-1)
+  assert.equal(immediate.recipientTriggeredNotice, true, 'the confirmation sent as it happens is person-triggered')
+  sendSpy.script = () => SENT
+  await notify.runBookingNoticeRetryPass(NOW)
+  const retried = smsCalls().at(-1)
+  assert.notEqual(retried, immediate)
+  assert.equal(retried.recipientTriggeredNotice, false, 'the retry stays under the floor')
+  const rem = setup()
+  rem.config = { offsets_minutes: [1440], email_enabled: false, sms_enabled: true }
+  rem.appointments[0].booked_at = '2026-08-20T00:00:00.000Z'
+  rem.appointments[0].starts_at = new Date(NOW.getTime() + 60 * 60_000).toISOString()
+  await notify.runBookingReminderPass(NOW)
+  assert.equal(smsCalls().at(-1).recipientTriggeredNotice, false, 'reminders stay under the floor')
+})
+
+await t('only the attendee\'s own action is person-triggered: a staff cancel, reschedule or re-send stays under the floor (review of R3)', async () => {
+  for (const event of ['cancellation', 'rescheduled', 'confirmation']) {
+    setup()
+    await notify.sendAppointmentNotice('appt-1', event, { actor: 'user:fsa-1' })
+    assert.equal(smsCalls().at(-1).recipientTriggeredNotice, false, `staff ${event}`)
+    setup()
+    await notify.sendAppointmentNotice('appt-1', event, { actor: 'public' })
+    assert.equal(smsCalls().at(-1).recipientTriggeredNotice, true, `attendee ${event}`)
+  }
+  setup()
+  await notify.sendBookingConfirmation('appt-1', 'user:fsa-1')
+  assert.equal(smsCalls().at(-1).recipientTriggeredNotice, false, 'an FSA re-send of the confirmation')
+})
+
+await t('send-time spacing: at most one reminder SMS per pass, none within 2h of the last one sent (CodeRabbit review of R6)', async () => {
+  // Two offsets due in the same pass (the 24h one late, the 1h one now): only one SMS goes out.
+  const both = setup()
+  both.config = { offsets_minutes: [1440, 60], email_enabled: false, sms_enabled: true }
+  both.appointments[0].booked_at = '2026-08-20T00:00:00.000Z'
+  both.appointments[0].starts_at = new Date(NOW.getTime() + 50 * 60_000).toISOString()
+  await notify.runBookingReminderPass(NOW)
+  assert.equal(smsCalls().length, 1, `${smsCalls().length} reminder SMS in one pass`)
+  // The ledger shows a reminder SMS sent 30 minutes ago: the next one waits.
+  const recent = setup()
+  recent.config = { offsets_minutes: [1440, 60], email_enabled: false, sms_enabled: true }
+  recent.appointments[0].booked_at = '2026-08-20T00:00:00.000Z'
+  recent.appointments[0].starts_at = new Date(NOW.getTime() + 50 * 60_000).toISOString()
+  recent.ledger.push({ id: 'led-prev', appointment_id: 'appt-1', schedule_version: recent.appointments[0].schedule_version ?? 1, event: 'reminder', offset_minutes: 1440, channel: 'sms', status: 'sent', created_at: new Date(NOW.getTime() - 30 * 60_000).toISOString() })
+  await notify.runBookingReminderPass(NOW)
+  assert.equal(smsCalls().length, 0, 'a reminder SMS went out 30 minutes after the last one')
+})
+
+await t('overlapping passes cannot send two reminder SMS for one appointment (CodeRabbit review of R6)', async () => {
+  const st = setup()
+  st.config = { offsets_minutes: [1440, 60], email_enabled: false, sms_enabled: true }
+  st.appointments[0].booked_at = '2026-08-20T00:00:00.000Z'
+  st.appointments[0].starts_at = new Date(NOW.getTime() + 50 * 60_000).toISOString()
+  await Promise.all([notify.runBookingReminderPass(NOW), notify.runBookingReminderPass(NOW)])
+  assert.equal(smsCalls().length, 1, `${smsCalls().length} reminder SMS from two overlapping passes`)
 })
 
 console.log('\n4. Rescheduled appointments')

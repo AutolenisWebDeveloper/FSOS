@@ -18,8 +18,9 @@
 // resolve to "allowed".
 
 import { getDb } from '../supabase/client'
-import { latestConsentGranted, smsTail, isDncLifted } from './contact-consent'
+import { latestConsentGranted, smsTail, isDncLifted, NOT_TEST_RECIPIENT } from './contact-consent'
 import { purposeToConsentPurpose, type MessagePurpose } from './purpose'
+
 
 export type Channel = 'sms' | 'email'
 
@@ -32,27 +33,25 @@ export type Channel = 'sms' | 'email'
  * Once a member exists the member-keyed `consents` table is authoritative, so this can
  * never re-grant a member-level revoke.
  */
-export async function durableContactConsentGranted(contact: string, channel: Channel): Promise<boolean> {
+export async function durableContactConsentGranted(contact: string, channel: Channel, opts: { isTest?: boolean } = {}): Promise<boolean> {
   try {
     const db = getDb()
+    // A non-test send never reads the test-recipient rows (follow-up R4).
+    const scope = <Q extends { or(f: string): Q }>(q: Q): Q => (opts.isTest === true ? q : q.or(NOT_TEST_RECIPIENT))
     if (channel === 'sms') {
       const tail = smsTail(contact)
       if (tail.length < 10) return false
-      const { data, error } = await db
-        .from('comm_contact_consents')
-        .select('action, captured_at')
-        .eq('channel', 'sms')
-        .ilike('contact', `%${tail}`)
+      const { data, error } = await scope(
+        db.from('comm_contact_consents').select('action, captured_at').eq('channel', 'sms').ilike('contact', `%${tail}`),
+      )
         .order('captured_at', { ascending: false })
         .limit(1)
       if (error) return false // fail closed — a returned error is not a grant
       return latestConsentGranted(data as { action: string; captured_at: string }[] | null)
     }
-    const { data, error } = await db
-      .from('comm_contact_consents')
-      .select('action, captured_at')
-      .eq('channel', channel)
-      .eq('contact', contact.toLowerCase())
+    const { data, error } = await scope(
+      db.from('comm_contact_consents').select('action, captured_at').eq('channel', channel).eq('contact', contact.toLowerCase()),
+    )
       .order('captured_at', { ascending: false })
       .limit(1)
     if (error) return false // fail closed
@@ -76,9 +75,11 @@ export async function contactConsentRevoked(
   contact: string,
   channel: Channel,
   purpose?: MessagePurpose,
+  opts: { isTest?: boolean } = {},
 ): Promise<boolean> {
   try {
     const db = getDb()
+    const scope = <Q extends { or(f: string): Q }>(q: Q): Q => (opts.isTest === true ? q : q.or(NOT_TEST_RECIPIENT))
     if (memberId) {
       const { data, error } = await db.from('consents').select('status').eq('member_id', memberId).eq('channel', channel).maybeSingle()
       if (error) return true // fail safe: an unreadable revoke state counts as revoked
@@ -99,22 +100,18 @@ export async function contactConsentRevoked(
     if (channel === 'sms') {
       const tail = smsTail(contact)
       if (tail.length < 10) return false
-      const { data, error } = await db
-        .from('comm_contact_consents')
-        .select('action, captured_at')
-        .eq('channel', 'sms')
-        .ilike('contact', `%${tail}`)
+      const { data, error } = await scope(
+        db.from('comm_contact_consents').select('action, captured_at').eq('channel', 'sms').ilike('contact', `%${tail}`),
+      )
         .order('captured_at', { ascending: false })
         .limit(1)
       if (error) return true // fail safe
       const rows = data as { action: string; captured_at: string }[] | null
       return Array.isArray(rows) && rows.length > 0 && !latestConsentGranted(rows) && rows[0]?.action === 'revoked'
     }
-    const { data, error } = await db
-      .from('comm_contact_consents')
-      .select('action, captured_at')
-      .eq('channel', channel)
-      .eq('contact', contact.toLowerCase())
+    const { data, error } = await scope(
+      db.from('comm_contact_consents').select('action, captured_at').eq('channel', channel).eq('contact', contact.toLowerCase()),
+    )
       .order('captured_at', { ascending: false })
       .limit(1)
     if (error) return true // fail safe

@@ -1,6 +1,6 @@
 # FSOS automation audit — report
 
-Branch `fix/automation-e2e` · 2026-10-02 · brief: [`automation-audit-brief.md`](automation-audit-brief.md) ·
+Branch `fix/automation-e2e` (merged as PR #322), follow-ups on `fix/automation-followups` (§1e) · 2026-10-02 · brief: [`automation-audit-brief.md`](automation-audit-brief.md) ·
 inventory, defect register and owner decisions: [`automation-inventory.md`](automation-inventory.md) (§10 holds the
 checkpoint decisions this work implements) · plan: [`../superpowers/plans/2026-10-02-automation-e2e-repair.md`](../superpowers/plans/2026-10-02-automation-e2e-repair.md).
 
@@ -43,6 +43,142 @@ placeholders are recorded as **UNANSWERED**; nothing is inferred for them.
 | Before merge | (1) `docs/ops/migration-runbook.md` (no PII) for the owner to run. (2) A deploy-impact list: everything that will send in the first 24 h after deploy (CRON_SECRET set, production as now), with counts and triggers, plus what sends today and will stop or change. (3) Booking notices and briefings with no FSOS message record must go through the gated send path and write one. (4) 3b counts for every store an automated text can resolve a recipient from, per store. (5) Whether the opt-out writers serialize concurrent events for one address, or the race window. |
 | Canary | The owner verified their phone and email in `/app/comms`. **The verified `comms_test_recipients` entries are the canary set**; their values are never copied anywhere. |
 | Owner-run | The owner runs the browser checks locally and sets `CRON_SECRET` and `SMS_A2P_APPROVED` themselves. When CI is green on the final head, mark the PR ready for review. **Do not merge.** |
+
+## 1e. Follow-ups after PR #322 — R1–R19, M1–M7 (branch `fix/automation-followups`, 2026-10-05)
+
+Same rules as before: the brief's guardrails and hard stops; production read-only; one commit per fix with its
+regression test; no merge or deploy. **This round made no production read or write, sent nothing, and changed no
+env var, cron schedule, webhook, provider setting, flag or switch.** For every item a test (or, for the runbook, a
+run on a throwaway local Postgres) was written first and shown failing on the code before the fix. Nothing came out
+NOT REPRODUCED. M3 and M6 were instructions rather than defects, so there was nothing to reproduce.
+
+Reproduce an item with `git checkout <commit>~1 -- <src files>` and `node tests/<name>.test.mjs` (`.mts` with
+`npx tsx`); the M7 test needs root Postgres: `sudo env "PATH=$PATH" CI_REQUIRE_INFRA=1 node tests/automation-migrations-rollback.test.mjs`.
+
+| Item | Outcome | Reproduced by (failing before the fix) | Fix | Commit |
+|---|---|---|---|---|
+| R1 | REPRODUCED → FIXED | optout-consent-property: Sam's grant made Pat sendable (sms) | grant writes only signed-in member; no unique match → 409; revoke household-wide | `a6eb2c0` |
+| R2 | REPRODUCED → FIXED | appointment-stops-prospecting: Cross-Sell eligibility missed a contact-linked native booking | shared upcomingAppointmentState (now also member-matched contacts) in Cross-Sell, Win-Back, workforce; unknown holds | `e1b47c4` |
+| R3 | REPRODUCED → FIXED | quiet-hours-notice-scope: APPOINTMENT/TRANSACTIONAL-tagged SMS at 23:00 allowed without a person-triggered declaration | exemption opt-in (recipientTriggeredNotice, no campaign key); only immediate booking confirmation/reschedule/cancel declare it | `0344de6`, `ced9e8d` |
+| R4 | REPRODUCED → FIXED | optout-consent-property: unverified destination wrote a grant | grant at verify only; test rows only for isTest; not START evidence; delete revokes; crypto codes, 5-guess cap | `b7e8d94`, `23ca671` |
+| R5 | REPRODUCED → FIXED | optout-routes-fail-closed: one-click POST returned 200 with the DNC write failing | 503 on ok:false for link GET, one-click POST, page POST; public/consent evidence before DNC | `9bc4d7f` |
+| R6 | REPRODUCED → FIXED | booking-sms-lifecycle 3c: 12h+1h both sent at 19:30; 2h+1h 30 min apart; Eastern number with no zone held to the continental window | half-offset limit, 2h spacing, area-code zone before continental; retry pass under the floor (via R3) | `1973095` |
+| R7 | REPRODUCED → FIXED | console-send-operator: campaign-asset send passed operatorInitiated true | operatorInitiated = sourceKind !== campaign_asset | `9bc300a` |
+| R8 | REPRODUCED → FIXED | transactional-notifications: typed {{{hello}}} reached the gate as an unresolved token (personalizationResolved false) | every { before another { neutralized; workshop receipt routed through literalBraces | `d470745` |
+| R9 | REPRODUCED → FIXED | credential-email-redaction: a DNC-blocked password-setup email escalated with its recovery link | containsCredential declaration; escalation stores a redaction marker | `f4521eb` |
+| R10 | REPRODUCED → FIXED | internal-alerts-delivery: an FSA alert quoting "we should buy" was blocked at recommendation | FSA alert exempt from business hours + step 5 only for the practice inbox; ack exempt from business hours, no echo | `17fee5d` |
+| R11 | REPRODUCED → FIXED | gate-reads-fail-closed: 8/8 cases answered permissively on a returned error | each read restrictive; member lookup failure withholds at consent | `bb5be3e` |
+| R12a | REPRODUCED → FIXED | engine-touches-read-holds: all four ticks completed a due enrollment on a touches read error | a read error holds the campaign run | `1f0169b` |
+| R12b | REPRODUCED → FIXED | drip-step-claim: a run that died after the provider accepted step 0 → step 0 sent twice | claim by compare-and-set cursor advance before sending; deferral releases | `3b04ca0` |
+| R12c | REPRODUCED → FIXED | workforce-first-touch-once: a drafted (claimed, outcome unknown) row was not counted as touched | sent or drafted counts | `24b6384` |
+| R12d | REPRODUCED (by code search) → FIXED | grep: workforce.ts only ever writes status held; nothing reads or moves it | expireStaleHolds before each build (earlier days → skipped, hold recorded) | `e48539c` |
+| R12e | REPRODUCED → FIXED | broadcast-hold-anchor: quietHoursHold('quiet_hours', created_at 10 days ago, now) → 'expired' (dropped on first withhold) | broadcastHoldAnchor: bounded from when it became due | `41e05a8` |
+| R12f | REPRODUCED → FIXED | broadcast-schedule: activation dispatched a broadcast scheduled 3 days out | activation without dispatch when schedule_at is future; dispatchCampaign refuses not-yet-due | `c3a73c9` |
+| R12g | REPRODUCED → FIXED | district-nurture-resume-own-thread: own email/SMS thread open → resumed; unrelated agency thread → stayed paused; read error → resumed (4/4 failed) | resumeSweep uses hasOpenConversation on the enrollment's own email/phone (fails closed). An enrollment with neither address resumes, as one with no agency_id did before | `25d2670` |
+| R12h | REPRODUCED → FIXED | resume-member-thread-order (memdb now sorts NULLs as Postgres): open real + empty closed → resumed; closed real + empty open → held | .not(last_message_at is null) + nullsFirst:false | `ca6a5a6` |
+| R13 | REPRODUCED → FIXED | optout-consent-property: inbound STOP left the district nurture enrollment live | all stop conditions call terminateAutomationForAddress (district by address); 21610 ungated | `2cc4928` |
+| R14 | REPRODUCED → FIXED | briefing-email-recorded: POST called dispatch() directly | sendRecorded (record, no tracking, no List-Unsubscribe) | `024e1be` |
+| R15 | REPRODUCED → FIXED | resend-idempotency-key: two attempts of one logical send got different keys | logical idempotencyKey from every retrying caller | `bdf262d` |
+| R16 | REPRODUCED → FIXED | zone-map-splits: 219 / 463-464 Eastern; 850 not approximate; panhandle SMS at 20:30 Eastern allowed; workshop passed phone-only caller zone | map fixed; split codes carry the other zone, evaluated at the chokepoint; workshop lets the chokepoint resolve | `5d6b4b0` |
+| R17a | REPRODUCED → FIXED | automation-run-state: running row 60 min old → 'running' | runState → timed_out past RUN_LEASE_MS (= JOB_LEASE_MS) | `1dbeeeb` |
+| R17b | REPRODUCED → FIXED | automation-run-state: kill-switch halt, 4 retry sweeps with an unreadable queue, workforce agent errored → all recorded completed/Succeeded (9 cases failed) | jobRunOutcome + runIdempotent settle; halted shown Halted, ok:false recorded errored | `d8c9bd0` |
+| R17c | REPRODUCED → FIXED | static-cron-routes-record-run: each route → 0 job_runs rows; Jobs page said 'not recorded here' | recordRouteRun: one '<route>:latest' row refreshed per tick; page reads it; sub-hourly stale after 1h | `2e8b3f2` |
+| R17d | REPRODUCED → FIXED | ai-active-agents-count: 6 rows (3 stood-down, all enabled) → old tile 5/6 | activeAgentCount: 2/3, '3 stood down' hint | `428c075` |
+| R17e | REPRODUCED → FIXED | replay-copy-matches-schedule: help said 'next daily run'; ticks are 0 17-23 | copy names the hourly 17:00–23:00 UTC window, pinned to vercel.json | `d02c99f` |
+| R18 | REPRODUCED → FIXED | node --import <11:00 UTC clock> tests/workshop-engine-invocation.test.mjs → "no NANP candidate matched" | the test injects its own clock (18:00 UTC) | `dfe884f` |
+| R19 | REPRODUCED → FIXED | consent-backfill-switch: POST executed with no switch row | consent_population_execute switch (only on runs; unseeded → off); dry run kept | `4056fb5` |
+| M1 | REPRODUCED → FIXED | local Postgres, 128–134 recorded but never run (135–141 applied): the old Section 1 passed 3 checks (trg_workshop_publish_gate, opportunities.source, idx_opportunities_source — all from 038/045) | 17 catalog checks (A) + 8 data checks (B), schema public; full chain: 25/25 true; skipped DB: A 0/17 true; failing file → re-apply after the "what it changes" table, never record | `587e8b8` |
+| M2 | REPRODUCED → FIXED | runbook applied 138 with no lock_timeout | `-c "set local lock_timeout = '5s'"` in the same -1 transaction; locally 138 cancelled after 5 s behind a held read lock, left no column and no record, then applied; setting did not leak | `587e8b8` |
+| M3 | n/a (instruction) | — | Section 3 and Order on the day: skip 137 until R6 is in a production deployment | `587e8b8` |
+| M4 | REPRODUCED → FIXED | old Section 7: no paused-enrollment precondition; UPDATE predicate not repeated; rollback restored by status only and re-ran | guard (refuses on any paused_for_conversation in 5 engines); predicate + unread_count = 0 repeated; audited/closed printed before a hand COMMIT; rollback distinct on (entity_id), updated_at = audit at, skip :rollback; locally: apply 3/5 seeded, rollback 1 (untouched only), 2nd rollback 0, guard stopped apply | `587e8b8` |
+| M5 | REPRODUCED → FIXED | local: the file's 137 rollback turned tuned {1440,120} and 5/10 into {1440} and 4/8 | every rollback in begin/commit; 137 resets only values 137 set | `587e8b8` |
+| M6 | n/a (instruction) | — | rewritten for merged state; Step 0b ledger read; Vercel Production SHA + `git merge-base --is-ancestor 804222f` before 139 | `587e8b8` |
+| M7 | REPRODUCED → FIXED | sudo CI_REQUIRE_INFRA=1 node tests/automation-migrations-rollback.test.mjs with an assertion after the 140 cycle → engine_retry_redispatch count '0' | re-apply 141; 137 covered by running the runbook block (forward, rollback, re-apply, tuned values survive) | `f5c3066` |
+
+### Adversarial review of this round (fresh reviewer that wrote none of it) — findings and fixes
+
+| # | Finding (severity) | Reproduced by (failing before) | Fix | Commit |
+|---|---|---|---|---|
+| 1 | R11 made an unreadable securities read answer `true`, and `getOrCreateConversation` **stored** it on `comm_conversations.is_security`, which nothing clears: one transient error would block every later appointment and service message on the thread (blocking) | `security-flag-not-persisted-on-error`: new and existing thread both stored `is_security = true` | `householdSecurityState()` returns null when unreadable; send time still treats it as securities; only a confirmed `true` is written | `20a7879` |
+| 2 | R3's exemption keyed on the event name only, so an FSA cancel, FSA reschedule and FSA confirmation re-send were exempt from the floor (should-fix; main exempted all appointment SMS) | `booking-sms-lifecycle`: staff `cancellation`/`rescheduled`/`confirmation` → `recipientTriggeredNotice: true` | also requires the attendee's self-service actor (`public`), which every attendee path passes | `afa7544` |
+| 3 | R12b's claim release filtered only on the step, so a STOP landing mid-send was reverted to `enrolled` by a hold (should-fix; DNC still blocked the send) | `drip-step-claim`: opted_out → enrolled | release requires `status in (enrolled, completed)` | `037cbf1` |
+| 4 | R12c: an AI draft failure after the claim left the row `drafted` forever, so the referral was never contacted (should-fix) | `workforce-draft-failure-requeues`: row left `drafted` | a draft failure sets the row `held` (`draft_failed`); the hold expires and the next build re-queues; the run is still recorded errored | `5b8d030` |
+| 5 | Runbook rollbacks had no lock timeout although they drop columns on `dnc_entries` (should-fix); the §4 combined rollback was not the block the test ran | — (doc) | rollbacks set `lock_timeout = '5s'`; the test runs the runbook's §4 block and re-applies 138/140/141 | `970cdcd` |
+
+Not changed, with reasons: the 5-guess cap on a test-recipient code is not atomic under concurrent guesses (nit; an
+operator-only route, and each guess is still checked against the stored code); campaign-asset console sends still
+carry `consentWaived: true` as on `main` — R7 made them US-only and automated, and whether a campaign asset should
+also require recorded consent is a question for the owner, not changed here.
+
+### PR review bots (Graphify, CodeRabbit) — findings and outcomes
+
+| Finding | Outcome | Commit |
+|---|---|---|
+| Graphify: runbook §1 `idx_wreg_active_email` check ignored `workshop_id`; generation-0 check not NULL-safe | Fixed (column is NOT NULL, so the second was defensive only) | `6b870a3` |
+| Graphify: six coupling-delta notes (`POST`, `buildQueue`, `runOutreachAgent`, `dispatchCampaign`, `terminateAutomationForAddress`, `deliverLeg`) | Not changed: each added edge is a requested fix (recorded send, failure reporting, single stop fan-out); replied on each thread | — |
+| CodeRabbit: reminder SMS spacing only on planned targets — the gate can hold one leg until a second is due and both go out together | Fixed: at most one reminder SMS per appointment per pass, none within 2 h of the last one the ledger shows sent. Two lifecycle tests that asserted several reminder SMS in one burst contradicted R6 and were corrected | `9ab5ae9` |
+| CodeRabbit: phone 850 + a Central ZIP dropped 850's Eastern side | Fixed in the resolver and the dispatch policy; three or more zones → evaluated in every continental zone | `02abbbd` |
+| CodeRabbit: shared appointment check capped at 50 contacts / members | Fixed: paged reads, chunked appointment check | `aa12da7` |
+| CodeRabbit: `recordRouteRun` — an older overlapping tick could overwrite a newer outcome | Fixed: settle fenced on the tick's `started_at` | `f2e441f` |
+| CodeRabbit: district-nurture resume checked only the enrollment's stored address | Fixed: also the agent's current address; no current snapshot → stays paused | `c5b5c22` |
+| CodeRabbit: test-recipient wrong guesses not atomic, write error ignored (13 answers past a 5-guess cap in the repro) | Fixed: compare-and-set on every guess and on verify; lost race → 409, write error → 5xx | `8093481` |
+| CodeRabbit: a draft-claim release that fails leaves the referral `drafted` | Fixed: retried, then escalated (`outreach_release_failed`) | `062a30b` |
+| CodeRabbit: runbook §1 accepted any partial predicate on `idx_wreg_active_email`; 137 rollback reset an operator-set column default | Fixed: exact predicate compared (a wrong one reads false locally); default reset only while it is 137's | `aa2adca` |
+| CodeRabbit nit: stale "inert no-op" comment on the retry-queue read | Fixed | `52c9bdc` |
+| CodeRabbit (2nd pass): two overlapping reminder passes could each send a different offset inside 2 h | Fixed: appointment-level reservation (compare-and-set on `appointments.reminder_sent_at`, released if nothing went out) | `ffe9be8` |
+| CodeRabbit (2nd pass): a verification whose grant and revert both failed stayed "verified" with no grant | Fixed: a later PATCH writes the missing grant | `aa49fc9` |
+| CodeRabbit (2nd pass): deleting an unverified destination wrote a revoke | Fixed: revoke only for a verified destination | `aa49fc9` |
+| CodeRabbit (2nd pass): runbook index checks did not pin the owning table / exact key / 134's predicate | Fixed; a wrong 134 index reads false locally | `b949944` |
+| CI: two test stubs lacked `order()`/`range()` used by the paged booking check | Fixed (test-only) | `2e4558d` |
+
+### Decisions taken inside the fixes (for the owner to confirm or reverse)
+
+- **R4, code storage.** `comms_test_recipients.verification_code` now holds `code:wrong_guesses` (no migration). A code
+  stored by the old route (bare digits) still verifies. The fifth wrong guess burns the code (HTTP 429); the operator
+  sends a new one. Codes come from `crypto.getRandomValues` with rejection sampling; comparison is constant-time.
+- **R13, carrier opt-out (Twilio 21610).** It now always closes automation for the number, like an inbound STOP, and
+  no longer waits on the `callback_engine_state` switch (which is left in place, unread). This only ever stops sends.
+- **R12b, drip at most once.** A drip step is claimed (cursor advanced by compare-and-set) before it is sent, and the
+  claim is released on a deferral or quiet-hours hold. A run that dies between the claim and the provider call loses
+  that one step rather than risking a second send.
+- **R3, staff-sent form-link SMS.** Staff send it; the recipient's own action did not trigger it. Its TRANSACTIONAL
+  tag therefore no longer exempts it, and it keeps the 9:00–20:00 floor (`ced9e8d`).
+- **R10, visitor acknowledgement.** The heading still greets the visitor by the name they typed; the message and
+  interest rows are gone. Say if the name should go too.
+- **R12g, no address.** A district-nurture enrollment with neither email nor phone resumes, as one with no agency did
+  before.
+- **R16, split area codes.** 850 and 448 resolve Central with Eastern as the other zone; both must be inside the
+  floor. The other approximate codes keep their existing second zone.
+- **R17b, halts.** `job_runs.status` is CHECK-limited, so a halt is recorded `completed` with `error = 'halted: …'` and
+  shown as **Halted**; an internal failure is recorded `errored` (shown Failed, retried by the next run).
+- **R17c, static routes.** One `job_runs` row per route (`<route>:latest`), refreshed every tick, so a 5-minute cron
+  never crowds the run log.
+
+### Listed for the supervising principal — not changed (owner instruction)
+
+**Household-wide securities check.** `src/lib/comms/conversations.ts:123-138` treats a conversation as securities
+when **any** policy in the household is a security, so appointment and service messages to every member of such a
+household are withheld. CLAUDE.md says `is_security` applies to the opportunity, case or communication, not to every
+interaction with the contact, and that the firewall must never block appointment, administrative or service
+messages. Left as is for the principal to rule on.
+
+### Out of scope, noted
+
+- `src/app/api/app/consent/backfill-group` (operator-attested group backfill) was not put behind the R19 switch; R19
+  named only `/api/super/consent/backfill`.
+
+### Verification for this round
+
+- **CODE-VERIFIED** (run on the head before the review fixes, 2026-10-05; the review fixes were re-run as listed in
+  the PR): `npm test` → "All 264 unpinned unit test file(s) passed";
+  `sudo env "PATH=$PATH" CI_REQUIRE_INFRA=1 npm run test:rls` → "All 25 unpinned rls test file(s) passed";
+  `npm run type-check` clean; `npm run lint` → "No ESLint warnings or errors"; `npm run build` exit 0.
+  Runbook SQL (Sections 1, 4's lock timeout, 3's rollback, 7) run on throwaway local Postgres 16 as described in the
+  runbook.
+- **BROWSER-VERIFIED:** nothing. The UI changes (Jobs page, AI Operations tile, health panels, replay copy) were proven
+  by tests only.
+- **NOT VERIFIED:** anything against production — the new Section 1 definition checks have not been run there, and
+  no canary send was made (no live send was authorised in this round).
 
 ## 1d. Round 4 — owner decisions and what was implemented (2026-10-05)
 

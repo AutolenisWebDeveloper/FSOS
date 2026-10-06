@@ -208,11 +208,9 @@ export async function POST(req: NextRequest) {
         to: v.data.email,
         subject: `We received your request — ${BUSINESS.short}`,
         heading: `Thanks for reaching out, ${displayName}.`,
-        lede: `Your message has reached ${BUSINESS.agent}, ${BUSINESS.title} with ${BUSINESS.carrier}. We aim to respond within ${SLA_HOURS} hours during business hours. Here's a copy of what you sent.`,
-        rows: [
-          { label: 'Interest', value: v.data.interest || null },
-          { label: 'Your message', value: v.data.message },
-        ],
+        // Follow-up R10: the acknowledgement no longer echoes the visitor's own text — a quoted
+        // question could trip the recommendation check and drop the receipt.
+        lede: `Your message has reached ${BUSINESS.agent}, ${BUSINESS.title} with ${BUSINESS.carrier}. We aim to respond within ${SLA_HOURS} hours during business hours.`,
         note: 'This is a confirmation that your request was received — no action is needed. If you did not submit this, you can ignore this email.',
       }),
       notifyFsa({

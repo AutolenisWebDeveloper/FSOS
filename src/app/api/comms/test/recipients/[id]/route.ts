@@ -4,6 +4,7 @@ import { readJson, configErrorResponse, dbErrorResponse } from '@/lib/http'
 import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { z } from 'zod'
 import { writeAudit } from '@/lib/audit/log'
+import { checkVerification, TEST_RECIPIENT_CONSENT_VERSION } from '@/lib/comms/console'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -33,20 +34,97 @@ export async function PATCH(req: NextRequest, props: { params: Promise<{ id: str
     const actor = actorOf(auth.session)
     const { data: row } = await db
       .from('comms_test_recipients')
-      .select('id, user_id, verification_code, verified_at')
+      .select('id, user_id, channel, address, verification_code, verified_at')
       .eq('id', id)
       .maybeSingle()
     if (!row || row.user_id !== actor) return NextResponse.json({ error: 'Destination not found.', reason: 'not_found' }, { status: 404 })
-    if (row.verified_at) return NextResponse.json({ ok: true, already_verified: true })
-    if (!row.verification_code || row.verification_code !== v.data.code) {
-      return NextResponse.json({ error: 'That code is incorrect.', reason: 'bad_code' }, { status: 422 })
+    if (row.verified_at) {
+      // Repair path (CodeRabbit review of R4): a verification whose grant write failed (and whose
+      // claim could not be reverted) is completed here. Only when NOTHING has been recorded for this
+      // device since it was verified — a revoke written after verification (a concurrent DELETE) is
+      // never undone by a stale PATCH.
+      const { data: since, error: sinceErr } = await db
+        .from('comm_contact_consents')
+        .select('id')
+        .eq('contact', row.address)
+        .eq('channel', row.channel)
+        .eq('consent_version', TEST_RECIPIENT_CONSENT_VERSION)
+        .gte('captured_at', row.verified_at)
+        .limit(1)
+      if (sinceErr) return dbErrorResponse('comms/test/recipients/[id]', sinceErr)
+      if (!Array.isArray(since) || since.length === 0) {
+        const { error: repairErr } = await db.from('comm_contact_consents').insert({
+          contact: row.address,
+          channel: row.channel,
+          action: 'granted',
+          consent_text: 'Operator self-consent to receive FSOS test messages on an owned, verified device.',
+          consent_version: TEST_RECIPIENT_CONSENT_VERSION,
+          source_url: '/app/comms/console',
+        })
+        if (repairErr) return dbErrorResponse('comms/test/recipients/[id]', repairErr)
+        // The destination may have been deleted meanwhile: then withdraw what was just granted.
+        const { data: still } = await db.from('comms_test_recipients').select('id').eq('id', id).maybeSingle()
+        if (!still) {
+          await db.from('comm_contact_consents').insert({
+            contact: row.address,
+            channel: row.channel,
+            action: 'revoked',
+            consent_text: 'Test destination removed by its operator.',
+            consent_version: TEST_RECIPIENT_CONSENT_VERSION,
+            source_url: '/app/comms/console',
+          })
+        }
+      }
+      return NextResponse.json({ ok: true, already_verified: true })
+    }
+    const check = checkVerification(row.verification_code, v.data.code)
+    // Every write below is a compare-and-set on the stored state this request judged, so concurrent
+    // guesses are each counted and only one can verify (CodeRabbit review of R4). A request that
+    // loses the race is told to retry and learns nothing about its guess.
+    const raced = () => NextResponse.json({ error: 'Another attempt was in progress. Try again.', reason: 'retry' }, { status: 409 })
+    if (!check.ok) {
+      // Record the wrong guess; a burned code must be re-sent (follow-up R4).
+      const { data: counted, error: guessErr } = await db
+        .from('comms_test_recipients')
+        .update({ verification_code: check.next })
+        .eq('id', id)
+        .eq('verification_code', row.verification_code)
+        .select('id')
+      if (guessErr) return dbErrorResponse('comms/test/recipients/[id]', guessErr)
+      if (!Array.isArray(counted) || counted.length === 0) return raced()
+      return check.exhausted
+        ? NextResponse.json({ error: 'Too many wrong codes. Remove and re-add the destination to get a new one.', reason: 'code_exhausted' }, { status: 429 })
+        : NextResponse.json({ error: 'That code is incorrect.', reason: 'bad_code' }, { status: 422 })
     }
 
-    const { error } = await db
+    // Claim the verification first (compare-and-set), so a concurrent wrong guess cannot be lost and
+    // only one request records the grant.
+    const verifiedAt = new Date().toISOString()
+    const { data: claimed, error } = await db
       .from('comms_test_recipients')
-      .update({ verified_at: new Date().toISOString(), verification_code: null })
+      .update({ verified_at: verifiedAt, verification_code: null })
       .eq('id', id)
+      .eq('verification_code', row.verification_code)
+      .is('verified_at', null)
+      .select('id')
     if (error) return dbErrorResponse('comms/test/recipients/[id]', error)
+    if (!Array.isArray(claimed) || claimed.length === 0) return raced()
+
+    // The operator's self-consent for THIS device, recorded only now that they proved they hold it.
+    // It counts only for TEST sends (contact-consent-read.ts) and is never START evidence (inbound.ts).
+    const { error: grantErr } = await db.from('comm_contact_consents').insert({
+      contact: row.address,
+      channel: row.channel,
+      action: 'granted',
+      consent_text: 'Operator self-consent to receive FSOS test messages on an owned, verified device.',
+      consent_version: TEST_RECIPIENT_CONSENT_VERSION,
+      source_url: '/app/comms/console',
+    })
+    if (grantErr) {
+      // No grant recorded → the destination is not verified (best-effort revert of the claim).
+      await db.from('comms_test_recipients').update({ verified_at: null, verification_code: row.verification_code }).eq('id', id).eq('verified_at', verifiedAt)
+      return dbErrorResponse('comms/test/recipients/[id]', grantErr)
+    }
     await writeAudit({ actor, action: 'config.changed', entity: 'comms_test_recipient', entityId: id, diff: { verified: true } })
     return NextResponse.json({ ok: true, verified: true })
   } catch (e) {
@@ -65,8 +143,21 @@ export async function DELETE(_req: NextRequest, props: { params: Promise<{ id: s
   try {
     const db = getDb()
     const actor = actorOf(auth.session)
-    const { data: row } = await db.from('comms_test_recipients').select('id, user_id').eq('id', id).maybeSingle()
+    const { data: row } = await db.from('comms_test_recipients').select('id, user_id, channel, address, verified_at').eq('id', id).maybeSingle()
     if (!row || row.user_id !== actor) return NextResponse.json({ error: 'Destination not found.', reason: 'not_found' }, { status: 404 })
+    // Withdraw the self-consent first (follow-up R4): append a revoke, never delete the grant.
+    // Only a VERIFIED destination ever had a grant, so only it gets a revoke (CodeRabbit review of R4).
+    if (row.verified_at && row.address && row.channel) {
+      const { error: revokeErr } = await db.from('comm_contact_consents').insert({
+        contact: row.address,
+        channel: row.channel,
+        action: 'revoked',
+        consent_text: 'Test destination removed by its operator.',
+        consent_version: TEST_RECIPIENT_CONSENT_VERSION,
+        source_url: '/app/comms/console',
+      })
+      if (revokeErr) return dbErrorResponse('comms/test/recipients/[id]', revokeErr)
+    }
     const { error } = await db.from('comms_test_recipients').delete().eq('id', id)
     if (error) return dbErrorResponse('comms/test/recipients/[id]', error)
     await writeAudit({ actor, action: 'config.changed', entity: 'comms_test_recipient', entityId: id, diff: { deleted: true } })

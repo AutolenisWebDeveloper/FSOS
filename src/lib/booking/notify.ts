@@ -25,10 +25,10 @@ import { sendVisitorAck } from '@/lib/notifications/transactional'
 import { signManageToken, manageTokenKey, MANAGE_TOKEN_TTL_MS } from './manage-tokens'
 import { buildBookingContext, buildBookingFallbackContent } from './notify-core'
 import { loadReminderConfig, reminderLeadHours } from './notification-config'
-import { type LifecycleEvent, sourceKeyFor, dueReminderOffsets, reminderSmsTiming } from './notify-events'
+import { type LifecycleEvent, sourceKeyFor, dueReminderOffsets, planSmsReminders, MIN_REMINDER_SPACING_MS } from './notify-events'
 import { withinQuietHours } from '../compliance/guardrail'
 // Relative (not @/): pure helpers the standalone-tsc booking tests must emit alongside notify.ts.
-import { CONTINENTAL_US_ZONES, localPartsInZone } from '../comms/recipient-timezone'
+import { CONTINENTAL_US_ZONES, localPartsInZone, resolveRecipientTimeZone } from '../comms/recipient-timezone'
 import { smsA2pApproved } from '@/lib/comms/a2p'
 import { isDeferralGateStep } from '@/lib/comms/gate'
 import type { MessagePurpose } from '@/lib/comms/purpose'
@@ -117,7 +117,7 @@ export type NotifyOutcome = {
 /** Send one appointment message on a channel (email or SMS) through the gate. */
 async function sendAppointmentMessage(
   db: Db,
-  opts: { channel: 'email' | 'sms'; sourceKey: string; appt: ApptRow; actor: string; durableConsentGranted: boolean },
+  opts: { channel: 'email' | 'sms'; sourceKey: string; appt: ApptRow; actor: string; durableConsentGranted: boolean; recipientTriggered?: boolean; ledgerKey?: string },
 ): Promise<NotifyOutcome> {
   const contact = unwrapOne(opts.appt.contacts)
   const type = unwrapOne(opts.appt.appointment_types)
@@ -143,6 +143,8 @@ async function sendAppointmentMessage(
   const outcome = await sendMessage({
     channel: opts.channel,
     to,
+    // One logical send per delivery-ledger leg: a retry reuses the provider idempotency key (R15).
+    ...(opts.ledgerKey ? { idempotencyKey: `booking:${opts.ledgerKey}` } : {}),
     // Classify BOTH legs. APPOINTMENT is what these messages are — transactional appointment
     // content with no promotional ask — and every purpose-keyed control then does the right
     // thing on its own instead of being special-cased:
@@ -191,6 +193,10 @@ async function sendAppointmentMessage(
     // quiet-hours floor is a SEPARATE step and is untouched, as are consent, DNC, approval, the
     // recommendation red line and the securities firewall.
     businessHoursExempt: true,
+    // Follow-up R3: only the notice sent AS the person's own booking / reschedule / cancellation
+    // happens may use the APPOINTMENT purpose's quiet-hours exemption. Reminders and the retry
+    // pass are scheduled sends and stay under the floor.
+    recipientTriggeredNotice: opts.recipientTriggered === true,
     actor: opts.actor,
     entity: { type: 'appointment', id: opts.appt.id },
     // Merge context + signed reschedule/cancel manage links (unused tokens render empty).
@@ -395,7 +401,7 @@ async function sendBookingTransactionalFallback(
 async function deliverLeg(
   db: Db,
   appt: ApptRow,
-  args: { event: LifecycleEvent; offsetMinutes: number; channel: 'email' | 'sms'; actor: string; durableConsentGranted: boolean },
+  args: { event: LifecycleEvent; offsetMinutes: number; channel: 'email' | 'sms'; actor: string; durableConsentGranted: boolean; recipientTriggered?: boolean },
 ): Promise<NotifyOutcome> {
   // A2P 10DLC hold: never claim an SMS leg while SMS is not yet live — leave it unclaimed so a
   // later tick delivers it once A2P is approved (mirrors the campaign tick's sms_a2p_hold).
@@ -433,6 +439,8 @@ async function deliverLeg(
       appt,
       actor: args.actor,
       durableConsentGranted: args.durableConsentGranted,
+      recipientTriggered: args.recipientTriggered === true,
+      ledgerKey: `${appt.id}:${scheduleVersion}:${args.event}:${args.offsetMinutes}:${args.channel}`,
     })
   } catch (err) {
     await releaseDelivery(db, claim.id)
@@ -477,6 +485,15 @@ const IMMEDIATE = 0
 
 /** Gate purpose for appointment SMS — transactional appointment content (see sendAppointmentMessage). */
 const APPOINTMENT_PURPOSE: MessagePurpose = 'APPOINTMENT'
+/** Lifecycle events the attendee's own action can trigger (follow-up R3); recap / no-show are the advisor's. */
+const PERSON_TRIGGERED_EVENTS: LifecycleEvent[] = ['confirmation', 'rescheduled', 'cancellation']
+/**
+ * The attendee's own self-service actor. Every attendee path passes it: the public booking route
+ * (book.ts → sendBookingConfirmation default), the manage-token cancel (setAppointmentStatus
+ * 'public') and reschedule ('public'). Staff paths pass the advisor's actor, so an FSA cancel,
+ * reschedule or confirmation re-send is NOT person-triggered and keeps the floor (review of R3).
+ */
+const ATTENDEE_ACTOR = 'public'
 
 /**
  * The single lifecycle-notice entry point (P5). Classifies the event to its approved stored
@@ -513,7 +530,15 @@ export async function sendAppointmentNotice(
   // fallback off it, and a reschedule/cancel/send caller only reads whether the notice went out).
   const config = await loadReminderConfig(db)
   if (config.smsEnabled) {
-    await deliverLeg(db, appt, { event, offsetMinutes: IMMEDIATE, channel: 'sms', actor, durableConsentGranted: false })
+    await deliverLeg(db, appt, {
+      event,
+      offsetMinutes: IMMEDIATE,
+      channel: 'sms',
+      actor,
+      durableConsentGranted: false,
+      // Follow-up R3: the attendee's own booking / reschedule / cancellation, sent as it happens.
+      recipientTriggered: actor === ATTENDEE_ACTOR && PERSON_TRIGGERED_EVENTS.includes(event),
+    })
   }
   return emailOutcome
 }
@@ -634,6 +659,11 @@ export async function runBookingReminderPass(
       result.skipped++
       continue
     }
+    // CodeRabbit review of R6: the planner spaces TARGETS, but the gate resolves the recipient's own
+    // zone and can hold a leg until another offset is also due. Space actual SENDS too: at most one
+    // reminder SMS per appointment per pass, and none within MIN_REMINDER_SPACING_MS of the last
+    // one the ledger shows sent. An unreadable ledger holds the SMS legs this pass.
+    let lastSmsMs = smsDue.due.length > 0 ? await lastReminderSmsSentMs(db, appt) : null
     for (const offset of [...new Set([...due, ...smsDue.due])].sort((a, b) => a - b)) {
       if (emailEligible && due.includes(offset)) {
         const emailOutcome = await deliverLeg(db, appt, {
@@ -651,6 +681,17 @@ export async function runBookingReminderPass(
       // opt-in, A2P go-live, DNC/STOP, quiet-hours scope and template approval are each
       // enforced by the gate itself; nothing here waives any of them.
       if (config.smsEnabled && smsDue.due.includes(offset)) {
+        if (lastSmsMs === 'unknown' || (lastSmsMs !== null && now.getTime() - lastSmsMs < MIN_REMINDER_SPACING_MS)) {
+          result.deferred++
+          continue
+        }
+        // Durable, appointment-level reservation so OVERLAPPING passes cannot each send a different
+        // offset inside the spacing (CodeRabbit review of R6). Released if nothing went out.
+        const slot = await reserveReminderSmsSlot(db, appt.id, now)
+        if (!slot) {
+          result.deferred++
+          continue
+        }
         const smsOutcome = await deliverLeg(db, appt, {
           event: 'reminder',
           offsetMinutes: offset,
@@ -658,9 +699,14 @@ export async function runBookingReminderPass(
           actor: 'agent:booking-reminders',
           durableConsentGranted: false,
         })
-        if (smsOutcome.sent) result.sent++
-        else if (smsOutcome.reason === 'already_delivered') result.skipped++
-        else result.deferred++ // a2p hold / no SMS consent / not approved
+        if (smsOutcome.sent) {
+          result.sent++
+          lastSmsMs = now.getTime()
+        } else {
+          await releaseReminderSmsSlot(db, appt.id, slot)
+          if (smsOutcome.reason === 'already_delivered') result.skipped++
+          else result.deferred++ // a2p hold / no SMS consent / not approved
+        }
       }
     }
   }
@@ -669,20 +715,87 @@ export async function runBookingReminderPass(
 
 /**
  * True when `ms` is inside the 09:00–20:00 floor for this booker: in their booking-form zone when
- * it is a valid IANA zone, otherwise in EVERY continental zone (owner decision 1 — an unresolved
- * recipient is never messaged in their unknown local night).
+ * it is a valid IANA zone; otherwise (follow-up R6) in the zone(s) their phone's area code resolves
+ * to — both zones for a split code; and only when neither places them, in EVERY continental zone
+ * (owner decision 1 — an unresolved recipient is never messaged in their unknown local night).
  */
-function reminderAllowedAt(bookerTimezone: string | null): (ms: number) => boolean {
+function reminderAllowedAt(bookerTimezone: string | null, phone: string | null | undefined): (ms: number) => boolean {
   let zones: readonly string[] = CONTINENTAL_US_ZONES
+  let fromForm = false
   if (bookerTimezone) {
     try {
       new Intl.DateTimeFormat('en-US', { timeZone: bookerTimezone })
       zones = [bookerTimezone]
+      fromForm = true
     } catch {
-      /* not an IANA zone — fall back to every continental zone */
+      /* not an IANA zone — fall through to the phone, then every continental zone */
     }
   }
+  if (!fromForm && phone) {
+    const r = resolveRecipientTimeZone({ phone, zip: null })
+    if (r.resolved) zones = r.secondaryTimeZone ? [r.timeZone, r.secondaryTimeZone] : [r.timeZone]
+  }
   return (ms) => zones.every((z) => withinQuietHours(localPartsInZone(z, new Date(ms)).hour))
+}
+
+/**
+ * Reserve this appointment's reminder-SMS slot: a compare-and-set on appointments.reminder_sent_at
+ * (re-armed to null by a reschedule) that succeeds only when no reminder SMS was reserved within
+ * MIN_REMINDER_SPACING_MS. Returns the reservation (and the value it replaced), or null when another
+ * pass holds the slot or the row cannot be read/written (the leg is held, never sent unspaced).
+ */
+async function reserveReminderSmsSlot(db: Db, apptId: string, now: Date): Promise<{ at: string; prev: string | null } | null> {
+  try {
+    const { data: cur, error: readErr } = await db.from('appointments').select('reminder_sent_at').eq('id', apptId).maybeSingle()
+    if (readErr || !cur) return null
+    const prev = (cur as { reminder_sent_at: string | null }).reminder_sent_at ?? null
+    if (prev !== null && now.getTime() - Date.parse(prev) < MIN_REMINDER_SPACING_MS) return null
+    const at = now.toISOString()
+    let q = db.from('appointments').update({ reminder_sent_at: at }).eq('id', apptId)
+    q = prev === null ? q.is('reminder_sent_at', null) : q.eq('reminder_sent_at', prev)
+    const { data, error } = await q.select('id')
+    if (error || !Array.isArray(data) || data.length !== 1) return null
+    return { at, prev }
+  } catch {
+    return null
+  }
+}
+
+/** Give back a reservation whose leg did not go out (only if no later pass has replaced it). */
+async function releaseReminderSmsSlot(db: Db, apptId: string, slot: { at: string; prev: string | null }): Promise<void> {
+  try {
+    await db.from('appointments').update({ reminder_sent_at: slot.prev }).eq('id', apptId).eq('reminder_sent_at', slot.at)
+  } catch {
+    /* best-effort: an unreleased reservation only delays the next reminder by the spacing */
+  }
+}
+
+/**
+ * When the last reminder SMS for this appointment's current schedule actually went out, per the
+ * delivery ledger (ms), null if none, 'unknown' if the ledger could not be read (the caller holds).
+ */
+async function lastReminderSmsSentMs(db: Db, appt: ApptRow): Promise<number | null | 'unknown'> {
+  try {
+    const version = appt.schedule_version ?? 1
+    const { data, error } = await db
+      .from('booking_notification_deliveries')
+      .select('appointment_id, schedule_version, event, channel, status, created_at')
+      .eq('appointment_id', appt.id)
+      .eq('schedule_version', version)
+      .eq('event', 'reminder')
+      .eq('channel', 'sms')
+      .eq('status', 'sent')
+    if (error) return 'unknown'
+    let last: number | null = null
+    for (const r of (data ?? []) as { appointment_id: string; schedule_version: number; event: string; channel: string; status: string; created_at: string }[]) {
+      if (r.appointment_id !== appt.id || r.schedule_version !== version || r.event !== 'reminder' || r.channel !== 'sms' || r.status !== 'sent') continue
+      const t = Date.parse(r.created_at)
+      if (Number.isFinite(t) && (last === null || t > last)) last = t
+    }
+    return last
+  } catch {
+    return 'unknown'
+  }
 }
 
 /** Which SMS reminder offsets are due now under the floor; counts the ones with no allowed time left. */
@@ -695,23 +808,10 @@ function smsReminderOffsetsDue(
   const startMs = appt.starts_at ? Date.parse(appt.starts_at) : NaN
   if (appt.status !== 'scheduled' || !Number.isFinite(startMs)) return { due: [], skipped: 0 }
   const anchorMs = anchorIso ? Date.parse(anchorIso) : NaN
-  const allowedAt = reminderAllowedAt(appt.booker_timezone)
-  const out: number[] = []
-  let skipped = 0
-  for (const raw of new Set(offsets.map((o) => Math.trunc(o)))) {
-    if (!Number.isFinite(raw) || raw <= 0) continue
-    const windowOpenMs = startMs - raw * 60_000
-    // Same suppression as dueReminderOffsets: a booking made inside this offset's window was
-    // already covered by its confirmation.
-    if (Number.isFinite(anchorMs) && anchorMs >= windowOpenMs) continue
-    const verdict = reminderSmsTiming(
-      { windowOpenMs, startMs, anchorMs: Number.isFinite(anchorMs) ? anchorMs : null, nowMs: now.getTime() },
-      allowedAt,
-    )
-    if (verdict === 'due') out.push(raw)
-    else if (verdict === 'skip' && now.getTime() >= windowOpenMs) skipped++
-  }
-  return { due: out.sort((a, b) => a - b), skipped }
+  return planSmsReminders(
+    { offsetsMinutes: offsets, startMs, anchorMs: Number.isFinite(anchorMs) ? anchorMs : null, nowMs: now.getTime() },
+    reminderAllowedAt(appt.booker_timezone, unwrapOne(appt.contacts)?.phone),
+  )
 }
 
 /** How far back a missed lifecycle SMS is re-driven. Older than this ⇒ left alone. */

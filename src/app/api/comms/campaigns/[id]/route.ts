@@ -103,7 +103,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
     }
 
     if (action === 'activate') {
-      const { data: c } = await db.from('comm_campaigns').select('status, simulated_at').eq('id', params.id).maybeSingle()
+      const { data: c } = await db.from('comm_campaigns').select('status, simulated_at, type, schedule_at').eq('id', params.id).maybeSingle()
       if (!c) return NextResponse.json({ error: 'Not found' }, { status: 404 })
       // Idempotency guard: never re-activate/re-dispatch a campaign that is already active
       // (per-recipient enrollment is also unique, so this only avoids a redundant scan).
@@ -111,6 +111,13 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
       // §14 — a simulation/preview pass is REQUIRED before activation.
       const gate = simulationSatisfiesActivation(c.simulated_at ?? null, new Date().toISOString())
       if (!gate.ok) return NextResponse.json({ error: gate.reason, reason: 'simulation_required' }, { status: 422 })
+      // Follow-up R12f: a broadcast scheduled for LATER is activated without dispatching — the
+      // campaign-dispatch cron sends it once schedule_at is reached (it skips one not yet due).
+      if (c.type !== 'drip' && c.schedule_at && Date.parse(c.schedule_at as string) > Date.now()) {
+        await db.from('comm_campaigns').update({ status: 'active', activated_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', params.id)
+        await writeAudit({ actor, action: 'entity.updated', entity: 'comm_campaign', entityId: params.id, diff: { status: 'active', scheduled_for: c.schedule_at } })
+        return NextResponse.json({ ok: true, status: 'active', scheduled_for: c.schedule_at, note: 'Scheduled — it sends at its scheduled time.' })
+      }
       // Dispatch FIRST; mark the campaign active only after a successful dispatch, so a
       // dispatch failure never leaves the campaign 'active' with nothing sent. dispatchCampaign
       // reads the row by id (it does not require status='active'), so ordering is safe.

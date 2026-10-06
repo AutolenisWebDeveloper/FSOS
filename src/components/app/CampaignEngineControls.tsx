@@ -76,7 +76,7 @@ const RESUME_BEHAVIOR_OPTIONS: { value: ResumeBehavior; label: string; help: str
 ]
 const REPLAY_OPTIONS: { value: ReplayPolicy; label: string; help: string }[] = [
   { value: 'skip', label: 'Skip missed touches', help: 'Touches that came due while paused are recorded as skipped — no catch-up burst.' },
-  { value: 'replay', label: 'Send the next due touch at the next run', help: 'The next pending touch goes out at the campaign’s next daily run (not immediately), through the compliance gate.' },
+  { value: 'replay', label: 'Send the next due touch at the next run', help: 'The next pending touch goes out at the campaign’s next scheduled run (hourly, 17:00–23:00 UTC) — not immediately — through the compliance gate.' },
 ]
 
 interface ControlResponse {

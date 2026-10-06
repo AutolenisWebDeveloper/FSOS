@@ -116,3 +116,12 @@ export function isKeywordRevokeEvidence(row: { consent_version?: string | null; 
 
 /** consents.source values the STOP-keyword writers record (inbound STOP, carrier 21610). */
 export const KEYWORD_OPT_OUT_SOURCES: readonly string[] = ['inbound_stop', 'carrier_opt_out']
+
+/**
+ * consent_version of the operator's self-consent for a verified TEST destination, and of the revoke
+ * appended when it is removed (comms/test/recipients). Follow-up R4: these rows count only for test
+ * sends — never as consent for any other send, never as START evidence. Mirrors console.ts.
+ */
+export const TEST_RECIPIENT_CONSENT_VERSION = 'test-recipient-v1'
+/** PostgREST `.or()` filter that drops test-recipient rows (rows with no version are kept). */
+export const NOT_TEST_RECIPIENT = `consent_version.is.null,consent_version.neq.${TEST_RECIPIENT_CONSENT_VERSION}`

@@ -17,7 +17,7 @@ import { runState, RUN_STATE_DOT, RUN_STATE_LABEL } from '@/lib/ops/automation-s
 
 interface HealthState {
   counts?: Record<string, number | null>
-  cron?: Record<string, { status: string; started_at: string; finished_at: string | null } | null>
+  cron?: Record<string, { status: string; started_at: string; finished_at: string | null; error?: string | null } | null>
   checked_at?: string
 }
 
@@ -107,7 +107,7 @@ export function CampaignHealthPanel({ endpoint }: { endpoint: string }) {
   // A FAILED latest cron run is a problem too (audit I-06): the panel used to judge health on
   // the counts alone, so a job failing every run still read "Healthy".
   const nowMs = health?.checked_at ? Date.parse(health.checked_at) : Date.now()
-  const anyFailedRun = cronEntries.some(([, run]) => runState(run, nowMs) === 'failed')
+  const anyFailedRun = cronEntries.some(([, run]) => ['failed', 'timed_out'].includes(runState(run, nowMs)))
   const anyProblem = anyFailedRun || problemValues.some((v) => typeof v === 'number' && v > 0)
   const allKnown = problemValues.every((v) => typeof v === 'number')
   const dotClass = anyProblem ? 'bg-status-lost' : allKnown ? 'bg-status-won' : 'bg-status-pending'

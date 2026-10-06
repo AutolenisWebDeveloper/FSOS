@@ -159,9 +159,11 @@ await t('EXEMPT PURPOSE (APPOINTMENT) + configured window + out-of-window → DE
   assert.match(r.reason, /deferred to the next opening/, 'the deferral names its recovery')
 })
 
-await t('EXEMPT PURPOSE (APPOINTMENT notice) with NO configured window is untouched', async () => {
-  const { r } = await smsTo('+12145550147', {}, { purpose: 'APPOINTMENT', suppressible: false }, LATE)
-  assert.equal(r.ok, true, '22:00 local sends — an immediate appointment notice has no floor')
+await t('EXEMPT PURPOSE (person-triggered APPOINTMENT notice) with NO configured window is untouched', async () => {
+  const { r } = await smsTo('+12145550147', {}, { purpose: 'APPOINTMENT', recipientTriggeredNotice: true, suppressible: false }, LATE)
+  assert.equal(r.ok, true, '22:00 local sends — an immediate, person-triggered appointment notice has no floor')
+  const { r: undeclared } = await smsTo('+12145550147', {}, { purpose: 'APPOINTMENT', suppressible: false }, LATE)
+  assert.equal(undeclared.ok, false, 'follow-up R3: an undeclared APPOINTMENT-tagged SMS keeps the floor')
 })
 
 await t('owner decision 2: POLICY_DEADLINE (Life Conversion / term conversion) SMS now keeps the floor', async () => {
@@ -170,12 +172,14 @@ await t('owner decision 2: POLICY_DEADLINE (Life Conversion / term conversion) S
   assert.equal(r.blockedStep, 'quiet_hours')
 })
 
-await t('a configured window on an exempt purpose with an UNKNOWN zone must hold in every continental zone', async () => {
+await t('a campaign-keyed send tagged with an exempt purpose and an UNKNOWN zone must hold in every continental zone', async () => {
   const { r } = await smsTo('+13575550147', {
     hoursWindows: { 'campaign:term_conv': { startHour: 9, endHour: 20, days: [0, 1, 2, 3, 4, 5, 6] } },
   }, { campaignKey: 'term_conv', purpose: 'APPOINTMENT', suppressible: false }, EARLY_PT)
-  assert.equal(r.ok, false, '07:00 Pacific is outside the configured window in one continental zone')
-  assert.equal(r.blockedStep, 'configured_window')
+  assert.equal(r.ok, false, '07:00 Pacific is outside the floor in one continental zone')
+  // Follow-up R3: a campaign-keyed send keeps the statutory floor whatever its purpose, so the floor
+  // (quiet_hours) is now the verdict ahead of the configured window.
+  assert.equal(r.blockedStep, 'quiet_hours')
 })
 
 // ─────────────────────────────────────────────────────────────────────────────

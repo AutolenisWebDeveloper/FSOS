@@ -115,6 +115,8 @@ export async function POST(req: NextRequest) {
       sendMessage({
         channel,
         to: d.to,
+        // The console's own idempotency key names the logical send (R15).
+        idempotencyKey: `console:${d.idempotency_key}`,
         subject,
         body,
         actor,
@@ -124,8 +126,10 @@ export async function POST(req: NextRequest) {
         templateId,
         isSecurity: d.is_security === true,
         humanAuthored,
-        // A person sent this 1:1 from the console (review finding 3b: may reach a non-US number).
-        operatorInitiated: true,
+        // Only a message the FSA TYPED is operator-initiated (review finding 3b: may reach a non-US
+        // number). A campaign asset is re-resolved server-side and nothing proves the FSA saw the
+        // rendered text, so it is automated — US only (follow-up R7; the round-3 opener rule).
+        operatorInitiated: sourceKind !== 'campaign_asset',
         // Individual 1:1 operator send — consent-on-file is waived (ADR-033). Opt-out-safe:
         // an explicit revoke still blocks, and DNC/quiet-hours/securities/recommendation all
         // still apply. WS-036: the waiver is for 1:1 SERVICING — it never stacks with a

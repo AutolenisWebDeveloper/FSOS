@@ -69,7 +69,9 @@ export async function POST(req: NextRequest) {
   // for the contact so future automated sends are blocked at gate step 3 — keyed by the
   // destination, so it works even when the contact isn't a legacy `customers` row. This is
   // what makes the opt-out real for the native comms engine, not just the legacy ledger.
-  await suppressContact(contact, channel)
+  // A write that did not land is a retryable error, never a success (follow-up R5).
+  const suppressed = await suppressContact(contact, channel)
+  if (!suppressed.ok) return NextResponse.json({ error: 'We could not record your opt-out just now. Please try again.' }, { status: 503 })
 
   return NextResponse.json({ success: true })
 }

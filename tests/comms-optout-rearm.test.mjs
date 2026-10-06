@@ -106,7 +106,8 @@ await t('a re-armed row is active again (created_at newer than lifted_at)', () =
 console.log('\nA broadcast quiet-hours hold is bounded')
 await t('campaign.ts bounds the hold from schedule_at, else created_at — never from "now"', () => {
   const src = readFileSync('src/lib/comms/campaign.ts', 'utf8')
-  assert.match(src, /quietHoursHold\(outcome\.gate\.blockedStep, \(campaign\.schedule_at as string \| null\) \?\? \(campaign\.created_at as string \| null\), /)
+  // Follow-up R12e: bounded from when the broadcast became due (activation / schedule), never created_at.
+  assert.match(src, /quietHoursHold\(outcome\.gate\.blockedStep, broadcastHoldAnchor\(campaign, /)
 })
 console.log(`\nAll ${passed} assertions passed.`)
 process.exit(0)

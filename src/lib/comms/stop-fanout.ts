@@ -1,8 +1,10 @@
 // src/lib/comms/stop-fanout.ts
-// The ONE place an opt-out closes a member's live automation — native drips and the three
-// campaign timelines. Shared by the inbound STOP / reply-stop handling (inbound.ts) and the
-// carrier-opt-out consumer (opt-out.ts recordCarrierOptOut, behind the callback_engine_state
-// switch). Relative imports only: opt-out.ts is part of the standalone chokepoint compile.
+// The ONE place an opt-out closes live automation — native drips, the three member-keyed campaign
+// timelines, and district nurture (keyed by address). Follow-up R13: EVERY stop condition calls it —
+// inbound STOP / reply-stop (inbound.ts), carrier 21610 (opt-out.ts recordCarrierOptOut), the
+// unsubscribe link / one-click / opt-out page and hard bounces / complaints (unsubscribe.ts
+// suppressContact), web and portal opt-outs, and operator revokes. Relative imports only: opt-out.ts
+// is part of the standalone chokepoint compile.
 
 import { getDb } from '../supabase/client'
 import { resolveAllMemberIds } from './conversations'
@@ -70,7 +72,8 @@ export async function terminateActiveEnrollments(memberId: string, reason: strin
 
 /**
  * Close live automation for every household member at an address (a shared phone or inbox
- * governs all of them — audit B-04). Returns how many enrollments were closed. Never throws.
+ * governs all of them — audit B-04), and every district-nurture enrollment addressed to it.
+ * Returns how many enrollments were closed. Never throws.
  */
 export async function terminateAutomationForAddress(
   channel: 'sms' | 'email',
@@ -86,5 +89,36 @@ export async function terminateAutomationForAddress(
   } catch {
     /* best-effort — DNC + consent already block every send */
   }
+  closed += await terminateDistrictNurtureForAddress(channel, contact, reason)
   return closed
+}
+
+/**
+ * District nurture enrollments carry the recipient's email / phone rather than a member id, so
+ * they are closed by address. `suppressed` is the terminal opt-out state its recheck already uses
+ * (district-nurture/eligibility.ts); the resume sweep never selects it. Never throws.
+ */
+export async function terminateDistrictNurtureForAddress(channel: 'sms' | 'email', contact: string, reason: string): Promise<number> {
+  try {
+    const db = getDb()
+    const nowISO = new Date().toISOString()
+    let q = db
+      .from('district_nurture_enrollments')
+      .update({ status: 'suppressed', exit_reason: 'opted_out', completed_at: nowISO, updated_at: nowISO })
+      .in('status', ['active', 'paused_for_conversation', 'paused_by_admin'])
+    if (channel === 'email') {
+      const email = (contact || '').trim().toLowerCase()
+      if (!email) return 0
+      q = q.ilike('email', email)
+    } else {
+      const tail = (contact || '').replace(/[^\d]/g, '').slice(-10)
+      if (tail.length !== 10) return 0
+      q = q.ilike('phone', `%${tail}`)
+    }
+    const { data } = await q.select('id')
+    void reason
+    return Array.isArray(data) ? data.length : 0
+  } catch {
+    return 0 /* best-effort — DNC + consent already block every send */
+  }
 }

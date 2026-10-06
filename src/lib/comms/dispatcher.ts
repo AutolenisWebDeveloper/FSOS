@@ -57,6 +57,12 @@ export interface DispatchRequest {
   /** Retained for callers that still name a suppression subject; the chokepoint re-resolves. */
   suppressionSubject?: SuppressionSubject
   correlationId?: string
+  /**
+   * Follow-up R15: the LOGICAL send's identity (an engine enrollment + touch, a booking ledger leg, a
+   * drip step, a broadcast enrollment, a workforce queue row, a console idempotency key). Retries of
+   * one logical send reuse it as the Resend Idempotency-Key; absent → the message id, as before.
+   */
+  idempotencyKey?: string
   /** How gate step 4 is satisfied for this send. */
   templateKind?: TemplateKind
   /** Recipient linkage, when the caller knows it (the chokepoint resolves it otherwise). */
@@ -136,9 +142,15 @@ export async function dispatch(req: DispatchRequest): Promise<DispatchResult> {
       : await sendEmail(req.to, req.subject ?? '', req.body, req.bodyText, {
           policy,
           ...(req.attachments?.length ? { attachments: req.attachments } : {}),
-          // One Resend Idempotency-Key per message of record (audit A-10). Twilio has no
-          // create-time idempotency; duplicate SMS stay prevented by the callers' claims.
-          ...(req.correlationId ? { idempotencyKey: `fsos-msg-${req.correlationId}` } : {}),
+          // One Resend Idempotency-Key per LOGICAL send (follow-up R15), so a retry after an ambiguous
+          // timeout — a new message record — cannot deliver twice; the message id when no logical key
+          // is given (audit A-10). Twilio has no create-time idempotency; duplicate SMS stay prevented
+          // by the callers' claims.
+          ...(req.idempotencyKey
+            ? { idempotencyKey: `fsos-${req.idempotencyKey}` }
+            : req.correlationId
+              ? { idempotencyKey: `fsos-msg-${req.correlationId}` }
+              : {}),
           ...(await resolveEmailEnvelope(req)),
         })
 

@@ -16,6 +16,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { cronAuthorized } from '@/lib/http'
 import { runReminderPass, runChangePass, runNurturePass } from '@/lib/workshops/comms-engine'
+import { recordRouteRun } from '@/lib/jobs/runtime'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -34,12 +35,21 @@ export async function GET(req: NextRequest) {
   try {
     // Change notices first (a reschedule/cancellation outranks a routine reminder),
     // then reminders, then nurture. Each pass is independently idempotent.
-    const changes = await runChangePass()
-    const reminders = await runReminderPass()
-    const nurture = await runNurturePass()
+    const passFailed = (r: { changes: { ok?: boolean }; reminders: { ok?: boolean }; nurture: { ok?: boolean } }) =>
+      r.changes.ok === false || r.reminders.ok === false || r.nurture.ok === false
+    const { changes, reminders, nurture } = await recordRouteRun(
+      'workshop-reminders',
+      async () => {
+        const changes = await runChangePass()
+        const reminders = await runReminderPass()
+        const nurture = await runNurturePass()
+        return { changes, reminders, nurture }
+      },
+      (r) => (passFailed(r) ? { status: 'errored', error: 'a workshop pass reported query/send errors' } : { status: 'completed', error: null }),
+    )
     // WS-064: a pass that surfaced query/send errors is a FAILED cron run — return 500
     // so cron dashboards alert instead of reading an invisible { ok:true, handled:0 }.
-    const failed = changes.ok === false || reminders.ok === false || nurture.ok === false
+    const failed = passFailed({ changes, reminders, nurture })
     return NextResponse.json(
       { job: 'workshop-reminders', changes, reminders, nurture },
       failed ? { status: 500 } : undefined,

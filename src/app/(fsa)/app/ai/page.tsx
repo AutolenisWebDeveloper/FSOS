@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { DashboardShell, StatTile, ErrorState } from '@/components/archetypes'
 import { Badge } from '@/components/ui/badge'
 import { load } from '@/lib/data/query'
+import { activeAgentCount } from '@/lib/ai/roster'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,7 +16,7 @@ export default async function AiCenterPage() {
   ])
   if (!agents.ok) return <DashboardShell title="AI Operations">{agents.kind === 'not_configured' ? <ErrorState title="Database not configured" /> : <ErrorState description={agents.message} />}</DashboardShell>
 
-  const active = agents.data.filter((a) => a.enabled).length
+  const agentCount = activeAgentCount(agents.data)
   const runsToday = runs.ok ? runs.data.length : 0
   const errors = runs.ok ? runs.data.filter((r) => r.status === 'errored').length : 0
   const cost = runs.ok ? runs.data.reduce((s, r) => s + Number(r.cost_usd || 0), 0) : 0
@@ -24,7 +25,12 @@ export default async function AiCenterPage() {
   return (
     <DashboardShell title="AI Operations" description="Observe and control the autonomous system. Every run is logged with confidence + cost.">
       <StatTile label="Workforce (today)" value="View" href="/app/ai/workforce" hint="Daily outreach quotas & sends" />
-      <StatTile label="Active agents" value={`${active}/${agents.data.length}`} href="/app/ai/agents" />
+      <StatTile
+        label="Active agents"
+        value={`${agentCount.active}/${agentCount.total}`}
+        href="/app/ai/agents"
+        hint={agentCount.stoodDown > 0 ? `${agentCount.stoodDown} stood down — campaigns own their audiences` : undefined}
+      />
       <StatTile label="Runs (24h)" value={runsToday} href="/app/ai/runs" />
       <StatTile label="Escalations open" value={escalations.ok ? escalations.data.length : 0} href="/app/ai/escalations" />
       <StatTile label="Errors (24h)" value={errors} href="/app/ai/errors" />

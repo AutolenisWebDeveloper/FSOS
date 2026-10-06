@@ -1,9 +1,13 @@
-// ROLLBACK PROOF for the automation-audit migrations (138, 139, 140, 141).
+// ROLLBACK PROOF for the automation-audit migrations (137, 138, 139, 140, 141).
 // The brief requires every schema change to ship "with a tested rollback". Each of these files
 // documents its rollback as a `-- ROLLBACK:` comment block; this proof applies the whole chain to
 // an ephemeral Postgres, EXECUTES each block, asserts the schema/data are back to the prior shape,
 // then re-applies the migration and asserts the forward state again (so deploy → rollback →
 // redeploy is safe). Same toolchain and skip rules as tests/migration-chain.test.mjs.
+// 137's own ROLLBACK comment overwrites operator-tuned values, so the runbook carries a guarded one
+// (docs/ops/migration-runbook.md, the block after `<!-- rollback:137 -->`); that exact block is
+// what runs here. 140's rollback drops the table and with it 141's row, so 141 is re-applied after
+// 140 (follow-up M7).
 // Registered in the `rls` set (scripts/run-tests.mjs). Run: node tests/automation-migrations-rollback.test.mjs
 import assert from 'node:assert/strict'
 import { execSync } from 'node:child_process'
@@ -58,6 +62,20 @@ function rollbackSql(file) {
   assert.ok(sql.length > 0, `${file} ROLLBACK block is empty`)
   return sql
 }
+/** The SQL of the runbook's fenced block that follows `<!-- ${marker} -->`. */
+function runbookSql(marker) {
+  const doc = readFileSync('docs/ops/migration-runbook.md', 'utf8')
+  const i = doc.indexOf(`<!-- ${marker} -->`)
+  assert.ok(i >= 0, `runbook has no <!-- ${marker} --> block`)
+  const m = /```sql\n([\s\S]*?)```/.exec(doc.slice(i))
+  assert.ok(m, `runbook <!-- ${marker} --> is not followed by a sql block`)
+  return m[1]
+}
+function runSql(sql) {
+  writeFileSync(`${L}/rb.sql`, sql + '\n')
+  sh(`chown postgres:postgres ${L}/rb.sql`)
+  runFile(`${L}/rb.sql`)
+}
 function runRollback(file) {
   writeFileSync(`${L}/rb.sql`, rollbackSql(file) + '\n')
   sh(`chown postgres:postgres ${L}/rb.sql`)
@@ -110,6 +128,32 @@ try {
   runFile(`${L}/setup.sql`)
   sh(`node scripts/migrate.mjs`, { env: { ...process.env, DATABASE_URL: URL }, maxBuffer: 64 * 1024 * 1024 })
 
+  // ── 137 reminder cadence (the runbook's guarded rollback) ──
+  const cadence = () => q(`select offsets_minutes::text || '|' || (select max_sms_per_day || '/' || max_combined_touches_per_day from comm_frequency_policy where id='appointment') from booking_reminder_config where id='global'`)
+  check('137 forward: 24h + 12h + 1h offsets, appointment caps 6/12', () => {
+    assert.equal(cadence(), '{1440,720,60}|6/12')
+  })
+  check('137 runbook rollback restores {1440} and 4/8; re-apply returns to the forward state', () => {
+    runSql(runbookSql('rollback:137'))
+    assert.equal(cadence(), '{1440}|4/8')
+    assert.match(q(`select column_default from information_schema.columns where table_name='booking_reminder_config' and column_name='offsets_minutes'`), /\{1440\}/)
+    assert.equal(q(`select count(*) from schema_migrations where filename='137_booking_reminder_cadence.sql'`), '0')
+    reapply('137_booking_reminder_cadence.sql')
+    assert.equal(cadence(), '{1440,720,60}|6/12')
+  })
+  check('137 runbook rollback leaves operator-tuned values alone (and re-apply does too)', () => {
+    q(`update booking_reminder_config set offsets_minutes='{1440,120}' where id='global'`)
+    q(`update comm_frequency_policy set max_sms_per_day=5, max_combined_touches_per_day=10 where id='appointment'`)
+    q(`alter table booking_reminder_config alter column offsets_minutes set default '{1440,180}'`)
+    runSql(runbookSql('rollback:137'))
+    assert.equal(cadence(), '{1440,120}|5/10', 'the rollback overwrote an operator value')
+    assert.match(q(`select column_default from information_schema.columns where table_name='booking_reminder_config' and column_name='offsets_minutes'`), /\{1440,180\}/, 'the rollback overwrote an operator-set default')
+    reapply('137_booking_reminder_cadence.sql')
+    assert.equal(cadence(), '{1440,120}|5/10', 're-apply overwrote an operator value')
+    q(`update booking_reminder_config set offsets_minutes='{1440,720,60}' where id='global'`)
+    q(`update comm_frequency_policy set max_sms_per_day=6, max_combined_touches_per_day=12 where id='appointment'`)
+  })
+
   // ── 141 engine_retry_redispatch switch seed (rolled back BEFORE 140, which drops the table) ──
   check('141 forward: engine_retry_redispatch seeded OFF; rollback removes only that row; re-apply restores it', () => {
     assert.equal(q(`select mode from automation_switches where key='engine_retry_redispatch'`), 'off')
@@ -134,6 +178,10 @@ try {
     assert.equal(table('automation_switches'), '0')
     reapply('140_automation_switches.sql')
     assert.equal(q(`select mode from automation_switches where key='callback_engine_state'`), 'off')
+    // Dropping the table removed 141's row too; 140 alone does not re-seed it (runbook §4).
+    assert.equal(q(`select count(*) from automation_switches where key='engine_retry_redispatch'`), '0')
+    reapply('141_engine_retry_redispatch_switch.sql')
+    assert.equal(q(`select mode from automation_switches where key='engine_retry_redispatch'`), 'off')
   })
 
   // ── 139 campaign purpose ──
@@ -166,8 +214,18 @@ try {
     reapply('138_dnc_lift_marker.sql')
     assert.equal(col('dnc_entries', 'lifted_at'), '1')
   })
+  // ── The runbook's combined §4 rollback (the block the owner runs), then re-apply 138, 140, 141 ──
+  check('runbook §4 rollback removes 141, 140 and 138 in one transaction; re-applying all three restores them', () => {
+    runSql(runbookSql('rollback:138-141'))
+    assert.equal(table('automation_switches'), '0')
+    assert.equal(col('dnc_entries', 'lifted_at'), '0')
+    assert.equal(q(`select count(*) from schema_migrations where filename in ('138_dnc_lift_marker.sql','140_automation_switches.sql','141_engine_retry_redispatch_switch.sql')`), '0')
+    for (const f of ['138_dnc_lift_marker.sql', '140_automation_switches.sql', '141_engine_retry_redispatch_switch.sql']) reapply(f)
+    assert.equal(col('dnc_entries', 'lifted_at'), '1')
+    assert.equal(q(`select string_agg(key || '=' || mode, ',' order by key) from automation_switches`), 'callback_engine_state=off,engine_retry_redispatch=off')
+  })
 } finally {
   try { sh(`runuser -u postgres -- ${PGBIN}/pg_ctl -D ${D} stop > /dev/null 2>&1`) } catch { /* ignore */ }
 }
 if (failures) { console.error(`\n✗ ${failures} rollback assertion(s) FAILED.`); process.exit(1) }
-console.log('\nAutomation-audit migration rollbacks proven (138, 139, 140, 141).')
+console.log('\nAutomation-audit migration rollbacks proven (137, 138, 139, 140, 141).')

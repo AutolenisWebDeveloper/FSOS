@@ -146,28 +146,84 @@ export function reminderSmsTiming(
   c: { windowOpenMs: number; startMs: number; anchorMs: number | null; nowMs: number },
   allowedAt: (ms: number) => boolean,
 ): 'due' | 'not_yet' | 'skip' {
-  const { windowOpenMs, startMs, anchorMs, nowMs } = c
-  if (!(nowMs < startMs)) return 'skip'
-  let target: number | null = null
-  if (allowedAt(windowOpenMs)) {
-    target = windowOpenMs
-  } else {
-    let prev: number | null = null
-    for (let t = windowOpenMs - SCAN_STEP_MS; t > windowOpenMs - 24 * 60 * MS_PER_MINUTE; t -= SCAN_STEP_MS) {
-      if (allowedAt(t)) { prev = t - EARLY_SHIFT_MARGIN_MS; break }
-    }
-    if (prev !== null && (!allowedAt(prev) || (anchorMs !== null && prev <= anchorMs))) prev = null
-    let next: number | null = null
-    for (let t = windowOpenMs + SCAN_STEP_MS; t < startMs; t += SCAN_STEP_MS) {
-      if (allowedAt(t)) { next = t; break }
-    }
-    if (prev !== null && next !== null) target = windowOpenMs - prev <= next - windowOpenMs ? prev : next
-    else target = prev ?? next
+  if (!(c.nowMs < c.startMs)) return 'skip'
+  return timingAt(reminderSmsTarget(c, allowedAt), c, allowedAt)
+}
+
+/**
+ * PURE. Where a reminder SMS is aimed (ms), or null when it is skipped:
+ *   • its configured time, when inside the floor;
+ *   • otherwise the nearer of the end of the previous allowed span (minus the tick margin, never
+ *     before the booking/reschedule anchor) and the start of the next one before the appointment;
+ *   • follow-up R6: a reminder that would move EARLIER by more than half its offset is skipped
+ *     (a 1-hour reminder never becomes a text the evening before).
+ */
+export function reminderSmsTarget(
+  c: { windowOpenMs: number; startMs: number; anchorMs: number | null },
+  allowedAt: (ms: number) => boolean,
+): number | null {
+  const { windowOpenMs, startMs, anchorMs } = c
+  if (allowedAt(windowOpenMs)) return windowOpenMs
+  const maxEarlierMs = (startMs - windowOpenMs) / 2
+  let prev: number | null = null
+  for (let t = windowOpenMs - SCAN_STEP_MS; t > windowOpenMs - 24 * 60 * MS_PER_MINUTE; t -= SCAN_STEP_MS) {
+    if (allowedAt(t)) { prev = t - EARLY_SHIFT_MARGIN_MS; break }
   }
+  if (prev !== null && (!allowedAt(prev) || (anchorMs !== null && prev <= anchorMs))) prev = null
+  if (prev !== null && windowOpenMs - prev > maxEarlierMs) prev = null
+  let next: number | null = null
+  for (let t = windowOpenMs + SCAN_STEP_MS; t < startMs; t += SCAN_STEP_MS) {
+    if (allowedAt(t)) { next = t; break }
+  }
+  if (prev !== null && next !== null) return windowOpenMs - prev <= next - windowOpenMs ? prev : next
+  return prev ?? next
+}
+
+function timingAt(
+  target: number | null,
+  c: { startMs: number; nowMs: number },
+  allowedAt: (ms: number) => boolean,
+): 'due' | 'not_yet' | 'skip' {
   if (target === null) return 'skip'
-  if (nowMs < target) return 'not_yet'
-  if (allowedAt(nowMs)) return 'due'
+  if (c.nowMs < target) return 'not_yet'
+  if (allowedAt(c.nowMs)) return 'due'
   // Past the target but outside the floor: wait for the next allowed tick, if one remains.
-  for (let t = nowMs + SCAN_STEP_MS; t < startMs; t += SCAN_STEP_MS) if (allowedAt(t)) return 'not_yet'
+  for (let t = c.nowMs + SCAN_STEP_MS; t < c.startMs; t += SCAN_STEP_MS) if (allowedAt(t)) return 'not_yet'
   return 'skip'
+}
+
+/** Follow-up R6: the least time between two reminder SMS for one appointment. */
+export const MIN_REMINDER_SPACING_MS = 2 * 60 * MS_PER_MINUTE
+
+/**
+ * PURE. Plans every SMS reminder offset for one appointment and says which are due now.
+ *   • an offset whose window opened at/before the booking/reschedule anchor is covered by that
+ *     notice and is not planned (unchanged);
+ *   • each offset is aimed by reminderSmsTarget (floor, nearest allowed time, half-offset limit);
+ *   • follow-up R6: two reminders are never planned within 2 hours of each other — offsets are
+ *     placed closest-to-the-appointment first, and a later-placed one that would land within
+ *     2 hours of a kept one is skipped. Targets are deterministic, so every tick agrees.
+ * Returns the offsets due now, and how many offsets are past their window with no send left.
+ */
+export function planSmsReminders(
+  c: { offsetsMinutes: readonly number[]; startMs: number; anchorMs: number | null; nowMs: number },
+  allowedAt: (ms: number) => boolean,
+): { due: number[]; skipped: number } {
+  const { startMs, anchorMs, nowMs } = c
+  if (!Number.isFinite(startMs)) return { due: [], skipped: 0 }
+  const offsets = [...new Set(c.offsetsMinutes.map((o) => Math.trunc(o)))].filter((o) => Number.isFinite(o) && o > 0).sort((a, b) => a - b)
+  const kept: number[] = []
+  const due: number[] = []
+  let skipped = 0
+  for (const offset of offsets) {
+    const windowOpenMs = startMs - offset * MS_PER_MINUTE
+    if (anchorMs !== null && anchorMs >= windowOpenMs) continue
+    let target = reminderSmsTarget({ windowOpenMs, startMs, anchorMs }, allowedAt)
+    if (target !== null && kept.some((k) => Math.abs(k - target!) < MIN_REMINDER_SPACING_MS)) target = null
+    if (target !== null) kept.push(target)
+    const verdict = nowMs < startMs ? timingAt(target, { startMs, nowMs }, allowedAt) : 'skip'
+    if (verdict === 'due') due.push(offset)
+    else if (verdict === 'skip' && nowMs >= windowOpenMs) skipped++
+  }
+  return { due, skipped }
 }

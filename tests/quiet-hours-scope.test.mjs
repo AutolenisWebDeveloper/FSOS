@@ -62,9 +62,11 @@ t('SMS marketing-class purposes ARE gated: MARKETING, WORKSHOP, BIRTHDAY, RELATI
   for (const p of QUIET_HOURS_GATED_PURPOSES) assert.equal(quietHoursApply('sms', p), true, `sms/${p}`)
 })
 
-t('SMS immediate-notice purposes are NOT gated (transactional, appointment notice, status, document)', () => {
+t('SMS immediate-notice purposes are NOT gated only for a person-triggered single-recipient notice (follow-up R3)', () => {
   for (const p of ['TRANSACTIONAL', 'APPOINTMENT', 'APPLICATION_STATUS', 'DOCUMENT_REQUEST']) {
-    assert.equal(quietHoursApply('sms', p), false, `sms/${p}`)
+    assert.equal(quietHoursApply('sms', p, { recipientTriggeredNotice: true }), false, `sms/${p} person-triggered`)
+    assert.equal(quietHoursApply('sms', p), true, `sms/${p} undeclared → gated`)
+    assert.equal(quietHoursApply('sms', p, { recipientTriggeredNotice: true, campaignKey: 'c1' }), true, `sms/${p} campaign → gated`)
   }
 })
 

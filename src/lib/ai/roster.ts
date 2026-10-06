@@ -118,6 +118,25 @@ export function agentSurface(key: string): AgentSurface {
   return AGENT_SURFACE[key] ?? 'roadmap'
 }
 
+/**
+ * The "Active agents" count (follow-up R17d). An agent stood down because a campaign engine owns its
+ * audience never sends, so it is neither active nor in the total — it is reported separately.
+ */
+export function activeAgentCount(rows: ReadonlyArray<{ key: string; enabled: boolean }>): { active: number; total: number; stoodDown: number } {
+  let active = 0
+  let total = 0
+  let stoodDown = 0
+  for (const r of rows) {
+    if (agentSurface(r.key) === 'engine_owned') {
+      stoodDown++
+      continue
+    }
+    total++
+    if (r.enabled) active++
+  }
+  return { active, total, stoodDown }
+}
+
 /** Human-readable label for the surface (for the AI Operations UI). */
 export function agentSurfaceLabel(s: AgentSurface): string {
   switch (s) {

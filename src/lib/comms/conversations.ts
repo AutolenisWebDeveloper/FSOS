@@ -15,6 +15,8 @@ export interface ContactLink {
   memberId: string | null
   householdId: string | null
   agencyId: string | null
+  /** The lookup ERRORED (follow-up R11): unresolved, not "no member". The gate withholds on it. */
+  failed?: boolean
 }
 
 /** Normalize a contact address so the same person always maps to one thread. */
@@ -45,13 +47,14 @@ export async function resolveContact(channel: Channel, contact: string): Promise
     let householdId: string | null = null
 
     if (channel === 'email') {
-      const { data } = await db
+      const { data, error } = await db
         .from('household_members')
         .select('id, household_id')
         .ilike('email', contact)
         .order('id', { ascending: true }) // deterministic when several members share an address
         .limit(1)
         .maybeSingle()
+      if (error) return { ...empty, failed: true }
       if (data) {
         memberId = data.id
         householdId = data.household_id
@@ -59,12 +62,13 @@ export async function resolveContact(channel: Channel, contact: string): Promise
     } else {
       const tail = last10(contact)
       if (tail.length >= 7) {
-        const { data } = await db
+        const { data, error } = await db
           .from('household_members')
           .select('id, household_id, phone')
           .ilike('phone', `%${tail}%`)
           .order('id', { ascending: true }) // deterministic when several members share a number
           .limit(5)
+        if (error) return { ...empty, failed: true }
         const hit = (data ?? []).find((r: { phone: string | null }) => last10(r.phone ?? '') === tail)
         if (hit) {
           memberId = hit.id
@@ -85,7 +89,7 @@ export async function resolveContact(channel: Channel, contact: string): Promise
 
     return { memberId, householdId, agencyId }
   } catch {
-    return empty
+    return { ...empty, failed: true }
   }
 }
 
@@ -119,22 +123,34 @@ export async function resolveAllMemberIds(channel: Channel, contact: string): Pr
   }
 }
 
-/** Whether the resolved household/policy carries the securities firewall flag. */
-export async function conversationIsSecurity(householdId: string | null): Promise<boolean> {
+/**
+ * The household's securities state: true / false when read, null when the read failed.
+ * Persisting callers store only a confirmed `true` — an unreadable read is a send-time hold, never
+ * a durable `is_security` flag (follow-up review of R11: one transient error must not mark a
+ * thread securities for good).
+ */
+export async function householdSecurityState(householdId: string | null): Promise<boolean | null> {
   if (!householdId) return false
   try {
     const db = getDb()
-    const { data } = await db
+    const { data, error } = await db
       .from('household_policies')
       .select('id')
       .eq('household_id', householdId)
       .eq('is_security', true)
       .is('deleted_at', null)
       .limit(1)
+    if (error) return null
     return Array.isArray(data) && data.length > 0
   } catch {
-    return false
+    return null
   }
+}
+
+/** Whether the resolved household/policy carries the securities firewall flag, at send time. */
+export async function conversationIsSecurity(householdId: string | null): Promise<boolean> {
+  // Unreadable → treated as securities for THIS send (follow-up R11).
+  return (await householdSecurityState(householdId)) ?? true
 }
 
 export interface Conversation {
@@ -175,7 +191,8 @@ export async function getOrCreateConversation(channel: Channel, rawContact: stri
     .maybeSingle()
 
   const link = await resolveContact(channel, contact)
-  const isSecurity = await conversationIsSecurity(link.householdId)
+  // Only a confirmed securities household is written to the thread; an unreadable read is not.
+  const isSecurity = (await householdSecurityState(link.householdId)) === true
 
   if (existing) {
     // Backfill association if the contact has since been matched to a member.

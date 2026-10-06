@@ -117,6 +117,14 @@ export async function loadWinbackEligibilityInput(
   const { data: prior } = await priorQ.limit(1).maybeSingle()
 
   const inActiveConversation = await hasOpenConversation(snap?.household_id ?? null)
+  // Follow-up R2: the view keys on appointments.household_id, which a native public booking never
+  // sets. OR in the shared read Life uses (household contacts + contacts matching a member).
+  // 'unknown' → null: the tick holds the touch; enrollment treats it as booked.
+  let apptState: 'yes' | 'no' | 'unknown' = 'no'
+  if (snap?.household_id) {
+    const { upcomingAppointmentState } = await import('@/lib/booking/appointment-booked')
+    apptState = await upcomingAppointmentState(snap.household_id)
+  }
 
   const input: WinbackEligibilityInput = {
     isSecurity: snap ? snap.is_security === true : true, // firewall-closed if no row
@@ -125,7 +133,7 @@ export async function loadWinbackEligibilityInput(
     staleDays: snap?.stale_days ?? 0,
     staleMinDays: campaign.stale_min_days,
     hasActiveAdvisorOpportunity: snap ? snap.has_active_advisor_opportunity === true : true,
-    hasUpcomingAppointment: snap ? snap.has_upcoming_appointment === true : true,
+    hasUpcomingAppointment: !snap || snap.has_upcoming_appointment === true || apptState === 'yes' ? true : apptState === 'unknown' ? null : false,
     inActiveConversation,
     priorEnrollmentActive: !!prior,
   }

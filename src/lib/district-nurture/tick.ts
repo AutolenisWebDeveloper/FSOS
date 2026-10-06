@@ -20,7 +20,7 @@ import { parseSubjectFromBody } from '@/lib/comms/template-subject'
 import { canDispatch } from './engine'
 import { evaluateNurtureEligibility, classifyRecheckOutcome } from './eligibility'
 import { computeTouchPlan, TOUCH_SCHEDULE, type TouchKind } from './schedule'
-import { loadCampaign, loadNurtureEligibilityInput, type NurtureCampaignConfig } from './data'
+import { hasOpenConversation, loadCampaign, loadNurtureEligibilityInput, loadNurtureSnapshot, type NurtureCampaignConfig } from './data'
 import { enrollAgent } from './enroll'
 import { resumeAfterWorkflow } from './inbound'
 
@@ -73,11 +73,14 @@ export async function districtNurtureTick(): Promise<NurtureTickResult> {
     resumed += await resumeSweep(db, c.id)
     enrolled += await enrollSweep(db, cfg, nowISO)
 
-    const { data: touchDefs } = await db
+    const { data: touchDefs, error: touchErr } = await db
       .from('district_nurture_touches')
       .select('touch_no, kind, template_id, asset_label')
       .eq('campaign_id', c.id)
       .order('touch_no', { ascending: true })
+    // Follow-up R12a: an unreadable touch plan HOLDS this campaign's run. Treated as "no touches", it
+    // marked every due enrollment completed.
+    if (touchErr || !Array.isArray(touchDefs)) continue
     const touchByNo = new Map<number, TouchRow>((touchDefs ?? []).map((t) => [t.touch_no, t as TouchRow]))
 
     const { data: due } = await db
@@ -182,29 +185,34 @@ export async function districtNurtureTick(): Promise<NurtureTickResult> {
   }
 }
 
-/** Resume enrollments paused by a workflow whose conversation has since closed (no catch-up). */
+/**
+ * Resume enrollments paused by a workflow whose conversation has since closed (no catch-up).
+ *
+ * Follow-up R12g: keyed on the same thread the pause is — the agent's own address
+ * (hasOpenConversation) — not "the agency has no open thread". An unrelated client thread under the
+ * agency no longer holds the agent, their own open reply thread no longer resumes them, and a read
+ * error holds (hasOpenConversation fails closed). Both the enrollment's address and the agent's
+ * current one (loadNurtureSnapshot, what the pause reads) must be free of an open thread.
+ */
 async function resumeSweep(db: ReturnType<typeof getDb>, campaignId: string): Promise<number> {
   const { data: paused } = await db
     .from('district_nurture_enrollments')
-    .select('id, agency_id, agency_owner_id')
+    .select('id, agency_owner_id, email, phone')
     .eq('campaign_id', campaignId)
     .eq('status', 'paused_for_conversation')
     .limit(2000)
 
   let resumed = 0
   for (const e of paused ?? []) {
-    const agencyId = (e as { agency_id: string | null }).agency_id
-    if (agencyId) {
-      const { count } = await db
-        .from('comm_conversations')
-        .select('id', { count: 'exact', head: true })
-        .eq('agency_id', agencyId)
-        .eq('status', 'open')
-      if ((count ?? 0) > 0) continue // conversation still open — stay paused
-    }
-    const agencyOwnerId = (e as { agency_owner_id: string | null }).agency_owner_id
-    if (!agencyOwnerId) continue
-    const r = await resumeAfterWorkflow({ campaignId, agencyOwnerId, actor: SYSTEM })
+    const row = e as { agency_owner_id: string | null; email: string | null; phone: string | null }
+    if (!row.agency_owner_id) continue
+    if (await hasOpenConversation(row.email, row.phone)) continue // their thread is still open — stay paused
+    // The pause reads the agent's CURRENT details (loadNurtureSnapshot); check those too. No snapshot
+    // (not a current candidate, or unreadable) → their thread cannot be checked → stay paused.
+    const current = await loadNurtureSnapshot(row.agency_owner_id)
+    if (!current) continue
+    if (await hasOpenConversation(current.email ?? null, current.phone ?? null)) continue
+    const r = await resumeAfterWorkflow({ campaignId, agencyOwnerId: row.agency_owner_id, actor: SYSTEM })
     resumed += r.resumed
   }
   return resumed
@@ -310,6 +318,8 @@ export async function fireMessageTouch(
   const outcome = await sendMessage({
     channel,
     to,
+    // One logical send per enrollment touch: a retry reuses the provider idempotency key (R15).
+    idempotencyKey: `district:${e.id}:${touchNo}`,
     subject: parseSubjectFromBody(tpl.body),
     body: tpl.body,
     actor: SYSTEM,

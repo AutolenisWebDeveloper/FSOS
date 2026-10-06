@@ -5,7 +5,7 @@ import { requireApiRole, requirePermission, actorOf } from '@/lib/auth/api'
 import { z } from 'zod'
 import { sendMessage } from '@/lib/comms/send'
 import { adHocTemplateId } from '@/lib/comms/assets'
-import { normalizeTestAddress, isValidTestAddress, makeVerificationCode } from '@/lib/comms/console'
+import { normalizeTestAddress, isValidTestAddress, makeVerificationCode, encodeVerification } from '@/lib/comms/console'
 import { writeAudit } from '@/lib/audit/log'
 
 export const dynamic = 'force-dynamic'
@@ -16,9 +16,10 @@ export const runtime = 'nodejs'
 // is owner-scoped: the operator adds their own number/email, a one-time code is sent to it
 // THROUGH THE PRODUCTION GATE (proving both control of the device and that the pipeline
 // works), and the operator confirms the code (see [id] PATCH) before the destination can
-// receive tests. Because the gate enforces consent even here, adding a destination also
-// records the operator's self-consent to receive test messages on their own device — no
-// bypass, no exemption (spec §0).
+// receive tests. The operator's self-consent for the device is recorded only once the code is
+// confirmed (follow-up R4: an unverified address is consent nobody gave), and it counts only for
+// TEST sends. The code itself goes out under the console waiver, which a recorded revoke and DNC
+// still block — no bypass, no exemption (spec §0).
 
 // GET — list the acting operator's own test destinations.
 export async function GET() {
@@ -79,28 +80,16 @@ export async function POST(req: NextRequest) {
 
     let recipientId = existing?.id as string | undefined
     if (recipientId) {
-      await db.from('comms_test_recipients').update({ verification_code: code, verification_sent_at: new Date().toISOString(), label: v.data.label ?? null }).eq('id', recipientId)
+      await db.from('comms_test_recipients').update({ verification_code: encodeVerification(code), verification_sent_at: new Date().toISOString(), label: v.data.label ?? null }).eq('id', recipientId)
     } else {
       const { data: created, error } = await db
         .from('comms_test_recipients')
-        .insert({ user_id: actor, channel: v.data.channel, address, label: v.data.label ?? null, verification_code: code, verification_sent_at: new Date().toISOString() })
+        .insert({ user_id: actor, channel: v.data.channel, address, label: v.data.label ?? null, verification_code: encodeVerification(code), verification_sent_at: new Date().toISOString() })
         .select('id')
         .single()
       if (error || !created) return dbErrorResponse('comms/test/recipients', error)
       recipientId = created.id
     }
-
-    // Record self-consent so the verification code + future tests can pass gate step 1 on
-    // the operator's OWN device (comm_contact_consents — read by the gate for a contact with
-    // no household member). This is legitimate: the operator is consenting for their device.
-    await db.from('comm_contact_consents').insert({
-      contact: address,
-      channel: v.data.channel,
-      action: 'granted',
-      consent_text: 'Operator self-consent to receive FSOS test messages on an owned device.',
-      consent_version: 'test-recipient-v1',
-      source_url: '/app/comms/console',
-    })
 
     // Send the code THROUGH THE GATE (is_test). A blocked result is still informative — it
     // proves the gate is enforcing — and the operator can address it (e.g. quiet hours).
@@ -114,6 +103,9 @@ export async function POST(req: NextRequest) {
       templateId,
       humanAuthored: true,
       operatorInitiated: true,
+      // The operator typed this address to prove they hold it; no consent row exists yet. The
+      // waiver is revoke-checked and DNC is never waivable.
+      consentWaived: true,
       isTest: true,
       sourceKind: 'test',
     })

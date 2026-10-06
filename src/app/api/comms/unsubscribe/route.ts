@@ -9,7 +9,9 @@
 //
 // Suppression flows through the single shared path (suppressContact → dnc_entries), so an
 // opt-out here actually blocks future sends at gate step 3 — not just a cosmetic flag.
-// Always responds success-shaped so the endpoint can't enumerate which contacts exist.
+// Responds success-shaped whether or not the contact exists, so the endpoint can't enumerate the
+// book — but an opt-out whose enforced write FAILED answers 503 (follow-up R5): the mail client or
+// the person retries, instead of being told it worked.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { suppressContact, verifyOneClick, type UnsubChannel } from '@/lib/comms/unsubscribe'
@@ -30,7 +32,8 @@ export async function POST(req: NextRequest) {
   // One-click is header-driven (no human step) → require a valid signed token when a
   // secret is configured, so the endpoint can't be abused to suppress arbitrary contacts.
   if (contact && verifyOneClick(contact, channel, token)) {
-    await suppressContact(contact, channel)
+    const res = await suppressContact(contact, channel)
+    if (!res.ok) return NextResponse.json({ error: 'Could not record the opt-out. Please try again.' }, { status: 503 })
   }
   return NextResponse.json({ success: true })
 }
@@ -38,7 +41,14 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   const { contact, channel, token } = parse(req)
   if (contact && verifyOneClick(contact, channel, token)) {
-    await suppressContact(contact, channel)
+    const res = await suppressContact(contact, channel)
+    if (!res.ok) {
+      return new NextResponse(
+        '<!doctype html><meta charset="utf-8"><title>Unsubscribe not completed</title>' +
+          '<p>We could not record your unsubscribe just now. Please use the link again in a few minutes.</p>',
+        { status: 503, headers: { 'content-type': 'text/html; charset=utf-8', 'retry-after': '60' } },
+      )
+    }
   }
   // Land on the friendly confirmation page (prefilled) regardless, so a human always sees
   // a clear outcome and can adjust channels.

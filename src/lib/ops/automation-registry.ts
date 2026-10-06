@@ -112,7 +112,7 @@ export const AUTOMATIONS: readonly AutomationEntry[] = [
     ui: '/app/comms/delivery',
     trigger: { kind: 'webhook', route: 'src/app/api/webhooks/twilio/status/route.ts' },
     consumer: { file: 'src/lib/comms/opt-out.ts', export: 'recordCarrierOptOut' },
-    switch: 'callback_engine_state',
+    // No switch: a carrier opt-out only ever STOPS sends (follow-up R13).
   },
   {
     key: 'inbound-sms',

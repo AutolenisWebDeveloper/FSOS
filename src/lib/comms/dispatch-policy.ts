@@ -37,6 +37,17 @@ import { evaluateQuietHours, combineQuietHoursDecisions, type HoursWindow, type 
 import { resolveRecipientTimeZone, recipientCountry, CONTINENTAL_US_ZONES, localPartsInZone, type TimezoneResolution } from './recipient-timezone'
 import { DEFAULT_TIMEZONE } from './local-time'
 import { isBusinessSuppressible } from './suppression'
+import { CONTACT } from '../site'
+
+/**
+ * The practice's own operations inboxes — the only destinations an internal FSA alert may claim
+ * (follow-up R10). Mirrors notifications/transactional.ts fsaNotificationInbox's sources.
+ */
+export function internalFsaInboxes(): string[] {
+  return [process.env.FSOS_NOTIFY_EMAIL, process.env.RESEND_REPLY_TO, CONTACT.email]
+    .filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+    .map((v) => v.trim().toLowerCase())
+}
 
 export type Channel = 'sms' | 'email'
 
@@ -106,6 +117,23 @@ export interface DispatchPolicyContext {
    * red line and the securities firewall all still apply exactly as before.
    */
   businessHoursExempt?: boolean
+  /**
+   * Follow-up R3: this SMS is a single-recipient notice the person's own action triggered, sent as it
+   * happens (a booking confirmation / reschedule / cancellation). Only then may a notice purpose exempt
+   * it from the quiet-hours floor and the Sunday hold — and never when a campaign key is present.
+   */
+  recipientTriggeredNotice?: boolean
+  /**
+   * Follow-up R9: the body carries a live credential (a password-setup / recovery link). A withheld
+   * send then records a redaction marker in the escalation queue, never the body itself.
+   */
+  containsCredential?: boolean
+  /**
+   * Follow-up R10: the caller declares an internal FSA ops alert. Honoured only when `to` is one of
+   * the practice's own inboxes (internalFsaInboxes) — then the recommendation wording check (gate
+   * step 5) does not apply. Nothing else is relaxed.
+   */
+  internalFsaRecipient?: boolean
   isTest?: boolean
   /**
    * A person started this send from an operator surface (console 1:1 send, conversation reply,
@@ -202,10 +230,12 @@ export { CONTINENTAL_US_ZONES, localPartsInZone } from './recipient-timezone'
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface PolicyDeps {
-  resolveContactLink(channel: Channel, to: string): Promise<{ memberId: string | null; householdId: string | null; agencyId: string | null }>
+  /** `failed`: the lookup errored — unresolved, NOT "no member" (follow-up R11). */
+  resolveContactLink(channel: Channel, to: string): Promise<{ memberId: string | null; householdId: string | null; agencyId: string | null; failed?: boolean }>
   memberConsent(memberId: string | null, channel: Channel): Promise<boolean>
-  contactConsent(to: string, channel: Channel): Promise<boolean>
-  consentRevoked(memberId: string | null, to: string, channel: Channel, purpose?: MessagePurpose): Promise<boolean>
+  /** `isTest`: a test-recipient self-consent counts only for test sends (follow-up R4). */
+  contactConsent(to: string, channel: Channel, isTest?: boolean): Promise<boolean>
+  consentRevoked(memberId: string | null, to: string, channel: Channel, purpose?: MessagePurpose, isTest?: boolean): Promise<boolean>
   onDNC(to: string, channel: Channel): Promise<boolean>
   templateApproved(templateId: string | null | undefined): Promise<boolean>
   aiPolicyApproved(agentKey?: string): Promise<boolean>
@@ -237,9 +267,10 @@ export const defaultPolicyDeps: PolicyDeps = {
         memberId: link.memberId ?? null,
         householdId: link.householdId ?? null,
         agencyId: link.agencyId ?? null,
+        ...(link.failed ? { failed: true } : {}),
       }
     } catch {
-      return { memberId: null, householdId: null, agencyId: null }
+      return { memberId: null, householdId: null, agencyId: null, failed: true }
     }
   },
   async memberConsent(memberId, channel) {
@@ -252,18 +283,18 @@ export const defaultPolicyDeps: PolicyDeps = {
       return false // fail closed
     }
   },
-  async contactConsent(to, channel) {
+  async contactConsent(to, channel, isTest) {
     try {
       const { durableContactConsentGranted } = await import('./contact-consent-read')
-      return await durableContactConsentGranted(to, channel)
+      return await durableContactConsentGranted(to, channel, { isTest: isTest === true })
     } catch {
       return false // fail closed
     }
   },
-  async consentRevoked(memberId, to, channel, purpose) {
+  async consentRevoked(memberId, to, channel, purpose, isTest) {
     try {
       const { contactConsentRevoked } = await import('./contact-consent-read')
-      return await contactConsentRevoked(memberId, to, channel, purpose)
+      return await contactConsentRevoked(memberId, to, channel, purpose, { isTest: isTest === true })
     } catch {
       return true // fail safe: an unverifiable revoke disables the waiver
     }
@@ -291,11 +322,13 @@ export const defaultPolicyDeps: PolicyDeps = {
     try {
       const { getDb } = await import('../supabase/client')
       const db = getDb()
-      const [{ data: pol }, { data: agent }] = await Promise.all([
+      const [polRes, agentRes] = await Promise.all([
         db.from('ai_policies').select('gateway_enabled').eq('id', 'global').maybeSingle(),
         db.from('ai_agents').select('enabled').eq('key', agentKey).maybeSingle(),
       ])
-      return pol?.gateway_enabled !== false && agent?.enabled === true
+      // An unreadable kill switch or agent row is not approval (follow-up R11).
+      if (polRes.error || agentRes.error) return false
+      return polRes.data?.gateway_enabled !== false && agentRes.data?.enabled === true
     } catch {
       return false
     }
@@ -325,30 +358,36 @@ export const defaultPolicyDeps: PolicyDeps = {
       // On SMS the destination IS the phone — the most direct resolution input there is.
       let phone: string | null = channel === 'sms' ? to : null
       let zip: string | null = null
+      // Follow-up R11: an unreadable location yields NO location, so the quiet-hours evaluation
+      // falls back to every continental zone — never a zone guessed from half the evidence.
+      const UNKNOWN = { phone: null, zip: null }
       if (memberId) {
-        const { data } = await db.from('household_members').select('phone').eq('id', memberId).maybeSingle()
+        const { data, error } = await db.from('household_members').select('phone').eq('id', memberId).maybeSingle()
+        if (error) return UNKNOWN
         phone = phone ?? (data?.phone ?? null)
       }
       // `household_members` carries no address, so the ZIP comes from the household or,
       // for a contact-resolvable recipient, the contacts row.
       if (householdId) {
-        const { data } = await db.from('households').select('zip').eq('id', householdId).maybeSingle()
+        const { data, error } = await db.from('households').select('zip').eq('id', householdId).maybeSingle()
+        if (error) return UNKNOWN
         zip = data?.zip ?? null
       }
       if (!phone || !zip) {
         const col = channel === 'sms' ? 'phone_digits' : 'email_lc'
         const val = channel === 'sms' ? to.replace(/\D/g, '').slice(-10) : to.toLowerCase()
         const q = db.from('contacts').select('phone, zip').is('deleted_at', null).limit(1)
-        const { data } = channel === 'sms'
+        const { data, error } = channel === 'sms'
           ? await q.ilike(col, `%${val}`)
           : await q.eq(col, val)
+        if (error) return UNKNOWN
         const row = Array.isArray(data) ? data[0] : null
         phone = phone ?? (row?.phone ?? null)
         zip = zip ?? (row?.zip ?? null)
       }
       return { phone, zip }
     } catch {
-      return { phone: channel === 'sms' ? to : null, zip: null }
+      return { phone: null, zip: null }
     }
   },
   async hoursWindow(scopeKey) {
@@ -386,7 +425,8 @@ export const defaultPolicyDeps: PolicyDeps = {
       const { getDb } = await import('../supabase/client')
       const db = getDb()
       if (conversationId) {
-        const { data } = await db.from('comm_conversations').select('is_security').eq('id', conversationId).maybeSingle()
+        const { data, error } = await db.from('comm_conversations').select('is_security').eq('id', conversationId).maybeSingle()
+        if (error) return true // unreadable → treated as securities (follow-up R11)
         if (data?.is_security === true) return true
       }
       if (householdId) {
@@ -395,7 +435,7 @@ export const defaultPolicyDeps: PolicyDeps = {
       }
       return false
     } catch {
-      return false
+      return true // fail closed (follow-up R11)
     }
   },
 }
@@ -468,9 +508,16 @@ export function resolveDispatchTimeZone(
   // different zones, the send must be inside the floor in both. It is recorded in the documented
   // dual-zone form (migration 124: method 'both', '<npaZone>+<zipZone>', input '<npa>+<zip3>') and
   // resolveDispatchPolicy evaluates the floor at the second zone's instant too.
-  if (byAddress?.resolved && byPhone?.resolved && byPhone.timeZone !== byAddress.timeZone) {
+  // CodeRabbit review of R16: also when the primaries agree but either side is a split area code /
+  // ZIP range (its minority zone must hold too). Three or more zones → unplaced (every continental).
+  if (
+    byAddress?.resolved &&
+    byPhone?.resolved &&
+    (byPhone.timeZone !== byAddress.timeZone || !!byPhone.secondaryTimeZone || !!byAddress.secondaryTimeZone)
+  ) {
     const both = resolveRecipientTimeZone({ phone: location.phone, zip: location.zip })
-    if (both.resolved && both.secondaryTimeZone) {
+    if (!both.resolved) return { resolution: both, zone: null, localHour: null, localDay: null, secondaryZone: null, legacy: false }
+    if (both.secondaryTimeZone) {
       const p = localPartsInZone(both.timeZone, at)
       return { resolution: both, zone: both.timeZone, localHour: p.hour, localDay: p.day, secondaryZone: both.secondaryTimeZone, legacy: false }
     }
@@ -481,7 +528,8 @@ export function resolveDispatchTimeZone(
     zone: resolution.timeZone,
     localHour: hour,
     localDay: day,
-    secondaryZone: null,
+    // Follow-up R16: a split area code / ZIP range names its minority side; the floor must hold there too.
+    secondaryZone: resolution.secondaryTimeZone ?? null,
     legacy: false,
   }
 }
@@ -504,11 +552,16 @@ export async function resolveDispatchPolicy(
   let memberId = ctx.memberId ?? null
   let householdId = ctx.householdId ?? null
   let agencyId = ctx.agencyId ?? null
+  // Follow-up R11: a member lookup that ERRORED is unresolved, not "no member". It must not fall
+  // back to the contact-level consent store (which a member-level revoke does not reach), so the
+  // send is withheld at consent.
+  let linkFailed = false
   if (!memberId && !householdId) {
     const link = await deps.resolveContactLink(ctx.channel, ctx.to)
     memberId = link.memberId
     householdId = link.householdId
     agencyId = agencyId ?? link.agencyId
+    linkFailed = link.failed === true
   }
 
   const effectivePurpose: MessagePurpose = ctx.purpose ?? 'MARKETING'
@@ -524,7 +577,7 @@ export async function resolveDispatchPolicy(
     convSecurity,
   ] = await Promise.all([
     deps.memberConsent(memberId, ctx.channel),
-    memberId ? Promise.resolve(false) : deps.contactConsent(ctx.to, ctx.channel),
+    memberId ? Promise.resolve(false) : deps.contactConsent(ctx.to, ctx.channel, ctx.isTest === true),
     deps.onDNC(ctx.to, ctx.channel),
     deps.templateApproved(ctx.templateId),
     deps.withinBusinessHours(),
@@ -537,11 +590,11 @@ export async function resolveDispatchPolicy(
   // documented opt-in (owner decision 5, audit G-08). consentRevoked is latest-wins on the contact
   // store and reads the member channel/purpose rows, and fails safe (true) on any read failure.
   const basisRevoked = ctx.consentWaived === true || ctx.durableConsentGranted === true
-    ? await deps.consentRevoked(memberId, ctx.to, ctx.channel, ctx.purpose)
+    ? await deps.consentRevoked(memberId, ctx.to, ctx.channel, ctx.purpose, ctx.isTest === true)
     : false
   const waiverApplies = ctx.consentWaived === true && !basisRevoked
   const durableApplies = ctx.durableConsentGranted === true && !basisRevoked
-  let consent = memberConsentOk || contactConsentOk || durableApplies || waiverApplies
+  let consent = !linkFailed && (memberConsentOk || contactConsentOk || durableApplies || waiverApplies)
 
   // ── Gate step 4: approved content. ──
   const approved =
@@ -607,7 +660,8 @@ export async function resolveDispatchPolicy(
     now,
   )
 
-  const floorApplies = quietHoursApply(ctx.channel, ctx.purpose)
+  const noticeScope = { recipientTriggeredNotice: ctx.recipientTriggeredNotice === true, campaignKey: ctx.campaignKey ?? null }
+  const floorApplies = quietHoursApply(ctx.channel, ctx.purpose, noticeScope)
 
   // Configured windows narrow the floor. Loaded only when a scope key names one, so an
   // unconfigured system does exactly one extra no-op lookup and behaves as before.
@@ -627,7 +681,7 @@ export async function resolveDispatchPolicy(
   // fallback can only hold sends a resolved zone would allow, never the reverse.
   const continentalFallback = timezoneNeeded && !timezone.resolution.resolved
   const timezoneResolved = !timezoneNeeded || timezone.resolution.resolved || continentalFallback
-  const sundayMarketingHold = sundayMarketingHoldApplies(ctx.channel, ctx.purpose)
+  const sundayMarketingHold = sundayMarketingHoldApplies(ctx.channel, ctx.purpose, noticeScope)
 
   let quietHours: QuietHoursDecision | undefined
   let configuredWindowOk: boolean | undefined
@@ -756,6 +810,7 @@ export async function resolveDispatchPolicy(
     suppressionReason,
     usesApprovedTemplateOrPolicy: approved,
     approvedHumanTemplate: approved === true && !!ctx.templateId && ctx.templateKind !== 'ai_policy',
+    internalFsaRecipient: ctx.internalFsaRecipient === true && ctx.channel === 'email' && internalFsaInboxes().includes(ctx.to.trim().toLowerCase()),
     personalizationResolved: ctx.personalizationResolved,
     personalizationReason: ctx.personalizationReason,
     // Firewall: the caller's flag OR the server-resolved conversation/household flag. It

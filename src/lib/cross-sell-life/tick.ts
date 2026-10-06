@@ -67,11 +67,14 @@ export async function crossSellLifeTick(): Promise<TickResult> {
     const cfg = await loadCampaign(c.id)
     if (!cfg) continue
 
-    const { data: touchDefs } = await db
+    const { data: touchDefs, error: touchErr } = await db
       .from('xsell_life_campaign_touches')
       .select('touch_no, kind, template_id, playbook_key, asset_label')
       .eq('campaign_id', c.id)
       .order('touch_no', { ascending: true })
+    // Follow-up R12a: an unreadable touch plan HOLDS this campaign's run. Treated as "no touches", it
+    // marked every due enrollment completed.
+    if (touchErr || !Array.isArray(touchDefs)) continue
     const touchByNo = new Map<number, TouchRow>((touchDefs ?? []).map((t) => [t.touch_no, t as TouchRow]))
 
     const { data: due } = await db
@@ -106,7 +109,11 @@ export async function crossSellLifeTick(): Promise<TickResult> {
       }
 
       // Re-check eligibility BEFORE the touch (§3 — ownership/consent/appointment recheck).
-      const elig = evaluateEligibility(await loadEligibilityInput(cfg, e.household_id, e.member_id, nowISO, e.id))
+      const eligInput = await loadEligibilityInput(cfg, e.household_id, e.member_id, nowISO, e.id)
+      // The appointment read failed: hold this touch for the next run rather than exiting the
+      // enrollment on a transient error — and never send while it is unknown (follow-up R2).
+      if (eligInput.hasLifeAppointment === null) continue
+      const elig = evaluateEligibility(eligInput)
       if (!elig.eligible) {
         await handleIneligible(db, e.id, elig.reasons, nowISO)
         exited++
@@ -255,6 +262,8 @@ export async function fireMessageTouch(
   const outcome = await sendMessage({
     channel,
     to,
+    // One logical send per enrollment touch: a retry reuses the provider idempotency key (R15).
+    idempotencyKey: `xsell:${e.id}:${touchNo}`,
     subject: channel === 'email' ? parseSubjectFromBody(tpl.body) : undefined,
     body: tpl.body,
     actor: SYSTEM,

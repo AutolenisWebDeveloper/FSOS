@@ -94,11 +94,12 @@ function rollbackSql(file) {
   assert.ok(sql.length > 0, `${file} ROLLBACK block is empty`)
   return sql
 }
-/** The owner's procedure: the file and its ledger row in ONE transaction (runbook, round 4). */
+/** The owner's procedure, verbatim from docs/ops/migration-runbook.md: lock timeout, the file and its
+ * ledger row in ONE transaction. */
 function ownerApply(file) {
   writeFileSync(`${L}/${file}`, readFileSync(`supabase/migrations/${file}`, 'utf8'))
   sh(`chown postgres:postgres ${L}/${file}`)
-  psql(`-q -1 -f ${L}/${file} -c ${JSON.stringify(`insert into schema_migrations (filename) values ('${file}')`)}`)
+  psql(`-q -1 -c "set local lock_timeout = '5s'" -f ${L}/${file} -c ${JSON.stringify(`insert into schema_migrations (filename) values ('${file}')`)}`)
 }
 
 // Run `sql` as a signed-in user (auth.uid() reads request.jwt.claim.sub, as on Supabase).

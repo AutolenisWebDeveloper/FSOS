@@ -139,7 +139,7 @@ await record('a gate BLOCK writes no form_send and surfaces the reason', () => {
 Module._load = origLoad
 
 // ── Part C — the REAL gate + purpose model back the forms classification ──────
-console.log('\nPart C — real gate/purpose: TRANSACTIONAL SMS is quiet-hours-exempt, but consent/DNC/securities still block')
+console.log('\nPart C — real gate/purpose: a staff-sent forms SMS keeps the floor; consent/DNC/securities still block')
 const outGate = mkdtempSync(join(tmpdir(), 'fsos-gate-'))
 execSync(
   `npx tsc src/lib/comms/gate.ts src/lib/comms/purpose.ts src/lib/compliance/guardrail.ts ` +
@@ -149,23 +149,29 @@ execSync(
 const { evaluateGate } = require(join(outGate, 'comms/gate.js'))
 const { quietHoursApply } = require(join(outGate, 'comms/purpose.js'))
 
-await record('purpose: quietHoursApply(sms, TRANSACTIONAL) === false (forms SMS is quiet-hours-exempt)', () =>
-  assert.equal(quietHoursApply('sms', 'TRANSACTIONAL'), false))
+// Follow-up R3: a form link is sent by staff, not triggered by the recipient's own action, so its
+// TRANSACTIONAL tag no longer exempts it from the 09:00–20:00 floor.
+await record('purpose: quietHoursApply(sms, TRANSACTIONAL) === true for a staff-sent form link (follow-up R3)', () =>
+  assert.equal(quietHoursApply('sms', 'TRANSACTIONAL'), true))
 
-// The gate context a forms SMS produces: humanAuthored → approved=true; TRANSACTIONAL → quietHoursExempt=true.
+// The gate context a forms SMS produces: humanAuthored → approved=true; floor applies (R3).
 const formsGate = (over) => ({
   draft: 'Hi Dana, your secure form is ready.',
   channel: 'sms',
   hasConsent: true,
-  recipientLocalHour: 22, // late night — would trip a marketing send
-  quietHoursExempt: true, // TRANSACTIONAL
+  recipientLocalHour: 14,
+  quietHoursExempt: false,
   onDNC: false,
   usesApprovedTemplateOrPolicy: true, // humanAuthored
   isSecurity: false,
   ...over,
 })
-await record('gate: transactional forms SMS at 22:00 is ALLOWED (quiet-hours-exempt)', () =>
+await record('gate: a forms SMS inside the floor (14:00) is ALLOWED', () =>
   assert.equal(evaluateGate(formsGate({})).allowed, true))
+await record('gate: a forms SMS at 22:00 is HELD by the floor (follow-up R3)', () => {
+  const g = evaluateGate(formsGate({ recipientLocalHour: 22 }))
+  assert.equal(g.allowed, false); assert.equal(g.blockedStep, 'quiet_hours')
+})
 await record('gate: no consent → BLOCKED on consent (consent still enforced, not waived)', () => {
   const g = evaluateGate(formsGate({ hasConsent: false }))
   assert.equal(g.allowed, false); assert.equal(g.blockedStep, 'consent')

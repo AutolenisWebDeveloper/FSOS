@@ -31,6 +31,8 @@ const DEFAULT_TS = {
 const UUID_COLS = { comm_messages: ['entity_id'] }
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const badUuid = (table, row) => (UUID_COLS[table] ?? []).find((c) => row[c] != null && !UUID_RE.test(String(row[c])) && !/^[a-z_]+-\d+$/.test(String(row[c])))
+// Many-to-one embeds a select may name: { table: { embeddedTable: foreignKeyColumn } }.
+const MANY_TO_ONE = { comm_campaign_enrollments: { comm_campaigns: 'campaign_id' } }
 const ID_COL = { customers: 'customer_id', agency_referrals: 'referral_id', workshop_registrations: 'reg_id', form_submissions: 'submission_id' }
 
 const likeToRe = (pat) =>
@@ -48,7 +50,8 @@ export function memDb({ now = () => new Date().toISOString(), failOn = null, uui
     // "a.eq.x,b.ilike.%y" → predicates OR'ed
     return expr.split(',').map((part) => {
       const [col, op, ...rest] = part.split('.')
-      const val = rest.join('.')
+      const raw = rest.join('.')
+      const val = op === 'is' && raw === 'null' ? null : raw
       return (r) => test(r, op, col, val)
     })
   }
@@ -94,14 +97,33 @@ export function memDb({ now = () => new Date().toISOString(), failOn = null, uui
         const out = { ...r }
         const emb = /consents\(([^)]*)\)/.exec(st.select ?? '')
         if (emb && table === 'household_members') out.consents = rows('consents').filter((c) => c.member_id === r.id).map((c) => ({ ...c }))
+        // Many-to-one embeds (e.g. comm_campaign_enrollments → comm_campaigns!inner(...)).
+        for (const [child, fk] of Object.entries(MANY_TO_ONE[table] ?? {})) {
+          if (new RegExp(`\\b${child}(!inner)?\\(`).test(st.select ?? '')) {
+            const hit = rows(child).find((x) => x.id === r[fk])
+            out[child] = hit ? { ...hit } : null
+          }
+        }
         return out
       }
+      const innerOk = (r) => Object.entries(MANY_TO_ONE[table] ?? {}).every(([child, fk]) =>
+        !new RegExp(`\\b${child}!inner\\(`).test(st.select ?? '') || rows(child).some((x) => x.id === r[fk]))
       function run() {
         if (failOn && failOn(st)) return { data: null, error: { message: `memdb: injected failure on ${table}.${st.method}` } }
         let affected = []
         if (st.method === 'select') {
-          affected = rows(table).filter(match)
-          for (const [col, asc] of [...st.order].reverse()) affected = [...affected].sort((a, b) => (asc ? 1 : -1) * cmp(a[col], b[col]))
+          affected = rows(table).filter(match).filter(innerOk)
+          // Postgres ordering: NULLs sort as the largest value (NULLS LAST ascending, NULLS FIRST
+          // descending) unless the caller passes nullsFirst.
+          for (const [col, asc, nullsFirst] of [...st.order].reverse()) {
+            const nf = nullsFirst ?? !asc
+            affected = [...affected].sort((a, b) => {
+              const x = a[col], y = b[col]
+              if (x == null || y == null) return x == null && y == null ? 0 : (x == null) === nf ? -1 : 1
+              return (asc ? 1 : -1) * cmp(x, y)
+            })
+          }
+          if (st.offset) affected = affected.slice(st.offset)
           if (st.limit != null) affected = affected.slice(0, st.limit)
           if (st.head) return { data: null, error: null, count: affected.length }
           return { data: affected.map(project), error: null, count: st.count ? affected.length : null }
@@ -168,9 +190,9 @@ export function memDb({ now = () => new Date().toISOString(), failOn = null, uui
           return chain
         },
         or(expr) { st.ors.push(parseOr(expr)); return chain },
-        order(c, o) { st.order.push([c, o?.ascending !== false]); return chain },
+        order(c, o) { st.order.push([c, o?.ascending !== false, o?.nullsFirst]); return chain },
         limit(n) { st.limit = n; return chain },
-        range(a, b) { st.limit = b - a + 1; return chain },
+        range(a, b) { st.offset = a; st.limit = b - a + 1; return chain },
         maybeSingle: async () => {
           const r = run()
           if (r.error) return r

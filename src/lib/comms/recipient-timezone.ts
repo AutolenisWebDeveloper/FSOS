@@ -61,6 +61,12 @@ export type TimezoneUnresolvedReason =
   | 'unparseable_zip'
   /** A well-formed ZIP this map does not place (military APO/FPO, unassigned). */
   | 'unknown_zip'
+  /**
+   * Phone and ZIP together place the recipient in three or more zones (a split area code or ZIP
+   * range plus a disagreeing input). One secondary zone cannot carry that, so the caller treats the
+   * recipient as unplaced: evaluated in every continental zone, which is stricter than any subset.
+   */
+  | 'conflicting_zones'
 
 export interface TimezoneResolved {
   resolved: true
@@ -74,7 +80,8 @@ export interface TimezoneResolved {
    */
   input: string
   /**
-   * Present ONLY when method is 'both' and the two inputs DISAGREE: the ZIP's zone, which
+   * Present when method is 'both' and the inputs DISAGREE, or when a split area code / ZIP range
+   * carries its minority side (follow-up R16): the other zone, which
    * the quiet-hours evaluation must satisfy IN ADDITION to `timeZone`. Two conflicting
    * pieces of evidence mean neither can be trusted alone — a phone kept from a previous
    * state, or a mailing address that is not where the person lives — so the send must be
@@ -141,8 +148,9 @@ const NPA_BY_ZONE: Readonly<Record<IanaZone, readonly string[]>> = {
     '754', '772', '786', '813', '863', '904', '941', '954',
     // GA
     '229', '404', '470', '478', '678', '706', '762', '770', '912', '943',
-    // IN (Eastern-majority; 812/930 straddle — see precision limits)
-    '219', '260', '317', '463', '574', '765', '812', '930',
+    // IN (Eastern-majority; 812/930 straddle — see precision limits). 219 (northwest IN) is
+    // Central — follow-up R16.
+    '260', '317', '463', '574', '765', '812', '930',
     // KY (Eastern half)
     '502', '606', '859',
     // ME, MD
@@ -180,8 +188,11 @@ const NPA_BY_ZONE: Readonly<Record<IanaZone, readonly string[]>> = {
     '205', '251', '256', '334', '659', '938',
     // AR
     '479', '501', '870',
-    // FL panhandle
+    // FL panhandle — split: Pensacola/Panama City are Central, Tallahassee is Eastern (approximate,
+    // both evaluated — follow-up R16)
     '448', '850',
+    // IN — northwest (Gary, Hammond, Valparaiso) — follow-up R16
+    '219',
     // IL
     '217', '224', '309', '312', '331', '447', '464', '618', '630', '708',
     '730', '773', '779', '815', '847', '872',
@@ -257,6 +268,7 @@ const NPA_BY_ZONE: Readonly<Record<IanaZone, readonly string[]>> = {
 
 /** NPAs whose area straddles a zone boundary; the map takes the majority side. */
 const APPROXIMATE_NPAS: ReadonlySet<string> = new Set([
+  '850', '448',                 // FL — panhandle Central vs Tallahassee Eastern (follow-up R16)
   '812', '930',                 // IN — Evansville (Central) vs Bloomington (Eastern)
   '906',                        // MI — western UP counties are Central
   '620',                        // KS — far-west counties are Mountain
@@ -267,6 +279,23 @@ const APPROXIMATE_NPAS: ReadonlySet<string> = new Set([
   '541', '458',                 // OR — Malheur County is Mountain
   '480', '520', '602', '623', '928', // AZ — Navajo Nation observes DST
 ])
+
+/**
+ * Follow-up R16: the OTHER side of a split area code. A split code is evaluated in BOTH zones (the
+ * resolution carries it as `secondaryTimeZone`), so its minority side is never messaged at night.
+ */
+const NPA_OTHER_ZONE: Readonly<Record<string, IanaZone>> = {
+  '850': 'America/New_York', '448': 'America/New_York',
+  '812': 'America/Chicago', '930': 'America/Chicago',
+  '906': 'America/Chicago',
+  '620': 'America/Denver',
+  '308': 'America/Denver',
+  '701': 'America/Denver',
+  '605': 'America/Denver',
+  '208': 'America/Los_Angeles', '986': 'America/Los_Angeles',
+  '541': 'America/Denver', '458': 'America/Denver',
+  '480': 'America/Denver', '520': 'America/Denver', '602': 'America/Denver', '623': 'America/Denver', '928': 'America/Denver',
+}
 
 const NPA_TO_ZONE: ReadonlyMap<string, IanaZone> = (() => {
   const m = new Map<string, IanaZone>()
@@ -317,6 +346,8 @@ interface ZipRange {
   zone: IanaZone
   /** The range straddles a zone boundary and takes the majority side. */
   approximate?: boolean
+  /** Follow-up R16: the minority side of an approximate range, evaluated too. */
+  otherZone?: IanaZone
 }
 
 /**
@@ -350,7 +381,9 @@ const ZIP_RANGES: readonly ZipRange[] = [
   { from: 400, to: 418, zone: 'America/New_York', approximate: true },  // KY east
   { from: 420, to: 427, zone: 'America/Chicago', approximate: true },   // KY west
   { from: 430, to: 459, zone: 'America/New_York' },      // OH
-  { from: 460, to: 475, zone: 'America/New_York', approximate: true },  // IN
+  { from: 460, to: 462, zone: 'America/New_York', approximate: true, otherZone: 'America/Chicago' },  // IN — Indianapolis
+  { from: 463, to: 464, zone: 'America/Chicago' },       // IN — northwest (Gary, Hammond) — follow-up R16
+  { from: 465, to: 475, zone: 'America/New_York', approximate: true, otherZone: 'America/Chicago' },  // IN
   { from: 476, to: 477, zone: 'America/Chicago' },       // IN — Evansville
   { from: 478, to: 479, zone: 'America/New_York' },      // IN
   { from: 480, to: 499, zone: 'America/New_York', approximate: true },  // MI (western UP Central)
@@ -443,6 +476,7 @@ export function resolveRecipientTimeZone(input: TimezoneResolutionInput): Timezo
   let npaValue: string | null = null
   let npaApprox = false
   let npaReason: TimezoneUnresolvedReason | null = null
+  let npaOther: IanaZone | null = null
   if (input.phone) {
     attempted.push('npa')
     const npa = npaOf(input.phone)
@@ -456,6 +490,7 @@ export function resolveRecipientTimeZone(input: TimezoneResolutionInput): Timezo
         npaZone = zone
         npaValue = npa
         npaApprox = APPROXIMATE_NPAS.has(npa)
+        npaOther = npaApprox ? (NPA_OTHER_ZONE[npa] ?? null) : null
       } else {
         npaReason = 'unknown_npa'
       }
@@ -466,6 +501,7 @@ export function resolveRecipientTimeZone(input: TimezoneResolutionInput): Timezo
   let zipValue: string | null = null
   let zipApprox = false
   let zipReason: TimezoneUnresolvedReason | null = null
+  let zipOther: IanaZone | null = null
   if (input.zip) {
     attempted.push('zip')
     const z3 = zip3Of(input.zip)
@@ -477,6 +513,7 @@ export function resolveRecipientTimeZone(input: TimezoneResolutionInput): Timezo
         zipZone = range.zone
         zipValue = z3
         zipApprox = range.approximate === true
+        zipOther = range.otherZone ?? null
       } else {
         zipReason = 'unknown_zip'
       }
@@ -488,20 +525,26 @@ export function resolveRecipientTimeZone(input: TimezoneResolutionInput): Timezo
     // recorded). Disagreement → the NPA zone stays primary and the ZIP zone rides along as
     // `secondaryTimeZone`; the caller must satisfy BOTH windows (quiet-hours-window.ts
     // combineQuietHoursDecisions), which can only be narrower than either alone.
+    // CodeRabbit review of R16: a split side (npaOther / zipOther) is kept even when the two
+    // primaries agree — 850 + a Central ZIP must still hold to the Eastern side.
+    const others = [...new Set([zipZone, npaOther, zipOther].filter((z): z is IanaZone => !!z && z !== npaZone))]
+    if (others.length > 1) return { resolved: false, reason: 'conflicting_zones', attempted }
     return {
       resolved: true,
       timeZone: npaZone,
-      ...(npaZone === zipZone ? {} : { secondaryTimeZone: zipZone }),
+      ...(others.length === 1 ? { secondaryTimeZone: others[0] } : {}),
       method: 'both',
       input: `${npaValue}+${zipValue}`,
       approximate: npaApprox || zipApprox,
     }
   }
+  // Follow-up R16: a split code (or ZIP range) carries its minority side as the second zone, so the
+  // quiet-hours evaluation holds in both.
   if (npaZone) {
-    return { resolved: true, timeZone: npaZone, method: 'npa', input: npaValue as string, approximate: npaApprox }
+    return { resolved: true, timeZone: npaZone, ...(npaOther && npaOther !== npaZone ? { secondaryTimeZone: npaOther } : {}), method: 'npa', input: npaValue as string, approximate: npaApprox }
   }
   if (zipZone) {
-    return { resolved: true, timeZone: zipZone, method: 'zip', input: zipValue as string, approximate: zipApprox }
+    return { resolved: true, timeZone: zipZone, ...(zipOther && zipOther !== zipZone ? { secondaryTimeZone: zipOther } : {}), method: 'zip', input: zipValue as string, approximate: zipApprox }
   }
 
   // Report the PRIMARY input's failure when one was supplied — it is the more actionable

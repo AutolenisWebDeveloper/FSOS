@@ -68,7 +68,11 @@ export async function runIdempotent<T>(
   dedupeKey: string,
   job: string,
   fn: () => Promise<T>,
-  opts: { leaseMs?: number } = {},
+  opts: {
+    leaseMs?: number
+    /** Map the returned result to the recorded outcome (R17b); default: completed. */
+    settle?: (result: T) => { status: 'completed' | 'errored'; error: string | null }
+  } = {},
 ): Promise<IdempotentOutcome<T>> {
   const db = getDb()
   const { error: claimError } = await db
@@ -103,9 +107,10 @@ export async function runIdempotent<T>(
 
   try {
     const result = await fn()
+    const settled = opts.settle ? opts.settle(result) : { status: 'completed' as const, error: null }
     await db
       .from('job_runs')
-      .update({ status: 'completed', finished_at: new Date().toISOString() })
+      .update({ status: settled.status, error: settled.error ? settled.error.slice(0, 500) : null, finished_at: new Date().toISOString() })
       .eq('dedupe_key', dedupeKey)
     return { skipped: false, result }
   } catch (err) {
@@ -120,6 +125,53 @@ export async function runIdempotent<T>(
       .update({ status: 'errored', error: message.slice(0, 500), finished_at: new Date().toISOString() })
       .eq('dedupe_key', dedupeKey)
       .eq('status', 'running')
+    throw err
+  }
+}
+
+/**
+ * Record the latest run of a STATIC cron route (follow-up R17c). booking-reminders, social-publish
+ * and workshop-reminders run sub-hourly on their own routes, outside runIdempotent's job:hour lock
+ * (their idempotency is per item), so they recorded no job_runs row and the Jobs page could not
+ * show them. One row per route (`<job>:latest`) is refreshed on every tick — never appended — so a
+ * 5-minute cron cannot crowd the run log. A throw is recorded errored and rethrown; `settle` maps a
+ * returned result that reports a failure. Bookkeeping only: a failed write never blocks the work.
+ */
+export async function recordRouteRun<T>(
+  job: string,
+  fn: () => Promise<T>,
+  settle?: (result: T) => { status: 'completed' | 'errored'; error: string | null },
+): Promise<T> {
+  const db = getDb()
+  const dedupeKey = `${job}:latest`
+  // Fenced on this tick's own started_at: an older overlapping tick that finishes last cannot
+  // overwrite the newer tick's outcome (CodeRabbit review of R17c).
+  const startedAt = new Date().toISOString()
+  const mark = async (patch: Record<string, unknown>) => {
+    try {
+      await db.from('job_runs').update(patch).eq('dedupe_key', dedupeKey).eq('started_at', startedAt)
+    } catch {
+      /* bookkeeping only */
+    }
+  }
+  try {
+    await db
+      .from('job_runs')
+      .upsert(
+        { dedupe_key: dedupeKey, job, status: 'running', started_at: startedAt, finished_at: null, error: null },
+        { onConflict: 'dedupe_key' },
+      )
+  } catch {
+    /* bookkeeping only */
+  }
+  try {
+    const result = await fn()
+    const s = settle ? settle(result) : { status: 'completed' as const, error: null }
+    await mark({ status: s.status, error: s.error ? s.error.slice(0, 500) : null, finished_at: new Date().toISOString() })
+    return result
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    await mark({ status: 'errored', error: message.slice(0, 500), finished_at: new Date().toISOString() })
     throw err
   }
 }

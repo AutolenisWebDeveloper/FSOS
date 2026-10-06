@@ -143,7 +143,7 @@ export async function campaignDispatch(): Promise<JobResult> {
     await assertKillSwitch('marketing_automation')
   } catch (err) {
     const which = err instanceof Error ? err.message : 'kill switch'
-    return { ok: true, handled: 0, note: `campaign-dispatch: halted — ${which} (broadcasts and drips not run)` }
+    return { ok: true, halted: true, handled: 0, note: `campaign-dispatch: halted — ${which} (broadcasts and drips not run)` }
   }
   const db = getDb()
   const nowISO = new Date().toISOString()
@@ -211,6 +211,38 @@ export async function dripAdvance(): Promise<JobResult> {
 
     const { data: member } = await db.from('household_members').select('email, phone, full_name').eq('id', e.member_id).maybeSingle()
     const to = camp.channel === 'email' ? member?.email : member?.phone
+
+    // Follow-up R12b: CLAIM the step before sending it, by advancing the cursor with a compare-and-set
+    // on the step the run read. A second run, or a retry after a run that died once the provider had
+    // accepted the message, finds the cursor already moved and sends nothing — at most once. A
+    // deferral below rolls the claim back so the same step is re-attempted, never skipped.
+    const nextStep = e.current_step + 1
+    const advance: Record<string, unknown> =
+      nextStep >= steps.length
+        ? { status: 'completed', current_step: nextStep }
+        : {
+            current_step: nextStep,
+            // Finding 5: hourly runs, at most one step per enrollment per day (each drip is single-channel).
+            next_send_at: oneTouchPerDay(new Date(Date.now() + Number(steps[nextStep]?.delay_days ?? 0) * 86400000).toISOString(), nowISO),
+          }
+    const { data: claimed, error: claimErr } = await db
+      .from('comm_campaign_enrollments')
+      .update(advance)
+      .eq('id', e.id)
+      .eq('status', 'enrolled')
+      .eq('current_step', e.current_step)
+      .select('id')
+    if (claimErr || !Array.isArray(claimed) || claimed.length === 0) continue
+    const releaseClaim = async () => {
+      await db
+        .from('comm_campaign_enrollments')
+        .update({ status: 'enrolled', current_step: e.current_step, next_send_at: e.next_send_at })
+        .eq('id', e.id)
+        .eq('current_step', nextStep)
+        // Only this run's own claim states: a STOP / opt-out that landed meanwhile is absorbing.
+        .in('status', ['enrolled', 'completed'])
+    }
+
     if (to) {
       const { data: tpl } = await db.from('comm_templates').select('body').eq('id', step.template_id).maybeSingle()
       // Slice 7 — purpose (campaign, else sequence default) + delegated-sender context.
@@ -232,6 +264,8 @@ export async function dripAdvance(): Promise<JobResult> {
       const outcome = await sendMessage({
         channel: camp.channel as 'sms' | 'email',
         to,
+        // One logical send per enrollment step: a retry reuses the provider idempotency key (R15).
+        idempotencyKey: `drip:${e.id}:${e.current_step}`,
         subject: step.subject,
         body: tpl?.body ?? '',
         actor: 'agent:marketing_automation',
@@ -255,22 +289,18 @@ export async function dripAdvance(): Promise<JobResult> {
       // Advancing would burn the step: the cursor is past it and nothing ever re-attempts
       // it — the exact failure the exempt-purpose defer rule exists to prevent. Terminal
       // blocks (consent, DNC, template, …) still advance past the step exactly as before.
-      if (!outcome.sent && isDeferralGateStep(outcome.gate.blockedStep)) continue
+      if (!outcome.sent && isDeferralGateStep(outcome.gate.blockedStep)) {
+        await releaseClaim()
+        continue
+      }
       // Owner decision 3: a quiet-hours withhold holds the step for the next window (cursor kept)
       // up to 72h past its due time; after that the step is passed over like any terminal block.
-      if (!outcome.sent && quietHoursHold(outcome.gate.blockedStep, e.next_send_at, nowISO) === 'hold') continue
+      if (!outcome.sent && quietHoursHold(outcome.gate.blockedStep, e.next_send_at, nowISO) === 'hold') {
+        await releaseClaim()
+        continue
+      }
+      if (outcome.sent) await db.from('comm_campaign_enrollments').update({ last_sent_at: nowISO }).eq('id', e.id)
       handled++
-    }
-
-    // Advance the cursor; schedule the next step by its delay, or complete.
-    const nextStep = e.current_step + 1
-    if (nextStep >= steps.length) {
-      await db.from('comm_campaign_enrollments').update({ status: 'completed', current_step: nextStep, last_sent_at: nowISO }).eq('id', e.id)
-    } else {
-      const delayDays = Number(steps[nextStep]?.delay_days ?? 0)
-      // Finding 5: hourly runs, at most one step per enrollment per day (each drip is single-channel).
-      const next = oneTouchPerDay(new Date(Date.now() + delayDays * 86400000).toISOString(), nowISO)
-      await db.from('comm_campaign_enrollments').update({ current_step: nextStep, next_send_at: next, last_sent_at: nowISO }).eq('id', e.id)
     }
   }
   return { ok: true, handled, note: `drip-advance: ${handled} steps sent through the gate` }
@@ -295,7 +325,9 @@ export async function resumePausedEnrollments(): Promise<JobResult> {
     const cached = decisionCache.get(memberId)
     if (cached) return cached
     const [{ data: conv }, { data: lastInbound }] = await Promise.all([
-      db.from('comm_conversations').select('status, last_message_at').eq('member_id', memberId).order('last_message_at', { ascending: false }).limit(1).maybeSingle(),
+      // Follow-up R12h: the latest thread that has a message. A descending order puts NULLs first in
+      // Postgres, so an empty thread used to decide the mode for a member with a real one.
+      db.from('comm_conversations').select('status, last_message_at').eq('member_id', memberId).not('last_message_at', 'is', null).order('last_message_at', { ascending: false, nullsFirst: false }).limit(1).maybeSingle(),
       db.from('comm_messages').select('created_at').eq('member_id', memberId).eq('direction', 'inbound').order('created_at', { ascending: false }).limit(1).maybeSingle(),
     ])
     const minutesSinceLastInbound = lastInbound?.created_at
@@ -386,10 +418,12 @@ export async function workforceOrchestrator(): Promise<JobResult> {
   const { runWorkforce } = await import('@/lib/ai/workforce')
   const result = await runWorkforce()
   const parts = Object.entries(result.dispatch)
-    .map(([k, s]) => `${k}: ${s.sent} sent/${s.blocked} blocked/${s.escalated} esc/${s.skipped} skip`)
+    .map(([k, s]) => `${k}: ${s.sent} sent/${s.blocked} blocked/${s.escalated} esc/${s.skipped} skip${s.errored ? ` ERRORED (${s.errored})` : ''}`)
     .join('; ')
+  // R17b: an agent run that errored fails the job run instead of recording a success.
+  const errored = Object.values(result.dispatch).some((s) => s.errored)
   await writeAudit({ actor: SYSTEM, action: 'ai.run', entity: 'workforce', diff: { built: result.built.byAgent, dispatch: result.dispatch, greenzone: true } })
-  return { ok: true, handled: result.totalSent, note: `workforce: ${result.built.queued} queued; ${parts}` }
+  return { ok: !errored, handled: result.totalSent, note: `workforce: ${result.built.queued} queued; ${parts}` }
 }
 
 // data-quality — reconcile unlinked agency owners into the unified Contact Center
@@ -434,7 +468,7 @@ export async function lifeConversionTick(): Promise<JobResult> {
 }
 
 // life-conversion-retry — retry/dead-letter sweep for stuck Life Conversion executions (§20,
-// observability parity D9). Fails soft before migration 089 is applied (no-op, never a cron error).
+// observability parity D9). A queue it cannot read is reported ok:false (a failed run, R17b).
 export async function lifeConversionRetry(): Promise<JobResult> {
   const { runRetrySweep } = await import('@/lib/life-campaign/jobs')
   const r = await runRetrySweep()
@@ -452,7 +486,7 @@ export async function pipelineWinbackTick(): Promise<JobResult> {
 }
 
 // pipeline-winback-retry — retry/dead-letter sweep for stuck Pipeline Win-Back executions (§20,
-// observability parity C1/D9). Fails soft before migration 088 is applied (no-op, never a cron error).
+// observability parity C1/D9). A queue it cannot read is reported ok:false (a failed run, R17b).
 export async function pipelineWinbackRetry(): Promise<JobResult> {
   const { runRetrySweep } = await import('@/lib/pipeline-winback/jobs')
   const r = await runRetrySweep()
@@ -470,7 +504,7 @@ export async function districtNurtureTick(): Promise<JobResult> {
 }
 
 // district-nurture-retry — retry/dead-letter sweep for stuck District Nurture executions.
-// Fails soft before migration 114 is applied (no-op, never a cron error).
+// A queue it cannot read is reported ok:false (a failed run, R17b).
 export async function districtNurtureRetry(): Promise<JobResult> {
   const { runRetrySweep } = await import('@/lib/district-nurture/jobs')
   const r = await runRetrySweep()

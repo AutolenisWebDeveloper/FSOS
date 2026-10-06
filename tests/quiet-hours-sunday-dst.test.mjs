@@ -13,11 +13,11 @@ const mod = loadChokepoint('qh-sunday-dst')
 const DALLAS = '+12145550147'
 const CLEAN = 'Your annual review window is open — reply to schedule.'
 
-function smsAt(now, purpose = 'MARKETING') {
+function smsAt(now, purpose = 'MARKETING', extra = {}) {
   const { messagingDeps, calls } = makeMessagingDeps(mod, {}, { now })
   return mod.messaging
     .sendSms(DALLAS, CLEAN, 'mid-qh', {
-      policy: { actor: 'agent:test', entity: { type: 'household', id: 'h1' }, purpose, templateKind: 'stored', templateId: 't1', suppressible: false },
+      policy: { actor: 'agent:test', entity: { type: 'household', id: 'h1' }, purpose, templateKind: 'stored', templateId: 't1', suppressible: false, ...extra },
     }, messagingDeps)
     .then((r) => ({ r, calls }))
 }
@@ -57,7 +57,7 @@ await t('Sun Nov 1 15:30Z: POLICY_DEADLINE (not marketing-class) is inside the f
   const { r } = await smsAt(at('2026-11-01T15:30:00Z'), 'POLICY_DEADLINE'); assert.equal(r.ok, true)
 })
 await t('Sun Nov 1 15:30Z: an immediate APPOINTMENT notice is not held', async () => {
-  const { r } = await smsAt(at('2026-11-01T15:30:00Z'), 'APPOINTMENT'); assert.equal(r.ok, true)
+  const { r } = await smsAt(at('2026-11-01T15:30:00Z'), 'APPOINTMENT', { recipientTriggeredNotice: true }); assert.equal(r.ok, true)
 })
 await t('Sat 09:30 local is not a Sunday → marketing sends', async () => {
   const { r } = await smsAt(at('2026-10-31T14:30:00Z')); assert.equal(r.ok, true)

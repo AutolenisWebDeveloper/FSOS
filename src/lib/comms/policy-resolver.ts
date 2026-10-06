@@ -48,6 +48,8 @@ export async function hasConsentForPurpose(
       // Channel-wide consent (consents, unique per member/channel).
       db.from('consents').select('status').eq('member_id', memberId).eq('channel', channel).maybeSingle(),
     ])
+    // A returned error is not a grant (follow-up R11): supabase-js resolves { error }, never throws.
+    if (scopedRes.error || channelRes.error) return false
     // Channel-wide revoke is the floor: STOP/opt-out at the channel level wins over any
     // purpose-scoped grant, so the two stores can never disagree in the permissive direction.
     if (channelRes.data?.status === 'revoked') return false
@@ -68,14 +70,20 @@ export async function hasConsentForPurpose(
  */
 export type FrequencyPolicyId = 'global' | 'reply' | 'appointment'
 
-async function loadFrequencyCaps(policyId: FrequencyPolicyId = 'global'): Promise<{ enabled: boolean; caps: FrequencyCaps } | null> {
+/** An unreadable cap row (follow-up R11): the send is held, never treated as uncapped. */
+const CAPS_UNREADABLE = 'unreadable' as const
+
+async function loadFrequencyCaps(policyId: FrequencyPolicyId = 'global'): Promise<{ enabled: boolean; caps: FrequencyCaps } | null | typeof CAPS_UNREADABLE> {
   try {
     const db = getDb()
-    let { data } = await db.from('comm_frequency_policy').select('*').eq('id', policyId).maybeSingle()
+    const first = await db.from('comm_frequency_policy').select('*').eq('id', policyId).maybeSingle()
+    if (first.error) return CAPS_UNREADABLE
+    let data = first.data
     // A missing scoped row falls back to 'global' — the TIGHTER of the two. An unapplied
     // migration must never leave a send less bounded than it is today.
     if (!data && policyId !== 'global') {
       const fallback = await db.from('comm_frequency_policy').select('*').eq('id', 'global').maybeSingle()
+      if (fallback.error) return CAPS_UNREADABLE
       data = fallback.data
     }
     if (!data) return null
@@ -91,9 +99,11 @@ async function loadFrequencyCaps(policyId: FrequencyPolicyId = 'global'): Promis
       },
     }
   } catch {
-    return null
+    return CAPS_UNREADABLE
   }
 }
+
+const FREQUENCY_HELD: PolicyDecision = { allowed: false, reason: 'Frequency could not be verified — held for a later cycle.' }
 
 /** Resolve the recipient's frequency decision from the message ledger + editable caps. */
 export async function resolveFrequency(
@@ -103,6 +113,7 @@ export async function resolveFrequency(
   policyId: FrequencyPolicyId = 'global',
 ): Promise<PolicyDecision> {
   const policy = await loadFrequencyCaps(policyId)
+  if (policy === CAPS_UNREADABLE) return FREQUENCY_HELD
   if (!policy || !policy.enabled) return { allowed: true }
   const now = Date.now()
   const dayAgo = new Date(now - 24 * 60 * 60 * 1000).toISOString()
@@ -123,6 +134,8 @@ export async function resolveFrequency(
       base().gte('sent_at', dayAgo),
       db.from('comm_messages').select('sent_at').eq('direction', 'outbound').eq('member_id', memberId).not('sent_at', 'is', null).order('sent_at', { ascending: false }).limit(1).maybeSingle(),
     ])
+    // Any unreadable count holds the send (follow-up R11): a null count is not zero.
+    if ([smsToday, sms7, mktToday, mkt7, combinedToday, lastSend].some((r) => r.error)) return FREQUENCY_HELD
     const minutesSinceLastSend = lastSend.data?.sent_at
       ? Math.floor((now - Date.parse(lastSend.data.sent_at)) / 60000)
       : null
@@ -140,8 +153,8 @@ export async function resolveFrequency(
       },
     })
   } catch {
-    // Fail open on a counting error — the other gate steps still protect the send.
-    return { allowed: true }
+    // Fail CLOSED as a deferral (follow-up R11): an uncountable recipient is held, not sent.
+    return FREQUENCY_HELD
   }
 }
 

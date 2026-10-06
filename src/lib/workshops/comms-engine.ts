@@ -431,9 +431,12 @@ export async function sendWorkshopMessage(db: Db, args: SendArgs): Promise<LogSt
       return finalize('deferred', { gate_blocked_step: 'quiet_hours', reason: 'recipient_tz_unresolved' })
     }
     recipientZone = resolution.timeZone
-    const localHour = localPartsInZone(recipientZone, new Date(nowMs)).hour
-    if (!withinQuietHours(localHour)) {
-      await writeAudit({ actor: ACTOR, action: 'comms.deferred', entity: 'workshop_registration', entityId: reg.reg_id, diff: { kind, channel, reason: 'outside_quiet_hours', recipient_zone: recipientZone, local_hour: localHour } })
+    // Follow-up R16: a split area code is checked in both of its zones.
+    const zonesToCheck = resolution.secondaryTimeZone ? [recipientZone, resolution.secondaryTimeZone] : [recipientZone]
+    const closed = zonesToCheck.find((z) => !withinQuietHours(localPartsInZone(z, new Date(nowMs)).hour))
+    if (closed) {
+      const localHour = localPartsInZone(closed, new Date(nowMs)).hour
+      await writeAudit({ actor: ACTOR, action: 'comms.deferred', entity: 'workshop_registration', entityId: reg.reg_id, diff: { kind, channel, reason: 'outside_quiet_hours', recipient_zone: closed, local_hour: localHour } })
       return finalize('deferred', { gate_blocked_step: 'quiet_hours', reason: 'outside_quiet_hours' })
     }
   }
@@ -513,11 +516,12 @@ export async function sendWorkshopMessage(db: Db, args: SendArgs): Promise<LogSt
     // marketing class. The engine's own recipient-local quiet-hours pre-check applies
     // to EVERY workshop SMS regardless (conservative operating setting).
     purpose: isReminderClass(kind) ? 'TRANSACTIONAL' : 'WORKSHOP',
-    // An IANA ZONE, never an offset — main's chokepoint resolves the local hour from it
-    // exactly (localPartsInZone) and reports the resolution as non-approximate. SMS
-    // carries the RECIPIENT's zone (resolved above, fail-closed); email is exempt from
-    // the quiet-hours floor and carries the venue's zone purely as gate context.
-    timeZone: channel === 'sms' ? (recipientZone ?? undefined) : (session?.timezone ?? undefined),
+    // Follow-up R16: SMS no longer hands the chokepoint its phone-only zone as the CALLER zone —
+    // that override skipped the ZIP and the both-zones rule. The chokepoint resolves the
+    // recipient's zone itself (the engine's pre-check above is an early deferral, not the
+    // authority). Email is exempt from the floor and carries the venue's zone as gate context.
+    timeZone: channel === 'sms' ? undefined : (session?.timezone ?? undefined),
+    recipientPhone: channel === 'sms' ? to : undefined,
     entity: { type: 'workshop_registration', id: reg.reg_id },
     recipientContext: { full_name: reg.name },
   })

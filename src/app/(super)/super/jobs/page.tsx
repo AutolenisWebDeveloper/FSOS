@@ -13,13 +13,16 @@ export const dynamic = 'force-dynamic'
 // (J-07), so it shows here as Failed instead of vanishing.
 const STATE_VARIANT: Record<RunState, 'won' | 'lost' | 'pending' | 'outline'> = {
   succeeded: 'won',
+  halted: 'pending',
   failed: 'lost',
+  timed_out: 'lost',
   running: 'pending',
   stale: 'pending',
   none: 'outline',
 }
 // An hourly-window job (17:00–23:00 UTC) is idle 18 hours overnight; a day without a run is stale.
-const STALE_AFTER = { daily: DAILY_STALE_MS, hourly: 2 * 3600 * 1000, hourly_window: DAILY_STALE_MS, sub_hourly: 0 } as const
+// A 5–15 minute route with no run in an hour has stopped.
+const STALE_AFTER = { daily: DAILY_STALE_MS, hourly: 2 * 3600 * 1000, hourly_window: DAILY_STALE_MS, sub_hourly: 3600 * 1000 } as const
 const CADENCE_LABEL = { daily: 'Daily', hourly: 'Hourly', hourly_window: 'Hourly, 17:00–23:00 UTC', sub_hourly: 'Every 5–15 min' } as const
 
 export default async function SuperJobsPage() {
@@ -28,7 +31,7 @@ export default async function SuperJobsPage() {
     [],
   )
   const nowMs = Date.now()
-  const latest = new Map<string, { status: string; started_at: string; finished_at: string | null }>()
+  const latest = new Map<string, { status: string; started_at: string; finished_at: string | null; error: string | null }>()
   if (rows.ok) for (const r of rows.data) if (!latest.has(r.job)) latest.set(r.job, r)
   const scheduled = AUTOMATIONS.filter((a) => a.trigger.kind === 'cron' || a.trigger.kind === 'cron_route')
 
@@ -51,7 +54,8 @@ export default async function SuperJobsPage() {
             </TableHeader>
             <TableBody>
               {scheduled.map((a) => {
-                const job = a.trigger.kind === 'cron' ? a.trigger.job : null
+                // Static routes record their latest run under their route name (recordRouteRun, R17c).
+                const job = a.trigger.kind === 'cron' ? a.trigger.job : a.trigger.kind === 'cron_route' ? a.trigger.route : null
                 const cadence = a.cadence ?? 'daily'
                 const run = job ? latest.get(job) : undefined
                 const state = job && rows.ok ? runState(run, nowMs, STALE_AFTER[cadence]) : null
@@ -68,10 +72,8 @@ export default async function SuperJobsPage() {
                     <TableCell>
                       {state ? (
                         <Badge variant={STATE_VARIANT[state]}>{RUN_STATE_LABEL[state]}</Badge>
-                      ) : job ? (
-                        <Badge variant="outline">Unknown — run log unreadable</Badge>
                       ) : (
-                        <span className="text-xs text-muted-foreground">Runs on its own route; not recorded here</span>
+                        <Badge variant="outline">Unknown — run log unreadable</Badge>
                       )}
                     </TableCell>
                   </TableRow>

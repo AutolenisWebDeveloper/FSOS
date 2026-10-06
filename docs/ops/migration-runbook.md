@@ -388,7 +388,7 @@ table, view and function through the service role (`getDb()`), which these files
 | File | Change | Visible effect |
 |---|---|---|
 | 142 | Creates `idx_form_submissions_pending`, `idx_opra_uncontacted` (from 001) and `v_contact_by_source` (from 070, `security_invoker`) | None for users. Closes the ledger's three residual gaps |
-| 143 | Revokes EXECUTE from PUBLIC, anon and authenticated on the 12 flagged SECURITY DEFINER functions (the service role keeps it); `comm_sendable_assets` becomes `security_invoker`; pins `search_path = public, extensions, pg_temp` on 47 functions, which repairs `has_role()` | None in the app. Direct `/rest/v1` reads with the public anon key, signed in or not, of the ~120 tables whose policies call `is_super()`/`has_role()` fail with 42501 instead of today's 42P01 (see below) |
+| 143 | Revokes EXECUTE from PUBLIC, anon and authenticated on the 12 flagged SECURITY DEFINER functions (the service role keeps it); `comm_sendable_assets` becomes `security_invoker`; pins `search_path = public, extensions, pg_temp` on 47 functions, which repairs `has_role()` | None in the app. Direct `/rest/v1` reads with the public anon key, signed in or not, of the 132 tables whose policies call the helpers fail with 42501 on every table, empty or not. Today the same reads return `[]` until a policy has a row to evaluate, then fail with 42P01 (see below) |
 
 **`has_role()` is broken in production today.** It carries `search_path=""` (set by hand; no
 migration did it) while its body names `user_roles` unqualified, so every call fails with
@@ -397,7 +397,7 @@ either one, for any role RLS applies to. Nothing user-facing shows it because th
 through the service role, which bypasses RLS. 143 re-pins it.
 
 **Why the helpers are revoked from signed-in users too.** Today the broken `has_role()` happens to
-block a signed-in user's JWT from reading those ~120 tables directly through `/rest/v1`. Repairing
+block a signed-in user's JWT from reading those 132 tables' rows directly through `/rest/v1`. Repairing
 it while signed-in users keep EXECUTE would open that path per the RLS policies (staff roles read
 the book and write the `FOR ALL` tables), with no MFA check (no policy tests `aal`) and none of the
 app's step-up, validation or audit. No FSOS code queries as a signed-in user, so 143 revokes the
@@ -464,12 +464,34 @@ protection, `vector`/`btree_gist` in `public`, and the 38 INFO "RLS enabled, no 
 (HaveIBeenPwned). Supabase documents it as Pro plan and above
 (https://supabase.com/docs/guides/auth/password-security); this project's plan was not checked.
 
-**Rollback** (each file's `-- ROLLBACK:` block, 143 before 142). Both are proven forward → rollback →
-re-apply by `tests/security-advisor-hardening.test.mjs`. 143's rollback restores production's exact
-prior grants and settings, including `has_role`'s broken `search_path=""`, so restoring the
-signed-in grants re-opens nothing.
+**Rollback** (143 before 142). Each file keeps its rollback as a `-- ROLLBACK:` block of **comment
+lines**, so pasting the block as-is runs nothing. Extract it with the command below, read it, then
+run it and the ledger delete in one transaction. `tests/security-advisor-hardening.test.mjs` proves
+that this extraction yields exactly the block it runs (forward → rollback → re-apply). 143's
+rollback restores production's exact prior grants and settings, including `has_role`'s broken
+`search_path=""`, so restoring the signed-in grants re-opens nothing.
 
 ```sh
-# 143 then 142: paste each file's ROLLBACK block into psql inside begin … commit, then
-psql "$DATABASE_URL" -c "delete from schema_migrations where filename in ('143_security_advisor_hardening.sql','142_residual_schema_gaps.sql');"
+# The comment lines after `-- ROLLBACK:`, with the leading `-- ` removed.
+rb() { awk '/^--[[:space:]]*ROLLBACK:/ {on=1; next} on && /^--/ {sub(/^--[[:space:]]?/, ""); print; next} on {exit}' "supabase/migrations/$1.sql"; }
+
+rb 143_security_advisor_hardening        # read it first
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f <(rb 143_security_advisor_hardening) \
+  -c "delete from schema_migrations where filename = '143_security_advisor_hardening.sql';"
+
+rb 142_residual_schema_gaps              # read it first
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f <(rb 142_residual_schema_gaps) \
+  -c "delete from schema_migrations where filename = '142_residual_schema_gaps.sql';"
+```
+
+**Verify the rollback** (read-only):
+
+```sql
+begin read only;
+select has_function_privilege('anon', 'public.member_dob(uuid,text)', 'EXECUTE');           -- true (prior state)
+select proconfig from pg_proc where oid = 'public.has_role(text)'::regprocedure;             -- {"search_path=\"\""} (prior state)
+select reloptions from pg_class where oid = 'public.comm_sendable_assets'::regclass;         -- null
+select to_regclass('public.v_contact_by_source');                                            -- null
+select count(*) from schema_migrations where filename in ('142_residual_schema_gaps.sql','143_security_advisor_hardening.sql');  -- 0
+commit;
 ```

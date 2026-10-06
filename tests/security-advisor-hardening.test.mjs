@@ -129,6 +129,17 @@ const searchPath = (sig) => q(`select coalesce((select c from unnest((select pro
 const can = (role, sig) => q(`select has_function_privilege('${role}', 'public.${sig}', 'EXECUTE')`)
 const indexDef = (name) => q(`select coalesce((select indexdef from pg_indexes where schemaname = 'public' and indexname = '${name}'), '<none>')`)
 const viewOptions = (name) => q(`select coalesce((select reloptions::text from pg_class where relnamespace = 'public'::regnamespace and relname = '${name}'), '<none>')`)
+// Functions that call pgcrypto unqualified but whose pin omits `extensions` (where pgcrypto lives on Supabase).
+const pgcryptoPinMissingExtensions = () => q(`select coalesce(string_agg(p.oid::regprocedure::text, ', ' order by p.oid::regprocedure::text), '') from pg_proc p
+  where p.pronamespace = 'public'::regnamespace and p.prosrc ~ 'pgp_sym_' and ${NOT_EXT}
+    and not exists (select 1 from unnest(coalesce(p.proconfig, '{}')) c where c ~ '^search_path=.*\\mextensions\\M')`)
+const INDEX_PENDING = /ON public\.form_submissions USING btree \(status, expires_at\)$/
+const INDEX_OPRA = /ON public\.opra_cases USING btree \(created_at\) WHERE \(contacted = false\)$/
+// v_contact_by_source must equal 070's aggregation computed directly over contacts.
+const contactBySourceDirect = () => q(`select string_agg(s || ':' || t || ':' || o, ',' order by s) from (select coalesce(nullif(btrim(source), ''), '(unspecified)') s, count(*) t, count(*) filter (where household_id is null) o from contacts where deleted_at is null group by 1) x`)
+const contactBySourceView = () => q(`set role service_role; select string_agg(source || ':' || total || ':' || orphaned, ',' order by source) from v_contact_by_source`)
+// The extraction the runbook (§8 rollback) tells the owner to run: identical rules to rollbackSql().
+const RB_AWK = `'/^--[[:space:]]*ROLLBACK:/ {on=1; next} on && /^--/ {sub(/^--[[:space:]]?/, ""); print; next} on {exit}'`
 
 let failures = 0
 const check = (name, fn) => {
@@ -186,6 +197,10 @@ try {
   // ── 1. Global invariants (regression guards) ─────────────────────────────────
   check('every function in public pins search_path (CREATE OR REPLACE without `set search_path` fails here)', () => {
     assert.equal(unpinned(), '', 'unpinned')
+  })
+  check('every function that calls pgcrypto pins a search_path that includes `extensions`', () => {
+    assert.ok(Number(q(`select count(*) from pg_proc where pronamespace = 'public'::regnamespace and prosrc ~ 'pgp_sym_'`)) >= 6, 'expected the six pgcrypto callers')
+    assert.equal(pgcryptoPinMissingExtensions(), '')
   })
   check('no SECURITY DEFINER function in public is executable by anon', () => {
     assert.equal(definerExecutableBy('anon'), '')
@@ -263,15 +278,21 @@ try {
     assert.equal(q(`set role service_role; select count(*) from comm_sendable_assets`), q(`select count(*) from comm_sendable_assets`))
     assert.match(err(`set role anon; select count(*) from comm_sendable_assets`), /permission denied for function is_super/)
   })
-  check('142: both indexes match 001 and v_contact_by_source matches 070 (security_invoker)', () => {
-    assert.match(indexDef('idx_form_submissions_pending'), /ON public\.form_submissions USING btree \(status, expires_at\)$/)
-    assert.match(indexDef('idx_opra_uncontacted'), /ON public\.opra_cases USING btree \(created_at\) WHERE \(contacted = false\)$/)
+  check('v_contact_by_source matches 070 (security_invoker; soft-deleted excluded; orphaned counted)', () => {
     assert.equal(viewOptions('v_contact_by_source'), '{security_invoker=true}')
-    q(`insert into contacts (full_name, source) values ('A', 'advisor_test_src'), ('B', ' '), ('C', null)`)
-    const direct = q(`select string_agg(s || ':' || t || ':' || o, ',' order by s) from (select coalesce(nullif(btrim(source), ''), '(unspecified)') s, count(*) t, count(*) filter (where household_id is null) o from contacts where deleted_at is null group by 1) x`)
-    assert.equal(q(`set role service_role; select string_agg(source || ':' || total || ':' || orphaned, ',' order by source) from v_contact_by_source`), direct)
-    assert.match(direct, /advisor_test_src:1:1/)
+    // An orphan, a linked contact and a soft-deleted one under the same source; blank and null sources.
+    q(`insert into contacts (full_name, source, household_id, deleted_at) values
+       ('A', 'advisor_test_src', null, null), ('E', 'advisor_test_src', '${HH}', null),
+       ('D', 'advisor_test_src', null, now()), ('B', ' ', null, null), ('C', null, null, null)`)
+    const direct = contactBySourceDirect()
+    assert.match(direct, /advisor_test_src:2:1/)
     assert.match(direct, /\(unspecified\):\d+/)
+    assert.equal(contactBySourceView(), direct)
+  })
+  check("the runbook's rollback extraction yields exactly each file's ROLLBACK block", () => {
+    for (const f of [M142, M143]) {
+      assert.equal(sh(`awk ${RB_AWK} supabase/migrations/${f}`).trim(), rollbackSql(f), f)
+    }
   })
 
   // ── 3. Owner apply on the production state, rollback, re-apply ──────────────
@@ -310,8 +331,13 @@ try {
     assert.equal(definerViews(), '')
     assert.equal(q(`set request.jwt.claim.sub = '${SUPER}'; set role service_role; select is_super()`), 't', 'has_role not repaired')
     assert.match(err(asUser(SUPER, 'select count(*) from user_roles')), /permission denied for function is_super/)
-    assert.match(indexDef('idx_form_submissions_pending'), /\(status, expires_at\)/)
+    // 142 itself (not 001) recreates both indexes and the view on production's state.
+    assert.match(indexDef('idx_form_submissions_pending'), INDEX_PENDING)
+    assert.match(indexDef('idx_opra_uncontacted'), INDEX_OPRA)
     assert.equal(viewOptions('v_contact_by_source'), '{security_invoker=true}')
+    assert.equal(contactBySourceView(), contactBySourceDirect())
+    assert.match(contactBySourceView(), /advisor_test_src:2:1/)
+    assert.equal(pgcryptoPinMissingExtensions(), '')
   })
   check('re-recording an applied file fails loudly and changes nothing (no `on conflict do nothing`)', () => {
     assert.throws(() => ownerApply(M143))

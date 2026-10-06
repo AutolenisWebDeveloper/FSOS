@@ -1,4 +1,4 @@
-# Migration runbook — `fix/automation-e2e` (137 → 141)
+# Migration runbook — `fix/automation-e2e` (137 → 141), then 142 → 143
 
 For the owner to run by hand. **This document contains no PII.** Every query in it is either
 read-only (`begin read only … commit`) or a step you choose to run. Nothing here was run against
@@ -372,3 +372,104 @@ commit;
 
 Re-arming `ai_autoreply` on rollback restores AI auto-replies on those 3 threads; leave them `false`
 unless the FSA wants them live (edit the rollback's `ai_autoreply` line to keep `false`).
+
+## 8. Apply 142 and 143 (live-audit residual gaps and security-advisor hardening)
+
+Added 2026-10-06. Same procedure as above: Step 0 first (backup or PITR window), then one file and
+its ledger row per transaction, 142 before 143, connected as `postgres` (the owner of every function
+and view these files touch, checked 2026-10-06; a REVOKE by a non-owner only warns and changes
+nothing). Precondition: the ledger records every file through 141, including 128–134, so that no
+later `npm run migrate` re-runs a file that re-creates a function without its pin (checked
+2026-10-06: 143 rows, max 141). Neither file depends on a deploy: the app reads every affected
+table, view and function through the service role (`getDb()`), which these files leave unchanged.
+
+**What changes.**
+
+| File | Change | Visible effect |
+|---|---|---|
+| 142 | Creates `idx_form_submissions_pending`, `idx_opra_uncontacted` (from 001) and `v_contact_by_source` (from 070, `security_invoker`) | None for users. Closes the ledger's three residual gaps |
+| 143 | Revokes EXECUTE from PUBLIC, anon and authenticated on the 12 flagged SECURITY DEFINER functions (the service role keeps it); `comm_sendable_assets` becomes `security_invoker`; pins `search_path = public, extensions, pg_temp` on 47 functions, which repairs `has_role()` | None in the app. Direct `/rest/v1` reads with the public anon key, signed in or not, of the ~120 tables whose policies call `is_super()`/`has_role()` fail with 42501 instead of today's 42P01 (see below) |
+
+**`has_role()` is broken in production today.** It carries `search_path=""` (set by hand; no
+migration did it) while its body names `user_roles` unqualified, so every call fails with
+`42P01 relation "user_roles" does not exist`. So do `is_super()` and every RLS policy that calls
+either one, for any role RLS applies to. Nothing user-facing shows it because the app reads only
+through the service role, which bypasses RLS. 143 re-pins it.
+
+**Why the helpers are revoked from signed-in users too.** Today the broken `has_role()` happens to
+block a signed-in user's JWT from reading those ~120 tables directly through `/rest/v1`. Repairing
+it while signed-in users keep EXECUTE would open that path per the RLS policies (staff roles read
+the book and write the `FOR ALL` tables), with no MFA check (no policy tests `aal`) and none of the
+app's step-up, validation or audit. No FSOS code queries as a signed-in user, so 143 revokes the
+helpers from `authenticated` as well: the posture stays closed, now on purpose. If direct
+client-side RLS reads are ever wanted, re-grant them together with an `aal2` check in the policies.
+
+**Read-only check before applying (2026-10-06 values in comments):**
+
+```sql
+begin read only;
+select count(*) from schema_migrations where filename in ('142_residual_schema_gaps.sql','143_security_advisor_hardening.sql');  -- 0
+select to_regclass('public.v_contact_by_source');                                                                                  -- null
+select count(*) from pg_indexes where indexname in ('idx_form_submissions_pending','idx_opra_uncontacted');                       -- 0
+select column_name from information_schema.columns where table_name = 'contacts' and column_name in ('source','household_id','deleted_at');  -- 3 rows
+set local role service_role;
+select count(*) from comm_sendable_assets;   -- note this number (as the app's role); it must be the same after 143
+commit;
+```
+
+**Apply** (stops at the first failure; each file and its row commit together or not at all):
+
+```sh
+for f in 142_residual_schema_gaps 143_security_advisor_hardening; do
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f "supabase/migrations/$f.sql" \
+    -c "insert into schema_migrations (filename) values ('$f.sql');" \
+    || { echo "STOPPED at $f.sql: nothing from it was applied or recorded."; break; }
+  echo "applied and recorded $f.sql"
+done
+```
+
+**Verify:**
+
+```sql
+begin read only;
+select public.has_role('super_admin');   -- false (no error; was 42P01)
+set local role service_role;
+select count(*) from comm_sendable_assets;   -- same number as before, read as the app's role
+reset role;
+-- SECURITY DEFINER functions anon can execute: expect 0
+select count(*) from pg_proc p where p.pronamespace = 'public'::regnamespace and p.prosecdef
+  and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')
+  and has_function_privilege('anon', p.oid, 'EXECUTE');
+-- ...and authenticated: expect 0
+select count(*) from pg_proc p where p.pronamespace = 'public'::regnamespace and p.prosecdef
+  and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')
+  and has_function_privilege('authenticated', p.oid, 'EXECUTE');
+-- functions without a pinned search_path: expect 0
+select count(*) from pg_proc p where p.pronamespace = 'public'::regnamespace and p.prokind = 'f'
+  and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')
+  and not exists (select 1 from unnest(coalesce(p.proconfig, '{}')) c where c like 'search_path=%');
+select reloptions from pg_class where oid = 'public.comm_sendable_assets'::regclass;   -- {security_invoker=true}
+select count(*) from pg_indexes where indexname in ('idx_form_submissions_pending','idx_opra_uncontacted');   -- 2
+commit;
+```
+
+Then re-run the Supabase security advisor. Expect no `security_definer_view`, no
+`anon_security_definer_function_executable`, no `authenticated_security_definer_function_executable`
+and no `function_search_path_mutable`. Still open and not closable by a migration: leaked-password
+protection, `vector`/`btree_gist` in `public`, and the 38 INFO "RLS enabled, no policy" tables
+(service-role only by design).
+
+**Leaked-password protection (dashboard, not SQL):** Authentication → Sign In / Providers → Email
+(`/dashboard/project/_/auth/providers?provider=Email`) → turn on "Prevent use of leaked passwords"
+(HaveIBeenPwned). Supabase documents it as Pro plan and above
+(https://supabase.com/docs/guides/auth/password-security); this project's plan was not checked.
+
+**Rollback** (each file's `-- ROLLBACK:` block, 143 before 142). Both are proven forward → rollback →
+re-apply by `tests/security-advisor-hardening.test.mjs`. 143's rollback restores production's exact
+prior grants and settings, including `has_role`'s broken `search_path=""`, so restoring the
+signed-in grants re-opens nothing.
+
+```sh
+# 143 then 142: paste each file's ROLLBACK block into psql inside begin … commit, then
+psql "$DATABASE_URL" -c "delete from schema_migrations where filename in ('143_security_advisor_hardening.sql','142_residual_schema_gaps.sql');"
+```
